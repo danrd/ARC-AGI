@@ -1,4 +1,6 @@
 import gym
+import os
+import copy
 import numpy as np
 import functools
 import warnings
@@ -12,7 +14,19 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor, VecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.logger import configure
 
+from data.dataset.ARC_dataset import ARCDataset
+from rl.ARC_task import ARCTask
+from utils.utils import seed_everything
+
 dataset = ARCDataset()
+
+def create_env(subtask, seed, target_grid=False):
+    """Auxiliary function for creating environments to create vectorized environment."""
+    env = gym.make('ARC-Gridworld-v0', seed=seed, target_grid=target_grid)
+    subtask = copy.deepcopy(subtask)
+    env.set_subtask(subtask)
+    return env
+
 def train_on_dataset(dataset, tasks_interval:list=[], tasks_subset:list=[]):
     seed_everything()
     accuracy = {}
@@ -42,7 +56,7 @@ def train_on_dataset(dataset, tasks_interval:list=[], tasks_subset:list=[]):
 
 def train_on_subtask(subtask):
     seed_everything()
-    envs = [functools.partial(create_env, subtask=subtasks[0], actions=[], seed=42+i, target_grid=False) for i in range(16)] # creating envs for vectorizing
+    envs = [functools.partial(create_env, subtask=subtask, actions=[], seed=42+i, target_grid=False) for i in range(16)] # creating envs for vectorizing
     vec_env = VecMonitor(DummyVecEnv(envs))
     p = (128,128,128)
     agent = PPO("MultiInputPolicy", vec_env, verbose=1, batch_size=256, gamma=0.99, learning_rate=0.0006, clip_range=0.2, 

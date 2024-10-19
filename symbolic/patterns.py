@@ -1,3 +1,7 @@
+import copy
+from typing import List
+from symbolic.utils import find_upper_left_corner, multiplicate_figures
+
 def left_lines(grid_size:int, pos:tuple)->List[List[tuple]]:
     """Auxiliary function for diagonals creations."""
     lines = []
@@ -6,7 +10,7 @@ def left_lines(grid_size:int, pos:tuple)->List[List[tuple]]:
     i, j = pos
     offset_i, offset_j, offset_ii, offset_jj = 0, 0, 0, 0
     base = [(i, j)]
-    for k in range(1, grid_size):
+    for _ in range(1, grid_size):
         offset_i += -1
         offset_j += -1
         new_cell = (i+offset_i, j+offset_j)
@@ -91,7 +95,6 @@ def lines_coords(grid_size:int)->List[List[List[tuple]]]:
 
 def rectangles_coords(grid_size:int)->List[List[List[tuple]]]:
     ul = find_upper_left_corner(grid_size)
-    grid_admissible = [ul+i for i in range(grid_size)]
     coords = []
     for i in range(grid_size-1):
         for j in range(grid_size-1):

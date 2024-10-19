@@ -1,3 +1,9 @@
+import typing
+from typing import List
+import sys
+import numpy as np
+from collections import defaultdict
+
 def find_upper_left_corner(grid_size:int)->int:
     """Finds left upper corner of the grid to take into account padding."""
     return min(14-(grid_size%2)*((grid_size//2)), 14-((grid_size-1)%2)*(((grid_size-1)//2)))

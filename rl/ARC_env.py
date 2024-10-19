@@ -4,13 +4,12 @@ import os
 import gymnasium
 from typing import Optional
 from gymnasium import spaces
-from gym.spaces import Dict, Box, Discrete, Space
 from gym import Env, Wrapper as gymWrapper
+from gym.spaces import Dict, Box, Discrete, Space
 import numpy as np
 from copy import copy
-from World import World, Agent
-from ARCTasks import ARCSubtask
-
+from rl.ARC_world import World, Agent
+from rl.ARC_task import ARCSubtask
 class ARCGridWorld(gymnasium.Env):
     def __init__(
             self, max_steps=1000, right_placement_scale=1., wrong_placement_scale=0.1,
@@ -160,15 +159,15 @@ class ARCGridWorld(gymnasium.Env):
         norm_reward = reward/(self.max_reward+100)
         return obs, norm_reward, done, truncated, info
 
-def create_env(
+    def create_env(
         max_steps=1000, right_placement_scale=1., wrong_placement_scale=0.1, 
         seed=None, actions_pred=None, target_grid=False
     ):
-    env = ARCGridWorld(
-        max_steps=max_steps, right_placement_scale=right_placement_scale,
-        seed=seed, actions_pred=actions_pred, target_grid=target_grid
-    )
-    return env
+        env = ARCGridWorld(
+            max_steps=max_steps, right_placement_scale=right_placement_scale,
+            seed=seed, actions_pred=actions_pred, target_grid=target_grid
+        )
+        return env
 
 gymnasium.envs.register(
      id='ARC-Gridworld-v0',

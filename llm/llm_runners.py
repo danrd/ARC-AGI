@@ -11,8 +11,6 @@ from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer
 from ctransformers import AutoModelForCausalLM as qAutoModelForCausalLM 
 from ctransformers import AutoConfig as qAutoConfig
 
-from iglu_datasets.promptgen.llm.abstract_llm_runner import AbstractGenerativeLmRunner
-
 from peft import (
     LoraConfig,
     get_peft_model,
@@ -22,7 +20,7 @@ from peft import (
 
 default_openai_key = os.getenv("OPENAI_API_KEY")
 
-class GPTRunner(AbstractGenerativeLmRunner):
+class GPTRunner():
     def __init__(self, debug: bool = False):
         self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         self.max_new_tokens = 400
@@ -77,7 +75,7 @@ class GPTRunner(AbstractGenerativeLmRunner):
             stream=False,
 )
     
-class LLMRunner(AbstractGenerativeLmRunner):
+class LLMRunner():
     def __init__(self, model:str, model_type:str, LORAConfig, gpu:bool = False, qlora=True, gpu_index=0):
         self.gpu_index = gpu_index
         self.model_type = model_type

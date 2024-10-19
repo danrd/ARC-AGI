@@ -1,12 +1,18 @@
 import matplotlib.pyplot as plt
 from matplotlib import colors
+import numpy as np
 import copy
+import os
+import pandas as pd
+from typing import List
+from utils.utils import load_json
+from symbolic.utils import coords_transform
 
-training_challenges = load_json('/kaggle/input/arc-prize-2024/arc-agi_training_challenges.json')
-training_solutions = load_json('/kaggle/input/arc-prize-2024/arc-agi_training_solutions.json')
-evaluation_challenges = load_json('/kaggle/input/arc-prize-2024/arc-agi_evaluation_challenges.json')
-evaluation_solutions = load_json('/kaggle/input/arc-prize-2024/arc-agi_evaluation_solutions.json')
-test_challenges = load_json('/kaggle/input/arc-prize-2024/arc-agi_test_challenges.json')
+training_challenges = load_json('data/dataset/arc-agi_training_challenges.json')
+training_solutions = load_json('data/dataset/arc-agi_training_solutions.json')
+evaluation_challenges = load_json('data/dataset/arc-agi_evaluation_challenges.json')
+evaluation_solutions = load_json('data/dataset/arc-agi_evaluation_solutions.json')
+test_challenges = load_json('data/dataset/arc-agi_test_challenges.json')
 tasks_keys = list(training_challenges.keys())+list(evaluation_challenges.keys())
 all_challenges = training_challenges | evaluation_challenges 
 
@@ -101,7 +107,7 @@ def plot_shape(shape:List[tuple]):
     plot_grid(grid)
     
 def plot_intersection(grid, figure):
-    i, j = coords_tranform(figure)
+    i, j = coords_transform(figure)
     grid = copy.deepcopy(grid)
     old_color = grid[i, j][0]
     new_color =  old_color-1 if old_color>1 else old_color+1
@@ -109,8 +115,21 @@ def plot_intersection(grid, figure):
     plot_grid(grid)
     
 def plot_intersection_with_replace(grid, figure):
-    i, j = coords_tranform(figure)
+    i, j = coords_transform(figure)
     old_color = grid[i, j][0]
     new_color =  old_color-1 if old_color>1 else old_color+1
     grid[i, j] = new_color
     plot_grid(grid)
+
+def plot_rewards(path_to_logs:str):
+    file = pd.read_csv(path_to_logs)
+    plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label=f'Training mean reward')
+    plt.xlabel("timesteps")
+    plt.ylabel("reward")
+    plt.legend()
+    if os.path.exists(path_to_logs)==True:
+          os.remove(path_to_logs)
+    plt.savefig(os.getcwd()+'/plot.png')
+    plt.show()
+    plt.close('all')
+    return

@@ -1,3 +1,14 @@
+import typing
+from typing import List
+import numpy as np
+import copy
+from collections import defaultdict
+from itertools import product
+from rl.ARC_task import ARCSubtask
+from utils.plotting import plot_grid
+from symbolic.utils import find_upper_left_corner, coords_transform
+from symbolic.patterns import generate_patterns
+
 class SubtaskSummary():
     def __init__(self, subtask:ARCSubtask, patterns:dict, train:bool=True):
         self.subtask = subtask
@@ -26,7 +37,7 @@ class GridSummary():
             shape_patterns = v
             for idx, pattern_list in enumerate(shape_patterns):
                 for pattern in pattern_list:
-                    i, j = coords_tranform(pattern) # transform list of tuples into two lists for i and j coordinates
+                    i, j = coords_transform(pattern) # transform list of tuples into two lists for i and j coordinates
                     retrieval = set(grid[i, j]) # extract cells colors with lists of coordinates and keep only unique 
                     if len(retrieval) > 1: # if colors more than 1 - not a candidate
                         break
@@ -168,6 +179,190 @@ class GridSummary():
                         triples.extend(summary.triples) 
                         if summary.complex_shape:
                             complex_shapes.append(summary.complex_shape)
+        return triples
+
+class RelationAnalyzer():
+    def __init__(self, object_1:GridObject, object_2:GridObject, shape:tuple):
+        self.object_1 = object_1
+        self.object_2 = object_2
+        self.shape = shape
+        self.triples = self.find_relations()
+        self.complex_shape = False
+        
+    @staticmethod
+    def intersection(coords_1, coords_2):
+        intersection = False
+        for coord_1 in coords_1:
+            for coord_2 in coords_2:
+                if coord_1[0] == coord_2[0] and coord_1[1] == coord_2[1]:
+                    intersection = True
+                    break
+        return intersection    
+    
+    @staticmethod
+    def hor_adjacency(coords_1, coords_2):
+        hor_adjacency = False
+        for coord_1 in coords_1:
+            for coord_2 in coords_2:
+                if coord_1[0] == coord_2[0] and (coord_1[1] == coord_2[1]+1 or coord_1[1] == coord_2[1]-1):
+                    hor_adjacency = True
+                    break
+            if hor_adjacency:
+                break
+        return hor_adjacency
+    
+    @staticmethod
+    def vert_adjacency(coords_1, coords_2):
+        vert_adjacency = False
+        for coord_1 in coords_1:
+            for coord_2 in coords_2:
+                if coord_1[1] == coord_2[1] and (coord_1[0] == coord_2[0]+1 or coord_1[0] == coord_2[0]-1):
+                    vert_adjacency = True
+                    break
+            if vert_adjacency:
+                break
+        return vert_adjacency 
+    
+    @staticmethod
+    def inside_tv_relation(tv_shape, object_coords):
+        inside_tv_relation = True
+        for coord in object_coords:
+            if coord[0] <= tv_shape.min_i or coord[0] >= tv_shape.max_i or coord[1] <= tv_shape.min_j or coord[1] >= tv_shape.max_j:
+                inside_tv_relation = False
+                break
+        return inside_tv_relation
+    
+    @staticmethod
+    def rotation_symmetry(coords_1, coords_2, shape):
+        if len(coords_1) > 1 and len(coords_2) > 1: # exclude cells
+            ul = find_upper_left_corner(shape[0])
+            coords_1_shifted = [(tup[0]-ul, tup[1]-ul) for tup in coords_1]
+            coords_2_shifted = [(tup[0]-ul, tup[1]-ul) for tup in coords_2]
+            rotations = []
+            if len(coords_1) == len(coords_2):
+                grid_1 = np.zeros(shape)
+                i_1, j_1 = coords_transform(coords_1_shifted)
+                grid_1[i_1, j_1] = 1
+                grid_2 = np.zeros(shape)
+                i_2, j_2 = coords_transform(coords_2_shifted)
+                grid_2[i_2, j_2] = 1
+                if (grid_1 == np.rot90(grid_2, k=1)).all():
+                    rotations.append('rotation_90')
+                if (grid_1 == np.rot90(grid_2, k=2)).all():
+                    rotations.append('rotation_180')
+                if (grid_1 == np.rot90(grid_2, k=3)).all():
+                    rotations.append('rotation_270')
+            return rotations  
+    
+    @staticmethod
+    def translation_symmetry(coords_1, coords_2, shape):
+        ul = find_upper_left_corner(shape[0])
+        coords_1_shifted = [(tup[0]-ul, tup[1]-ul) for tup in coords_1]
+        coords_2_shifted = [(tup[0]-ul, tup[1]-ul) for tup in coords_2]
+        i_offset = 0
+        j_offset = 0
+        i_offsets = []
+        j_offsets = []
+        if len(coords_1) == len(coords_2):
+            for coord_1 in coords_1_shifted:
+                for coord_2 in coords_2_shifted:
+                    i_offsets.append(coord_1[0]-coord_2[0])
+                    j_offsets.append(coord_1[1]-coord_2[1])
+        set_i_offsets = set(i_offsets)
+        set_j_offsets = set(j_offsets)
+        if len(set_i_offsets) == 1 and len(set_j_offsets) == 1:
+            i_offset = list(set_i_offsets)[0]
+            j_offset = list(set_j_offsets)[0]
+        return (i_offset, j_offset)   
+ 
+    def find_relations(self):
+        triples = []
+        intersection = self.intersection(self.object_1.coords, self.object_2.coords)
+        if intersection:
+            hor_adjacency = False 
+            vert_adjacency = False
+        else:
+            hor_adjacency = self.hor_adjacency(self.object_1.coords, self.object_2.coords)
+            vert_adjacency = self.vert_adjacency(self.object_1.coords, self.object_2.coords)
+        
+        if intersection:
+            self.object_1.relations[self.object_2.label].append("intersect_with")
+            self.object_2.relations[self.object_1.label].append("intersect_with")
+            triples.append([self.object_1, "intersect_with", self.object_2])
+            triples.append([self.object_2, "intersect_with", self.object_1])
+        elif hor_adjacency and vert_adjacency:
+            self.object_1.relations[self.object_2.label].append("horizontal_and_vertical_adjacency")
+            self.object_2.relations[self.object_1.label].append("horizontal_and_vertical_adjacency")
+            triples.append([self.object_1, "horizontal_and_vertical_adjacency", self.object_2])
+            triples.append([self.object_2, "horizontal_and_vertical_adjacency", self.object_1])
+            if self.object_1.color_number==self.object_2.color_number:
+                complex_shape_coords = self.object_1.coords + self.object_2.coords
+                complex_shape_label = f'complex_shape_{int(self.object_1.label.split("_")[-1])+int(self.object_2.label.split("_")[-1])}'
+                self.complex_shape = GridObject(shape='complex_shape', coords=complex_shape_coords, color=self.object_1.color_number, label=complex_shape_label)
+        elif hor_adjacency:
+            self.object_1.relations[self.object_2.label].append("horizontal_adjacency")
+            self.object_2.relations[self.object_1.label].append("horizontal_adjacency")
+            triples.append([self.object_1, "horizontal_adjacency", self.object_2])
+            triples.append([self.object_2, "horizontal_adjacency", self.object_1])
+            if self.object_1.color_number==self.object_2.color_number:
+                complex_shape_coords = self.object_1.coords + self.object_2.coords
+                complex_shape_label = f'complex_shape_{int(self.object_1.label.split("_")[-1])+int(self.object_2.label.split("_")[-1])}'
+                self.complex_shape = GridObject(shape='complex_shape', coords=complex_shape_coords, color=self.object_1.color_number, label=complex_shape_label)
+        elif vert_adjacency:
+            self.object_1.relations[self.object_2.label].append("vertical_adjacency")
+            self.object_2.relations[self.object_1.label].append("vertical_adjacency")
+            triples.append([self.object_1, "vertical_adjacency", self.object_2])
+            triples.append([self.object_2, "vertical_adjacency", self.object_1])
+            if self.object_1.color_number==self.object_2.color_number:
+                complex_shape_coords = self.object_1.coords + self.object_2.coords
+                complex_shape_label = f'complex_shape_{int(self.object_1.label.split("_")[-1])+int(self.object_2.label.split("_")[-1])}'
+                self.complex_shape = GridObject(shape='complex_shape', coords=complex_shape_coords, color=self.object_1.color_number, label=complex_shape_label)           
+        if self.object_1.shape == 'tv_shape':
+            if self.inside_tv_relation(self.object_1, self.object_2.coords):
+                self.object_1.relations[self.object_2.label].append("tv_relation")
+                self.object_2.relations[self.object_1.label].append("tv_relation")
+                triples.append([self.object_1, "tv_relation", self.object_2])
+                triples.append([self.object_2, "tv_relation", self.object_1])
+                
+        if self.object_2.shape == 'tv_shape':
+            if self.inside_tv_relation(self.object_2, self.object_1.coords):
+                self.object_1.relations[self.object_2.label].append("tv_relation")
+                self.object_2.relations[self.object_1.label].append("tv_relation")
+                triples.append([self.object_1, "tv_relation", self.object_2])
+                triples.append([self.object_2, "tv_relation", self.object_1])
+        
+        if self.object_1.color == self.object_2.color:
+            self.object_1.relations[self.object_2.label].append("same_color")
+            self.object_2.relations[self.object_1.label].append("same_color")
+            triples.append([self.object_2, f"same_color", self.object_1])
+            triples.append([self.object_1, f"same_color", self.object_2])
+            
+        if self.object_1.shape == self.object_2.shape:
+            self.object_1.relations[self.object_2.label].append("same_shape")
+            self.object_2.relations[self.object_1.label].append("same_shape")
+            triples.append([self.object_2, f"same_shape", self.object_1])
+            triples.append([self.object_1, f"same_shape", self.object_2])
+            
+        if self.object_1.size == self.object_2.size:
+            self.object_1.relations[self.object_2.label].append("same_size")
+            self.object_2.relations[self.object_1.label].append("same_size")
+            triples.append([self.object_2, f"same_size", self.object_1])
+            triples.append([self.object_1, f"same_size", self.object_2])
+            
+        rotations = self.rotation_symmetry(self.object_1.coords, self.object_2.coords, self.shape)
+        if rotations != []:
+            for rotation in rotations:
+                self.object_1.relations[self.object_2.label].append(rotation)
+                self.object_2.relations[self.object_1.label].append(rotation)
+                triples.append([self.object_1, rotation, self.object_2])
+                triples.append([self.object_2, rotation, self.object_1])
+        
+        (i_offset, j_offset) = self.translation_symmetry(self.object_1.coords, self.object_2.coords, self.shape)
+        if i_offset != 0 and j_offset != 0:
+            self.object_1.relations[self.object_2.label].append(f"translation_symmetry")
+            self.object_2.relations[self.object_1.label].append(f"translation_symmetry")
+            triples.append([self.object_1, f"translation_symmetry", self.object_2])
+            triples.append([self.object_2, f"translation_symmetry", self.object_1])
         return triples
 
 class GridObject():

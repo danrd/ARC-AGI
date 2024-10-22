@@ -107,17 +107,27 @@ def plot_shape(shape:List[tuple]):
     plot_grid(grid)
     
 def plot_intersection(grid, figure):
-    i, j = coords_transform(figure)
+    i, j = np.where(x!=1)
     grid = copy.deepcopy(grid)
-    old_color = grid[i, j][0]
-    new_color =  old_color-1 if old_color>1 else old_color+1
+    colors = grid[i, j]
+    new_color = 1
+    for c in range(1, 10):
+        if c not in colors:
+            new_color = c
+            break
+    i, j = coords_transform(figure)
     grid[i, j] = new_color
     plot_grid(grid)
     
 def plot_intersection_with_replace(grid, figure):
+    i, j =  np.where(x!=1)
+    colors = grid[i, j]
+    new_color = 1
+    for c in range(1, 10):
+        if c not in colors:
+            new_color = c
+            break
     i, j = coords_transform(figure)
-    old_color = grid[i, j][0]
-    new_color =  old_color-1 if old_color>1 else old_color+1
     grid[i, j] = new_color
     plot_grid(grid)
 

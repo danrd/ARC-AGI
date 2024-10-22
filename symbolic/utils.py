@@ -4,9 +4,11 @@ import sys
 import numpy as np
 from collections import defaultdict
 
-def find_upper_left_corner(grid_size:int)->int:
+def find_upper_left_corner(grid_size:tuple)->tuple:
     """Finds left upper corner of the grid to take into account padding."""
-    return min(14-(grid_size%2)*((grid_size//2)), 14-((grid_size-1)%2)*(((grid_size-1)//2)))
+    i = min(14-(grid_size[0]%2)*((grid_size[0]//2)), 14-((grid_size[0]-1)%2)*(((grid_size[0]-1)//2)))
+    j = min(14-(grid_size[1]%2)*((grid_size[1]//2)), 14-((grid_size[1]-1)%2)*(((grid_size[1]-1)//2)))
+    return (i, j)
 
 def calculate_size(figures):
     """Calculation to control a size of pregenerated shapes."""
@@ -37,6 +39,13 @@ def dict_merge(dict_1, dict_2)->dict:
         else:
             dict_1[k] = v
     return dict_1
+
+def dict_to_list(dict):
+    res_list = []
+    keys = dict.keys()
+    for key in keys: 
+        res_list.extend(dict[key])
+    return res_list
 
 def coords_transform(pattern:List[tuple]):
     """Transform list of tuples into two lists for i and j coordinates.""" 
@@ -111,11 +120,11 @@ def create_figures(figures:dict)->typing.Dict[tuple, List[List[List[tuple]]]]:
         colored_figures_dict[k] = figures
     return colored_figures_dict
 
-def is_admissible(figure:List[tuple], grid_size:int)->bool:
+def is_admissible(figure:List[tuple], grid_size:tuple)->bool:
     """Defines possibility of placing figure inside grid."""
     ul = find_upper_left_corner(grid_size)
     for coord in figure:
-        if coord[0] in range(ul, grid_size+ul) and coord[1] in range(ul, grid_size+ul):
+        if coord[0] in range(ul[0], grid_size[0]+ul[0]) and coord[1] in range(ul[1], grid_size[1]+ul[1]):
             continue
         else:
             return False
@@ -135,14 +144,13 @@ def perform_mapping(fig_dict:dict, figure:List[tuple], grid_cells)->dict:
     fig_dict[key].append(figure)
     return fig_dict
 
-def multiplicate_figures(figures, grid_size:int)->dict:
+def multiplicate_figures(figures, grid_size:tuple)->dict:
     """Multiplicates figures shifting their coordinates inside grid."""
-    ul = find_upper_left_corner(grid_size)
     multiplied_figures = []
     for figure in figures:
-        for i in range(grid_size):
-            for j in range(grid_size):
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
                 new_figure = figure_shift(figure, i, j)
                 if is_admissible(new_figure, grid_size):
                       multiplied_figures.append([new_figure])
-    return multiplied_figures
+    return multiplied_figures 

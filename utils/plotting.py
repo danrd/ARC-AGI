@@ -6,7 +6,7 @@ import os
 import pandas as pd
 from typing import List
 from utils.utils import load_json
-from symbolic.utils import coords_transform
+from symbolic.utils import coords_transform, find_upper_left_corner
 
 training_challenges = load_json('data/dataset/arc-agi_training_challenges.json')
 training_solutions = load_json('data/dataset/arc-agi_training_solutions.json')
@@ -60,9 +60,10 @@ def plot_task(task_id):
     print()
      
 def plot_one(ax, i, task, train_or_test, input_or_output):
-    cmap = colors.ListedColormap(['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
-                                  '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'])
-    norm = colors.Normalize(vmin=0, vmax=9)
+    """Auxilary function for plot_task function."""
+    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
+                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
+    norm = colors.Normalize(vmin=0, vmax=10)
     input_matrix = task[train_or_test][i][input_or_output]
     ax.imshow(input_matrix, cmap=cmap, norm=norm)
     ax.grid(True, which = 'both',color = 'lightgrey', linewidth = 0.5)
@@ -72,24 +73,19 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])   
     ax.set_title(train_or_test + ' ' + input_or_output, fontweight='bold')
             
-def plot_grids(grids):
-    for plot_idx, grid in enumerate(grids):
-        plt.subplot(1, len(grids), plot_idx + 1)
-        plot_grid(grid)
-            
 def plot_grid(grid):
     grid = np.array(grid)
-    cmap = colors.ListedColormap(
-        ['#FFFFFF', '#000000', '#0074D9','#FF4136','#2ECC40','#FFDC00',
-         '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'])
-    norm = colors.Normalize(vmin=-1, vmax=9)
+    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
+                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
+    norm = colors.Normalize(vmin=0, vmax=10)
     plt.imshow(grid, cmap=cmap, norm=norm)
     plt.grid(True,which='both',color='lightgrey', linewidth=0.5) 
     plt.xticks(np.arange(-0.5, grid.shape[1]), [])
     plt.yticks(np.arange(-0.5, grid.shape[0]), [])
     plt.xlim(-0.5, grid.shape[1]-0.5)    
-    
+ 
 def evaluate_grid(correct_grid, predicted_grids):
+    """Calculate metrics based on predicted grid and correct grid."""
     correct_grid = np.array(correct_grid)
     metrics = dict(accuracy=0, correct_pixels=0, correct_size=0, unanswered=(2 - len(predicted_grids))/2)
     for predicted_grid in predicted_grids:
@@ -98,38 +94,47 @@ def evaluate_grid(correct_grid, predicted_grids):
             metrics['accuracy'] = max(metrics['accuracy'], np.all(predicted_grid == correct_grid))
             metrics['correct_pixels'] = max(metrics['correct_pixels'], np.mean(predicted_grid == correct_grid))
             metrics['correct_size'] = max(metrics['correct_size'], correct_grid.shape == predicted_grid.shape)
-    return metrics    
+    return metrics     
 
-def plot_shape(shape:List[tuple]):
-    grid = np.zeros((30,30))
+def plot_shape(shape:List[tuple], grid_size:tuple):
+    """Plot a figure which is a list of tuples with coordinates."""
+    grid = np.zeros(grid_size)
+    ul = find_upper_left_corner(grid_size)
     for coord in shape:
+        coord = (coord[0]-ul[0], coord[1]-ul[1])
         grid[coord] = 2
     plot_grid(grid)
     
-def plot_intersection(grid, figure):
-    i, j = np.where(x!=1)
+def plot_intersection(grid:np.array, shape:List[tuple], grid_size:tuple):
+    """Plot intersection with defined shape."""
+    ul = find_upper_left_corner(grid_size)
     grid = copy.deepcopy(grid)
-    colors = grid[i, j]
+    i, j =  np.where(grid!=0)
+    colors = grid[i, j] # identify all colors to use different color for intersection
     new_color = 1
     for c in range(1, 10):
         if c not in colors:
             new_color = c
             break
-    i, j = coords_transform(figure)
+    i, j = coords_transform(shape)
     grid[i, j] = new_color
-    plot_grid(grid)
+    croped_grid = grid[ul[0]:ul[0]+grid_size[0], ul[1]:ul[1]+grid_size[1]] # exclude padding
+    plot_grid(croped_grid)
     
-def plot_intersection_with_replace(grid, figure):
-    i, j =  np.where(x!=1)
-    colors = grid[i, j]
+def plot_intersection_with_replace(grid:np.array, shape:List[tuple], grid_size:tuple):
+    """Plot intersection for several figeres at once."""
+    ul = find_upper_left_corner(grid_size)
+    i, j =  np.where(grid!=0)
+    colors = grid[i, j] # identify all colors to use different color for intersection
     new_color = 1
     for c in range(1, 10):
         if c not in colors:
             new_color = c
             break
-    i, j = coords_transform(figure)
+    i, j = coords_transform(shape)
     grid[i, j] = new_color
-    plot_grid(grid)
+    croped_grid = grid[ul[0]:ul[0]+grid_size[0], ul[1]:ul[1]+grid_size[1]] # exclude padding
+    plot_grid(croped_grid)
 
 def plot_rewards(path_to_logs:str):
     file = pd.read_csv(path_to_logs)

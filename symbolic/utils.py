@@ -1,4 +1,5 @@
 import typing
+import copy
 from typing import List
 import sys
 import numpy as np
@@ -10,18 +11,18 @@ def find_upper_left_corner(grid_size:tuple)->tuple:
     j = min(14-(grid_size[1]%2)*((grid_size[1]//2)), 14-((grid_size[1]-1)%2)*(((grid_size[1]-1)//2)))
     return (i, j)
 
-def calculate_size(figures):
+def calculate_size(shapes):
     """Calculation to control a size of pregenerated shapes."""
     el_num = 0
     size = 0
-    for k, v in figures.items():
+    for k, v in shapes.items():
         for color in range(10):
             el_num += len(v[color])
             size += sys.getsizeof(v[color])/1048576
     print(f'number of elements in dictionary: {el_num}')
     print(f'size of dictionary: {size} mb')
 
-def decompose_into_summands(number)->typing.Dict[int, List[np.array]]:
+def decompose_into_summands(number:int)->typing.Dict[int, List[np.array]]:
     summands = defaultdict(list)
     for k in range(number-1,0,-1):
         subsummands = []
@@ -31,7 +32,7 @@ def decompose_into_summands(number)->typing.Dict[int, List[np.array]]:
         summands[i+j+1].append(subsummands)
     return summands
 
-def dict_merge(dict_1, dict_2)->dict:
+def dict_merge(dict_1:dict, dict_2:dict)->dict:
     keys = list(dict_1.keys())
     for k, v in dict_2.items():
         if k in keys:
@@ -47,14 +48,9 @@ def dict_to_list(dict):
         res_list.extend(dict[key])
     return res_list
 
-def coords_transform(pattern:List[tuple]):
+def coords_transform(shape:List[tuple]):
     """Transform list of tuples into two lists for i and j coordinates.""" 
-    list_i = []
-    list_j = []
-    for tup in pattern:
-        list_i.append(tup[0])
-        list_j.append(tup[1])
-    return list_i, list_j
+    return [tup[0] for tup in shape], [tup[1] for tup in shape]
 
 def define_grid_cells(max_grid_size:int=30)->dict:
     """Defines admissible cells for all possible grid sizes."""
@@ -85,7 +81,7 @@ def define_grid_cells(max_grid_size:int=30)->dict:
             for i in range(i_left+1, i_right+1):
                 cell = (i, j_left)
                 cells.append(cell) 
-        cells_copy = copy.deepcopy(cells)
+        cells_copy = copy.copy(cells)
         grid_cells[(grid_size, grid_size)] = cells_copy    
     return grid_cells        
 
@@ -120,37 +116,77 @@ def create_figures(figures:dict)->typing.Dict[tuple, List[List[List[tuple]]]]:
         colored_figures_dict[k] = figures
     return colored_figures_dict
 
-def is_admissible(figure:List[tuple], grid_size:tuple)->bool:
-    """Defines possibility of placing figure inside grid."""
+def count_unique_cells(shape:str, shape_coords:List[tuple], used_cells:List[tuple])->int:
+    """Returns a number of figure cells that are already related to some other figure."""
+    counter = 0
+    if shape != 'diagonal':
+        return 0
+    else:
+        for cell in shape_coords:
+            if cell not in used_cells:
+                counter += 1
+    return counter
+
+def shape_shift(shape:List[tuple], x_shift:int, y_shift:int):
+    """Shifts each coordinate of the shape by x_shift and y_shift values."""
+    return [(coord[0] + x_shift, coord[1] + y_shift) for coord in shape]
+
+def perform_mapping(shape_dict:dict, shape:List[tuple], grid_cells)->dict:
+    """Udpates dictionary with shapes adding new shape with correspinding key."""
+    key = grid_mapping(shape, grid_cells)
+    shape_dict[key].append(shape)
+    return shape_dict
+
+def is_admissible(shape:List[tuple], grid_size:tuple)->bool:
+    """Defines possibility of placing shape inside grid."""
     ul = find_upper_left_corner(grid_size)
-    for coord in figure:
-        if coord[0] in range(ul[0], grid_size[0]+ul[0]) and coord[1] in range(ul[1], grid_size[1]+ul[1]):
+    i_coords = range(ul[0], grid_size[0]+ul[0])
+    j_coords = range(ul[1], grid_size[1]+ul[1])
+    shape.reverse()
+    for coord in shape:
+        if coord[0] in i_coords and coord[1] in j_coords:
             continue
         else:
             return False
     return True
 
-def figure_shift(figure:List[tuple], x_shift:int, y_shift:int):
-    """Shifts each coordinate of the figure by x_shift and y_shift values."""
-    new_figure = []
-    for coord in figure:
-        new_coord = (coord[0]+x_shift, coord[1]+y_shift)
-        new_figure.append(new_coord)
-    return new_figure
-
-def perform_mapping(fig_dict:dict, figure:List[tuple], grid_cells)->dict:
-    """Udpates dictionary with figures adding new figure with correspinding key."""
-    key = grid_mapping(figure, grid_cells)
-    fig_dict[key].append(figure)
-    return fig_dict
-
-def multiplicate_figures(figures, grid_size:tuple)->dict:
-    """Multiplicates figures shifting their coordinates inside grid."""
-    multiplied_figures = []
-    for figure in figures:
+def multiplicate_shapes(shapes, grid_size:tuple)->dict:
+    """Multiplicates shapes shifting their coordinates inside grid."""
+    multiplied_shapes = []
+    for shape in shapes:
         for i in range(grid_size[0]):
             for j in range(grid_size[1]):
-                new_figure = figure_shift(figure, i, j)
-                if is_admissible(new_figure, grid_size):
-                      multiplied_figures.append([new_figure])
-    return multiplied_figures 
+                new_shape = shape_shift(shape, i, j)
+                if is_admissible(new_shape, grid_size):
+                      multiplied_shapes.append([new_shape])
+    return multiplied_shapes 
+
+def is_admissible2(grid_admissible:List[tuple], shape:List[tuple])->bool:
+    """Defines possibility of placing shape inside grid."""
+    for coord in shape:
+        if coord not in grid_admissible:
+            return False
+        else:
+            continue
+    return True
+
+def multiplicate_shapes2(shapes, grid_size:tuple)->dict:
+    """Multiplicates shapes shifting their coordinates inside grid."""
+    grid_admissible = [(ul[0]+i, ul[1]+j) for i in range(grid_size[0]) for j in range(grid_size[1])]
+    multiplied_shapes = []
+    for shape in shapes:
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
+                new_shape = shape_shift(shape, i, j)
+                if is_admissible(grid_admissible, new_shape):
+                      multiplied_shapes.append([new_shape])
+    return multiplied_shapes 
+
+def check_subset_condition(larger_obj:set, smaller_obj:list)->bool:
+    """Check if all coordinates of smaller object are occupied be larger object."""
+    for coord in smaller_obj:
+        if coord in larger_obj:
+            continue
+        else: 
+            return False
+    return True

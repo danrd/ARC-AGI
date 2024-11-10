@@ -4,7 +4,6 @@ import numpy as np
 from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
 
-
 class ARCDataset:
     def __init__(self, split:str='full'):
         self.load_dataset(split)

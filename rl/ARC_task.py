@@ -65,5 +65,4 @@ class ARCTask:
         self.subtasks = subtasks
         self.test_inp = test_inp
         self.test_out = test_out
-        self.test_out_shape = test_out.shape
         self.test_subtask =  ARCSubtask(f'{label}_test', self.test_inp, self.test_out)

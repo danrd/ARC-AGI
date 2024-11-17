@@ -159,15 +159,15 @@ class ARCGridWorld(gymnasium.Env):
         norm_reward = reward/(self.max_reward+100)
         return obs, norm_reward, done, truncated, info
 
-    def create_env(
+def create_env(
         max_steps=1000, right_placement_scale=1., wrong_placement_scale=0.1, 
         seed=None, actions_pred=None, target_grid=False
     ):
-        env = ARCGridWorld(
-            max_steps=max_steps, right_placement_scale=right_placement_scale,
-            seed=seed, actions_pred=actions_pred, target_grid=target_grid
+    env = ARCGridWorld(
+        max_steps=max_steps, right_placement_scale=right_placement_scale,
+        seed=seed, actions_pred=actions_pred, target_grid=target_grid
         )
-        return env
+    return env
 
 gymnasium.envs.register(
      id='ARC-Gridworld-v0',

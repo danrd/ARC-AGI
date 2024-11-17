@@ -13,7 +13,7 @@ CONCISE_PROMPT = ["general_instruction", "examples_repr", "task_repr", "output_f
 COLOR_MAPPING = {0:'black', 1:'blue', 2:'red', 3:'green', 4:'yellow', 5:'gray', 6:'magenta',
                  7:'orange', 8:'sky', 9:'brown'}
 
-general_instruction = f"""
+GENERAL_INSTRUCTION = f"""
 You are a helpful AI assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
 The challenge involves identifying the next image in a sequence, similar to Raven's progressive matrices.
 The user will present you with sample input and output grids for each task. 
@@ -21,7 +21,7 @@ Your job will be to understand the transformation rules between the input and th
 To facilitate task solving user can provide additional relevant information about current puzzle.
 """
 
-grid_description = f"""
+GRID_DESCRIPTION = f"""
 The puzzle-like inputs and outputs present a grid with height amd width between 1 and 30 where each cell can be one of ten colors.  
 Here is a mapping for colors and numbers that represent specific color on a grid: {COLOR_MAPPING}.
 Black color is represented by 0 and in most cases is the background color. 
@@ -30,7 +30,7 @@ Each object has its own color, size and specific position on the grid.
 Base objects depending on a task can be combined to form complex shapes.
 """
 
-task_instruction = f"""
+TASK_INSTRUCTION = f"""
 Firstly, the most important thing for task solving is to compare each input and output grid pairs.
 Based on that you can deduce that task implies size change. 
 If the size decreased then it indicates possibility of generalization, sections overlay or cropping types of tasks.
@@ -54,17 +54,17 @@ And finally, its important to count a number of objects for each shape, color an
 The reason is that you may need in some tasks to choose the most frequent object or to color other object with dominant color.\n 
 """
 
-examples_template = f"""Here are the example input and output pairs from which you should learn the underlying transformation to later predict the output for the given test input: """
+EXAMPLES_TEMPLATE = f"""Here are the example input and output pairs from which you should learn the underlying transformation to later predict the output for the given test input: """
 
-task_repr = f"""
+TASK_REPR = f"""
 Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data: """
 
-hints = f"""Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
+HINTS = f"""Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
 1) Compare input and output grids from examples to identify what shape and color are important for the tast. 2) Find shape for identified pattern on the task input grid.
 3) Color the shape with identified color. Most probably the output grid will have the same shape as the task inpur grid.
 """
 
-output_format = f"""
+OUTPUT_FORMAT = f"""
 Only provide the output grid in the form as in the example input and output pairs.
 Example: array([[1, 2, 3, 4, 5],\n [6, 7, 8, 9, 10]\n]). 
 Do not provide any additional information.
@@ -93,36 +93,43 @@ def prepare_grid_for_prompt(grid:np.array, shape:tuple):
 
 def examples_representation(task:ARCTask, prompts_modifications:dict):
     """Get representation for grids from examples."""
+    global EXAMPLES_TEMPLATE
     if "examples_repr" in prompts_modifications.keys():
-        examples_template = prompts_modifications["examples_repr"]
-    return examples_template + get_propmt_for_examples(task)
+        EXAMPLES_TEMPLATE = prompts_modifications["examples_repr"]
+    return EXAMPLES_TEMPLATE + get_propmt_for_examples(task)
 
 def task_representation(task:ARCTask, prompts_modifications:dict):
+    """Get representation for test grid."""
+    global TASK_REPR
     if "task_repr" in prompts_modifications.keys():
-        task_repr = prompts_modifications["task_repr"]
-    return task_repr + repr(prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape))
+        TASK_REPR = prompts_modifications["task_repr"]
+    return TASK_REPR + repr(prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape))
 
 def compose_prompt(task:ARCTask, prompt_structure:List, prompts_modifications:dict):
     """Compose prompts according to defined prompt structure."""
+    global GENERAL_INSTRUCTION
+    global GRID_DESCRIPTION
+    global TASK_INSTRUCTION
+    global OUTPUT_FORMAT
     final_prompt = ""
     if "general_instruction" in prompt_structure:
         if "general_instruction" in prompts_modifications.keys():
-            general_instruction =  prompts_modifications["general_instruction"]
-        final_prompt += f'[INSTRUCTION]{general_instruction}[/INSTRUCTION]\n'
+            GENERAL_INSTRUCTION =  prompts_modifications["general_instruction"]
+        final_prompt += f'[INSTRUCTION]{GENERAL_INSTRUCTION}[/INSTRUCTION]\n'
     if "grid_description" in prompt_structure:
         if "grid_description" in prompts_modifications.keys():
-            grid_description =  prompts_modifications["grid_description"]
-        final_prompt += f'[GRID_DESCRIPTION]{grid_description}[/GRID_DESCRIPTION]\n'
+            GRID_DESCRIPTION =  prompts_modifications["grid_description"]
+        final_prompt += f'[GRID_DESCRIPTION]{GRID_DESCRIPTION}[/GRID_DESCRIPTION]\n'
     if "task_instruction" in prompt_structure:
         if "task_instruction" in prompts_modifications.keys():
-            task_instruction =  prompts_modifications["task_instruction"]
-        final_prompt += f'[TASK_INSTRUCTION]{task_instruction}[/TASK_INSTRUCTION]\n'
+            TASK_INSTRUCTION =  prompts_modifications["task_instruction"]
+        final_prompt += f'[TASK_INSTRUCTION]{TASK_INSTRUCTION}[/TASK_INSTRUCTION]\n'
     if "examples_repr" in prompt_structure:
         final_prompt += f'[EXAMPLES]{examples_representation(task, prompts_modifications)}[/EXAMPLES]\n'
     if "task_repr" in prompt_structure:
         final_prompt += f'[TASK]{task_representation(task, prompts_modifications)}[/TASK]\n'
     if "output_format" in prompt_structure:
         if "output_format" in prompts_modifications.keys():
-            output_format =  prompts_modifications["output_format"]
-        final_prompt += f'[FORMAT]{output_format}[/FORMAT]'
+            OUTPUT_FORMAT =  prompts_modifications["output_format"]
+        final_prompt += f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]'
     return final_prompt

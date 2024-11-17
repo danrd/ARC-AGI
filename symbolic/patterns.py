@@ -105,15 +105,15 @@ def lines_coords(grid_size:tuple)->List[List[List[tuple]]]:
 def rectangles_coords(grid_size:tuple)->List[List[List[tuple]]]:
     """Create rectangle patterns for given grid_size."""
     def i_expansion(grid_size):
-       """Patterns expanding along i axis.""" 
-       ul = find_upper_left_corner(grid_size)
-       coords = []
-       for size_i in range(2, grid_size[0]+1):
-        cache = []
-        hor_rects = []
-        for size_j in range(2, grid_size[1]+1):
-            base_hor = [(ii+ul[0], jj+ul[1]) for ii in range(size_i) for jj in range(size_j)]
-            hor_rects.append(copy.copy(base_hor))
+        """Patterns expanding along i axis.""" 
+        ul = find_upper_left_corner(grid_size)
+        coords = []
+        for size_i in range(2, grid_size[0]+1):
+            cache = []
+            hor_rects = []
+            for size_j in range(2, grid_size[1]+1):
+                base_hor = [(ii+ul[0], jj+ul[1]) for ii in range(size_i) for jj in range(size_j)]
+                hor_rects.append(copy.copy(base_hor))
             coords.append(copy.copy(hor_rects)) 
             cache.append(copy.copy(hor_rects)) 
             for i in range(size_i-2):

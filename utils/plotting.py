@@ -8,22 +8,18 @@ from typing import List
 from utils.utils import load_json
 from symbolic.utils import coords_transform, find_upper_left_corner
 
-training_challenges = load_json('data/dataset/arc-agi_training_challenges.json')
-training_solutions = load_json('data/dataset/arc-agi_training_solutions.json')
-evaluation_challenges = load_json('data/dataset/arc-agi_evaluation_challenges.json')
-evaluation_solutions = load_json('data/dataset/arc-agi_evaluation_solutions.json')
-test_challenges = load_json('data/dataset/arc-agi_test_challenges.json')
+training_challenges = load_json('data/dataset/training_challenges.json')
+training_solutions = load_json('data/dataset/training_solutions.json')
+evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
+evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
+test_challenges = load_json('data/dataset/test_challenges.json')
 tasks_keys = list(training_challenges.keys())+list(evaluation_challenges.keys())
 all_challenges = training_challenges | evaluation_challenges 
 
 def plot_task(task_id):
     """Plots the train and test pairs of a specified task, using same color scheme as the ARC app."""   
-    try:
-        task = training_challenges[task_id]
-        task_solution = training_solutions[task_id][0]
-    except Exception:
-        task = evaluation_challenges[task_id]
-        task_solution = evaluation_solutions[task_id][0]   
+    task = all_challenges[task_id]
+    task_solution = all_challenges[task_id][0]
     num_train = len(task['train'])
     num_test  = len(task['test'])
     w = num_train + num_test
@@ -36,9 +32,9 @@ def plot_task(task_id):
     
     plot_one(axs[0, j+1], 0, task, 'test', 'input')
 
-    cmap = colors.ListedColormap(['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
-                                  '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'])
-    norm = colors.Normalize(vmin=0, vmax=9)
+    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
+                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
+    norm = colors.Normalize(vmin=0, vmax=10)
     answer = task_solution
     
     axs[1, j+1].imshow(answer, cmap=cmap, norm=norm)
@@ -75,14 +71,18 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
             
 def plot_grid(grid):
     grid = np.array(grid)
+    i, j = np.where(grid!=1.0)
+    i_size = max(i) - min(i) + 1
+    j_size = max(j) - min(j) + 1
+    grid_without_pad = grid[coords_transform(list(zip(i, j)))].reshape((i_size, j_size))*10
     cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
                                  '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
     norm = colors.Normalize(vmin=0, vmax=10)
-    plt.imshow(grid, cmap=cmap, norm=norm)
+    plt.imshow(grid_without_pad, cmap=cmap, norm=norm)
     plt.grid(True,which='both',color='lightgrey', linewidth=0.5) 
-    plt.xticks(np.arange(-0.5, grid.shape[1]), [])
-    plt.yticks(np.arange(-0.5, grid.shape[0]), [])
-    plt.xlim(-0.5, grid.shape[1]-0.5)    
+    plt.xticks(np.arange(-0.5, grid_without_pad.shape[1]), [])
+    plt.yticks(np.arange(-0.5, grid_without_pad.shape[0]), [])
+    plt.xlim(-0.5, grid_without_pad.shape[1]-0.5)    
  
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""
@@ -96,47 +96,57 @@ def evaluate_grid(correct_grid, predicted_grids):
             metrics['correct_size'] = max(metrics['correct_size'], correct_grid.shape == predicted_grid.shape)
     return metrics     
 
-def plot_shape(shape:List[tuple], grid_size:tuple):
+def plot_shape(shape:List[tuple]):
     """Plot a figure which is a list of tuples with coordinates."""
-    grid = np.zeros(grid_size)
-    ul = find_upper_left_corner(grid_size)
-    for coord in shape:
-        coord = (coord[0]-ul[0], coord[1]-ul[1])
-        grid[coord] = 2
+    i, j = coords_transform(shape)
+    min_coord = min(min(i), min(j))
+    i_shape = max(i) - min(i) + 1
+    j_shape = max(j) - min(j) + 1
+    grid = np.zeros((i_shape, j_shape))
+    i_shifted = [i_coord-min_coord for i_coord in i]
+    j_shifted = [j_coord-min_coord for j_coord in j]
+    shifted_shape = list(zip(i_shifted, j_shifted))
+    for coord in shifted_shape:
+        grid[coord] = 0.2
     plot_grid(grid)
     
-def plot_intersection(grid:np.array, shape:List[tuple], grid_size:tuple):
+def plot_intersection(grid:np.array, shape:List[tuple]):
     """Plot intersection with defined shape."""
-    ul = find_upper_left_corner(grid_size)
     grid = copy.deepcopy(grid)
-    i, j =  np.where(grid!=0)
+    i, j =  np.where(grid!=0.0)
     colors = grid[i, j] # identify all colors to use different color for intersection
-    new_color = 1
-    for c in range(1, 10):
-        if c not in colors:
-            new_color = c
+    new_color = 0
+    for c in range(1, 10,):
+        if c/10 not in colors:
+            new_color = c/10
             break
     i, j = coords_transform(shape)
     grid[i, j] = new_color
-    croped_grid = grid[ul[0]:ul[0]+grid_size[0], ul[1]:ul[1]+grid_size[1]] # exclude padding
-    plot_grid(croped_grid)
+    i, j = np.where(grid!=10.0)
+    i_shape = max(i) - min(i) + 1
+    j_shape = max(j) - min(j) + 1
+    grid_without_pad = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape)) # exclude padding
+    plot_grid(grid_without_pad)
     
 def plot_intersection_with_replace(grid:np.array, shape:List[tuple], grid_size:tuple):
     """Plot intersection for several figeres at once."""
-    ul = find_upper_left_corner(grid_size)
-    i, j =  np.where(grid!=0)
+    i, j =  np.where(grid!=0.0)
     colors = grid[i, j] # identify all colors to use different color for intersection
-    new_color = 1
-    for c in range(1, 10):
-        if c not in colors:
-            new_color = c
+    new_color = 0
+    for c in range(1, 10,):
+        if c/10 not in colors:
+            new_color = c/10
             break
     i, j = coords_transform(shape)
     grid[i, j] = new_color
-    croped_grid = grid[ul[0]:ul[0]+grid_size[0], ul[1]:ul[1]+grid_size[1]] # exclude padding
-    plot_grid(croped_grid)
-
+    i, j = np.where(grid!=10.0)
+    i_shape = max(i) - min(i) + 1
+    j_shape = max(j) - min(j) + 1
+    grid_without_pad = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape)) # exclude padding
+    plot_grid(grid_without_pad)
+    
 def plot_rewards(path_to_logs:str):
+    """Plot rewards for RL agent."""
     file = pd.read_csv(path_to_logs)
     plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label=f'Training mean reward')
     plt.xlabel("timesteps")

@@ -25,7 +25,7 @@ class ARCSubtask:
             reshaped_grid = np.pad(grid, pad_width=[(left_pad,right_pad), (upper_pad, down_pad)], constant_values=10)
             return reshaped_grid/10
         else: 
-            return grid   
+            return grid/10   
 
     def step_intersection(self, grid):
         """
@@ -46,12 +46,13 @@ class ARCSubtask:
         return right_placement,  done
     
     def maximal_intersection(self, grid):
-        """Calculates the number of common blocks for current grid and target grid."""
+        """Calculate the number of common blocks for current grid and target grid."""
         intersection = ((grid==self.train_out) * (grid!=1) * (self.train_out!=1) ).sum()
         max_int = intersection 
         return max_int
     
     def calculate_relevant_blocks(self, grid):
+        "Calculate a number of cells that are not black or white"
         relevant_size = grid.size - (grid==1).sum().item() - (grid==0).sum().item()
         return relevant_size
     
@@ -60,6 +61,7 @@ class ARCSubtask:
         self.max_int = 0
     
 class ARCTask:
+    """Class for storing information for a task."""
     def __init__(self, label:str, subtasks:List[ARCSubtask], test_inp:np.array, test_out:np.array):
         self.label = label
         self.subtasks = subtasks

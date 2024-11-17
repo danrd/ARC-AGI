@@ -1,8 +1,11 @@
 import os
 import json
 import numpy as np
+import pandas as pd
+from datasets import Dataset
 from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
+from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
     def __init__(self, split:str='full'):
@@ -34,12 +37,11 @@ class ARCDataset:
         split : str
             Possible options are train/full. If full It takes evaluation examples as well.
         """    
-        cwd = os.getcwd()
-        self.training_challenges = self.load_json(cwd+'/data/dataset/arc_agi_training_challenges.json')
-        self.training_solutions = self.load_json(cwd+'/data/dataset/arc_agi_training_solutions.json')
-        self.evaluation_challenges = self.load_json(cwd+'/data/dataset/arc_agi_evaluation_challenges.json')
-        self.evaluation_solutions = self.load_json(cwd+'/data/dataset/arc_agi_evaluation_solutions.json')
-        self.test_challenges = self.load_json(cwd+'/data/dataset/arc_agi_test_challenges.json')
+        self.training_challenges = self.load_json('data/dataset/training_challenges.json')
+        self.training_solutions = self.load_json('data/dataset/training_solutions.json')
+        self.evaluation_challenges = self.load_json('data/dataset/evaluation_challenges.json')
+        self.evaluation_solutions = self.load_json('data/dataset/evaluation_solutions.json')
+        self.test_challenges = self.load_json('data/dataset/test_challenges.json')
         if split=='full':
             self.tasks_keys = list(self.training_challenges.keys()) + list(self.evaluation_challenges.keys())
             self.training_challenges = self.training_challenges | self.evaluation_challenges
@@ -63,3 +65,21 @@ class ARCDataset:
             task = ARCTask(key, subtasks, test_inp, test_out)
             tasks.append(task)
         return tasks
+    
+def prepare_dataset(test_ratio:float=0.2, use_eval_set:bool=False, prompts_modifications={}):
+    """Prepare dataset creating prompts for all tasks."""
+    all_tasks = []
+    if use_eval_set:
+        n_examples = 800
+    else: 
+       n_examples = 400
+    ARC_tasks = ARCDataset().tasks[0:n_examples]
+    for _, task in enumerate(ARC_tasks):
+        text = compose_prompt(task, BASE_PROMPT, prompts_modifications)
+        task_dict = {'text':text, 'solution':repr(prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape))}
+        all_tasks.append(task_dict)
+    df = pd.DataFrame(all_tasks)
+    dataset = Dataset.from_pandas(df)
+    dataset = dataset.shuffle(seed=42)
+    dataset = dataset.train_test_split(test_size=test_ratio)   
+    return dataset

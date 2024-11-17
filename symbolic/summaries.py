@@ -9,8 +9,10 @@ from symbolic.objects_analysis import GridObject, ObjectCombiner, ObjectsFilter,
 from utils.plotting import plot_grid
 from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list
 from symbolic.patterns import generate_patterns
+from llm.prompts import COLOR_MAPPING
 
 class TaskSummary():
+    """Class for inferencing information about a task."""
     def __init__(self, task:ARCTask, patterns:dict):
         self.patterns = patterns
         self.train_subtasks = task.subtasks[:-1]
@@ -18,18 +20,22 @@ class TaskSummary():
         self.train_subtasks_summaries = []
         self.grid_shapes_ratios = self.compare_grid_shapes()
         self.need_resize = bool(1-all(self.grid_shapes_ratios))
+    
     def compare_grid_shapes(self):
+        """Compare the shapes of the grids in the train subtasks with the test subtask."""
         ratios = []
         for subtask in self.train_subtasks:
             ratios.append(subtask.train_inp_shape/subtask.train_out_shape)
         return ratios
    
     def obtain_summaries(self):
+        """Obtain the summaries of the train subtasks."""
         for subtask in self.train_subtasks:
             self.train_subtasks_summaries.append(SubtaskSummary(subtask, self.patterns))
 
 class SubtaskSummary():
-    def __init__(self, subtask:ARCSubtask, patterns:dict, train:bool=True, need_resize=None):
+    """Class for inferencing information about a subtask."""
+    def __init__(self, subtask:ARCSubtask, train:bool=True, need_resize=None):
         self.subtask = subtask
         self.subtask_label = self.subtask_label
         self.need_resize = need_resize
@@ -167,7 +173,7 @@ class GridSummary():
                 sizes[obj.size].append(obj)
                 shapes[obj.shape] += 1
                 if obj.shape != 'complex':
-                    color = obj.colors_mapping[obj.color_number[0]]
+                    color = COLOR_MAPPING[obj.color_number[0]]
                     colors[color] += 1
         sorted_keys = sorted(list(sizes.keys()), reverse=True)
         sizes = {k:sizes[k] for k in sorted_keys}
@@ -184,4 +190,4 @@ class GridSummary():
                 summary = RelationAnalyzer(obj_1, obj_2, self.shape)
                 triples.extend(summary.triples)
                 distances[f'{obj_1.label}-{obj_2.label}'] = self.calculate_distance(obj_1, obj_2)
-        return triples      
+        return triples

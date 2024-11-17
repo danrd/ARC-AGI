@@ -117,15 +117,11 @@ def create_figures(figures:dict)->typing.Dict[tuple, List[List[List[tuple]]]]:
     return colored_figures_dict
 
 def count_unique_cells(shape:str, shape_coords:List[tuple], used_cells:List[tuple])->int:
-    """Returns a number of figure cells that are already related to some other figure."""
-    counter = 0
+    """Returns a number of shape cells that are already related to some other shape."""
     if shape != 'diagonal':
         return 0
     else:
-        for cell in shape_coords:
-            if cell not in used_cells:
-                counter += 1
-    return counter
+        return sum(1 for cell in shape_coords if cell not in used_cells)
 
 def shape_shift(shape:List[tuple], x_shift:int, y_shift:int):
     """Shifts each coordinate of the shape by x_shift and y_shift values."""

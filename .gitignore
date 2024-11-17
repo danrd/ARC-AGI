@@ -1,2 +1,5 @@
 arc-baseline.ipynb
 /pictures
+data/pretrained_models
+wandb
+__pycache__/

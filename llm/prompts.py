@@ -18,16 +18,14 @@ You are a helpful AI assistant. Your job is to solve tasks from the Abstraction 
 The challenge involves identifying the next image in a sequence, similar to Raven's progressive matrices.
 The user will present you with sample input and output grids for each task. 
 Your job will be to understand the transformation rules between the input and the output and apply them to the last input grid given by the user.
-To facilitate task solving user can provide additional relevant information about current puzzle.
 """
 
 GRID_DESCRIPTION = f"""
-The puzzle-like inputs and outputs present a grid with height amd width between 1 and 30 where each cell can be one of ten colors.  
-Here is a mapping for colors and numbers that represent specific color on a grid: {COLOR_MAPPING}.
-Black color is represented by 0 and in most cases is the background color. 
-Each grid can contain a number of base objects: cells, lines, rectangles, diagonals and tetris-like shapes (e.g. L-shape).
+The puzzle-like inputs and outputs present a grid with height and width between 1 and 30 where each cell can be one of ten colors.  
+Here is colors representation: {COLOR_MAPPING}.
+Black color in most cases is background color. 
+Groups of identically colored cells form objects: lines, rectangles, diagonals and tetris-like shapes (e.g. L-shape).
 Each object has its own color, size and specific position on the grid.
-Base objects depending on a task can be combined to form complex shapes.
 """
 
 TASK_INSTRUCTION = f"""
@@ -65,7 +63,7 @@ HINTS = f"""Most probably you need to deal with font coloring type of puzzle. Th
 """
 
 OUTPUT_FORMAT = f"""
-Only provide the output grid in the form as in the example input and output pairs.
+Return only output grid as numpy array.
 Example: array([[1, 2, 3, 4, 5],\n [6, 7, 8, 9, 10]\n]). 
 Do not provide any additional information.
 """
@@ -82,14 +80,27 @@ def get_propmt_for_examples(task:ARCTask):
     for idx, subtask in enumerate(task.subtasks):
         inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape)
         out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape)
-        examples += f'Example {idx+1}:\n Input: {repr(inp_grid)}\n Output: {repr(out_grid)}\n'
+        examples += f'Example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
     return examples
 
-def prepare_grid_for_prompt(grid:np.array, shape:tuple):
+def prepare_grid_for_prompt(grid:np.array, shape:tuple, concise=True):
     """Get representation for grid one grid from examples."""
     ul = find_upper_left_corner(shape)
     grid = copy.copy(grid[ul[0]:ul[0]+shape[0], ul[1]:ul[1]+shape[1]]*10)
-    return grid.astype(int)
+    if concise:
+        return concise_grid_representation(grid)
+    else:
+        return repr(grid.astype(int))
+    
+def concise_grid_representation(grid:np.array):
+    """Concise representation for numpy array without brackets and commas."""
+    repr = f'grid shape: {grid.shape[0]}x{grid.shape[1]}\n'
+    for i in range(grid.shape[0]):
+        repr += f'{i+1} '
+        for j in range(grid.shape[1]):
+            repr += f'{int(grid[i][j])}'
+        repr += '\n'
+    return repr
 
 def examples_representation(task:ARCTask, prompts_modifications:dict):
     """Get representation for grids from examples."""

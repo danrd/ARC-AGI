@@ -76,7 +76,7 @@ def prepare_dataset(test_ratio:float=0.2, use_eval_set:bool=False, prompts_modif
     ARC_tasks = ARCDataset().tasks[0:n_examples]
     for _, task in enumerate(ARC_tasks):
         text = compose_prompt(task, BASE_PROMPT, prompts_modifications)
-        task_dict = {'text':text, 'solution':repr(prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape))}
+        task_dict = {'text':text, 'solution':repr(prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape, concise=False))}
         all_tasks.append(task_dict)
     df = pd.DataFrame(all_tasks)
     dataset = Dataset.from_pandas(df)

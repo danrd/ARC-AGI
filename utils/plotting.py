@@ -15,11 +15,12 @@ evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
 test_challenges = load_json('data/dataset/test_challenges.json')
 tasks_keys = list(training_challenges.keys())+list(evaluation_challenges.keys())
 all_challenges = training_challenges | evaluation_challenges 
+all_solutions = training_solutions | evaluation_solutions
 
 def plot_task(task_id):
     """Plots the train and test pairs of a specified task, using same color scheme as the ARC app."""   
     task = all_challenges[task_id]
-    task_solution = all_challenges[task_id][0]
+    task_solution = all_solutions[task_id][0]
     num_train = len(task['train'])
     num_test  = len(task['test'])
     w = num_train + num_test

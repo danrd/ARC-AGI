@@ -8,9 +8,9 @@ from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
-    def __init__(self, split:str='full'):
+    def __init__(self, split:str='full', augmentation:bool=False):
         self.load_dataset(split)
-        self.tasks = self.create_tasks()
+        self.tasks = self.create_tasks(augmentation)
     
     @staticmethod
     def load_json(file_path):

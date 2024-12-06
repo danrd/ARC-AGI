@@ -2,7 +2,7 @@ import os
 import json
 import numpy as np
 import pandas as pd
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
@@ -84,25 +84,30 @@ class ARCDataset:
             tasks = tasks + aug_tasks
         return tasks
     
-def prepare_dataset(test_ratio:float=0.2, use_eval_set:bool=False, augmentation=False, prompts_modifications={}):
+def prepare_dataset(augmentation=False, test_augmentation=False, prompts_modifications={}, seed=42):
     """Prepare dataset creating prompts for all tasks."""
     ARC_dataset = ARCDataset(augmentation=augmentation)
-    all_tasks = []
-    if use_eval_set:
-        n_examples = 800
-    else: 
-       n_examples = 400
-    ARC_tasks = ARC_dataset.tasks[0:n_examples]
+    train = []
+    test = []
+    train_tasks = ARC_dataset.tasks[0:400]
+    test_tasks = ARC_dataset.tasks[400:800]
     if augmentation:
-        ARC_tasks  += ARC_dataset.tasks[n_examples:]
-    for _, task in enumerate(ARC_tasks):
-        text = compose_prompt(task, BASE_PROMPT, prompts_modifications)
-        task_dict = {'text':text, 'solution':repr(prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape, concise=False))}
-        all_tasks.append(task_dict)
-    df = pd.DataFrame(all_tasks)
-    dataset = Dataset.from_pandas(df)
-    dataset = dataset.shuffle(seed=42)
-    dataset = dataset.train_test_split(test_size=test_ratio)   
+        train_tasks += ARC_dataset.tasks[800:6400]
+        if test_augmentation:
+            test_tasks += ARC_dataset.tasks[6400:12000]
+    for train_task in train_tasks:
+        train_text = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
+        train_task_dict = {'text':train_text, 'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
+        train.append(train_task_dict)
+    for test_task in test_tasks:
+        test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications)
+        test_task_dict = {'text':test_text, 'solution':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, concise=False))}
+        test.append(test_task_dict)
+    train_df = pd.DataFrame(train)
+    train_dataset = Dataset.from_pandas(train_df).shuffle(seed=seed)
+    test_df = pd.DataFrame(test)
+    test_dataset = Dataset.from_pandas(test_df).shuffle(seed=seed)
+    dataset = DatasetDict({'train':train_dataset, 'test':test_dataset})   
     return dataset
 
 def augment_grid(grid:np.array)->List[np.array]:

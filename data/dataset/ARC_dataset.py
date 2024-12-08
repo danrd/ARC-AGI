@@ -30,7 +30,7 @@ class ARCDataset:
         test_out = np.array(self.training_solutions[task][0])
         return train_inp, train_out, test_inp, test_out
     
-    def load_dataset(self, split:str='full'):
+    def load_dataset(self):
         """Load dataset files and set splitting for training.
         Parameters
         ----------
@@ -42,14 +42,10 @@ class ARCDataset:
         self.evaluation_challenges = self.load_json('data/dataset/evaluation_challenges.json')
         self.evaluation_solutions = self.load_json('data/dataset/evaluation_solutions.json')
         self.test_challenges = self.load_json('data/dataset/test_challenges.json')
-        if split=='full':
-            self.tasks_keys = list(self.training_challenges.keys()) + list(self.evaluation_challenges.keys())
-            self.training_challenges = self.training_challenges | self.evaluation_challenges
-            self.training_solutions = self.training_solutions | self.evaluation_solutions
-        elif split=='train':
-            self.tasks_keys = list(self.training_challenges.keys())
-        else:
-            raise ValueError('You need to specify splitting for the dataset with options: train or full')
+        self.tasks_keys = list(self.training_challenges.keys()) + list(self.evaluation_challenges.keys())
+        self.training_challenges = self.training_challenges | self.evaluation_challenges
+        self.training_solutions = self.training_solutions | self.evaluation_solutions
+
     
     def create_tasks(self, augmentation):
         """Create a list of tasks for current splitting setting."""

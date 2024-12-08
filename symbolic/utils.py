@@ -1,7 +1,8 @@
 import typing
 import copy
-from typing import List
+from typing import List, Union
 import sys
+import torch
 import numpy as np
 from collections import defaultdict
 
@@ -55,7 +56,6 @@ def coords_transform(shape:List[tuple]):
 def define_grid_cells(max_grid_size:int=30)->dict:
     """Defines admissible cells for all possible grid sizes."""
     grid_cells = {(1,1):[(14,14)]}
-    center = 14
     i_right = 14
     j_right = 14
     i_left = 14
@@ -186,3 +186,21 @@ def check_subset_condition(larger_obj:set, smaller_obj:list)->bool:
         else: 
             return False
     return True
+
+def grid_formatting(grid:Union[np.array, torch.Tensor, List[list], List[tuple]])->np.array:
+    """Unify grid format for processing as there is initial dataset format with ints and normalized from ARCDataset with floats."""
+    if type(grid) != np.array:
+        grid = np.array(grid)
+    max_el = grid.max()
+    if max_el > 1:
+       return grid.astype(int) 
+    else:
+      return (grid*10).astype(int)   
+
+def crop_pad(grid:np.array)->np.array:
+    """Return grid without padding"""
+    i, j = np.where(grid!=10)
+    i_shape = max(i) - min(i) + 1
+    j_shape = max(j) - min(j) + 1
+    croped_grid = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape))
+    return croped_grid

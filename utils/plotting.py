@@ -6,7 +6,7 @@ import os
 import pandas as pd
 from typing import List
 from utils.utils import load_json
-from symbolic.utils import coords_transform, find_upper_left_corner
+from symbolic.utils import coords_transform, grid_formatting, crop_pad
 
 training_challenges = load_json('data/dataset/training_challenges.json')
 training_solutions = load_json('data/dataset/training_solutions.json')
@@ -71,19 +71,15 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     ax.set_title(train_or_test + ' ' + input_or_output, fontweight='bold')
             
 def plot_grid(grid):
-    grid = np.array(grid)
-    i, j = np.where(grid!=1.0)
-    i_size = max(i) - min(i) + 1
-    j_size = max(j) - min(j) + 1
-    grid_without_pad = grid[coords_transform(list(zip(i, j)))].reshape((i_size, j_size))*10
+    grid = crop_pad(grid_formatting(grid))
     cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
-    norm = colors.Normalize(vmin=0, vmax=10)
-    plt.imshow(grid_without_pad, cmap=cmap, norm=norm)
+                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff', '#002f1f'])
+    norm = colors.Normalize(vmin=0, vmax=11)
+    plt.imshow(grid, cmap=cmap, norm=norm)
     plt.grid(True,which='both',color='lightgrey', linewidth=0.5) 
-    plt.xticks(np.arange(-0.5, grid_without_pad.shape[1]), [])
-    plt.yticks(np.arange(-0.5, grid_without_pad.shape[0]), [])
-    plt.xlim(-0.5, grid_without_pad.shape[1]-0.5)    
+    plt.xticks(np.arange(-0.5, grid.shape[1]), [])
+    plt.yticks(np.arange(-0.5, grid.shape[0]), [])
+    plt.xlim(-0.5, grid.shape[1]-0.5)         
  
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""
@@ -108,43 +104,21 @@ def plot_shape(shape:List[tuple]):
     j_shifted = [j_coord-min_coord for j_coord in j]
     shifted_shape = list(zip(i_shifted, j_shifted))
     for coord in shifted_shape:
-        grid[coord] = 0.2
+        grid[coord] = 11
     plot_grid(grid)
     
-def plot_intersection(grid:np.array, shape:List[tuple]):
+def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]):
     """Plot intersection with defined shape."""
+    grid = crop_pad(grid_formatting(grid))
     grid = copy.deepcopy(grid)
-    i, j =  np.where(grid!=0.0)
-    colors = grid[i, j] # identify all colors to use different color for intersection
-    new_color = 0
-    for c in range(1, 10,):
-        if c/10 not in colors:
-            new_color = c/10
-            break
+    if type(shape) == list:
+        shape_union = []
+        for sh in shape:
+            shape_union.extend(sh)
+            shape = shape_union
     i, j = coords_transform(shape)
-    grid[i, j] = new_color
-    i, j = np.where(grid!=10.0)
-    i_shape = max(i) - min(i) + 1
-    j_shape = max(j) - min(j) + 1
-    grid_without_pad = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape)) # exclude padding
-    plot_grid(grid_without_pad)
-    
-def plot_intersection_with_replace(grid:np.array, shape:List[tuple], grid_size:tuple):
-    """Plot intersection for several figeres at once."""
-    i, j =  np.where(grid!=0.0)
-    colors = grid[i, j] # identify all colors to use different color for intersection
-    new_color = 0
-    for c in range(1, 10,):
-        if c/10 not in colors:
-            new_color = c/10
-            break
-    i, j = coords_transform(shape)
-    grid[i, j] = new_color
-    i, j = np.where(grid!=10.0)
-    i_shape = max(i) - min(i) + 1
-    j_shape = max(j) - min(j) + 1
-    grid_without_pad = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape)) # exclude padding
-    plot_grid(grid_without_pad)
+    grid[i, j] = 11
+    plot_grid(grid)
     
 def plot_rewards(path_to_logs:str):
     """Plot rewards for RL agent."""

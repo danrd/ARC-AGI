@@ -8,8 +8,8 @@ from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
-    def __init__(self, split:str='full', augmentation:bool=False):
-        self.load_dataset(split)
+    def __init__(self, augmentation:bool=False):
+        self.load_dataset()
         self.tasks = self.create_tasks(augmentation)
     
     @staticmethod
@@ -30,7 +30,7 @@ class ARCDataset:
         test_out = np.array(self.training_solutions[task][0])
         return train_inp, train_out, test_inp, test_out
     
-    def load_dataset(self):
+    def load_dataset(self, additional_datasets=True):
         """Load dataset files and set splitting for training.
         Parameters
         ----------
@@ -45,9 +45,14 @@ class ARCDataset:
         self.tasks_keys = list(self.training_challenges.keys()) + list(self.evaluation_challenges.keys())
         self.training_challenges = self.training_challenges | self.evaluation_challenges
         self.training_solutions = self.training_solutions | self.evaluation_solutions
-
+        if additional_datasets:
+            self.mini_arc_challenges = self.load_json('data/additional_datasets/mini_arc/mini_arc_challenges.json')
+            self.mini_arc_solutions = self.load_json('data/additional_datasets/mini_arc/mini_arc_solutions.json')
+            self.training_challenges = self.training_challenges | self.mini_arc_challenges
+            self.training_solutions = self.training_solutions | self.mini_arc_solutions
+            self.tasks_keys += list(self.mini_arc_challenges.keys())
     
-    def create_tasks(self, augmentation):
+    def create_tasks(self, augmentation=True):
         """Create a list of tasks for current splitting setting."""
         tasks = []
         aug_tasks = []
@@ -80,17 +85,22 @@ class ARCDataset:
             tasks = tasks + aug_tasks
         return tasks
     
-def prepare_dataset(augmentation=False, test_augmentation=False, prompts_modifications={}, seed=42):
+def prepare_dataset(augmentation=False, test_augmentation=False, additional_datasets=False, 
+                    prompts_modifications={}, seed=42):
     """Prepare dataset creating prompts for all tasks."""
     ARC_dataset = ARCDataset(augmentation=augmentation)
     train = []
     test = []
     train_tasks = ARC_dataset.tasks[0:400]
+    if additional_datasets:
+        train_tasks += ARC_dataset.tasks[800:950]
     test_tasks = ARC_dataset.tasks[400:800]
     if augmentation:
-        train_tasks += ARC_dataset.tasks[800:6400]
+        train_tasks += ARC_dataset.tasks[950:6550]
+        if additional_datasets:
+           train_tasks += ARC_dataset.tasks[12150:14250] 
         if test_augmentation:
-            test_tasks += ARC_dataset.tasks[6400:12000]
+            test_tasks += ARC_dataset.tasks[6550:12150]
     for train_task in train_tasks:
         train_text = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
         train_task_dict = {'text':train_text, 'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}

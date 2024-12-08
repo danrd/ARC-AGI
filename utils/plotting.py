@@ -4,7 +4,7 @@ import numpy as np
 import copy
 import os
 import pandas as pd
-from typing import List
+from typing import List, Union
 from utils.utils import load_json
 from symbolic.utils import coords_transform, grid_formatting, crop_pad
 
@@ -13,9 +13,11 @@ training_solutions = load_json('data/dataset/training_solutions.json')
 evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
 evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
 test_challenges = load_json('data/dataset/test_challenges.json')
-tasks_keys = list(training_challenges.keys())+list(evaluation_challenges.keys())
-all_challenges = training_challenges | evaluation_challenges 
-all_solutions = training_solutions | evaluation_solutions
+mini_arc_challenges = load_json('data/additional_datasets/mini_arc/mini_arc_challenges.json')
+mini_arc_solutions = load_json('data/additional_datasets/mini_arc/mini_arc_solutions.json')
+tasks_keys = list(training_challenges.keys()) + list(evaluation_challenges.keys()) + list(mini_arc_challenges.keys())
+all_challenges = training_challenges | evaluation_challenges | mini_arc_challenges
+all_solutions = training_solutions | evaluation_solutions | mini_arc_solutions
 
 def plot_task(task_id):
     """Plots the train and test pairs of a specified task, using same color scheme as the ARC app."""   

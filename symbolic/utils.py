@@ -192,10 +192,10 @@ def grid_formatting(grid:Union[np.array, torch.Tensor, List[list], List[tuple]])
     if type(grid) != np.array:
         grid = np.array(grid)
     max_el = grid.max()
-    if max_el > 1:
+    if max_el >= 1 and type(max_el) in [np.int64, np.int32, np.int16, np.int8]:
        return grid.astype(int) 
     else:
-      return (grid*10).astype(int)   
+      return (grid*10).astype(int)      
 
 def crop_pad(grid:np.array)->np.array:
     """Return grid without padding"""

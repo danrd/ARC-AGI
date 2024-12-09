@@ -30,7 +30,7 @@ class ARCDataset:
         test_out = np.array(self.training_solutions[task][0])
         return train_inp, train_out, test_inp, test_out
     
-    def load_dataset(self, additional_datasets=True):
+    def load_dataset(self, additional_datasets=False):
         """Load dataset files and set splitting for training.
         Parameters
         ----------

@@ -8,8 +8,8 @@ from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
-    def __init__(self, augmentation:bool=False):
-        self.load_dataset()
+    def __init__(self, augmentation:bool=False, additional_datasets=False):
+        self.load_dataset(additional_datasets)
         self.tasks = self.create_tasks(augmentation)
     
     @staticmethod
@@ -88,7 +88,8 @@ class ARCDataset:
 def prepare_dataset(augmentation=False, test_augmentation=False, additional_datasets=False, 
                     prompts_modifications={}, seed=42):
     """Prepare dataset creating prompts for all tasks."""
-    ARC_dataset = ARCDataset(augmentation=augmentation)
+    ARC_dataset = ARCDataset(augmentation=augmentation, 
+                             additional_datasets=additional_datasets)
     train = []
     test = []
     train_tasks = ARC_dataset.tasks[0:400]

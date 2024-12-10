@@ -26,3 +26,25 @@ def seed_everything(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     return
+
+class TaskIterator:
+    def __init__(self, start=0, end=0, tasks_keys=False):
+        self.current = start
+        self.end = end
+        self.tasks_keys = tasks_keys
+        if tasks_keys:
+            self.end = len(tasks_keys)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.current < self.end:
+            if self.tasks_keys:
+                value = self.tasks_keys[self.current]
+            else:
+                value = self.current
+            self.current += 1
+            return value
+        else:
+            raise StopIteration

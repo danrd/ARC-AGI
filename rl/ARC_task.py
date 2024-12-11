@@ -17,6 +17,7 @@ class ARCSubtask:
         """Transform any grid to max shape (30,30)."""
         shape_x = grid.shape[0]
         shape_y = grid.shape[1]
+        assert(shape_x in range(1,31) and shape_y in range(1,31)), f'incompatible grid size: ({shape_x}, {shape_y} for subtaks {self.label})'
         if shape_x!=30 or shape_y!=30:
             left_pad = (30-shape_x)//2
             right_pad = 30 - shape_x - left_pad

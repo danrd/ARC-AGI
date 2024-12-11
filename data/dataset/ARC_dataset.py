@@ -2,117 +2,170 @@ import os
 import json
 import numpy as np
 import pandas as pd
+from utils.utils import load_json
 from datasets import Dataset, DatasetDict
 from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
-    def __init__(self, augmentation:bool=False, additional_datasets=False):
+    def __init__(self, additional_datasets:bool=['mini_arc', 'synth_arc', 'concept_arc', 
+                                                'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
+                                                'tama_arc', 'com_arc'], 
+                 augmentation:bool=False, ttt_augmentation:bool=False):
         self.load_dataset(additional_datasets)
         self.tasks = self.create_tasks(augmentation)
+        self.hard_tasks, self.easy_tasks = self.difficulty_filter()
+        if ttt_augmentation:
+            self.ttt_tasks = self.ttt_augmentation()
     
-    @staticmethod
-    def load_json(file_path):
-        """Load JSON data from a file."""
-        with open(file_path, 'r') as file:
-            data = json.load(file)
-        return data
-    
-    def task_to_lists(self, task:dict)-> Union[List[np.array], List[np.array], np.array]:
+    def task_to_lists(self, task_key:str)-> Union[List[np.array], List[np.array], np.array]:
         """Transform dictionary with task data into several lists for convenience."""
         train_inp = []
         train_out = []
-        for d in self.training_challenges[task]['train']:
+        for d in self.training_challenges[task_key]['train']:
             train_inp.append(np.array(d['input']))
             train_out.append(np.array(d['output']))
-        test_inp = np.array(self.training_challenges[task]['test'][0]['input'])
-        test_out = np.array(self.training_solutions[task][0])
+        test_inp = np.array(self.training_challenges[task_key]['test'][0]['input'])
+        test_out = np.array(self.training_solutions[task_key][0])
         return train_inp, train_out, test_inp, test_out
     
-    def load_dataset(self, additional_datasets=False):
+    def load_dataset(self, additional_datasets):
         """Load dataset files and set splitting for training.
         Parameters
         ----------
-        split : str
-            Possible options are train/full. If full It takes evaluation examples as well.
+        additional_datasets : Union[List[str], bool]
+            If provided - list of additional datasets.
         """    
-        self.training_challenges = self.load_json('data/dataset/training_challenges.json')
-        self.training_solutions = self.load_json('data/dataset/training_solutions.json')
-        self.evaluation_challenges = self.load_json('data/dataset/evaluation_challenges.json')
-        self.evaluation_solutions = self.load_json('data/dataset/evaluation_solutions.json')
-        self.test_challenges = self.load_json('data/dataset/test_challenges.json')
+        self.training_challenges = load_json('data/dataset/training_challenges.json')
+        self.training_solutions = load_json('data/dataset/training_solutions.json')
+        self.evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
+        self.evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
+        self.test_challenges = load_json('data/dataset/test_challenges.json')
         self.tasks_keys = list(self.training_challenges.keys()) + list(self.evaluation_challenges.keys())
         self.training_challenges = self.training_challenges | self.evaluation_challenges
         self.training_solutions = self.training_solutions | self.evaluation_solutions
+        self.task2difficulty = load_json('data/dataset/task2difficulty.json')
         if additional_datasets:
-            self.mini_arc_challenges = self.load_json('data/additional_datasets/mini_arc/mini_arc_challenges.json')
-            self.mini_arc_solutions = self.load_json('data/additional_datasets/mini_arc/mini_arc_solutions.json')
-            self.training_challenges = self.training_challenges | self.mini_arc_challenges
-            self.training_solutions = self.training_solutions | self.mini_arc_solutions
-            self.tasks_keys += list(self.mini_arc_challenges.keys())
+            self.addtitional_datasets_challenges = {}
+            self.additional_datasets_solutions = {}
+            for dataset in additional_datasets:
+                dataset_challenges = load_json(f'data/additional_datasets/{dataset}/{dataset}_challenges.json')
+                dataset_solutions = load_json(f'data/additional_datasets/{dataset}/{dataset}_solutions.json')
+                self.addtitional_datasets_challenges[dataset] = dataset_challenges
+                self.additional_datasets_solutions[dataset] = dataset_solutions
+                self.training_challenges |= dataset_challenges
+                self.training_solutions |= dataset_solutions
+                self.tasks_keys += list(dataset_challenges.keys())
     
     def create_tasks(self, augmentation=True):
         """Create a list of tasks for current splitting setting."""
         tasks = []
         aug_tasks = []
-        for key in self.tasks_keys:
+        for idx, key in enumerate(self.tasks_keys):
             train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
             subtasks = []
-            aug_subtasks = [[] for _ in range(14)]
-            n = len(train_inp)
-            for i in range(n):
+            for i in range(len(train_inp)):
                 label = f'{key}_{i}'
                 subtask = ARCSubtask(label, train_inp[i], train_out[i])
                 subtasks.append(subtask)
-                if augmentation:
-                    train_inp_aug_grids = augment_grid(train_inp[i])
-                    train_out_aug_grids = augment_grid(train_out[i])
-                    for j in range(14):
-                        label = f'{key}_{i}_aug_{j}'
-                        subtask = ARCSubtask(label, train_inp_aug_grids[j], train_out_aug_grids[j])
-                        aug_subtasks[j].append(subtask)
             task = ARCTask(key, subtasks, test_inp, test_out)
             tasks.append(task) 
             if augmentation:
-                test_inp_aug_grids = augment_grid(test_inp)
-                test_out_aug_grids = augment_grid(test_out)
-                for i in range(14):
-                    aug_key = f'{key}_aug_{i}'
-                    task = ARCTask(aug_key, aug_subtasks[i], test_inp_aug_grids[i], test_out_aug_grids[i])
-                    aug_tasks.append(task)
+                aug_task = self.augment_task(subtasks, test_inp, test_out, key)
+                aug_tasks.extend(aug_task)
         if augmentation:
             tasks = tasks + aug_tasks
         return tasks
+
+    @staticmethod
+    def augment_task(self, subtasks:List[ARCSubtask], test_inp:np.array, 
+                     test_out:np.array, key:str)->List[List[ARCSubtask]]:
+        """Create a list of additional tasks based on subtasks of a given initial task using grid augmentation"""
+        aug_subtasks = [[] for _ in range(14)]
+        aug_tasks = []
+        difficulty = self.task2difficulty[key]
+        aug_key = f'{key}_aug'
+        for i, subtask in enumerate(subtasks):
+            train_inp_aug_grids = augment_grid(subtask.train_inp)
+            train_out_aug_grids = augment_grid(subtask.train_out)
+            for j in range(14):
+                label = f'{aug_key}_{j}'
+                new_subtask = ARCSubtask(label, train_inp_aug_grids[j], train_out_aug_grids[j])
+                aug_subtasks[j].append(new_subtask)
+        test_inp_aug_grids = augment_grid(test_inp)
+        test_out_aug_grids = augment_grid(test_out)
+        for i in range(14):
+            key = f'{aug_key}_{i}'
+            self.task2difficulty[key] = difficulty
+            task = ARCTask(key, aug_subtasks[i], test_inp_aug_grids[i], test_out_aug_grids[i])
+            aug_tasks.append(task)
+        return aug_tasks
+
+    def difficulty_filter(self):
+        """Split tasks based on their predifined difficulty"""
+        easy_tasks = []
+        hard_tasks = []
+        for task in self.tasks:
+            if self.task2difficulty[task.label] == 'easy':
+                easy_tasks.append(task)
+            else:
+                hard_tasks.append(task)
+        return easy_tasks, hard_tasks
+
+    def ttt_augmentation(self):
+        """Create training tasks from test tasks in line with test-time-training (ttt) concept."""
+        ttt_tasks = []
+        for idx, key in enumerate(self.tasks_keys[400:800]):
+            ttt_key = f'{key}_ttt'
+            train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
+            n = len(train_inp)
+            test_idx = np.random.randint(0, n)
+            test_inp = train_inp.pop(test_idx)
+            test_out = train_out.pop(test_idx)
+            subtasks = []
+            for i in range(n-1):
+                label = f'{ttt_key}_{i}'
+                subtask = ARCSubtask(label, train_inp[i], train_out[i])
+                subtasks.append(subtask)
+            difficulty = self.task2difficulty[key]
+            self.task2difficulty[ttt_key] = difficulty
+            task = ARCTask(ttt_key, subtasks, test_inp, test_out)
+            ttt_tasks.append(task) 
+        return ttt_tasks
     
-def prepare_dataset(augmentation=False, test_augmentation=False, additional_datasets=False, 
-                    prompts_modifications={}, seed=42):
+def prepare_dataset(additional_datasets=False, augmentation=False,  
+                    ttt_augmentation=False, prompts_modifications={}, 
+                    cur_learning:bool=False, seed=42):
     """Prepare dataset creating prompts for all tasks."""
-    ARC_dataset = ARCDataset(augmentation=augmentation, 
-                             additional_datasets=additional_datasets)
-    train = []
-    test = []
-    train_tasks = ARC_dataset.tasks[0:400]
-    if additional_datasets:
-        train_tasks += ARC_dataset.tasks[800:950]
-    test_tasks = ARC_dataset.tasks[400:800]
-    if augmentation:
-        train_tasks += ARC_dataset.tasks[950:6550]
-        if additional_datasets:
-           train_tasks += ARC_dataset.tasks[12150:14250] 
-        if test_augmentation:
-            test_tasks += ARC_dataset.tasks[6550:12150]
-    for train_task in train_tasks:
+    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation)
+    train_set_easy = []
+    train_set_hard = []
+    test_set = []
+    train_tasks_easy = ARC_dataset.easy_tasks 
+    train_tasks_hard = ARC_dataset.hard_tasks[400:]
+    test_tasks = ARC_dataset.hard_tasks[0:400]
+    if ttt_augmentation: 
+        train_tasks_hard += ARC_dataset.ttt_tasks
+    for train_task in train_tasks_easy:
         train_text = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
         train_task_dict = {'text':train_text, 'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
-        train.append(train_task_dict)
+        train_set_easy.append(train_task_dict)
+    for train_task in train_tasks_hard:
+        train_text = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
+        train_task_dict = {'text':train_text, 'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
+        train_set_hard.append(train_task_dict)   
     for test_task in test_tasks:
         test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications)
         test_task_dict = {'text':test_text, 'solution':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, concise=False))}
-        test.append(test_task_dict)
-    train_df = pd.DataFrame(train)
-    train_dataset = Dataset.from_pandas(train_df).shuffle(seed=seed)
-    test_df = pd.DataFrame(test)
+        test_set.append(test_task_dict)
+    train_df_easy = pd.DataFrame(train_set_easy).sample(frac=1)
+    train_df_hard = pd.DataFrame(train_set_hard).sample(frac=1)
+    test_df = pd.DataFrame(test_set).sample(frac=1)
+    train_df = pd.concat([train_df_easy, train_df_hard], ignore_index = True)
+    train_dataset = Dataset.from_pandas(train_df)
+    if not cur_learning:
+        train_dataset.shuffle(seed=seed)
     test_dataset = Dataset.from_pandas(test_df).shuffle(seed=seed)
     dataset = DatasetDict({'train':train_dataset, 'test':test_dataset})   
     return dataset

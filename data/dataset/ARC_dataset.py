@@ -58,7 +58,7 @@ class ARCDataset:
                 self.tasks_keys.extend(list(dataset_challenges.keys()))
                 self.task2dataset |= {key : dataset for key in dataset_challenges.keys()}
     
-    def create_tasks(self, augmentation=True):
+    def create_tasks(self, augmentation):
         """Create a list of tasks for current splitting setting."""
         tasks = []
         aug_tasks = []

@@ -10,8 +10,11 @@ DETAILED_PROMPT =  ["general_instruction", "grid_description", "task_instruction
 BASE_PROMPT = ["general_instruction", "grid_description", "examples_repr", "task_repr", "output_format"]  
 CONCISE_PROMPT = ["general_instruction", "examples_repr", "task_repr", "output_format"] 
 
-COLOR_MAPPING = {0:'black', 1:'blue', 2:'red', 3:'green', 4:'yellow', 5:'gray', 6:'magenta',
-                 7:'orange', 8:'sky', 9:'brown'}
+COLOR_MAPPING = {0:'black', 0.1:'blue', 1:'blue', 0.2:'red', 2:'red', 
+                 0.3:'green', 3:'green', 0.4:'yellow', 4:'yellow', 
+                 0.5:'gray', 5:'gray', 0.6:'magenta', 6:'magenta',
+                 0.7:'orange', 7:'orange', 0.8:'sky', 8:'sky', 
+                 0.9:'brown', 9:'brown'}
 
 GENERAL_INSTRUCTION = f"""
 You are a helpful AI assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).

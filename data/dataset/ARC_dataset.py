@@ -9,7 +9,7 @@ from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
-    def __init__(self, additional_datasets:bool=['mini_arc', 'synth_arc', 'concept_arc', 
+    def __init__(self, additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
                                                 'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
                                                 'tama_arc', 'com_arc'], 
                  augmentation:bool=False, ttt_augmentation:bool=False):
@@ -17,7 +17,7 @@ class ARCDataset:
         self.tasks = self.create_tasks(augmentation)
         self.hard_tasks, self.easy_tasks = self.difficulty_filter()
         if ttt_augmentation:
-            self.ttt_tasks = self.ttt_augmentation()
+            self.ttt_tasks = self.ttt_augmentation(augmentation)
     
     def task_to_lists(self, task_key:str)-> Union[List[np.array], List[np.array], np.array]:
         """Transform dictionary with task data into several lists for convenience."""
@@ -46,17 +46,17 @@ class ARCDataset:
         self.training_challenges = self.training_challenges | self.evaluation_challenges
         self.training_solutions = self.training_solutions | self.evaluation_solutions
         self.task2difficulty = load_json('data/dataset/task2difficulty.json')
+        self.task2dataset = {key : 'arc' for key in self.tasks_keys}
         if additional_datasets:
-            self.addtitional_datasets_challenges = {}
-            self.additional_datasets_solutions = {}
+            self.additional_datasets = {}
             for dataset in additional_datasets:
                 dataset_challenges = load_json(f'data/additional_datasets/{dataset}/{dataset}_challenges.json')
                 dataset_solutions = load_json(f'data/additional_datasets/{dataset}/{dataset}_solutions.json')
-                self.addtitional_datasets_challenges[dataset] = dataset_challenges
-                self.additional_datasets_solutions[dataset] = dataset_solutions
+                self.additional_datasets[dataset] = dataset_challenges
                 self.training_challenges |= dataset_challenges
                 self.training_solutions |= dataset_solutions
-                self.tasks_keys += list(dataset_challenges.keys())
+                self.tasks_keys.extend(list(dataset_challenges.keys()))
+                self.task2dataset |= {key : dataset for key in dataset_challenges.keys()}
     
     def create_tasks(self, augmentation=True):
         """Create a list of tasks for current splitting setting."""
@@ -75,14 +75,13 @@ class ARCDataset:
                 aug_task = self.augment_task(subtasks, test_inp, test_out, key)
                 aug_tasks.extend(aug_task)
         if augmentation:
-            tasks = tasks + aug_tasks
+            tasks += aug_tasks[0:5600] + aug_tasks[11200:] # excluding aug tasks for test set 
         return tasks
 
-    @staticmethod
     def augment_task(self, subtasks:List[ARCSubtask], test_inp:np.array, 
                      test_out:np.array, key:str)->List[List[ARCSubtask]]:
         """Create a list of additional tasks based on subtasks of a given initial task using grid augmentation"""
-        aug_subtasks = [[] for _ in range(14)]
+        aug_subtasks = [[] for _ in range(14)] # as with augmentation we have 14 new grids
         aug_tasks = []
         difficulty = self.task2difficulty[key]
         aug_key = f'{key}_aug'
@@ -113,15 +112,17 @@ class ARCDataset:
                 hard_tasks.append(task)
         return easy_tasks, hard_tasks
 
-    def ttt_augmentation(self):
+    def ttt_augmentation(self, augmentation):
         """Create training tasks from test tasks in line with test-time-training (ttt) concept."""
         ttt_tasks = []
+        aug_ttt_tasks = []
         for idx, key in enumerate(self.tasks_keys[400:800]):
             ttt_key = f'{key}_ttt'
             train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
             n = len(train_inp)
-            test_idx = np.random.randint(0, n)
-            test_inp = train_inp.pop(test_idx)
+            test_idx = np.random.randint(0, n) # identify index of test subtask
+            # exclude test subtask from train subtasks
+            test_inp = train_inp.pop(test_idx) 
             test_out = train_out.pop(test_idx)
             subtasks = []
             for i in range(n-1):
@@ -132,6 +133,11 @@ class ARCDataset:
             self.task2difficulty[ttt_key] = difficulty
             task = ARCTask(ttt_key, subtasks, test_inp, test_out)
             ttt_tasks.append(task) 
+            if augmentation:
+                aug_task = self.augment_task(subtasks, test_inp, test_out, key)
+                aug_ttt_tasks.extend(aug_task)
+        if augmentation:
+            ttt_tasks += aug_ttt_tasks
         return ttt_tasks
     
 def prepare_dataset(additional_datasets=False, augmentation=False,  

@@ -4,6 +4,9 @@ from typing import List
 from collections import defaultdict
 from utils.plotting import plot_grid
 from symbolic.utils import check_subset_condition, find_upper_left_corner, coords_transform
+from collections import Counter
+from llm.prompts import COLOR_MAPPING
+
 class GridObject():
     """Class for storing identified objects on a grid."""
     def __init__(self, shape:str, coords:List[tuple], color:List[float], label:str, positioning=[]):
@@ -18,13 +21,10 @@ class GridObject():
         self.max_i = self.edges[1]
         self.min_j = self.edges[2]
         self.max_j = self.edges[3]
-        self.colors_mapping = {0:'black', 0.1:'blue', 0.2:'red', 0.3:'green', 0.4:'yellow', 0.5:'gray', 0.6:'magenta',
-                 0.7:'orange', 0.8:'sky', 0.9:'brown', 1:'white'}
         self.color_number = color
-        self.color = [self.colors_mapping[color] for color in self.color_number]
-        self.relations = defaultdict(list)
+        self.color = [COLOR_MAPPING[color] for color in self.color_number]
         self.label = label
-        self.symmetry = self.check_symmetry
+        self.symmetry = self.check_symmetry() if self.shape != 'cell' else []
         self.positioning = positioning
         
     def __repr__(self):
@@ -60,10 +60,13 @@ class GridObject():
     
     def check_symmetry(self):
         """Identify symmetric propetries for the object."""
-        grid = np.zeros((self.max_i-self.min_i, self.max_j-self.min_j))
+        shape = max(self.max_i, self.max_j) - min(self.min_i, self.min_j) + 1
+        min_coord = min(self.min_i, self.min_j)
+        upper_left_grid_corner = (min_coord, min_coord)
+        grid = np.zeros((shape, shape))
         symmetries = []
         for coord in self.coords:
-            grid[coord] = 1
+            grid[(coord[0]-upper_left_grid_corner[0], coord[1]-upper_left_grid_corner[0])] = 1
         if (np.flipud(grid)==grid).all():
             symmetries.append('horizontal_symmetry')
         if (np.fliplr(grid)==grid).all():
@@ -79,12 +82,13 @@ class GridObject():
     def create_object_triples(self):
         """Create triples based on objects properties."""
         triples = [] 
-        triples.append((self.label, 'has', self.symmetry))
         for position in self.positioning:
             triples.append((self.label, 'located', position))
         triples.append((self.label, 'has_shape', self.shape))
-        triples.append((self.label, 'has_color', self.color))
+        triples.append((self.label, 'has_color', self.color[0]))
         triples.append((self.label, 'has_size', self.size))
+        if self.shape != 'cell': 
+            triples.append((self.label, 'has', self.symmetry))
         return triples
     
     def plot(self):
@@ -310,10 +314,10 @@ class RelationAnalyzer():
         self.object_1 = object_1
         self.object_2 = object_2
         self.shape = shape
-        self.triples = self.set_relations()
+        self.triples, self.relation_counter = self.set_relations()
     
     @staticmethod
-    def rotation_symmetry(coords_1, coords_2, shape):
+    def rotation_symmetry(coords_1:List[tuple], coords_2:List[tuple], shape:tuple):
         """Identify rotation relations between objects."""
         rotations = []
         if len(coords_1) > 1 and len(coords_2) > 1: # exclude cells
@@ -344,7 +348,7 @@ class RelationAnalyzer():
         return rotations  
     
     @staticmethod
-    def translation_symmetry(coords_1, coords_2, shape):
+    def translation_symmetry(coords_1:List[tuple], coords_2:List[tuple], shape:tuple):
         """Identify if each coordinate of object_1 equals each coordinate of object_2 after some shifting."""
         ul = find_upper_left_corner(shape)
         coords_1_shifted = [(tup[0]-ul[0], tup[1]-ul[1]) for tup in coords_1]
@@ -366,7 +370,7 @@ class RelationAnalyzer():
         return (i_offset, j_offset)   
 
     @staticmethod
-    def in_contour(object_1, object_2):
+    def in_contour(object_1:GridObject, object_2:GridObject):
         """Identify if all coordinates of object_1 are surrounded by coordinates of object_2 or in the reverse order."""
         in_contour = None
         if object_2.max_i < object_1.max_i and object_2.max_j < object_1.max_j and object_2.min_i > object_1.min_i and object_2.min_j > object_1.min_j:
@@ -376,71 +380,88 @@ class RelationAnalyzer():
         return in_contour   
 
     @staticmethod
-    def in_line(coords_1, coords_2):
+    def in_line(coords_1:List[tuple], coords_2:List[tuple]):
         """Identify if object_1 and object_2 can be connected by line."""
         list_i_1, list_j_1 = coords_transform(coords_1)
         list_i_2, list_j_2 = coords_transform(coords_2)
         i_intersection = set(list_i_1) & set(list_i_2)
         j_intersection = set(list_j_1) & set(list_j_2)
         return set(list_i_1) & set(list_i_2) or set(list_j_1) & set(list_j_2)
+
+    @staticmethod
+    def x_alignment(object_1:GridObject, object_2:GridObject):
+        """Identify if object_1 and object_2 are aligned in relation to x axis."""
+        return object_1.max_i == object_2.max_i and object_1.min_i == object_2.min_i 
+
+    @staticmethod
+    def y_alignment(object_1:GridObject, object_2:GridObject):
+        """Identify if object_1 and object_2 are aligned in relation to y axis."""
+        return object_1.max_j == object_2.max_j and object_1.min_j == object_2.min_j     
             
     def set_relations(self):
         """Set all considered relations."""
         assert self.object_1!=None and self.object_2!=None and self.shape!=None, f"Object_1, Object_2 and grid shape should be specified"
         triples = []  
+        relation_statistics = Counter()
 
         if self.object_1.color == self.object_2.color:
-            self.object_1.relations[self.object_2.label].append(f"same_color")
-            self.object_2.relations[self.object_1.label].append(f"same_color")
-            triples.append((self.object_2, f"same_color", self.object_1))
-            triples.append((self.object_1, f"same_color", self.object_2))
+            triples.append((self.object_2.label, f"same_color", self.object_1.label))
+            triples.append((self.object_1.label, f"same_color", self.object_2.label))
+            relation_statistics[f"same_color"] += 1 
             
         if self.object_1.shape == self.object_2.shape:
-            self.object_1.relations[self.object_2.label].append(f"same_shape")
-            self.object_2.relations[self.object_1.label].append(f"same_shape")
-            triples.append((self.object_2, f"same_shape", self.object_1))
-            triples.append((self.object_1, f"same_shape", self.object_2))
+            triples.append((self.object_2.label, f"same_shape", self.object_1.label))
+            triples.append((self.object_1.label, f"same_shape", self.object_2.label))
+            relation_statistics[f"same_shape"] += 1  
             
         if self.object_1.size == self.object_2.size:
-            self.object_1.relations[self.object_2.label].append(f"same_size")
-            self.object_2.relations[self.object_1.label].append(f"same_size")
-            triples.append((self.object_2, f"same_size", self.object_1))
-            triples.append((self.object_1, f"same_size", self.object_2))
+            triples.append((self.object_2.label, f"same_size", self.object_1.label))
+            triples.append((self.object_1.label, f"same_size", self.object_2.label))
+            relation_statistics[f"same_size"] += 1  
             
         rotations = self.rotation_symmetry(self.object_1.coords, self.object_2.coords, self.shape)
         if rotations != []:
             for rotation in rotations:
-                self.object_1.relations[self.object_2.label].append(rotation)
-                self.object_2.relations[self.object_1.label].append(rotation)
-                triples.append((self.object_1, rotation, self.object_2))
-                triples.append((self.object_2, rotation, self.object_1))
+                triples.append((self.object_1.label, rotation, self.object_2.label))
+                triples.append((self.object_2.label, rotation, self.object_1.label))
         
         (i_offset, j_offset) = self.translation_symmetry(self.object_1.coords, self.object_2.coords, self.shape)
         if i_offset != 0 and j_offset != 0:
-            self.object_1.relations[self.object_2.label].append(f"translation_symmetry")
-            self.object_2.relations[self.object_1.label].append(f"translation_symmetry")
-            triples.append((self.object_1, f"translation_symmetry", self.object_2))
-            triples.append((self.object_2, f"translation_symmetry", self.object_1))
+            triples.append((self.object_1.label, f"translation_symmetry", self.object_2.label))
+            triples.append((self.object_2.label, f"translation_symmetry", self.object_1.label))
 
         in_contour = self.in_contour(self.object_1, self.object_2)
         if in_contour == "object_2":
-            self.object_1.relations[self.object_2.label].append(f"has_in_contour")
-            self.object_2.relations[self.object_1.label].append(f"in_contour")
-            triples.append((self.object_2, f"in_contour", self.object_1))
-            triples.append((self.object_1, f"has_in_contour", self.object_2))
+            triples.append((self.object_2.label, f"in_contour", self.object_1.label))
+            triples.append((self.object_1.label, f"has_in_contour", self.object_2.label))
+            relation_statistics[f"in_contour"] += 1 
 
         if in_contour == "object_1":
-            self.object_1.relations[self.object_2.label].append(f"in_contour")
-            self.object_2.relations[self.object_1.label].append(f"has_in_contour")
-            triples.append((self.object_1, f"in_contour", self.object_2))
-            triples.append((self.object_2, f"has_in_contour", self.object_1))
+            triples.append((self.object_1.label, f"in_contour", self.object_2.label))
+            triples.append((self.object_2.label, f"has_in_contour", self.object_1.label))
 
         if self.in_line(self.object_1.coords, self.object_2.coords):
-            self.object_1.relations[self.object_2.label].append(f"in_line")
-            self.object_2.relations[self.object_1.label].append(f"in_line") 
-            triples.append((self.object_1, f"in_line", self.object_2))
-            triples.append((self.object_2, f"in_line", self.object_1))             
-        return triples
+            triples.append((self.object_1.label, f"in_line", self.object_2.label))
+            triples.append((self.object_2.label, f"in_line", self.object_1.label))  
+            relation_statistics[f"in_line"] += 1 
+
+        x_alignment = self.x_alignment(self.object_1, self.object_2)
+        y_alignment = self.y_alignment(self.object_1, self.object_2)
+        if x_alignment and y_alignment:
+            triples.append((self.object_1.label, f"x_y_aligned_with", self.object_2.label))
+            triples.append((self.object_2.label, f"x_y_aligned_with", self.object_1.label))
+            relation_statistics[f"x_y_aligned_with"] += 1  
+        else:    
+            if self.x_alignment(self.object_1, self.object_2):
+                triples.append((self.object_1.label, f"x_aligned_with", self.object_2.label))
+                triples.append((self.object_2.label, f"x_aligned_with", self.object_1.label))
+                relation_statistics[f"x_aligned_with"] += 1 
+            
+            if self.y_alignment(self.object_1, self.object_2):
+                triples.append((self.object_1.label, f"y_aligned_with", self.object_2.label))
+                triples.append((self.object_2.label, f"y_aligned_with", self.object_1.label))
+                relation_statistics[f"y_aligned_with"] += 1 
+        return triples, relation_statistics
 
 class ObjectCombiner():
     """Class for creating complex objects by merging base types of shapes."""

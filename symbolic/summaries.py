@@ -2,7 +2,7 @@ import typing
 from typing import List
 import numpy as np
 import copy
-from collections import defaultdict
+from collections import defaultdict, Counter
 from itertools import product
 from rl.ARC_task import ARCTask, ARCSubtask
 from symbolic.objects_analysis import GridObject, ObjectCombiner, ObjectsFilter, RelationAnalyzer
@@ -57,9 +57,11 @@ class GridSummary():
         self.objects_dict = {}
         self.initial_objects = self.retrieve_objects(self.grid, self.patterns, self.shape)
         self.objects = self.filter_objects()
-        # self.complex_objects = self.construct_complex_objects()
+        # self.complex_objects = self.construct_complex_objects() 
         self.objects_summary = self.create_objects_summary()
-        self.triples = self.set_relations()
+        self.relations_for_stats = ["same_color", "same_shape", "same_size", "in_contour", "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with"]
+        self.triples, self.relation_statistics = self.set_relations()
+        self.relations_summary = self.create_relations_summary()
 
     def define_grid_corners(self):
         grid_size = self.shape
@@ -165,29 +167,52 @@ class GridSummary():
 
     def create_objects_summary(self):
         """Create a summary for grid objects to get aggregate information about their shapes, sizes, colors.""" 
-        sizes = defaultdict(list)
-        shapes = defaultdict(lambda: 0)
-        colors = defaultdict(lambda: 0)
+        size2shape = defaultdict(list)
+        shape2size = {}
+        shapes = {shape:0 for shape in (list(self.patterns.keys())+['cell'])}
+        colors = {COLOR_MAPPING[i/10]:0 for i in range(10)}
         for k, v in self.objects.items():
             for idx, obj in enumerate(v):
-                sizes[obj.size].append(obj)
+                size2shape[obj.size].append(obj)
+                shape2size[obj.label] = obj.size
                 shapes[obj.shape] += 1
                 if obj.shape != 'complex':
                     color = COLOR_MAPPING[obj.color_number[0]]
                     colors[color] += 1
-        sorted_keys = sorted(list(sizes.keys()), reverse=True)
-        sizes = {k:sizes[k] for k in sorted_keys}
-        summary = {'sizes':sizes, 'shape':shapes, 'colors':colors}
-        return summary
+        sorted_keys = sorted(list(size2shape.keys()), reverse=True)
+        size2shape = {k:size2shape[k] for k in sorted_keys}
+        shape2size_values = list(shape2size.values())
+        mean_size = 0
+        median_size = 0
+        if len(shape2size_values)>0:
+            mean_size = np.mean(shape2size_values)
+            median_size = np.median(shape2size_values)
+        objects_summary = {'size2shape':size2shape, 'shape2size':shape2size, 'mean_size':mean_size, 'median_size':median_size, 'shapes':shapes, 'colors':colors}
+        return objects_summary
+
+    def create_relations_summary(self):
+        """Create a summary for relation between grid objects to get useful information for reasoning.""" 
+        relations_summary = self.relation_statistics
+        objects_properties = {'symmetry':0}
+        for k, v in self.objects.items():
+            for idx, obj in enumerate(v):
+                if obj.symmetry != [] and obj.symmetry != 'assymetry':
+                    objects_properties['symmetry'] += 1
+        relations_summary.update(objects_properties)       
+        return relations_summary
     
     def set_relations(self):
         """Iterate over objects to identify relations between them.""" 
-        triples = []
+        all_triples = []
+        relation_statistics = Counter(self.relations_for_stats)
         distances = defaultdict(lambda: 0)
         all_objects = dict_to_list(self.objects)
         for idx, obj_1 in enumerate(all_objects):
             for obj_2 in all_objects[idx+1:]: 
-                summary = RelationAnalyzer(obj_1, obj_2, self.shape)
-                triples.extend(summary.triples)
+                analyzer = RelationAnalyzer(obj_1, obj_2, self.shape)
+                triples = analyzer.triples
+                relation_counter = analyzer.relation_counter
+                all_triples.extend(triples)
+                relation_statistics.update(relation_counter)
                 distances[f'{obj_1.label}-{obj_2.label}'] = self.calculate_distance(obj_1, obj_2)
-        return triples
+        return all_triples, relation_statistics

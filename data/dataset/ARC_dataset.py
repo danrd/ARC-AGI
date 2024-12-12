@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from utils.utils import load_json
 from datasets import Dataset, DatasetDict
 from typing import Union, List
@@ -37,6 +38,7 @@ class ARCDataset:
         additional_datasets : Union[List[str], bool]
             If provided - list of additional datasets.
         """    
+        self.datasets = {}
         self.training_challenges = load_json('data/dataset/training_challenges.json')
         self.training_solutions = load_json('data/dataset/training_solutions.json')
         self.evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
@@ -47,16 +49,17 @@ class ARCDataset:
         self.training_solutions = self.training_solutions | self.evaluation_solutions
         self.task2difficulty = load_json('data/dataset/task2difficulty.json')
         self.task2dataset = {key : 'arc' for key in self.tasks_keys}
+        self.datasets['arc'] = {'challenges':self.training_challenges, 'solutions':self.training_solutions, 'keys': self.tasks_keys}
         if additional_datasets:
-            self.additional_datasets = {}
             for dataset in additional_datasets:
                 dataset_challenges = load_json(f'data/additional_datasets/{dataset}/{dataset}_challenges.json')
                 dataset_solutions = load_json(f'data/additional_datasets/{dataset}/{dataset}_solutions.json')
-                self.additional_datasets[dataset] = dataset_challenges
-                self.training_challenges |= dataset_challenges
+                dataset_tasks_keys = list(dataset_challenges.keys())
+                self.datasets[dataset] = {'challenges':dataset_challenges, 'solutions':dataset_solutions, 'keys':dataset_tasks_keys}
+                self.task2dataset |= {key : dataset for key in dataset_tasks_keys}
+                self.training_challenges |=  dataset_challenges
                 self.training_solutions |= dataset_solutions
-                self.tasks_keys.extend(list(dataset_challenges.keys()))
-                self.task2dataset |= {key : dataset for key in dataset_challenges.keys()}
+                self.tasks_keys.extend(dataset_tasks_keys)
     
     def create_tasks(self, augmentation):
         """Create a list of tasks for current splitting setting."""
@@ -140,11 +143,12 @@ class ARCDataset:
             ttt_tasks += aug_ttt_tasks
         return ttt_tasks
     
-def prepare_dataset(additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
+def prepare_dataset(tokenizer,
+                    additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
                                               'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
                                               'tama_arc', 'com_arc'], 
                     augmentation=False, ttt_augmentation=False, 
-                    prompts_modifications={}, 
+                    prompts_modifications={}, max_tokens:int=None,
                     cur_learning:bool=False, seed=42):
     """Prepare dataset creating prompts for all tasks."""
     ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation)
@@ -154,22 +158,33 @@ def prepare_dataset(additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc',
     train_tasks_easy = ARC_dataset.easy_tasks 
     train_tasks_hard = ARC_dataset.hard_tasks[400:]
     test_tasks = ARC_dataset.hard_tasks[0:400]
+    rejected_train = 0
+    rejected_test = 0
     if ttt_augmentation: 
         train_tasks_hard += ARC_dataset.ttt_tasks
-    for train_task in train_tasks_easy:
-        train_text_easy = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
-        train_task_dict_easy = {'text':train_text_easy, 
-                                'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
-        train_set_easy.append(train_task_dict_easy)
-    for train_task in train_tasks_hard:
-        train_text_hard = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
-        train_task_dict_hard = {'text':train_text_hard, 
-                                'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
-        train_set_hard.append(train_task_dict_hard)   
-    for test_task in test_tasks:
-        test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications)
-        test_task_dict = {'text':test_text, 'solution':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, concise=False))}
-        test_set.append(test_task_dict)
+    for train_task in tqdm(train_tasks_easy):
+        train_text_easy = compose_prompt(train_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens)
+        if train_text_easy:
+            train_task_dict_easy = {'text':train_text_easy, 
+                                    'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
+            train_set_easy.append(train_task_dict_easy)
+        else:
+            rejected_train += 1
+    for train_task in tqdm(train_tasks_hard):
+        train_text_hard = compose_prompt(train_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens)
+        if train_text_hard:
+            train_task_dict_hard = {'text':train_text_hard, 
+                                    'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
+            train_set_hard.append(train_task_dict_hard)   
+        else:
+            rejected_train += 1
+    for test_task in tqdm(test_tasks):
+        test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens)
+        if test_text:
+            test_task_dict = {'text':test_text, 'solution':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, concise=False))}
+            test_set.append(test_task_dict)
+        else:
+            rejected_test += 1 
     train_df_easy = pd.DataFrame(train_set_easy).sample(frac=1)
     train_df_hard = pd.DataFrame(train_set_hard).sample(frac=1)
     test_df = pd.DataFrame(test_set).sample(frac=1)
@@ -178,7 +193,9 @@ def prepare_dataset(additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc',
     if not cur_learning:
         train_dataset.shuffle(seed=seed)
     test_dataset = Dataset.from_pandas(test_df).shuffle(seed=seed)
-    dataset = DatasetDict({'train':train_dataset, 'test':test_dataset})   
+    dataset = DatasetDict({'train':train_dataset, 'test':test_dataset}) 
+    print(f"Train set: {len(dataset['train'])} examples\n Test set: {len(dataset['test'])} examples\n")
+    print(f"Number of train filtered out examples: {rejected_train}\n Number of train filtered out examples: {rejected_test}")  
     return dataset
 
 def augment_grid(grid:np.array)->List[np.array]:

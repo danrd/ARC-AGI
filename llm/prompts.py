@@ -77,16 +77,24 @@ def find_upper_left_corner(grid_size:tuple)->tuple:
     j = min(14-(grid_size[1]%2)*((grid_size[1]//2)), 14-((grid_size[1]-1)%2)*(((grid_size[1]-1)//2)))
     return (i, j)
 
-def get_propmt_for_examples(task:ARCTask):
+def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int, max_tokens:int)->str:
     """Get representation for grids from examples."""
     examples = ""
+    tokens_number = tokens_number
     for idx, subtask in enumerate(task.subtasks):
         inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape)
         out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape)
-        examples += f'Example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
+        example = f'Example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
+        tokens_number += len(tokenizer.tokenize(example))
+        if tokens_number < max_tokens:
+            examples += example
+        elif tokens_number > max_tokens and idx <= 1:
+            return False
+        else:
+            break
     return examples
 
-def prepare_grid_for_prompt(grid:np.array, shape:tuple, concise=True):
+def prepare_grid_for_prompt(grid:np.array, shape:tuple, concise=True)->str:
     """Get representation for grid one grid from examples."""
     ul = find_upper_left_corner(shape)
     grid = copy.copy(grid[ul[0]:ul[0]+shape[0], ul[1]:ul[1]+shape[1]]*10)
@@ -105,45 +113,61 @@ def concise_grid_representation(grid:np.array):
         repr += '\n'
     return repr
 
-def examples_representation(task:ARCTask, prompts_modifications:dict):
+def examples_representation(task:ARCTask, tokenizer, tokens_number:int, max_tokens, prompts_modifications:dict)->str:
     """Get representation for grids from examples."""
     global EXAMPLES_TEMPLATE
     if "examples_repr" in prompts_modifications.keys():
         EXAMPLES_TEMPLATE = prompts_modifications["examples_repr"]
-    return EXAMPLES_TEMPLATE + get_propmt_for_examples(task)
+    tokens_number += len(tokenizer.tokenize(EXAMPLES_TEMPLATE))
+    examples_repr = get_propmt_for_examples(task, tokenizer, tokens_number, max_tokens)
+    if examples_repr:
+        return EXAMPLES_TEMPLATE + examples_repr
+    else:
+        return False
 
-def task_representation(task:ARCTask, prompts_modifications:dict):
+def task_representation(task:ARCTask, prompts_modifications:dict)->str:
     """Get representation for test grid."""
     global TASK_REPR
     if "task_repr" in prompts_modifications.keys():
         TASK_REPR = prompts_modifications["task_repr"]
     return TASK_REPR + repr(prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape))
 
-def compose_prompt(task:ARCTask, prompt_structure:List, prompts_modifications:dict):
+def compose_prompt(task:ARCTask, prompt_structure:List, prompts_modifications:dict, tokenizer, max_tokens)->str:
     """Compose prompts according to defined prompt structure."""
     global GENERAL_INSTRUCTION
     global GRID_DESCRIPTION
     global TASK_INSTRUCTION
     global OUTPUT_FORMAT
     final_prompt = ""
+    tokens_number = 0
     if "general_instruction" in prompt_structure:
         if "general_instruction" in prompts_modifications.keys():
-            GENERAL_INSTRUCTION =  prompts_modifications["general_instruction"]
-        final_prompt += f'[INSTRUCTION]{GENERAL_INSTRUCTION}[/INSTRUCTION]\n'
+            general_instruction =  prompts_modifications["general_instruction"]
+        general_instruction = f'[INSTRUCTION]{GENERAL_INSTRUCTION}[/INSTRUCTION]\n'
+        tokens_number += len(tokenizer.tokenize(general_instruction))
     if "grid_description" in prompt_structure:
         if "grid_description" in prompts_modifications.keys():
-            GRID_DESCRIPTION =  prompts_modifications["grid_description"]
-        final_prompt += f'[GRID_DESCRIPTION]{GRID_DESCRIPTION}[/GRID_DESCRIPTION]\n'
+            grid_description =  prompts_modifications["grid_description"]
+        grid_description = f'[GRID_DESCRIPTION]{GRID_DESCRIPTION}[/GRID_DESCRIPTION]\n'
+        tokens_number += len(tokenizer.tokenize(grid_description))
     if "task_instruction" in prompt_structure:
         if "task_instruction" in prompts_modifications.keys():
-            TASK_INSTRUCTION =  prompts_modifications["task_instruction"]
-        final_prompt += f'[TASK_INSTRUCTION]{TASK_INSTRUCTION}[/TASK_INSTRUCTION]\n'
-    if "examples_repr" in prompt_structure:
-        final_prompt += f'[EXAMPLES]{examples_representation(task, prompts_modifications)}[/EXAMPLES]\n'
+            task_instruction =  prompts_modifications["task_instruction"]
+        task_instruction = f'[TASK_INSTRUCTION]{TASK_INSTRUCTION}[/TASK_INSTRUCTION]\n'
+        tokens_number += len(tokenizer.tokenize(task_instruction))
     if "task_repr" in prompt_structure:
-        final_prompt += f'[TASK]{task_representation(task, prompts_modifications)}[/TASK]\n'
+        task_repr = f'[TASK]{task_representation(task, prompts_modifications)}[/TASK]\n'
+        tokens_number += len(tokenizer.tokenize(task_repr))
     if "output_format" in prompt_structure:
         if "output_format" in prompts_modifications.keys():
-            OUTPUT_FORMAT =  prompts_modifications["output_format"]
-        final_prompt += f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]'
-    return final_prompt
+            output_format =  prompts_modifications["output_format"]
+        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]'
+        tokens_number += len(tokenizer.tokenize(output_format))
+    if "examples_repr" in prompt_structure:
+        examples_repr = f'[EXAMPLES]{examples_representation(task, tokenizer, tokens_number, max_tokens, prompts_modifications)}[/EXAMPLES]\n'
+    if examples_repr:
+        for task_element in prompt_structure:
+            final_prompt += locals()[task_element]
+        return final_prompt
+    else:
+        return False

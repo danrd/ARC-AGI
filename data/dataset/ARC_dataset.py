@@ -140,8 +140,11 @@ class ARCDataset:
             ttt_tasks += aug_ttt_tasks
         return ttt_tasks
     
-def prepare_dataset(additional_datasets=False, augmentation=False,  
-                    ttt_augmentation=False, prompts_modifications={}, 
+def prepare_dataset(additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
+                                              'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
+                                              'tama_arc', 'com_arc'], 
+                    augmentation=False, ttt_augmentation=False, 
+                    prompts_modifications={}, 
                     cur_learning:bool=False, seed=42):
     """Prepare dataset creating prompts for all tasks."""
     ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation)
@@ -154,13 +157,15 @@ def prepare_dataset(additional_datasets=False, augmentation=False,
     if ttt_augmentation: 
         train_tasks_hard += ARC_dataset.ttt_tasks
     for train_task in train_tasks_easy:
-        train_text = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
-        train_task_dict = {'text':train_text, 'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
-        train_set_easy.append(train_task_dict)
+        train_text_easy = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
+        train_task_dict_easy = {'text':train_text_easy, 
+                                'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
+        train_set_easy.append(train_task_dict_easy)
     for train_task in train_tasks_hard:
-        train_text = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
-        train_task_dict = {'text':train_text, 'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
-        train_set_hard.append(train_task_dict)   
+        train_text_hard = compose_prompt(train_task, BASE_PROMPT, prompts_modifications)
+        train_task_dict_hard = {'text':train_text_hard, 
+                                'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, concise=False))}
+        train_set_hard.append(train_task_dict_hard)   
     for test_task in test_tasks:
         test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications)
         test_task_dict = {'text':test_text, 'solution':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, concise=False))}

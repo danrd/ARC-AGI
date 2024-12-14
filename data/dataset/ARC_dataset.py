@@ -64,7 +64,7 @@ class ARCDataset:
     def create_tasks(self, augmentation):
         """Create a list of tasks for current splitting setting."""
         tasks = []
-        aug_tasks = []
+        self.aug_tasks = []
         for idx, key in enumerate(self.tasks_keys):
             train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
             subtasks = []
@@ -76,9 +76,9 @@ class ARCDataset:
             tasks.append(task) 
             if augmentation:
                 aug_task = self.augment_task(subtasks, test_inp, test_out, key)
-                aug_tasks.extend(aug_task)
+                self.aug_tasks.extend(aug_task)
         if augmentation:
-            tasks += aug_tasks[0:5600] + aug_tasks[11200:] # excluding aug tasks for test set 
+            tasks += self.aug_tasks[0:5600] + self.aug_tasks[11200:] # excluding aug tasks for test set 
         return tasks
 
     def augment_task(self, subtasks:List[ARCSubtask], test_inp:np.array, 

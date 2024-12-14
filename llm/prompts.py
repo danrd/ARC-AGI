@@ -85,7 +85,7 @@ def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int, max_toke
         inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape)
         out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape)
         example = f'Example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
-        tokens_number += len(tokenizer.tokenize(example))
+        tokens_number += len(tokenizer.tokenize(example)) + 10
         if tokens_number < max_tokens:
             examples += example
         elif tokens_number > max_tokens and idx <= 1:

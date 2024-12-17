@@ -77,13 +77,14 @@ def find_upper_left_corner(grid_size:tuple)->tuple:
     j = min(14-(grid_size[1]%2)*((grid_size[1]//2)), 14-((grid_size[1]-1)%2)*(((grid_size[1]-1)//2)))
     return (i, j)
 
-def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int, max_tokens:int)->str:
+def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int, 
+                            max_tokens:int, grid_repr_type:str='ascii')->str:
     """Get representation for grids from examples."""
     examples = ""
     tokens_number = tokens_number
     for idx, subtask in enumerate(task.subtasks):
-        inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape)
-        out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape)
+        inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape, grid_repr_type)
+        out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape, grid_repr_type)
         example = f'Example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
         tokens_number += len(tokenizer.tokenize(example)) + 10
         if tokens_number < max_tokens:
@@ -94,12 +95,14 @@ def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int, max_toke
             break
     return examples
 
-def prepare_grid_for_prompt(grid:np.array, shape:tuple, concise=True)->str:
+def prepare_grid_for_prompt(grid:np.array, shape:tuple, grid_repr_type:str='ascii')->str:
     """Get representation for grid one grid from examples."""
     ul = find_upper_left_corner(shape)
     grid = copy.copy(grid[ul[0]:ul[0]+shape[0], ul[1]:ul[1]+shape[1]]*10)
-    if concise:
+    if grid_repr_type=='concise':
         return concise_grid_representation(grid)
+    elif grid_repr_type=='ascii':
+        return ascii_grid_representation(grid)
     else:
         return repr(grid.astype(int))
     
@@ -113,26 +116,42 @@ def concise_grid_representation(grid:np.array):
         repr += '\n'
     return repr
 
-def examples_representation(task:ARCTask, tokenizer, tokens_number:int, max_tokens, prompts_modifications:dict)->str:
+def ascii_grid_representation(grid:np.array):
+    """ASCII representation for numpy array without brackets and commas."""
+    repr = f'grid shape: {grid.shape[0]}x{grid.shape[1]}\n'
+    for i in range(grid.shape[0]):
+        for j in range(grid.shape[1]):
+            repr += f'{int(grid[i][j])}'
+            if j != grid.shape[1]-1:
+               repr += '|' 
+        repr += '\n'
+    return repr
+
+def examples_representation(task:ARCTask, tokenizer, tokens_number:int, 
+                            max_tokens, prompts_modifications:dict,
+                            grid_repr_type:str='ascii')->str:
     """Get representation for grids from examples."""
     global EXAMPLES_TEMPLATE
     if "examples_repr" in prompts_modifications.keys():
         EXAMPLES_TEMPLATE = prompts_modifications["examples_repr"]
     tokens_number += len(tokenizer.tokenize(EXAMPLES_TEMPLATE))
-    examples_repr = get_propmt_for_examples(task, tokenizer, tokens_number, max_tokens)
+    examples_repr = get_propmt_for_examples(task, tokenizer, tokens_number, 
+                                            max_tokens, grid_repr_type)
     if examples_repr:
         return EXAMPLES_TEMPLATE + examples_repr
     else:
         return False
 
-def task_representation(task:ARCTask, prompts_modifications:dict)->str:
+def task_representation(task:ARCTask, prompts_modifications:dict, grid_repr_type:str='ascii')->str:
     """Get representation for test grid."""
     global TASK_REPR
     if "task_repr" in prompts_modifications.keys():
         TASK_REPR = prompts_modifications["task_repr"]
-    return TASK_REPR + repr(prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape))
+    return TASK_REPR + repr(prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape, grid_repr_type))
 
-def compose_prompt(task:ARCTask, prompt_structure:List, prompts_modifications:dict, tokenizer, max_tokens)->str:
+def compose_prompt(task:ARCTask, prompt_structure:List, 
+                   prompts_modifications:dict, tokenizer, 
+                   max_tokens, grid_repr_type:str='ascii')->str:
     """Compose prompts according to defined prompt structure."""
     global GENERAL_INSTRUCTION
     global GRID_DESCRIPTION
@@ -156,7 +175,7 @@ def compose_prompt(task:ARCTask, prompt_structure:List, prompts_modifications:di
         task_instruction = f'[TASK_INSTRUCTION]{TASK_INSTRUCTION}[/TASK_INSTRUCTION]\n'
         tokens_number += len(tokenizer.tokenize(task_instruction))
     if "task_repr" in prompt_structure:
-        task_repr = f'[TASK]{task_representation(task, prompts_modifications)}[/TASK]\n'
+        task_repr = f'[TASK]{task_representation(task, prompts_modifications, grid_repr_type)}[/TASK]\n'
         tokens_number += len(tokenizer.tokenize(task_repr))
     if "output_format" in prompt_structure:
         if "output_format" in prompts_modifications.keys():
@@ -164,7 +183,7 @@ def compose_prompt(task:ARCTask, prompt_structure:List, prompts_modifications:di
         output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]'
         tokens_number += len(tokenizer.tokenize(output_format))
     if "examples_repr" in prompt_structure:
-        examples_repr = f'[EXAMPLES]{examples_representation(task, tokenizer, tokens_number, max_tokens, prompts_modifications)}[/EXAMPLES]\n'
+        examples_repr = f'[EXAMPLES]{examples_representation(task, tokenizer, tokens_number, max_tokens, prompts_modifications, grid_repr_type)}[/EXAMPLES]\n'
     if examples_repr:
         for task_element in prompt_structure:
             final_prompt += locals()[task_element]

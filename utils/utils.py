@@ -27,7 +27,7 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False
     return
 
- def create_saving_path(model:str)->str:
+def create_saving_path(model:str)->str:
     dest_dir = os.getcwd() + '/data/pretrained_models/'
     existed_filed_names = os.listdir(dest_dir)
     max_version = 0

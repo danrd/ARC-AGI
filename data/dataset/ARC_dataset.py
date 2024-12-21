@@ -16,7 +16,7 @@ class ARCDataset:
                  augmentation:bool=False, ttt_augmentation:bool=False):
         self.load_dataset(additional_datasets)
         self.tasks = self.create_tasks(augmentation)
-        self.hard_tasks, self.easy_tasks = self.difficulty_filter()
+        self.easy_tasks, self.hard_tasks = self.difficulty_filter()
         if ttt_augmentation:
             self.ttt_tasks = self.ttt_augmentation(augmentation)
     

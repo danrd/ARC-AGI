@@ -27,6 +27,18 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False
     return
 
+ def create_saving_path(model:str)->str:
+    dest_dir = os.getcwd() + '/data/pretrained_models/'
+    existed_filed_names = os.listdir(dest_dir)
+    max_version = 0
+    for file_name in existed_filed_names:
+        if model in file_name:
+            prev_version = int(file_name.split('arc_v')[1])
+            if prev_version > max_version:
+                max_version = prev_version
+    path = dest_dir + model.split('/')[1] + f'_arc_v{max_version+1}'
+    return path    
+
 class TaskIterator:
     def __init__(self, start=0, end=0, tasks_keys=False):
         self.current = start

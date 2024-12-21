@@ -196,7 +196,7 @@ def prepare_dataset(tokenizer,
     test_dataset = Dataset.from_pandas(test_df).shuffle(seed=seed)
     dataset = DatasetDict({'train':train_dataset, 'test':test_dataset}) 
     print(f"Train set: {len(dataset['train'])} examples\n Test set: {len(dataset['test'])} examples\n")
-    print(f"Number of train filtered out examples: {rejected_train}\n Number of train filtered out examples: {rejected_test}")  
+    print(f"Number of train filtered out examples: {rejected_train}\nNumber of test filtered out examples: {rejected_test}")  
     return dataset
 
 def augment_grid(grid:np.array)->List[np.array]:

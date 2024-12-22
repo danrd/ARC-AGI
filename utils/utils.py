@@ -29,14 +29,16 @@ def seed_everything(seed=42):
 
 def create_saving_path(model:str)->str:
     dest_dir = os.getcwd() + '/data/pretrained_models/'
+    model_name = model.split('/')[1]
+    dest_dir = os.getcwd() + '/data/pretrained_models/'
     existed_filed_names = os.listdir(dest_dir)
     max_version = 0
     for file_name in existed_filed_names:
-        if model in file_name:
+        if model_name in file_name:
             prev_version = int(file_name.split('arc_v')[1])
             if prev_version > max_version:
                 max_version = prev_version
-    path = dest_dir + model.split('/')[1] + f'_arc_v{max_version+1}'
+    path = dest_dir + model_name + f'_arc_v{max_version+1}'
     return path    
 
 class TaskIterator:

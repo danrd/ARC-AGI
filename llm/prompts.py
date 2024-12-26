@@ -159,6 +159,7 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
     global OUTPUT_FORMAT
     final_prompt = ""
     tokens_number = 0
+    examples_repr = False
     if "general_instruction" in prompt_structure:
         if "general_instruction" in prompts_modifications.keys():
             general_instruction =  prompts_modifications["general_instruction"]

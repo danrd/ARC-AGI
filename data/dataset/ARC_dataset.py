@@ -13,8 +13,8 @@ class ARCDataset:
     def __init__(self, additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
                                                 'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
                                                 'tama_arc', 'com_arc'], 
-                 augmentation:bool=False, ttt_augmentation:bool=False):
-        self.load_dataset(additional_datasets)
+                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False):
+        self.load_dataset(additional_datasets, filter_tasks)
         self.tasks = self.create_tasks(augmentation)
         self.easy_tasks, self.hard_tasks = self.difficulty_filter()
         if ttt_augmentation:
@@ -31,7 +31,7 @@ class ARCDataset:
         test_out = np.array(self.training_solutions[task_key][0])
         return train_inp, train_out, test_inp, test_out
     
-    def load_dataset(self, additional_datasets):
+    def load_dataset(self, additional_datasets, filter_tasks):
         """Load dataset files and set splitting for training.
         Parameters
         ----------
@@ -51,9 +51,12 @@ class ARCDataset:
         self.task2dataset = {key : 'arc' for key in self.tasks_keys}
         self.datasets['arc'] = {'challenges':self.training_challenges, 'solutions':self.training_solutions, 'keys': self.tasks_keys}
         if additional_datasets:
+            rejected_tasks = load_json('data/additional_datasets/rejected_tasks.json')
             for dataset in additional_datasets:
                 dataset_challenges = load_json(f'data/additional_datasets/{dataset}/{dataset}_challenges.json')
                 dataset_solutions = load_json(f'data/additional_datasets/{dataset}/{dataset}_solutions.json')
+                if filter_tasks and dataset in rejected_tasks.keys():
+                   dataset_challenges, dataset_solutions = self.filter_tasks(dataset_challenges, dataset_solutions, rejected_tasks[dataset])
                 dataset_tasks_keys = list(dataset_challenges.keys())
                 self.datasets[dataset] = {'challenges':dataset_challenges, 'solutions':dataset_solutions, 'keys':dataset_tasks_keys}
                 self.task2dataset |= {key : dataset for key in dataset_tasks_keys}
@@ -61,6 +64,14 @@ class ARCDataset:
                 self.training_solutions |= dataset_solutions
                 self.tasks_keys.extend(dataset_tasks_keys)
     
+    @staticmethod
+    def filter_tasks(challenges, solutions, rejected_tasks):
+        for key in challenges.keys():
+            if key in rejected_tasks:
+               del challenges[key]
+               del solutions[key]
+        return challenges, solutions 
+
     def create_tasks(self, augmentation):
         """Create a list of tasks for current splitting setting."""
         tasks = []
@@ -144,15 +155,15 @@ class ARCDataset:
         return ttt_tasks
     
 def prepare_dataset(tokenizer,
-                    additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
-                                              'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
-                                              'tama_arc', 'com_arc'], 
+                    additional_datasets=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
+                                         'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
+                                         'tama_arc', 'com_arc'], 
                     augmentation=False, ttt_augmentation=False, 
                     prompts_modifications={}, max_tokens:int=None,
                     cur_learning:bool=False, seed:int=42,
-                    grid_repr_type:str='ascii'):
+                    grid_repr_type:str='ascii', filter_tasks:bool=False):
     """Prepare dataset creating prompts for all tasks."""
-    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation)
+    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks)
     train_set_easy = []
     train_set_hard = []
     test_set = []
@@ -167,7 +178,7 @@ def prepare_dataset(tokenizer,
         train_text_easy = compose_prompt(train_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
         if train_text_easy:
             train_task_dict_easy = {'text':train_text_easy, 
-                                    'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
+                                    'labels':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
             train_set_easy.append(train_task_dict_easy)
         else:
             rejected_train += 1
@@ -175,21 +186,21 @@ def prepare_dataset(tokenizer,
         train_text_hard = compose_prompt(train_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
         if train_text_hard:
             train_task_dict_hard = {'text':train_text_hard, 
-                                    'solution':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
+                                    'labels':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
             train_set_hard.append(train_task_dict_hard)   
         else:
             rejected_train += 1
     for test_task in tqdm(test_tasks):
         test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
         if test_text:
-            test_task_dict = {'text':test_text, 'solution':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, grid_repr_type))}
+            test_task_dict = {'text':test_text, 'labels':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, grid_repr_type))}
             test_set.append(test_task_dict)
         else:
             rejected_test += 1 
     train_df_easy = pd.DataFrame(train_set_easy).sample(frac=1)
     train_df_hard = pd.DataFrame(train_set_hard).sample(frac=1)
-    test_df = pd.DataFrame(test_set).sample(frac=1)
-    train_df = pd.concat([train_df_easy, train_df_hard], ignore_index = True)
+    test_df = pd.DataFrame(test_set).sample(frac=1).reset_index(drop=True)
+    train_df = pd.concat([train_df_easy, train_df_hard], ignore_index = True).reset_index(drop=True)
     train_dataset = Dataset.from_pandas(train_df)
     if not cur_learning:
         train_dataset.shuffle(seed=seed)

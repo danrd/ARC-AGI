@@ -108,7 +108,7 @@ class ProgressCallback(TrainerCallback):
             self.training_bar.close()
             self.training_bar = None
 
-class LightningProgressCallback(Callback):
+class PLProgressCallback(Callback):
     """
     A PyTorch Lightning callback that displays the progress of training or evaluation.
     You can modify `max_str_len` to control how long strings are truncated when logging.

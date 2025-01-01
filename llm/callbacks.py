@@ -114,13 +114,14 @@ class PLProgressCallback(Callback):
     You can modify `max_str_len` to control how long strings are truncated when logging.
     """
 
-    def __init__(self, output_dir, tokenizer, max_str_len: int = 2000):
+    def __init__(self, output_dir, tokenizer, max_str_len:int=2000, 
+                 training_bar=None, prediction_bar=None):
         """
         Initialize the callback with optional max_str_len parameter to control string truncation length.
         """
         super().__init__()
-        self.training_bar = None
-        self.prediction_bar = None
+        self.training_bar = training_bar
+        self.prediction_bar = prediction_bar
         self.max_str_len = max_str_len
         self.output_dir = output_dir
         self.tokenizer = tokenizer

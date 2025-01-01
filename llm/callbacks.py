@@ -126,102 +126,55 @@ class PLProgressCallback(Callback):
         self.output_dir = output_dir
         self.tokenizer = tokenizer
         os.makedirs(output_dir, exist_ok=True)
-
-    def on_fit_start(self, trainer, pl_module):
-        self._init_progress_bar(trainer)
-
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        if self.training_bar is not None:
-            self.training_bar.update(1)
-
-    def on_validation_start(self, trainer, pl_module):
-        self._init_prediction_bar(trainer)
+        self.predictions = []
+        self.references = []
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        if self.prediction_bar is not None:
-            self.prediction_bar.update(1)
-
-    def on_test_start(self, trainer, pl_module):
-        self._init_prediction_bar(trainer)
+        self._accumulate_predictions(trainer, pl_module, batch)
 
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        if self.prediction_bar is not None:
-            self.prediction_bar.update(1)
-
-    def on_predict_start(self, trainer, pl_module):
-        self._init_prediction_bar(trainer)
+        self._accumulate_predictions(trainer, pl_module, batch)
 
     def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        if self.prediction_bar is not None:
-            self.prediction_bar.update(1)
+        self._accumulate_predictions(trainer, pl_module, batch)
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        self._save_predictions(trainer, pl_module)
+        self._write_predictions(trainer, "validation")
 
     def on_test_epoch_end(self, trainer, pl_module):
-        self._save_predictions(trainer, pl_module)
+        self._write_predictions(trainer, "test")
 
     def on_predict_epoch_end(self, trainer, pl_module):
-        self._save_predictions(trainer, pl_module)
+        self._write_predictions(trainer, "predict")
 
-    def on_fit_end(self, trainer, pl_module):
-        self._close_progress_bars()
-
-    def on_train_end(self, trainer, pl_module):
-        self._close_progress_bars()
-
-    def _init_progress_bar(self, trainer):
-        if trainer.state.fn == TrainerFn.FITTING:
-            if trainer.is_global_zero:
-                self.training_bar = tqdm(total=trainer.estimated_stepping_batches, dynamic_ncols=True)
-            self.current_step = 0
-
-    def _init_prediction_bar(self, trainer):
-        if trainer.state.fn in [TrainerFn.VALIDATING, TrainerFn.TESTING, TrainerFn.PREDICTING]:
-            if trainer.is_global_zero:
-                self.prediction_bar = tqdm(total=len(trainer.datamodule.val_dataloader()), dynamic_ncols=True)
-            self.current_step = 0
-
-    def _save_predictions(self, trainer, pl_module):
-        # This function would need to be implemented based on your specific needs.
-        # Here's a basic structure to get you started.
+    def _accumulate_predictions(self, trainer, pl_module, batch):
         model = pl_module.model
-        predictions = []
-        references = []
+        inputs = batch["input_ids"].to(pl_module.device)
+        attention_mask = batch["attention_mask"].to(pl_module.device)
 
-        dataloader = trainer.datamodule.val_dataloader()  # or test_dataloader() depending on the context
-        model.eval()
-        for batch in dataloader:
-            inputs = batch["input_ids"].to(pl_module.device)
-            attention_mask = batch["attention_mask"].to(pl_module.device)
+        # Generate predictions
+        with torch.no_grad():
+            outputs = model.generate(
+                input_ids=inputs,
+                attention_mask=attention_mask,
+                max_length=4048,
+            )
 
-            # Generate predictions
-            with torch.no_grad():
-                outputs = model.generate(
-                    input_ids=inputs,
-                    attention_mask=attention_mask,
-                    max_length=4048,
-                )
+        # Decode predictions and references
+        decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        decoded_refs = self.tokenizer.batch_decode(batch["labels"], skip_special_tokens=True)
 
-            # Decode predictions and references
-            decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            decoded_refs = self.tokenizer.batch_decode(batch["labels"], skip_special_tokens=True)
+        self.predictions.extend(decoded_preds)
+        self.references.extend(decoded_refs)
 
-            predictions.extend(decoded_preds)
-            references.extend(decoded_refs)
-
+    def _write_predictions(self, trainer, mode):
         # Save predictions and references to a file
-        output_file = os.path.join(self.output_dir, f"predictions_{trainer.state.fn}_{trainer.current_epoch}.json")
+        output_file = os.path.join(self.output_dir, f"predictions_{mode}_{trainer.current_epoch}.json")
         with open(output_file, "w") as f:
-            json.dump({"predictions": predictions, "references": references}, f, indent=4)
+            json.dump({"predictions": self.predictions, "references": self.references}, f, indent=4)
 
         print(f"Predictions saved to {output_file}")
 
-    def _close_progress_bars(self):
-        if self.training_bar is not None:
-            self.training_bar.close()
-            self.training_bar = None
-
-        if self.prediction_bar is not None:
-            self.prediction_bar.close()
-            self.prediction_bar = None
+        # Reset predictions and references for the next epoch
+        self.predictions = []
+        self.references = []

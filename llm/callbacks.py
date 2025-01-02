@@ -148,6 +148,7 @@ class PLProgressCallback(Callback):
         self._write_predictions(trainer, "predict")
 
     def _accumulate_predictions(self, trainer, pl_module, batch):
+        print('hi')
         model = pl_module.model
         inputs = batch["input_ids"].to(pl_module.device)
         attention_mask = batch["attention_mask"].to(pl_module.device)
@@ -168,6 +169,7 @@ class PLProgressCallback(Callback):
         self.references.extend(decoded_refs)
 
     def _write_predictions(self, trainer, mode):
+        print('hi')
         # Save predictions and references to a file
         output_file = os.path.join(self.output_dir, f"predictions_{mode}_{trainer.current_epoch}.json")
         with open(output_file, "w") as f:

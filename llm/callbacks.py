@@ -130,13 +130,13 @@ class PLProgressCallback(Callback):
         self.references = []
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        self._accumulate_predictions(trainer, pl_module, batch)
+        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        self._accumulate_predictions(trainer, pl_module, batch)
+        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
     def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        self._accumulate_predictions(trainer, pl_module, batch)
+        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
     def on_validation_epoch_end(self, trainer, pl_module):
         self._write_predictions(trainer, "validation")

@@ -128,7 +128,7 @@ class PLProgressCallback(Callback):
         os.makedirs(output_dir, exist_ok=True)
         self.predictions = []
         self.references = []
-
+        
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
@@ -138,16 +138,16 @@ class PLProgressCallback(Callback):
     def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
-    def on_validation_epoch_end(self, trainer, pl_module):
+    def on_validation_epoch_end(self, trainer, pl_module, outputs):
         self._write_predictions(trainer, "validation")
 
-    def on_test_epoch_end(self, trainer, pl_module):
+    def on_test_epoch_end(self, trainer, pl_module, outputs):
         self._write_predictions(trainer, "test")
 
-    def on_predict_epoch_end(self, trainer, pl_module):
+    def on_predict_epoch_end(self, trainer, pl_module, outputs):
         self._write_predictions(trainer, "predict")
 
-    def _accumulate_predictions(self, trainer, pl_module, batch):
+    def _accumulate_predictions(self, trainer, pl_module, batch, dataloader_idx):
         print('hi')
         model = pl_module.model
         inputs = batch["input_ids"].to(pl_module.device)

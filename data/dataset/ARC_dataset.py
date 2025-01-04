@@ -163,9 +163,10 @@ def prepare_dataset(tokenizer,
                     augmentation=False, ttt_augmentation=False, 
                     prompts_modifications={}, max_tokens:int=None,
                     cur_learning:bool=False, seed:int=42,
-                    grid_repr_type:str='ascii', filter_tasks:bool=False):
+                    grid_repr_type:str='ascii', filter_tasks:bool=False,
+                    validate:bool=False):
     """Prepare dataset creating prompts for all tasks."""
-    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks)
+    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks, validate)
     train_set_easy = []
     train_set_hard = []
     test_set = []
@@ -180,7 +181,7 @@ def prepare_dataset(tokenizer,
         train_text_easy = compose_prompt(train_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
         if train_text_easy:
             train_task_dict_easy = {'text':train_text_easy, 
-                                    'labels':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
+                                    'label_ids':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
             train_set_easy.append(train_task_dict_easy)
         else:
             rejected_train += 1
@@ -188,14 +189,14 @@ def prepare_dataset(tokenizer,
         train_text_hard = compose_prompt(train_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
         if train_text_hard:
             train_task_dict_hard = {'text':train_text_hard, 
-                                    'labels':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
+                                    'label_ids':repr(prepare_grid_for_prompt(train_task.test_subtask.train_out, train_task.test_subtask.train_out_shape, grid_repr_type))}
             train_set_hard.append(train_task_dict_hard)   
         else:
             rejected_train += 1
     for test_task in tqdm(test_tasks):
         test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
         if test_text:
-            test_task_dict = {'text':test_text, 'labels':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, grid_repr_type))}
+            test_task_dict = {'text':test_text, 'label_ids':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, grid_repr_type))}
             test_set.append(test_task_dict)
         else:
             rejected_test += 1 

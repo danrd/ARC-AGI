@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from utils.utils import load_json
+from symbolic.utils import augment_grid
 from datasets import Dataset, DatasetDict
 from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
@@ -13,7 +14,8 @@ class ARCDataset:
     def __init__(self, additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
                                                 'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
                                                 'tama_arc', 'com_arc'], 
-                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False):
+                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False, validate:bool=False):
+        self.validate = validate
         self.load_dataset(additional_datasets, filter_tasks)
         self.tasks = self.create_tasks(augmentation)
         self.easy_tasks, self.hard_tasks = self.difficulty_filter()
@@ -76,17 +78,17 @@ class ARCDataset:
         """Create a list of tasks for current splitting setting."""
         tasks = []
         self.aug_tasks = []
-        for idx, key in enumerate(self.tasks_keys):
+        for idx, key in enumerate(self.tasks_keys[0:]):
             train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
             subtasks = []
             for i in range(len(train_inp)):
                 label = f'{key}_{i}'
-                subtask = ARCSubtask(label, train_inp[i], train_out[i])
+                subtask = ARCSubtask(label, train_inp[i], train_out[i], self.validate)
                 subtasks.append(subtask)
-            task = ARCTask(key, subtasks, test_inp, test_out)
+            task = ARCTask(key, subtasks, test_inp, test_out, self.validate)
             tasks.append(task) 
             if augmentation:
-                aug_task = self.augment_task(subtasks, test_inp, test_out, key)
+                aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, key)
                 self.aug_tasks.extend(aug_task)
         if augmentation:
             tasks += self.aug_tasks[0:5600] + self.aug_tasks[11200:] # excluding aug tasks for test set 
@@ -104,14 +106,14 @@ class ARCDataset:
             train_out_aug_grids = augment_grid(subtask.train_out)
             for j in range(14):
                 label = f'{aug_key}_{j}'
-                new_subtask = ARCSubtask(label, train_inp_aug_grids[j], train_out_aug_grids[j])
+                new_subtask = ARCSubtask(label, train_inp_aug_grids[j], train_out_aug_grids[j], self.validate)
                 aug_subtasks[j].append(new_subtask)
         test_inp_aug_grids = augment_grid(test_inp)
         test_out_aug_grids = augment_grid(test_out)
         for i in range(14):
             key = f'{aug_key}_{i}'
             self.task2difficulty[key] = difficulty
-            task = ARCTask(key, aug_subtasks[i], test_inp_aug_grids[i], test_out_aug_grids[i])
+            task = ARCTask(key, aug_subtasks[i], test_inp_aug_grids[i], test_out_aug_grids[i], self.validate)
             aug_tasks.append(task)
         return aug_tasks
 
@@ -141,14 +143,14 @@ class ARCDataset:
             subtasks = []
             for i in range(n-1):
                 label = f'{ttt_key}_{i}'
-                subtask = ARCSubtask(label, train_inp[i], train_out[i])
+                subtask = ARCSubtask(label, train_inp[i], train_out[i], self.validate)
                 subtasks.append(subtask)
             difficulty = self.task2difficulty[key]
             self.task2difficulty[ttt_key] = difficulty
-            task = ARCTask(ttt_key, subtasks, test_inp, test_out)
+            task = ARCTask(ttt_key, subtasks, test_inp, test_out, self.validate)
             ttt_tasks.append(task) 
             if augmentation:
-                aug_task = self.augment_task(subtasks, test_inp, test_out, key)
+                aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, key)
                 aug_ttt_tasks.extend(aug_task)
         if augmentation:
             ttt_tasks += aug_ttt_tasks
@@ -209,15 +211,3 @@ def prepare_dataset(tokenizer,
     print(f"Train set: {len(dataset['train'])} examples\n Test set: {len(dataset['test'])} examples\n")
     print(f"Number of train filtered out examples: {rejected_train}\nNumber of test filtered out examples: {rejected_test}")  
     return dataset
-
-def augment_grid(grid:np.array)->List[np.array]:
-    new_grids = []
-    new_grids.append(np.rot90(grid,k=1))
-    new_grids.append(np.rot90(grid,k=2))
-    new_grids.append(np.rot90(grid,k=3))
-    new_grids.append(np.fliplr(grid))
-    new_grids.append(np.flipud(grid))
-    for inc in range(1, 10):
-        new_grid = grid * 10
-        new_grids.append(((new_grid+inc)%10)/10)
-    return new_grids

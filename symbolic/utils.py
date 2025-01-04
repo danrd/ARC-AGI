@@ -204,3 +204,40 @@ def crop_pad(grid:np.array)->np.array:
     j_shape = max(j) - min(j) + 1
     croped_grid = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape))
     return croped_grid
+
+def adjust_grid_shape(grid:np.array, target_shape:tuple=(30,30), pad_value:int=10, normalize:bool=True)->np.array:
+    """Transform any grid to target shape with padding."""
+    shape_x = grid.shape[0]
+    shape_y = grid.shape[1]
+    target_x = target_shape[0]
+    target_y = target_shape[1]
+    reshaped_grid = copy.copy(grid)
+    if shape_x!=target_x or shape_y!=target_y:
+        left_pad = (target_x-shape_x)//2
+        right_pad = target_x - shape_x - left_pad
+        upper_pad = (target_y-shape_y)//2
+        down_pad = target_y - shape_y - upper_pad
+        reshaped_grid = np.pad(grid, pad_width=[(left_pad,right_pad), (upper_pad, down_pad)], constant_values=pad_value)
+    if normalize:
+        reshaped_grid = reshaped_grid/10
+    return reshaped_grid 
+
+def augment_grid(grid:np.array)->List[np.array]:
+    new_grids = []
+    new_grids.append((np.rot90(grid,k=1)*10).astype(int))
+    new_grids.append((np.rot90(grid,k=2)*10).astype(int))
+    new_grids.append((np.rot90(grid,k=3)*10).astype(int))
+    new_grids.append((np.fliplr(grid)*10).astype(int))
+    new_grids.append((np.flipud(grid)*10).astype(int))
+    new_grid = crop_pad((grid*10).astype(int))
+    for inc in range(1, 10):
+        grid_recolored = ((new_grid+inc)%10).astype(int)
+        new_grids.append(grid_recolored)
+    return new_grids
+
+def check_grid_values(grid:np.array):
+    """Check grid values for validity."""
+    check = (grid >= 0) * (grid <= 1)
+    for v in range(1, 10):
+        check *= grid != v * 0.01
+    return np.all(check)

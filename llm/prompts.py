@@ -29,6 +29,30 @@ Groups of identically colored cells form objects: lines, rectangles, diagonals a
 Each object has its own color, size and specific position on the grid.
 """
 
+CLAUDE_INSTRUCTION = f"""
+You are an advanced pattern recognition AI specialized in solving abstract reasoning challenges. Your primary objective is to:
+- Decompose the grid into distinct object groups
+- Analyze spatial, color, and structural transformations
+- Identify invariant and variant properties
+- Generalize a minimal set of rules explaining the transformation
+- Predict the most likely output grid based on learned rules
+Reasoning steps:
+1. Object Identification
+   - Segment grid into color-based objects
+   - Note object boundaries, shapes, and positions
+2. Transformation Analysis
+   - Compare input and output grid differences
+   - Classify transformation types:
+     * Color changes
+     * Position shifts
+     * Shape modifications
+     * Symmetry/asymmetry patterns
+3. Rule Generalization
+   - Formulate a concise set of transformation rules
+   - Validate rules against all provided examples
+   - Apply rules to predict the output grid
+"""
+
 TASK_INSTRUCTION = f"""
 Firstly, the most important thing for task solving is to compare each input and output grid pairs.
 Based on that you can deduce that task implies size change. 
@@ -64,9 +88,8 @@ HINTS = f"""Most probably you need to deal with font coloring type of puzzle. Th
 """
 
 OUTPUT_FORMAT = f"""
-Return only output grid as numpy array.
+Return only output grid as numpy array without any explanation.
 Example: array([[1, 2, 3, 4, 5],\n [6, 7, 8, 9, 10]\n]). 
-Do not provide any additional information.
 """
 
 def find_upper_left_corner(grid_size:tuple)->tuple:

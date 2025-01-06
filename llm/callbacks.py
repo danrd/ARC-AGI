@@ -137,6 +137,7 @@ class PLProgressCallback(Callback):
         pl_module: "pl.LightningModule",
         outputs,
         batch,
+        random_param,
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> None:

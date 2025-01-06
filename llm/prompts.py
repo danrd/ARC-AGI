@@ -90,6 +90,7 @@ HINTS = f"""Most probably you need to deal with font coloring type of puzzle. Th
 OUTPUT_FORMAT = f"""
 Return only output grid as numpy array without any explanation.
 Example: array([[1, 2, 3, 4, 5],\n [6, 7, 8, 9, 10]\n]). 
+Answer: array([[
 """
 
 def find_upper_left_corner(grid_size:tuple)->tuple:
@@ -172,7 +173,8 @@ def task_representation(task:ARCTask, prompts_modifications:dict, grid_repr_type
 
 def compose_prompt(task:ARCTask, prompt_structure:List, 
                    prompts_modifications:dict, tokenizer, 
-                   max_tokens, grid_repr_type:str='ascii')->str:
+                   max_tokens, grid_repr_type:str='ascii',
+                   train_example:bool=True)->str:
     """Compose prompts according to defined prompt structure."""
     global GENERAL_INSTRUCTION
     global GRID_DESCRIPTION
@@ -204,11 +206,15 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
             output_format =  prompts_modifications["output_format"]
         output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]'
         tokens_number += len(tokenizer.tokenize(output_format))
+    # if train_example:
+    #   tokens_number += len(tokenizer.tokenize(task.test_subtask.train_out))  
     if "examples_repr" in prompt_structure:
         examples_repr = f'[EXAMPLES]{examples_representation(task, tokenizer, tokens_number, max_tokens, prompts_modifications, grid_repr_type)}[/EXAMPLES]\n'
     if examples_repr:
         for task_element in prompt_structure:
             final_prompt += locals()[task_element]
+        # if train_example:
+        #    final_prompt += ascii_grid_representation(task.test_subtask.train_out)
         return final_prompt
     else:
         return False

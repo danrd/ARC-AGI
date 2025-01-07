@@ -129,19 +129,8 @@ class PLProgressCallback(Callback):
         self.predictions = []
         self.references = []
         
-    # def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-    #     self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
-    def on_validation_batch_end(
-        self,
-        trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
-        outputs,
-        batch,
-        random_param,
-        batch_idx: int,
-        dataloader_idx: int = 0,
-    ) -> None:
-        """Called when the validation batch ends."""
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)

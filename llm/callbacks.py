@@ -129,22 +129,22 @@ class PLProgressCallback(Callback):
         self.predictions = []
         self.references = []
         
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
-    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
-    def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
 
-    def on_validation_epoch_end(self, trainer, pl_module, outputs):
+    def on_validation_epoch_end(self, trainer, pl_module):
         self._write_predictions(trainer, "validation")
 
-    def on_test_epoch_end(self, trainer, pl_module, outputs):
+    def on_test_epoch_end(self, trainer, pl_module):
         self._write_predictions(trainer, "test")
 
-    def on_predict_epoch_end(self, trainer, pl_module, outputs):
+    def on_predict_epoch_end(self, trainer, pl_module):
         self._write_predictions(trainer, "predict")
 
     def _accumulate_predictions(self, trainer, pl_module, batch, dataloader_idx):

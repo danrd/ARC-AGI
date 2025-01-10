@@ -139,5 +139,32 @@ class PLProgressCallback(Callback):
             outputs = model.generate(
                 input_ids=inputs,
                 attention_mask=attention_mask,
-                max_new_tokens=2000,
+                max_new_tokens=512,  # Reduced from 2000
             )
+
+        # Move outputs to CPU to free GPU memory
+        outputs = outputs.cpu()
+        batch["labels"] = batch["labels"].cpu()
+
+        # Decode predictions and references
+        decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        decoded_refs = self.tokenizer.batch_decode(batch["labels"], skip_special_tokens=True)
+
+        # Save predictions and references incrementally
+        output_file = os.path.join(self.output_dir, f"predictions_{mode}_{trainer.current_epoch}.jsonl")
+        with open(output_file, "a") as f:
+            for pred, ref in zip(decoded_preds, decoded_refs):
+                json.dump({"prediction": pred, "reference": ref}, f)
+                f.write("\n")
+
+        # Clear CUDA cache to free up memory
+        torch.cuda.empty_cache()
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        print(f"Validation predictions saved for epoch {trainer.current_epoch}")
+
+    def on_test_epoch_end(self, trainer, pl_module):
+        print(f"Test predictions saved for epoch {trainer.current_epoch}")
+
+    def on_predict_epoch_end(self, trainer, pl_module):
+        print(f"Prediction results saved for epoch {trainer.current_epoch}")

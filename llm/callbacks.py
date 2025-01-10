@@ -149,8 +149,8 @@ class PLProgressCallback(Callback):
 
     def _accumulate_predictions(self, trainer, pl_module, batch, dataloader_idx):
         model = pl_module.model
-        inputs = batch["input_ids"].to(pl_module.device)
-        attention_mask = batch["attention_mask"].to(pl_module.device)
+        inputs = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
 
         # Generate predictions
         with torch.no_grad():

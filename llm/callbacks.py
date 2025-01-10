@@ -110,44 +110,26 @@ class ProgressCallback(TrainerCallback):
 
 class PLProgressCallback(Callback):
     """
-    A PyTorch Lightning callback that displays the progress of training or evaluation.
-    You can modify `max_str_len` to control how long strings are truncated when logging.
+    A PyTorch Lightning callback that saves predictions incrementally to avoid memory issues.
     """
 
-    def __init__(self, output_dir, tokenizer, max_str_len:int=2000, 
-                 training_bar=None, prediction_bar=None):
-        """
-        Initialize the callback with optional max_str_len parameter to control string truncation length.
-        """
+    def __init__(self, output_dir, tokenizer, max_str_len=2000):
         super().__init__()
-        self.training_bar = training_bar
-        self.prediction_bar = prediction_bar
         self.max_str_len = max_str_len
         self.output_dir = output_dir
         self.tokenizer = tokenizer
         os.makedirs(output_dir, exist_ok=True)
-        self.predictions = []
-        self.references = []
-        
+
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
+        self._process_batch(trainer, pl_module, batch, batch_idx, "validation")
 
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
+        self._process_batch(trainer, pl_module, batch, batch_idx, "test")
 
     def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        self._accumulate_predictions(trainer, pl_module, batch, dataloader_idx)
+        self._process_batch(trainer, pl_module, batch, batch_idx, "predict")
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        self._write_predictions(trainer, "validation")
-
-    def on_test_epoch_end(self, trainer, pl_module):
-        self._write_predictions(trainer, "test")
-
-    def on_predict_epoch_end(self, trainer, pl_module):
-        self._write_predictions(trainer, "predict")
-
-    def _accumulate_predictions(self, trainer, pl_module, batch, dataloader_idx):
+    def _process_batch(self, trainer, pl_module, batch, batch_idx, mode):
         model = pl_module.model
         inputs = batch["input_ids"]
         attention_mask = batch["attention_mask"]
@@ -159,22 +141,3 @@ class PLProgressCallback(Callback):
                 attention_mask=attention_mask,
                 max_new_tokens=2000,
             )
-
-        # Decode predictions and references
-        decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        decoded_refs = self.tokenizer.batch_decode(batch["labels"], skip_special_tokens=True)
-
-        self.predictions.extend(decoded_preds)
-        self.references.extend(decoded_refs)
-
-    def _write_predictions(self, trainer, mode):
-        # Save predictions and references to a file
-        output_file = os.path.join(self.output_dir, f"predictions_{mode}_{trainer.current_epoch}.json")
-        with open(output_file, "w") as f:
-            json.dump({"predictions": self.predictions, "references": self.references}, f, indent=4)
-
-        print(f"Predictions saved to {output_file}")
-
-        # Reset predictions and references for the next epoch
-        self.predictions = []
-        self.references = []

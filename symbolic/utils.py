@@ -224,12 +224,12 @@ def adjust_grid_shape(grid:np.array, target_shape:tuple=(30,30), pad_value:int=1
 
 def augment_grid(grid:np.array)->List[np.array]:
     new_grids = []
-    new_grids.append((np.rot90(grid,k=1)*10).astype(int))
-    new_grids.append((np.rot90(grid,k=2)*10).astype(int))
-    new_grids.append((np.rot90(grid,k=3)*10).astype(int))
-    new_grids.append((np.fliplr(grid)*10).astype(int))
-    new_grids.append((np.flipud(grid)*10).astype(int))
     new_grid = crop_pad((grid*10).astype(int))
+    new_grids.append(np.rot90(new_grid,k=1))
+    new_grids.append(np.rot90(new_grid,k=2))
+    new_grids.append(np.rot90(new_grid,k=3))
+    new_grids.append(np.fliplr(new_grid))
+    new_grids.append(np.flipud(new_grid))
     for inc in range(1, 10):
         grid_recolored = ((new_grid+inc)%10).astype(int)
         new_grids.append(grid_recolored)

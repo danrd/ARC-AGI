@@ -63,13 +63,16 @@ class ProgressCallback(TrainerCallback):
                     attention_mask=attention_mask,
                     max_length=4048,
                 )
-
+            
             # Decode predictions and references
             decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
             decoded_refs = self.tokenizer.batch_decode(batch["labels"], skip_special_tokens=True)
 
             predictions.extend(decoded_preds)
             references.extend(decoded_refs)
+
+
+            
 
         # Save predictions and references to a file
         output_file = os.path.join(self.output_dir, f"predictions_eval_step_{state.global_step}.json")

@@ -221,9 +221,9 @@ class CustomCollateFn:
         texts = [item['input_ids'] for item in batch]
         labels = [item['labels'] for item in batch]
         
-        model_inputs = tokenizer(texts, return_tensors='pt', truncation=False, padding=True)
+        model_inputs = self.tokenizer(texts, return_tensors='pt', truncation=False, padding=True)
         max_len = model_inputs['input_ids'][0].shape[-1]
-        labels = tokenizer(labels, return_tensors='pt', truncation=False, padding='max_length', max_length=max_len).input_ids
+        labels = self.tokenizer(labels, return_tensors='pt', truncation=False, padding='max_length', max_length=max_len).input_ids
 
         return {
             'input_ids': model_inputs['input_ids'],

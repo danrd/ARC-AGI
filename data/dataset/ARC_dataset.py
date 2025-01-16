@@ -212,3 +212,20 @@ def prepare_dataset(tokenizer,
     print(f"Train set: {len(dataset['train'])} examples\n Test set: {len(dataset['test'])} examples\n")
     print(f"Number of train filtered out examples: {rejected_train}\nNumber of test filtered out examples: {rejected_test}")  
     return dataset
+
+class CustomCollateFn:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def __call__(self, batch):
+        texts = [item['input_ids'] for item in batch]
+        labels = [item['labels'] for item in batch]
+        
+        model_inputs = tokenizer(texts, return_tensors='pt', truncation=False, padding=True)
+        max_len = model_inputs['input_ids'][0].shape[-1]
+        labels = tokenizer(labels, return_tensors='pt', truncation=False, padding='max_length', max_length=max_len).input_ids
+
+        return {
+            'input_ids': model_inputs['input_ids'],
+            'attention_mask': model_inputs['attention_mask'],
+            'labels': labels}

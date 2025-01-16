@@ -61,7 +61,8 @@ class ProgressCallback(TrainerCallback):
                 outputs = model.generate(
                     input_ids=inputs,
                     attention_mask=attention_mask,
-                    max_length=4048,
+                    max_length=6000,
+                    max_new_tokens=1000,
                 )
             inputs = torch.where(inputs == -100, self.tokenizer.pad_token_id, inputs)
             outputs = torch.where(outputs == -100, self.tokenizer.pad_token_id, outputs)

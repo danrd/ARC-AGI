@@ -10,9 +10,9 @@ DETAILED_PROMPT =  ["general_instruction", "grid_description", "task_instruction
 BASE_PROMPT = ["general_instruction", "grid_description", "examples_repr", "task_repr", "output_format"]  
 CONCISE_PROMPT = ["general_instruction", "examples_repr", "task_repr", "output_format"] 
 
-COLOR_MAPPING = {0:'black', 1:'blue', 2:'red', 3:'green', 
-                 4:'yellow', 5:'gray', 6:'magenta',
-                 7:'orange', 8:'sky', 9:'brown'}
+COLOR_MAPPING = f'0=black, 1=blue, 2=red, 3=green, 
+                  4=yellow, 5=gray, 6=magenta,
+                  7=orange, 8=sky, 9=brown'
 
 GENERAL_INSTRUCTION = f"""
 You are a helpful AI assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
@@ -24,7 +24,7 @@ Your job will be to understand the transformation rules between the input and th
 GRID_DESCRIPTION = f"""
 The puzzle-like inputs and outputs present a grid with height and width between 1 and 30 where each cell can be one of ten colors.  
 Here is colors representation: {COLOR_MAPPING}.
-Black color in most cases is background color. 
+Any color could be a background color. 
 Groups of identically colored cells form objects: lines, rectangles, diagonals and tetris-like shapes (e.g. L-shape).
 Each object has its own color, size and specific position on the grid.
 """
@@ -77,10 +77,10 @@ And finally, its important to count a number of objects for each shape, color an
 The reason is that you may need in some tasks to choose the most frequent object or to color other object with dominant color.\n 
 """
 
-EXAMPLES_TEMPLATE = f"""Here are the example input and output pairs from which you should learn the underlying transformation to later predict the output for the given test input: """
+EXAMPLES_TEMPLATE = f"""Here are the example input and output pairs from which you should learn 
+                        the underlying transformation to later predict the output for the given test input:\n"""
 
-TASK_REPR = f"""
-Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data: """
+TASK_REPR = f"""Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data: """
 
 HINTS = f"""Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
 1) Compare input and output grids from examples to identify what shape and color are important for the tast. 2) Find shape for identified pattern on the task input grid.
@@ -115,7 +115,7 @@ def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int,
             break
     return examples
 
-def prepare_grid_for_prompt(grid:np.array, shape:tuple, grid_repr_type:str='ascii')->str:
+def prepare_grid_for_prompt(grid:np.array, shape:tuple, grid_repr_type:str='concise')->str:
     """Get representation for grid one grid from examples."""
     ul = find_upper_left_corner(shape)
     grid = copy.copy(grid[ul[0]:ul[0]+shape[0], ul[1]:ul[1]+shape[1]]*10)
@@ -204,8 +204,9 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
             output_format =  prompts_modifications["output_format"]
         output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT] Answer: grid shape:'
         tokens_number += len(tokenizer.tokenize(output_format))
-    # if train_example:
-    #   tokens_number += len(tokenizer.tokenize(task.test_subtask.train_out))  
+    if train_example:
+      test_out_repr = prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape, grid_repr_type)
+      tokens_number += len(tokenizer.tokenize(test_out_repr))
     if "examples_repr" in prompt_structure:
         examples = examples_representation(task, tokenizer, tokens_number, max_tokens, prompts_modifications, grid_repr_type)
         if examples:
@@ -215,8 +216,8 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
     if examples_repr:
         for task_element in prompt_structure:
             final_prompt += locals()[task_element]
-        # if train_example:
-        #    final_prompt += ascii_grid_representation(task.test_subtask.train_out)
+        if train_example:
+           final_prompt += test_out_repr
         return final_prompt
     else:
         return False

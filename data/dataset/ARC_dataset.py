@@ -194,7 +194,7 @@ def prepare_dataset(tokenizer,
         else:
             rejected_train += 1
     for test_task in tqdm(test_tasks):
-        test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type)
+        test_text = compose_prompt(test_task, BASE_PROMPT, prompts_modifications, tokenizer, max_tokens, grid_repr_type, train_example=False)
         if test_text:
             test_task_dict = {'input_ids':test_text, 'labels':repr(prepare_grid_for_prompt(test_task.test_subtask.train_out, test_task.test_subtask.train_out_shape, grid_repr_type))}
             test_set.append(test_task_dict)

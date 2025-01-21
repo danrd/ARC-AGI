@@ -10,9 +10,9 @@ DETAILED_PROMPT =  ["general_instruction", "grid_description", "task_instruction
 BASE_PROMPT = ["general_instruction", "grid_description", "examples_repr", "task_repr", "output_format"]  
 CONCISE_PROMPT = ["general_instruction", "examples_repr", "task_repr", "output_format"] 
 
-COLOR_MAPPING = f'0=black, 1=blue, 2=red, 3=green, 
+COLOR_MAPPING = f"""0=black, 1=blue, 2=red, 3=green, 
                   4=yellow, 5=gray, 6=magenta,
-                  7=orange, 8=sky, 9=brown'
+                  7=orange, 8=sky, 9=brown"""
 
 GENERAL_INSTRUCTION = f"""
 You are a helpful AI assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
@@ -202,7 +202,7 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
     if "output_format" in prompt_structure:
         if "output_format" in prompts_modifications.keys():
             output_format =  prompts_modifications["output_format"]
-        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT] Answer: grid shape:'
+        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT] Answer: '
         tokens_number += len(tokenizer.tokenize(output_format))
     if train_example:
       test_out_repr = prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape, grid_repr_type)

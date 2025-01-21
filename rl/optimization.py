@@ -17,7 +17,7 @@ from stable_baselines3.common.logger import configure
 
 from utils.utils import seed_everything
 from data.dataset.ARC_dataset import ARCDataset
-from rl.agent import create_env
+from rl.training import create_env
 
 gym.envs.register(
      id='ARC-Gridworld-v0',

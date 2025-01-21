@@ -12,15 +12,12 @@ SKY = 0.8
 BROWN = 0.9
 WHITE = 1
 
-BUILD_ZONE_SIZE_X = 30
-BUILD_ZONE_SIZE_Y = 30
-BUILD_ZONE_SIZE = 30, 30
-
 class World:
-    def __init__(self):
+    def __init__(self, build_zone, font_color=0.0):
         self.world = {}
         self.placed = set()
-        self.build_zone = (30, 30)
+        self.build_zone = build_zone
+        self.font_color = font_color
         self.initialized = False
 
     def deinit(self):
@@ -34,9 +31,9 @@ class World:
         
     def initialize(self):
         """ Initialize the world by placing all the blocks."""
-        for x in range(30):
-            for y in range(30):
-                self.add_block((x, y), 1)
+        for x in range(self.build_zone[0]):
+            for y in range(self.build_zone[1]):
+                self.add_block((x, y), self.font_color)
         self.initialized = True
 
     def add_block(self, position:tuple, color:float):
@@ -67,63 +64,60 @@ class World:
         x = agent.position[0] + strafe[0]
         y = agent.position[1] + strafe[1]
         if (x, y) not in self.forbidden_cells:
-            agent.position = (x,y)
+            agent.position = (x, y)
             agent.encoded_position = agent.encode_position()
         else:
             return
 
     def parse_action(self, action):
-        # 0 noop; 1 left; 2 right; 3 up; 4 down; 5 place black block 6 place blue block
-        # 7 place red block 8 place green block 9 place yellow block 10 place gray block
-        # 11 place magenta block 12 place orange block 13 place sky block 14 place brown block
+        # 0 left; 1 right; 2 up; 3 down; 4 place black block 5 place blue block
+        # 6 place red block 7 place green block 8 place yellow block 9 place gray block
+        # 10 place magenta block 11 place orange block 12 place sky block 13 place brown block
         strafe = [0, 0]
         add = -1
-        if action == 1:
+        if action == 0:
             strafe[0] += -1
-        elif action == 2:
+        elif action == 1:
             strafe[0] += 1
-        elif action == 3:
+        elif action == 2:
             strafe[1] += 1
-        elif action == 4:
+        elif action == 3:
             strafe[1] += -1
-        elif action == 5:
+        elif action == 4:
             add = BLACK
-        elif action == 6:
+        elif action == 5:
             add = BLUE
-        elif action == 7:
+        elif action == 6:
             add = RED
-        elif action == 8:
+        elif action == 7:
             add = GREEN
-        elif action == 9:
+        elif action == 8:
             add = YELLOW
-        elif action == 10:
+        elif action == 9:
             add = GRAY
-        elif action == 11:
+        elif action == 10:
             add = MAGENTA
-        elif action == 12:
+        elif action == 11:
             add = ORANGE
-        elif action == 13:
+        elif action == 12:
             add = SKY
-        elif action == 14:
+        elif action == 13:
             add = BROWN
         return strafe, add
 
     def place_block(self, agent, color:int):
-        if color in range(10):
+        if color != -1:
             self.add_block(agent.position, color)
     
-    def step(self, agent, action):
-        strafe, add = self.parse_action(action)
+    def step(self, agent, strafe, add):
         self.movement(agent, strafe=strafe)
         self.place_block(agent, color=add)
         
 class Agent:
-    def __init__(self, position:tuple=(14,14)) -> None:
+    def __init__(self, position:tuple=(14, 14)) -> None:
         self.position = position
         self.encoded_position = self.encode_position()
     
     def encode_position(self):
-        grid = np.zeros((30,30))
-        position = self.position
-        grid[position] = 1
-        return grid
+        norm_pos = (self.position[0]/30, self.position[1]/30)
+        return norm_pos

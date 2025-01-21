@@ -63,7 +63,7 @@ class World:
     def movement(self, agent, strafe: list):
         x = agent.position[0] + strafe[0]
         y = agent.position[1] + strafe[1]
-        if (x, y) not in self.forbidden_cells:
+        if (x, y) not in self.forbidden_cells and x in range(0, self.build_zone[0]) and y in range(0, self.build_zone[1]):
             agent.position = (x, y)
             agent.encoded_position = agent.encode_position()
         else:

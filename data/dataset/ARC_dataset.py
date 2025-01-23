@@ -222,7 +222,7 @@ class CustomCollateFn:
         labels = [item['labels'] for item in batch]
         
         model_inputs = self.tokenizer(texts, return_tensors='pt', truncation=False, padding=True)
-        max_len = model_inputs['text'][0].shape[-1]
+        max_len = model_inputs['input_ids'][0].shape[-1]
         labels = self.tokenizer(labels, return_tensors='pt', truncation=False, padding='max_length', max_length=max_len).input_ids
 
         return {

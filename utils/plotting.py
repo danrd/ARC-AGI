@@ -103,7 +103,6 @@ def plot_shape(shape:List[tuple]):
     
 def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]):
     """Plot intersection with defined shape."""
-    grid = crop_pad(grid_formatting(grid))
     grid = copy.deepcopy(grid)
     if type(shape) == list:
         shape_union = []
@@ -112,6 +111,7 @@ def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]
             shape = shape_union
     i, j = coords_transform(shape)
     grid[i, j] = 11
+    grid = crop_pad(grid_formatting(grid))
     plot_grid(grid)
     
 def plot_rewards(path_to_logs:str):

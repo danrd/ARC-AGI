@@ -13,7 +13,7 @@ class ProgressCallback(TrainerCallback):
     You can modify `max_str_len` to control how long strings are truncated when logging.
     """
 
-    def __init__(self, output_dir, tokenizer, max_str_len:int = 2000):
+    def __init__(self, output_dir, tokenizer, eval_dataloader, max_str_len:int = 2000):
         """
         Initialize the callback with optional max_str_len parameter to control string truncation length.
 
@@ -24,9 +24,10 @@ class ProgressCallback(TrainerCallback):
         """
         self.training_bar = None
         self.prediction_bar = None
-        self.max_str_len = max_str_len
         self.output_dir = output_dir
         self.tokenizer = tokenizer
+        self.eval_dataloader = eval_dataloader
+        self.max_str_len = max_str_len
         os.makedirs(output_dir, exist_ok=True)
 
     def on_train_begin(self, args, state, control, **kwargs):
@@ -47,12 +48,12 @@ class ProgressCallback(TrainerCallback):
                 )
             self.prediction_bar.update(1)
 
-    def on_evaluate(self, args, state, control, model=None, eval_dataloader=None, **kwargs):
+    def on_epoch_end(self, args, state, control, model=None, eval_dataloader=None, **kwargs):
         model.eval()
         predictions = []
         references = []
 
-        for batch in eval_dataloader:
+        for batch in self.eval_dataloader:
             inputs = batch["input_ids"].to(args.device)
             attention_mask = batch["attention_mask"].to(args.device)
 

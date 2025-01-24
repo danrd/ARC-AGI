@@ -1,3 +1,5 @@
+import numpy as np
+import wandb
 from tqdm import tqdm
 import torch
 import json
@@ -6,6 +8,7 @@ from transformers.trainer_utils import has_length
 from transformers import TrainerCallback
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.trainer.states import TrainerFn
+from llm.utils import lev_sim
 
 class ProgressCallback(TrainerCallback):
     """
@@ -64,9 +67,9 @@ class ProgressCallback(TrainerCallback):
                     attention_mask=attention_mask,
                     max_new_tokens=2000,
                 )
-            inputs = torch.where(inputs == -100, self.tokenizer.pad_token_id, inputs)
-            outputs = torch.where(outputs == -100, self.tokenizer.pad_token_id, outputs)
-            labels = torch.where(batch["labels"] == -100, self.tokenizer.pad_token_id, batch["labels"])
+            inputs = torch.where(inputs==-100, self.tokenizer.pad_token_id, inputs)
+            outputs = torch.where(outputs==-100, self.tokenizer.pad_token_id, outputs)
+            labels = torch.where(batch["labels"]==-100, self.tokenizer.pad_token_id, batch["labels"])
             
             # Decode predictions and references
             decoded_inputs = self.tokenizer.batch_decode(inputs, skip_special_tokens=True)
@@ -87,6 +90,21 @@ class ProgressCallback(TrainerCallback):
             json.dump({"predictions": predictions, "references": references}, f, indent=4)
 
         print(f"Predictions saved to {output_file}")
+
+        similarities = []
+        trues_list = []
+        for i in range(len(predictions)):
+            pred = predictions[i]
+            ref = references[i]
+            sim = lev_sim(pred, ref)
+            similarities.append(sim)
+            if sim==1:
+                trues_list.append(1)
+            else:
+                trues_list.append(0)
+        mean_sim = np.mean(np.array(similarities))
+        accuracy = sum(trues_list) / len(trues_list)
+        wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
     def on_predict(self, args, state, control, **kwargs):
         if state.is_world_process_zero:

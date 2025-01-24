@@ -141,58 +141,69 @@ class PLProgressCallback(Callback):
     A PyTorch Lightning callback that saves predictions incrementally to avoid memory issues.
     """
 
-    def __init__(self, output_dir, tokenizer, max_str_len=2000):
+    def __init__(self, output_dir, tokenizer, eval_dataloader, max_str_len=2000):
         super().__init__()
         self.max_str_len = max_str_len
         self.output_dir = output_dir
         self.tokenizer = tokenizer
+        self.eval_dataloader = eval_dataloader
         os.makedirs(output_dir, exist_ok=True)
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        self._process_batch(trainer, pl_module, batch, batch_idx, "validation")
+    # def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
+    #     self._process_batch(trainer, pl_module, batch, batch_idx, "validation")
 
-    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        self._process_batch(trainer, pl_module, batch, batch_idx, "test")
-
-    def on_predict_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-        self._process_batch(trainer, pl_module, batch, batch_idx, "predict")
-
-    def _process_batch(self, trainer, pl_module, batch, batch_idx, mode):
+    def on_train_epoch_end(self, trainer, pl_module):
         model = pl_module.model
-        inputs = batch["input_ids"]
-        attention_mask = batch["attention_mask"]
+        model.eval()
+        predictions = []
+        references = []
 
-        # Generate predictions
-        with torch.no_grad():
-            outputs = model.generate(
-                input_ids=inputs,
-                attention_mask=attention_mask,
-                max_new_tokens=512,  # Reduced from 2000
-            )
+        for batch in self.eval_dataloader:
+            inputs = batch["input_ids"].to(args.device)
+            attention_mask = batch["attention_mask"].to(args.device)
 
-        # Move outputs to CPU to free GPU memory
-        outputs = outputs.cpu()
-        batch["labels"] = batch["labels"].cpu()
+            # Generate predictions
+            with torch.no_grad():
+                outputs = model.generate(
+                    input_ids=inputs,
+                    attention_mask=attention_mask,
+                    max_new_tokens=2000,
+                )
+            inputs = torch.where(inputs==-100, self.tokenizer.pad_token_id, inputs)
+            outputs = torch.where(outputs==-100, self.tokenizer.pad_token_id, outputs)
+            labels = torch.where(batch["labels"]==-100, self.tokenizer.pad_token_id, batch["labels"])
+            
+            # Decode predictions and references
+            decoded_inputs = self.tokenizer.batch_decode(inputs, skip_special_tokens=True)
+            decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            decoded_refs = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-        # Decode predictions and references
-        decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        decoded_refs = self.tokenizer.batch_decode(batch["labels"], skip_special_tokens=True)
+            # Remove input text from predictions (if necessary)
+            for i in range(len(decoded_preds)):
+            # Remove the input text from the prediction
+                decoded_preds[i] = decoded_preds[i][len(decoded_inputs[i]):]
+            
+            predictions.extend(decoded_preds)
+            references.extend(decoded_refs)
 
-        # Save predictions and references incrementally
-        output_file = os.path.join(self.output_dir, f"predictions_{mode}_{trainer.current_epoch}.jsonl")
-        with open(output_file, "a") as f:
-            for pred, ref in zip(decoded_preds, decoded_refs):
-                json.dump({"prediction": pred, "reference": ref}, f)
-                f.write("\n")
+        # Save predictions and references to a file
+        output_file = os.path.join(self.output_dir, f"predictions_eval_step_{state.global_step}.json")
+        with open(output_file, "w") as f:
+            json.dump({"predictions": predictions, "references": references}, f, indent=4)
 
-        # Clear CUDA cache to free up memory
-        torch.cuda.empty_cache()
+        print(f"Predictions saved to {output_file}")
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        print(f"Validation predictions saved for epoch {trainer.current_epoch}")
-
-    def on_test_epoch_end(self, trainer, pl_module):
-        print(f"Test predictions saved for epoch {trainer.current_epoch}")
-
-    def on_predict_epoch_end(self, trainer, pl_module):
-        print(f"Prediction results saved for epoch {trainer.current_epoch}")
+        similarities = []
+        trues_list = []
+        for i in range(len(predictions)):
+            pred = predictions[i]
+            ref = references[i]
+            sim = lev_sim(pred, ref)
+            similarities.append(sim)
+            if sim==1:
+                trues_list.append(1)
+            else:
+                trues_list.append(0)
+        mean_sim = np.mean(np.array(similarities))
+        accuracy = sum(trues_list) / len(trues_list)
+        wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})

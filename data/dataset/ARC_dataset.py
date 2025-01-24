@@ -214,8 +214,10 @@ def prepare_dataset(tokenizer,
     return dataset
 
 class CustomCollateFn:
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, eval:bool=True):
         self.tokenizer = tokenizer
+        if eval:
+            self.tokenizer.padding_side = 'left'
 
     def __call__(self, batch):
         texts = [item['text'] for item in batch]

@@ -150,7 +150,7 @@ class ARCDataset:
             task = ARCTask(ttt_key, subtasks, test_inp, test_out, self.validate)
             ttt_tasks.append(task) 
             if augmentation:
-                aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, key)
+                aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, ttt_key)
                 aug_ttt_tasks.extend(aug_task)
         if augmentation:
             ttt_tasks += aug_ttt_tasks

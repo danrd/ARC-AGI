@@ -62,13 +62,14 @@ class ARCDataset:
                 if filter_tasks and dataset in rejected_tasks.keys():
                    dataset_challenges, dataset_solutions = self.filter_tasks(dataset_challenges, dataset_solutions, rejected_tasks[dataset])
                 dataset_tasks_keys = list(dataset_challenges.keys())
-                self.datasets_idxs[dataset] = (self.cur_idx, self.cur_idx+len(dataset_tasks_keys))
-                self.cur_idx += len(dataset_tasks_keys) + 1
+                self.datasets_idxs[dataset] = (self.cur_idx, self.cur_idx+len(dataset_tasks_keys)-1)
+                self.cur_idx += len(dataset_tasks_keys)
                 self.datasets[dataset] = {'challenges':dataset_challenges, 'solutions':dataset_solutions, 'keys':dataset_tasks_keys}
                 self.task2dataset |= {key:dataset for key in dataset_tasks_keys}
                 self.training_challenges |=  dataset_challenges
                 self.training_solutions |= dataset_solutions
                 self.tasks_keys.extend(dataset_tasks_keys)
+        self.aug_start_idx = self.cur_idx + 400 * 14
     
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):
@@ -160,15 +161,23 @@ class ARCDataset:
             ttt_tasks += aug_ttt_tasks
         return ttt_tasks
     
+    def prepare_eval_dataset(self, max_shape:tuple=(15,15)):
+        eval_dataset = []
+        for task in self.tasks[400:800]:
+            shape = task.test_subtask.train_out_shape
+            if shape[0] <= max_shape[0] and shape[1] <= max_shape[1]:
+                eval_dataset.append(task)
+        return eval_dataset    
+    
 def prepare_dataset(tokenizer,
-                    additional_datasets=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
-                                         'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
+                    additional_datasets=['mini_arc', 're_arc', 'synth_arc', 
+                                         'concept_arc', 'dbigham_arc', 'ns_arc',
                                          'tama_arc', 'com_arc'], 
                     augmentation=False, ttt_augmentation=False, 
                     prompts_modifications={}, max_tokens:int=None,
                     cur_learning:bool=False, seed:int=42,
                     grid_repr_type:str='ascii', filter_tasks:bool=False,
-                    validate:bool=False):
+                    validate:bool=False, max_eval_grid_shape:tuple=(15,15)):
     """Prepare dataset creating prompts for all tasks."""
     ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks, validate)
     train_set_easy = []
@@ -176,7 +185,7 @@ def prepare_dataset(tokenizer,
     test_set = []
     train_tasks_easy = ARC_dataset.easy_tasks 
     train_tasks_hard = ARC_dataset.hard_tasks[400:]
-    test_tasks = ARC_dataset.hard_tasks[0:400]
+    test_tasks = ARC_dataset.hard_tasks[0:400] if max_eval_grid_shape==(30,30) else ARC_dataset.prepare_eval_dataset(max_eval_grid_shape)
     rejected_train = 0
     rejected_test = 0
     if ttt_augmentation: 

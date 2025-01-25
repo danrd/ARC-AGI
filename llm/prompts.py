@@ -10,9 +10,9 @@ DETAILED_PROMPT =  ["general_instruction", "grid_description", "task_instruction
 BASE_PROMPT = ["general_instruction", "grid_description", "examples_repr", "task_repr", "output_format"]  
 CONCISE_PROMPT = ["general_instruction", "examples_repr", "task_repr", "output_format"] 
 
-COLOR_MAPPING = f"""0=black, 1=blue, 2=red, 3=green, 
-                  4=yellow, 5=gray, 6=magenta,
-                  7=orange, 8=sky, 9=brown"""
+COLOR_MAPPING = "0=black, 1=blue, 2=red, 3=green, " \
+                "4=yellow, 5=gray, 6=magenta, " \
+                "7=orange, 8=sky, 9=brown"
 
 GENERAL_INSTRUCTION = f"""
 You are a helpful AI assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
@@ -77,11 +77,15 @@ And finally, its important to count a number of objects for each shape, color an
 The reason is that you may need in some tasks to choose the most frequent object or to color other object with dominant color.\n 
 """
 
-EXAMPLES_TEMPLATE = f"""Here are the example input and output pairs from which you should learn the underlying transformation to later predict the output for the given test input:\n"""
+EXAMPLES_TEMPLATE = f"""
+Here are the example input and output pairs from which you should learn the underlying transformation 
+to later predict the output for the given test input:\n
+"""
 
 TASK_REPR = f"""Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data: """
 
-HINTS = f"""Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
+HINTS = f"""
+Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
 1) Compare input and output grids from examples to identify what shape and color are important for the tast. 2) Find shape for identified pattern on the task input grid.
 3) Color the shape with identified color. Most probably the output grid will have the same shape as the task inpur grid.
 """

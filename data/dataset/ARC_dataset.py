@@ -52,6 +52,8 @@ class ARCDataset:
         self.task2difficulty = load_json('data/dataset/task2difficulty.json')
         self.task2dataset = {key : 'arc' for key in self.tasks_keys}
         self.datasets['arc'] = {'challenges':self.training_challenges, 'solutions':self.training_solutions, 'keys': self.tasks_keys}
+        self.cur_idx = 800
+        self.datasets_idxs = {'arc':(0, 799)}
         if additional_datasets:
             rejected_tasks = load_json('data/additional_datasets/rejected_tasks.json')
             for dataset in additional_datasets:
@@ -60,8 +62,10 @@ class ARCDataset:
                 if filter_tasks and dataset in rejected_tasks.keys():
                    dataset_challenges, dataset_solutions = self.filter_tasks(dataset_challenges, dataset_solutions, rejected_tasks[dataset])
                 dataset_tasks_keys = list(dataset_challenges.keys())
+                self.datasets_idxs[dataset] = (self.cur_idx, self.cur_idx+len(dataset_tasks_keys))
+                self.cur_idx += len(dataset_tasks_keys) + 1
                 self.datasets[dataset] = {'challenges':dataset_challenges, 'solutions':dataset_solutions, 'keys':dataset_tasks_keys}
-                self.task2dataset |= {key : dataset for key in dataset_tasks_keys}
+                self.task2dataset |= {key:dataset for key in dataset_tasks_keys}
                 self.training_challenges |=  dataset_challenges
                 self.training_solutions |= dataset_solutions
                 self.tasks_keys.extend(dataset_tasks_keys)

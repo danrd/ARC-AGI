@@ -52,8 +52,8 @@ class ProgressCallback(TrainerCallback):
             self.prediction_bar.update(1)
 
     def on_epoch_end(self, args, state, control, model=None, eval_dataloader=None, **kwargs):
-        mean_sim, accuracy = evaluate_model()
-        accuracy = sum(trues_list) / len(trues_list)
+        file_name = args.output_dir + f'predictions_ep_{state.epoch}.json'
+        mean_sim, accuracy = evaluate_model(model, self.tokenizer, self.eval_dataloader, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
     def on_predict(self, args, state, control, **kwargs):
@@ -103,62 +103,11 @@ class PLProgressCallback(Callback):
     #     self._process_batch(trainer, pl_module, batch, batch_idx, "validation")
 
     def on_train_epoch_end(self, trainer, pl_module):
-        model = pl_module.model
-        model.eval()
-        predictions = []
-        references = []
-
-        for batch in self.eval_dataloader:
-            inputs = batch["input_ids"].to(args.device)
-            attention_mask = batch["attention_mask"].to(args.device)
-
-            # Generate predictions
-            with torch.no_grad():
-                outputs = model.generate(
-                    input_ids=inputs,
-                    attention_mask=attention_mask,
-                    max_new_tokens=2000,
-                )
-            inputs = torch.where(inputs==-100, self.tokenizer.pad_token_id, inputs)
-            outputs = torch.where(outputs==-100, self.tokenizer.pad_token_id, outputs)
-            labels = torch.where(batch["labels"]==-100, self.tokenizer.pad_token_id, batch["labels"])
-            
-            # Decode predictions and references
-            decoded_inputs = self.tokenizer.batch_decode(inputs, skip_special_tokens=True)
-            decoded_preds = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            decoded_refs = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-            # Remove input text from predictions (if necessary)
-            for i in range(len(decoded_preds)):
-            # Remove the input text from the prediction
-                decoded_preds[i] = decoded_preds[i][len(decoded_inputs[i]):]
-            
-            predictions.extend(decoded_preds)
-            references.extend(decoded_refs)
-
-        # Save predictions and references to a file
-        output_file = os.path.join(self.output_dir, f"predictions_eval_step_{state.global_step}.json")
-        with open(output_file, "w") as f:
-            json.dump({"predictions": predictions, "references": references}, f, indent=4)
-
-        print(f"Predictions saved to {output_file}")
-
-        similarities = []
-        trues_list = []
-        for i in range(len(predictions)):
-            pred = predictions[i]
-            ref = references[i]
-            sim = lev_sim(pred, ref)
-            similarities.append(sim)
-            if sim==1:
-                trues_list.append(1)
-            else:
-                trues_list.append(0)
-        mean_sim = np.mean(np.array(similarities))
-        accuracy = sum(trues_list) / len(trues_list)
+        file_name = trainer.default_root + f'predictions_ep_{trainer.current_epoch}.json'
+        mean_sim, accuracy = evaluate_model(pl_module.model, self.tokenizer, self.eval_dataloader, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
-def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=1025, output_dir='data/'):
+def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=1025, output_file='data/predictions.json'):
         model.eval()
         predictions = []
         references = []
@@ -192,7 +141,6 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=1025, outpu
             references.extend(decoded_refs)
 
         # Save predictions and references to a file
-        output_file = os.path.join(output_dir, f"predictions_final.json")
         with open(output_file, "w") as f:
             json.dump({"predictions": predictions, "references": references}, f, indent=4)
 

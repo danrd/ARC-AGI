@@ -77,8 +77,7 @@ And finally, its important to count a number of objects for each shape, color an
 The reason is that you may need in some tasks to choose the most frequent object or to color other object with dominant color.\n 
 """
 
-EXAMPLES_TEMPLATE = f"""Here are the example input and output pairs from which you should learn 
-                        the underlying transformation to later predict the output for the given test input:\n"""
+EXAMPLES_TEMPLATE = f"""Here are the example input and output pairs from which you should learn the underlying transformation to later predict the output for the given test input:\n"""
 
 TASK_REPR = f"""Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data: """
 

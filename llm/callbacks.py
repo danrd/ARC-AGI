@@ -1,3 +1,4 @@
+import gc
 import numpy as np
 import wandb
 from tqdm import tqdm
@@ -5,7 +6,7 @@ import torch
 import json
 import os
 from transformers.trainer_utils import has_length
-from transformers import TrainerCallback
+from transformers import TrainerCallback, GenerationConfig
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.trainer.states import TrainerFn
 from llm.utils import lev_sim
@@ -16,7 +17,7 @@ class ProgressCallback(TrainerCallback):
     You can modify `max_str_len` to control how long strings are truncated when logging.
     """
 
-    def __init__(self, output_dir, tokenizer, eval_dataloader, max_new_token:int = 2000):
+    def __init__(self, output_dir, tokenizer, eval_dataloader, max_new_token:int=300):
         """
         Initialize the callback with optional max_str_len parameter to control string truncation length.
 
@@ -75,14 +76,22 @@ class PLProgressCallback(Callback):
                                             max_new_token=self.max_new_token, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
-def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=1025, output_file='data/predictions.json'):
+def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300, output_file='data/predictions.json', device='cuda:0'):
+        generation_config = GenerationConfig(
+                                            num_beams=2,             
+                                            early_stopping=True, 
+                                            num_return_sequences=1,
+                                            length_penalty=1,
+                                            )
+        
         model.eval()
+        model.generation_config = generation_config
         predictions = []
         references = []
 
-        for batch in eval_dataloader:
-            inputs = batch["input_ids"]
-            attention_mask = batch["attention_mask"]
+        for batch in tqdm(eval_dataloader):
+            inputs = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
 
             # Generate predictions
             with torch.no_grad():
@@ -107,6 +116,8 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=1025, outpu
             
             predictions.extend(decoded_preds)
             references.extend(decoded_refs)
+            torch.cuda.empty_cache()
+            gc.collect()
 
         # Save predictions and references to a file
         with open(output_file, "w") as f:

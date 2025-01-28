@@ -91,7 +91,11 @@ Most probably you need to deal with font coloring type of puzzle. Thus, take int
 """
 
 OUTPUT_FORMAT = f"""
-Return only output grid in the same format as examples without any explanation.
+Return only output grid in the format:
+n,m:
+1 el_1 ... el_m
+...
+n el_1 ... el_m
 """
 
 def find_upper_left_corner(grid_size:tuple)->tuple:
@@ -131,9 +135,9 @@ def prepare_grid_for_prompt(grid:np.array, shape:tuple, grid_repr_type:str='conc
     
 def concise_grid_representation(grid:np.array):
     """Concise representation for numpy array without brackets and commas."""
-    repr = f'grid shape: {grid.shape[0]}x{grid.shape[1]}\n'
+    repr = f'grid shape: {grid.shape[0]},{grid.shape[1]}\n'
     for i in range(grid.shape[0]):
-        repr += f'{i+1} '
+        repr += f'{i+1} '    
         for j in range(grid.shape[1]):
             repr += f'{int(grid[i][j])}'
         repr += '\n'
@@ -141,7 +145,7 @@ def concise_grid_representation(grid:np.array):
 
 def ascii_grid_representation(grid:np.array):
     """ASCII representation for numpy array without brackets and commas."""
-    repr = f'grid shape: {grid.shape[0]}x{grid.shape[1]}\n'
+    repr = f'grid shape: {grid.shape[0]},{grid.shape[1]}\n'
     for i in range(grid.shape[0]):
         for j in range(grid.shape[1]):
             repr += f'{int(grid[i][j])}'
@@ -180,33 +184,39 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
     global GENERAL_INSTRUCTION
     global GRID_DESCRIPTION
     global TASK_INSTRUCTION
+    global HINTS
     global OUTPUT_FORMAT
     final_prompt = ""
     tokens_number = 0
     examples_repr = False
     if "general_instruction" in prompt_structure:
-        if "general_instruction" in prompts_modifications.keys():
-            general_instruction =  prompts_modifications["general_instruction"]
         general_instruction = f'[INSTRUCTION]{GENERAL_INSTRUCTION}[/INSTRUCTION]\n'
+        if "general_instruction" in prompts_modifications.keys():
+            general_instruction =  f'[INSTRUCTION]{prompts_modifications["general_instruction"]}[/INSTRUCTION]\n'
         tokens_number += len(tokenizer.tokenize(general_instruction))
     if "grid_description" in prompt_structure:
-        if "grid_description" in prompts_modifications.keys():
-            grid_description =  prompts_modifications["grid_description"]
         grid_description = f'[GRID_DESCRIPTION]{GRID_DESCRIPTION}[/GRID_DESCRIPTION]\n'
+        if "grid_description" in prompts_modifications.keys():
+            grid_description =  f'[GRID_DESCRIPTION]{prompts_modifications["grid_description"]}[/GRID_DESCRIPTION]\n'
         tokens_number += len(tokenizer.tokenize(grid_description))
     if "task_instruction" in prompt_structure:
-        if "task_instruction" in prompts_modifications.keys():
-            task_instruction =  prompts_modifications["task_instruction"]
         task_instruction = f'[TASK_INSTRUCTION]{TASK_INSTRUCTION}[/TASK_INSTRUCTION]\n'
+        if "task_instruction" in prompts_modifications.keys():
+            task_instruction =  f'[TASK_INSTRUCTION]{prompts_modifications["task_instruction"]}[/TASK_INSTRUCTION]\n'
         tokens_number += len(tokenizer.tokenize(task_instruction))
     if "task_repr" in prompt_structure:
         task_repr = f'[TASK]{task_representation(task, prompts_modifications, grid_repr_type)}[/TASK]\n'
         tokens_number += len(tokenizer.tokenize(task_repr))
     if "output_format" in prompt_structure:
-        if "output_format" in prompts_modifications.keys():
-            output_format =  prompts_modifications["output_format"]
         output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT] Answer: '
+        if "output_format" in prompts_modifications.keys():
+            output_format =  f'[FORMAT]{prompts_modifications["output_format"]}[/FORMAT] Answer: '
         tokens_number += len(tokenizer.tokenize(output_format))
+    if "hints" in prompt_structure:
+        hints = f'[HINTS]{OUTPUT_FORMAT}[/HINTS]'
+        if "hints" in prompts_modifications.keys():
+            hints =  f'[HINTS]{prompts_modifications["hints"]}[/HINTS]'
+        tokens_number += len(tokenizer.tokenize(hints))
     if train_example:
       test_out_repr = prepare_grid_for_prompt(task.test_subtask.train_out, task.test_subtask.train_out_shape, grid_repr_type)
       tokens_number += len(tokenizer.tokenize(test_out_repr))

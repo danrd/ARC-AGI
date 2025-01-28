@@ -82,7 +82,7 @@ Here are the example input and output pairs from which you should learn the unde
 to later predict the output for the given test input:\n
 """
 
-TASK_REPR = f"""Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data: """
+TASK_REPR = f"""Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data:\n"""
 
 HINTS = f"""
 Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
@@ -93,9 +93,9 @@ Most probably you need to deal with font coloring type of puzzle. Thus, take int
 OUTPUT_FORMAT = f"""
 Return only output grid in the format:
 n,m:
-1 el_1 ... el_m
+1 x_1 ... x_m
 ...
-n el_1 ... el_m
+n x_1 ... x_m
 """
 
 def find_upper_left_corner(grid_size:tuple)->tuple:

@@ -1,3 +1,7 @@
+import numpy as np
+from collections import Counter
+import matplotlib.pyplot as plt
+
 def levenshtein_distance(s1: str, s2: str) -> int:
     """
     Compute the Levenshtein distance between two strings.
@@ -28,3 +32,58 @@ def lev_sim(s1: str, s2: str) -> float:
     distance = levenshtein_distance(s1, s2)
     max_len = max(len(s1), len(s2))
     return 1.0 - (distance / max_len) if max_len != 0 else 1.0
+
+def prompts_length_dist(dataset, tokenizer, plot=False, percentiles=False):
+    lens = []
+    for prompt in dataset['text']:
+        l = len(tokenizer(prompt)['input_ids'])
+        lens.append(l)
+    counter = sorted(Counter(lens), reverse=True)
+    if plot:
+        plt.hist(sorted(counter, reverse=True))
+    if percentiles:
+        percs = {}
+        for p in range(10, 100, 10):
+            percs[p] = np.percentile(counter, p)
+        percs[95] = np.percentile(counter, 95)
+        percs[99] = np.percentile(counter, 99)
+        return counter, percs
+    else:
+        return counter
+    
+def parse_concise_grid(grid_str: str) -> np.array:
+    """
+    Parse a grid from concise LLM output representation into a NumPy array.
+    """
+    lines = grid_str.strip().split('\n')
+    
+    # Extract shape from the first line
+    shape_line = lines[0]
+    shape = tuple(map(int, shape_line.split('(')[1].split(')').split(',')))
+    
+    # Parse grid values
+    grid = []
+    for line in lines[1:]:
+        # Ignore the row index at the start of each line
+        row_values = list(map(int, line.split()[1]))
+        grid.append(row_values)
+    
+    return np.array(grid).reshape(shape)
+
+def parse_ascii_grid(grid_str: str) -> np.array:
+    """
+    Parse a grid from ASCII LLM output representation into a NumPy array.
+    """
+    lines = grid_str.strip().split('\n')
+    
+    # Extract shape from the first line
+    shape_line = lines[0]
+    shape = tuple(map(int, shape_line.split('(')[1].split(')').split(',')))
+    
+    # Parse grid values
+    grid = []
+    for line in lines[1:]:
+        row_values = list(map(int, line.split('|')))
+        grid.append(row_values)
+    
+    return np.array(grid).reshape(shape)

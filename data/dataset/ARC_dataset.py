@@ -220,8 +220,9 @@ def prepare_dataset(tokenizer,
         test_text = compose_prompt(test_task, BASE_PROMPT, 
                                    prompts_modifications, tokenizer, 
                                    max_tokens, grid_repr_type, 
-                                   train_example=False) + 'grid shape: '
+                                   train_example=False)
         if test_text:
+            test_text += 'grid shape: ' + f'{train_task.test_subtask.train_out_shape[0]},{train_task.test_subtask.train_out_shape[1]}\n'
             ref_grid = prepare_grid_for_prompt(test_task.test_subtask.train_out, 
                                                test_task.test_subtask.train_out_shape, 
                                                grid_repr_type).split('grid shape: ')[1]

@@ -17,7 +17,7 @@ class ProgressCallback(TrainerCallback):
     You can modify `max_str_len` to control how long strings are truncated when logging.
     """
 
-    def __init__(self, output_dir, tokenizer, eval_dataloader, max_new_token:int=300):
+    def __init__(self, output_dir, tokenizer, eval_dataloader, max_new_tokens:int=300):
         """
         Initialize the callback with optional max_str_len parameter to control string truncation length.
 
@@ -31,7 +31,7 @@ class ProgressCallback(TrainerCallback):
         self.output_dir = output_dir
         self.tokenizer = tokenizer
         self.eval_dataloader = eval_dataloader
-        self.max_new_token = max_new_token
+        self.max_new_tokens = max_new_tokens
         os.makedirs(output_dir, exist_ok=True)
 
     def on_train_begin(self, args, state, control, **kwargs):
@@ -47,7 +47,7 @@ class ProgressCallback(TrainerCallback):
     def on_epoch_end(self, args, state, control, model=None, eval_dataloader=None, **kwargs):
         file_name = args.output_dir + f'predictions_ep_{state.epoch}.json'
         mean_sim, accuracy = evaluate_model(model, self.tokenizer, self.eval_dataloader, 
-                                            max_new_token=self.max_new_token, output_file=file_name)
+                                            max_new_tokens=self.max_new_tokens, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
     def on_train_end(self, args, state, control, **kwargs):
@@ -59,9 +59,9 @@ class PLProgressCallback(Callback):
     """
     A PyTorch Lightning callback that saves predictions incrementally to avoid memory issues.
     """
-    def __init__(self, output_dir, tokenizer, eval_dataloader, max_new_token=2000):
+    def __init__(self, output_dir, tokenizer, eval_dataloader, max_new_tokens=300):
         super().__init__()
-        self.max_new_token = max_new_token
+        self.max_new_tokens = max_new_tokens
         self.output_dir = output_dir
         self.tokenizer = tokenizer
         self.eval_dataloader = eval_dataloader
@@ -73,7 +73,7 @@ class PLProgressCallback(Callback):
     def on_train_epoch_end(self, trainer, pl_module):
         file_name = trainer.default_root + f'predictions_ep_{trainer.current_epoch}.json'
         mean_sim, accuracy = evaluate_model(pl_module.model, self.tokenizer, self.eval_dataloader, 
-                                            max_new_token=self.max_new_token, output_file=file_name)
+                                            max_new_tokens=self.max_new_tokens, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
 def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300, output_file='data/predictions.json', device='cuda:0'):

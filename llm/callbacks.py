@@ -76,14 +76,18 @@ class PLProgressCallback(Callback):
                                             max_new_tokens=self.max_new_tokens, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
-def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300, output_file='data/predictions.json', device='cuda:0'):
-        generation_config = GenerationConfig(
-                                            num_beams=2,             
-                                            early_stopping=True, 
-                                            num_return_sequences=1,
-                                            length_penalty=1,
-                                            )
-        
+def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300, 
+                   output_file='data/predictions.json', device='cuda:0',
+                   generation_config=None):
+        if generation_config:
+            generation_config = generation_config
+        else:
+            generation_config = GenerationConfig(
+                                                num_beams=2,             
+                                                early_stopping=True, 
+                                                num_return_sequences=1,
+                                                length_penalty=1,
+                                                )
         model.eval()
         model.generation_config = generation_config
         predictions = []

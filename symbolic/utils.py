@@ -197,9 +197,9 @@ def grid_formatting(grid:Union[np.array, torch.Tensor, List[list], List[tuple]])
     else:
       return (grid*10).astype(int)      
 
-def crop_pad(grid:np.array)->np.array:
+def crop_pad(grid:np.array, pad_val=10)->np.array:
     """Return grid without padding"""
-    i, j = np.where(grid!=10)
+    i, j = np.where(grid!=pad_val)
     i_shape = max(i) - min(i) + 1
     j_shape = max(j) - min(j) + 1
     croped_grid = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape))

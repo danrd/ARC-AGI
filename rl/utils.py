@@ -1,5 +1,6 @@
 import random
 import numpy as np
+from symbolic.utils import crop_pad, adjust_grid_shape
 
 def vote_for_cell(votes, tie_break='random'):
     """
@@ -85,3 +86,13 @@ def get_position(obs_pos_vector):
     for pos in obs_pos_vector:
         positions.append(pos.nonzero())
     return positions
+
+def repad(task, max_shape=(15,15)):
+    subtasks = task.subtasks + [task.test_subtask] 
+    for subtask in task.subtasks:
+        subtask.train_inp = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=-0.000001), target_shape=(15,15), pad_value=-0.000001, normalize=False)
+        subtask.train_out = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=-0.000001), target_shape=(15,15), pad_value=-0.000001, normalize=False)
+    task.test_subtask.train_inp = adjust_grid_shape(crop_pad(task.test_subtask.train_inp, pad_val=-0.000001), 
+                                                    target_shape=(15,15), pad_value=-0.000001, normalize=False)
+    task.test_subtask.train_out = adjust_grid_shape(crop_pad(task.test_subtask.train_out, pad_val=-0.000001), target_shape=(15,15), pad_value=-0.000001, normalize=False)
+    return task

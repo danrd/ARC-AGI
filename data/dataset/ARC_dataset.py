@@ -261,3 +261,19 @@ class CustomCollateFn:
             'input_ids': model_inputs['input_ids'],
             'attention_mask': model_inputs['attention_mask'],
             'labels': labels}
+    
+def check_subtasks_grids(subtasks, max_shape=(15,15)):
+    for subtask in subtasks:
+        if subtask.train_inp_shape > max_shape or subtask.train_out_shape > max_shape:
+            return False
+    return True
+
+def filtered_tasks(max_shape=(15, 15)):
+    dataset = ARCDataset(additional_datasets=False) 
+    tasks_idxs = []
+    for idx, task in enumerate(dataset.tasks):
+        subtasks = task.subtasks + [task.test_subtask]
+        valid_task = check_subtasks_grids(subtasks, max_shape)
+        if valid_task:
+            tasks_idxs.append(idx)
+    return tasks_idxs

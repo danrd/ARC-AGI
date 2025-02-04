@@ -18,7 +18,8 @@ GENERAL_INSTRUCTION = f"""
 You are a helpful AI assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
 The challenge involves identifying the next image in a sequence, similar to Raven's progressive matrices.
 The user will present you with sample input and output grids for each task. 
-Your job will be to understand the transformation rules between the input and the output and apply them to the last input grid given by the user.
+Your job is to analyze provided grids and deduce the transformation rules that turn each input grid into corresponding output grid. 
+Then, apply these rules to the given test input to generate the correct output grid.
 """
 
 GRID_DESCRIPTION = f"""
@@ -82,7 +83,7 @@ Here are the example input and output pairs from which you should learn the unde
 to later predict the output for the given test input:\n
 """
 
-TASK_REPR = f"""Now, solve the following puzzle based on its input grid by applying the rules you have learned from the training data:\n"""
+TASK_REPR = f"""Now, based on the transformation rules deduced from the training examples, solve the following puzzle:\nInput:\n"""
 
 HINTS = f"""
 Most probably you need to deal with font coloring type of puzzle. Thus, take into account follwing recommendations for task solving:
@@ -112,7 +113,7 @@ def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int,
     for idx, subtask in enumerate(task.subtasks):
         inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape, grid_repr_type)
         out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape, grid_repr_type)
-        example = f'Example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
+        example = f'Training example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
         tokens_number += len(tokenizer.tokenize(example)) + 10
         if tokens_number < max_tokens:
             examples += example
@@ -174,7 +175,7 @@ def task_representation(task:ARCTask, prompts_modifications:dict, grid_repr_type
     global TASK_REPR
     if "task_repr" in prompts_modifications.keys():
         TASK_REPR = prompts_modifications["task_repr"]
-    return TASK_REPR + repr(prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape, grid_repr_type))
+    return TASK_REPR + prepare_grid_for_prompt(task.test_subtask.train_inp, task.test_subtask.train_inp_shape, grid_repr_type)
 
 def compose_prompt(task:ARCTask, prompt_structure:List, 
                    prompts_modifications:dict, tokenizer, 
@@ -205,10 +206,10 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
             task_instruction =  f'[TASK_INSTRUCTION]{prompts_modifications["task_instruction"]}[/TASK_INSTRUCTION]\n'
         tokens_number += len(tokenizer.tokenize(task_instruction))
     if "task_repr" in prompt_structure:
-        task_repr = f'[TASK]{task_representation(task, prompts_modifications, grid_repr_type)}[/TASK]\n'
+        task_repr = f'[TASK]' + task_representation(task, prompts_modifications, grid_repr_type) + f'[/TASK]\n'
         tokens_number += len(tokenizer.tokenize(task_repr))
     if "output_format" in prompt_structure:
-        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT] Answer: '
+        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]\nOutput:\n '
         if "output_format" in prompts_modifications.keys():
             output_format =  f'[FORMAT]{prompts_modifications["output_format"]}[/FORMAT] Answer: '
         tokens_number += len(tokenizer.tokenize(output_format))

@@ -83,7 +83,7 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
             generation_config = generation_config
         else:
             generation_config = GenerationConfig(
-                                                num_beams=2,             
+                                                num_beams=5,             
                                                 early_stopping=True, 
                                                 num_return_sequences=1,
                                                 length_penalty=1,

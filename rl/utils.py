@@ -89,9 +89,9 @@ def get_position(obs_pos_vector):
 
 def repad(task, max_shape=(15,15)):
     for subtask in task.subtasks:
-        subtask.train_inp = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=1), target_shape=(15,15), pad_value=-0.1, normalize=False)
-        subtask.train_out = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=1), target_shape=(15,15), pad_value=-0.1, normalize=False)
+        subtask.train_inp = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=1), target_shape=max_shape, pad_value=-0.1, normalize=False)
+        subtask.train_out = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=1), target_shape=max_shape, pad_value=-0.1, normalize=False)
     task.test_subtask.train_inp = adjust_grid_shape(crop_pad(task.test_subtask.train_inp, pad_val=1), 
-                                                    target_shape=(15,15), pad_value=-0.1, normalize=False)
-    task.test_subtask.train_out = adjust_grid_shape(crop_pad(task.test_subtask.train_out, pad_val=1), target_shape=(15,15), pad_value=-0.1, normalize=False)
+                                                    target_shape=max_shape, pad_value=-0.1, normalize=False)
+    task.test_subtask.train_out = adjust_grid_shape(crop_pad(task.test_subtask.train_out, pad_val=1), target_shape=max_shape, pad_value=-0.1, normalize=False)
     return task

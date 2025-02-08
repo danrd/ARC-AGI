@@ -106,14 +106,14 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
                     attention_mask=attention_mask,
                     max_new_tokens=max_new_tokens,
                 )
-            inputs = torch.where(inputs==-100, tokenizer.pad_token_id, inputs)
-            outputs = torch.where(outputs==-100, tokenizer.pad_token_id, outputs)
-            labels = torch.where(batch["labels"]==-100, tokenizer.pad_token_id, batch["labels"])
+            inputs = torch.where(inputs==-100, tokenizer.pad_token_id, inputs).to('cpu')
+            outputs = torch.where(outputs==-100, tokenizer.pad_token_id, outputs).to('cpu')
+            labels = torch.where(batch["labels"]==-100, tokenizer.pad_token_id, batch["labels"]).to('cpu')
             
             # Decode predictions and references
-            decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True).to('cpu')
-            decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True).to('cpu')
-            decoded_refs = tokenizer.batch_decode(labels, skip_special_tokens=True).to('cpu')
+            decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True)
+            decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            decoded_refs = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
             # Remove input text from predictions (if necessary)
             for i in range(len(decoded_preds)):

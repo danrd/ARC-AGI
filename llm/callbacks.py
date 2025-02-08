@@ -77,7 +77,7 @@ class PLProgressCallback(Callback):
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
 def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300, 
-                   output_file='data/predictions.json', device='cuda:0',
+                   output_file='data/predictions.json', device=None,
                    generation_config=None):
         if generation_config:
             generation_config = generation_config
@@ -88,6 +88,8 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
                                                 num_return_sequences=1,
                                                 length_penalty=1,
                                                 )
+        if not device:
+            device = model.device
         model.eval()
         model.generation_config = generation_config
         predictions = []
@@ -118,8 +120,8 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
             # Remove the input text from the prediction
                 decoded_preds[i] = decoded_preds[i][len(decoded_inputs[i]):]
             
-            predictions.extend(decoded_preds)
-            references.extend(decoded_refs)
+            predictions.extend(decoded_preds.to('cpu'))
+            references.extend(decoded_refs.to('cpu'))
             torch.cuda.empty_cache()
             gc.collect()
 

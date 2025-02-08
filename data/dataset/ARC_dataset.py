@@ -73,10 +73,13 @@ class ARCDataset:
     
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):
+        exclude_list = []
         for key in challenges.keys():
             if key in rejected_tasks:
-               del challenges[key]
-               del solutions[key]
+               exclude_list.append(key)
+        for key in exclude_list:
+            del challenges[key]
+            del solutions[key]
         return challenges, solutions 
 
     def create_tasks(self, augmentation):
@@ -222,7 +225,7 @@ def prepare_dataset(tokenizer,
                                    max_tokens, grid_repr_type, 
                                    train_example=False)
         if test_text:
-            # test_text += 'grid shape: ' + f'{train_task.test_subtask.train_out_shape[0]},{train_task.test_subtask.train_out_shape[1]}\n'
+            test_text += 'grid shape: '
             ref_grid = prepare_grid_for_prompt(test_task.test_subtask.train_out, 
                                                test_task.test_subtask.train_out_shape, 
                                                grid_repr_type).split('grid shape: ')[1]

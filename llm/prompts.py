@@ -113,7 +113,7 @@ def get_propmt_for_examples(task:ARCTask, tokenizer, tokens_number:int,
     for idx, subtask in enumerate(task.subtasks):
         inp_grid = prepare_grid_for_prompt(subtask.train_inp, subtask.train_inp_shape, grid_repr_type)
         out_grid = prepare_grid_for_prompt(subtask.train_out, subtask.train_out_shape, grid_repr_type)
-        example = f'Training example {idx+1}:\n Input: {inp_grid}\n Output: {out_grid}\n'
+        example = f'Training example {idx+1}:\nInput:\n{inp_grid}\nOutput:\n{out_grid}\n'
         tokens_number += len(tokenizer.tokenize(example)) + 10
         if tokens_number < max_tokens:
             examples += example
@@ -209,7 +209,7 @@ def compose_prompt(task:ARCTask, prompt_structure:List,
         task_repr = f'[TASK]' + task_representation(task, prompts_modifications, grid_repr_type) + f'[/TASK]\n'
         tokens_number += len(tokenizer.tokenize(task_repr))
     if "output_format" in prompt_structure:
-        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]\nOutput:\n '
+        output_format = f'[FORMAT]{OUTPUT_FORMAT}[/FORMAT]\nOutput:\n'
         if "output_format" in prompts_modifications.keys():
             output_format =  f'[FORMAT]{prompts_modifications["output_format"]}[/FORMAT] Answer: '
         tokens_number += len(tokenizer.tokenize(output_format))

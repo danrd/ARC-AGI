@@ -114,10 +114,11 @@ class World:
         self.place_block(agent, color=add)
         
 class Agent:
-    def __init__(self, position:tuple=(14, 14)) -> None:
+    def __init__(self, position:tuple=(14, 14), world_size:tuple=(30, 30)) -> None:
         self.position = position
+        self.world_size = world_size
         self.encoded_position = self.encode_position()
     
     def encode_position(self):
-        norm_pos = (self.position[0]/30, self.position[1]/30)
+        norm_pos = (self.position[0]/self.world_size[0], self.position[1]/self.world_size[1])
         return norm_pos

@@ -87,3 +87,7 @@ def parse_ascii_grid(grid_str: str) -> np.array:
         grid.append(row_values)
     
     return np.array(grid).reshape(shape)
+
+def check_module_devices(model):
+    for name, param in model.named_parameters():
+        print(f"Parameter: {name}, Device: {param.device}")

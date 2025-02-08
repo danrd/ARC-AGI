@@ -111,17 +111,17 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
             labels = torch.where(batch["labels"]==-100, tokenizer.pad_token_id, batch["labels"])
             
             # Decode predictions and references
-            decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True)
-            decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            decoded_refs = tokenizer.batch_decode(labels, skip_special_tokens=True)
+            decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True).to('cpu')
+            decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True).to('cpu')
+            decoded_refs = tokenizer.batch_decode(labels, skip_special_tokens=True).to('cpu')
 
             # Remove input text from predictions (if necessary)
             for i in range(len(decoded_preds)):
             # Remove the input text from the prediction
                 decoded_preds[i] = decoded_preds[i][len(decoded_inputs[i]):]
             
-            predictions.extend(decoded_preds.to('cpu'))
-            references.extend(decoded_refs.to('cpu'))
+            predictions.extend(decoded_preds)
+            references.extend(decoded_refs)
             torch.cuda.empty_cache()
             gc.collect()
 

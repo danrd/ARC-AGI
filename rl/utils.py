@@ -2,6 +2,21 @@ import random
 import numpy as np
 from symbolic.utils import crop_pad, adjust_grid_shape
 
+def linear_schedule(initial_value: float, final_value: float = 0.0):
+    """
+    Linear learning rate schedule.
+    :param initial_value: Initial learning rate.
+    :param final_value: Final learning rate.
+    :return: A function that takes the progress (from 0 to 1) and returns the learning rate.
+    """
+    def func(progress: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0 (end).
+        """
+        return initial_value + (final_value - initial_value) * (1 - progress)
+
+    return func
+
 def vote_for_cell(votes, tie_break='random'):
     """
     Given a 1D array of integer votes, return the most frequent value.

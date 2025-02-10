@@ -15,38 +15,6 @@ class ARCSubtask:
         if validate:
             assert (check_grid_values(self.train_inp)==True) and (check_grid_values(self.train_out)==True), f"Invalid grid values for subtask {self.label}\n Input grid: {self.train_inp}\n Output grid: {self.train_out}" 
         
-    def step_intersection(self, grid):
-        """
-        Calculates the difference between the maximal intersection at previous step and the current one.
-        Note that the method updates object fields to save the grid size.
-        Parameters
-        ----------
-        grid : np.array
-            Current grid state.
-        """   
-        max_int = self.maximal_intersection(grid)
-        done = max_int == self.target_size
-        right_placement = (max_int - self.max_int)
-        grid_size = self.calculate_relevant_blocks(grid)
-        self.prev_grid_size = grid_size
-        self.max_int = max_int
-        self.right_placement = right_placement
-        return right_placement,  done
-    
-    def maximal_intersection(self, grid):
-        """Calculate the number of common blocks for current grid and target grid."""
-        intersection = ((grid==self.train_out) * (grid!=1) * (self.train_out!=1) ).sum()
-        max_int = intersection 
-        return max_int
-    
-    def calculate_relevant_blocks(self, grid):
-        "Calculate a number of cells that are not black or white"
-        relevant_size = grid.size - (grid==1).sum().item() - (grid==0).sum().item()
-        return relevant_size
-    
-    def reset(self):
-        self.prev_grid_size = 0
-        self.max_int = 0
 class ARCTask:
     """Class for storing information for a task."""
     def __init__(self, label:str, subtasks:List[ARCSubtask], test_inp:np.array, test_out:np.array, validate:bool=False):

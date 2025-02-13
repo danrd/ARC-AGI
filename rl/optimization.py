@@ -1,6 +1,8 @@
 import optuna
 import wandb
 import os
+import gc
+import torch
 from copy import copy 
 from rl.ARC_task import ARCTask, ARCSubtask
 from rl.training import train_on_subtask, train_on_task
@@ -42,7 +44,7 @@ def optimize_agent(target, rl_config):
     return study.best_params, study.best_trial
 
 def hp_tuning(task_idx:int, subtasks_idxs:list, rl_config_params, model_config_params, base_rl_config, base_model_config):
-    wandb.login(key=os.environ["wandb_key"])
+    wandb.login(key='d71fac65cbcb94496f54123b10bf2d3d64fd8606')
     dataset = ARCDataset()
     for param in rl_config_params.keys():
         rl_config = copy(base_rl_config)
@@ -75,4 +77,6 @@ def hp_tuning(task_idx:int, subtasks_idxs:list, rl_config_params, model_config_p
                         del agent, callback
                     print('All trials were finished')
                     wandb.finish()
+                    torch.cuda.empty_cache()
+                    gc.collect()
     return

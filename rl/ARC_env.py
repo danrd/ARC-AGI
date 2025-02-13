@@ -65,8 +65,8 @@ class ARCGridWorld(gymnasium.Env):
         grid_size = self.subtask.train_out_shape
         position = self.find_upper_left_corner(grid_size) if self.padding else (0, 0)
         if self.random_start:
-            i = np.random.randint(low=position[0], high=position[0]+grid_size[0]-1)
-            j = np.random.randint(low=position[1], high=position[1]+grid_size[1]-1)
+            i = np.random.randint(low=position[0], high=position[0]+grid_size[0]-1) if grid_size[0] != 1 else position[0]
+            j = np.random.randint(low=position[1], high=position[1]+grid_size[1]-1) if grid_size[1] != 1 else position[1]
             position = (i, j)
         return position   
 

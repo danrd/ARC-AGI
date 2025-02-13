@@ -15,6 +15,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         extractors = {}
         total_concat_size = 0
         self.pos_enc_dim = pos_enc_dim
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if cnn_arch:
             self.cnn =  cnn_arch   
@@ -34,21 +35,22 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         for key, subspace in observation_space.spaces.items():
             if key == "agent_position":
                 # Run through a simple MLP
-                extractors[key] = nn.Sequential(nn.Flatten(), nn.Linear(subspace.shape[0]*subspace.shape[1], self.pos_enc_dim))
+                extractors[key] = nn.Sequential(nn.Flatten(), nn.Linear(subspace.shape[0]*subspace.shape[1], self.pos_enc_dim)).to(self.device)
                 total_concat_size += self.pos_enc_dim
             else:
                 # We will just downsample one channel of the image by 4x4 and flatten.
                 # Assume the image is single-channel (subspace.shape[0] == 0)  
-                extractors[key] = self.cnn
+                extractors[key] = self.cnn.to(self.device)
                             # Compute shape by doing one forward pass
                 with torch.no_grad():
-                    n_flatten = extractors[key](torch.as_tensor(observation_space.spaces[key].sample()[None]).float())
+                    n_flatten = extractors[key](torch.as_tensor(observation_space.spaces[key].sample()[None]).float().to(self.device))
                 total_concat_size += n_flatten.shape[-2] * n_flatten.shape[-1]
     
         self.extractors = nn.ModuleDict(extractors)
         self._features_dim = total_concat_size
 
     def forward(self, observation) -> torch.Tensor:
+        observation = {key: obs.to(self.device) for key, obs in observation.items()}
         encoded_tensor_list = []
         # self.extractors contain nn.Modules that do all the processing.
         for key, extractor in self.extractors.items():

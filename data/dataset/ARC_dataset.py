@@ -267,7 +267,9 @@ class CustomCollateFn:
     
 def check_subtasks_grids(subtasks, max_shape=(15,15)):
     for subtask in subtasks:
-        if subtask.train_inp_shape > max_shape or subtask.train_out_shape > max_shape:
+        cond_1 = subtask.train_inp_shape[0] > max_shape[0] or subtask.train_inp_shape[1] > max_shape[1]
+        cond_2 = subtask.train_out_shape[0] > max_shape[0] or subtask.train_out_shape[1] > max_shape[1]
+        if cond_1 or cond_2:
             return False
     return True
 

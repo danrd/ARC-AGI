@@ -5,6 +5,10 @@ import numpy as np
 import torch
 import pickle
 
+def check_module_devices(model):
+    for name, param in model.named_parameters():
+        print(f"Parameter: {name}, Device: {param.device}")
+
 def load_json(file_path):
     """Load JSON data from a file."""
     with open(file_path, 'r') as file:

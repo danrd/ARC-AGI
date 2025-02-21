@@ -73,7 +73,7 @@ def hp_tuning(task_idx:int, subtasks_idxs:list, rl_config_params, model_config_p
                         acc, mean_len, agent, callback = train_on_subtask(subtask=subtask, rl_config=rl_config, PPO_config=model_config, 
                                                                      verbose=True, plot_grid_pred=True, debug=False)
                         expl_var = round(callback.explained_variances[-1], 3)
-                        wandb.log({"accuracies": [acc], "mean_ep_lens":[mean_len], "expl_vars": [expl_var]})
+                        wandb.log({"accuracies": [acc], "mean_ep_lens":[mean_len], "expl_vars": [expl_var], "episode_accs": callback.episode_accs})
                         del agent, callback
                     print('All trials were finished')
                     wandb.finish()

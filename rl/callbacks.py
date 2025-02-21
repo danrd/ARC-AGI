@@ -5,7 +5,9 @@ from typing import Callable, List,Tuple, Union
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import sync_envs_normalization
 from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.logger import Logger, KVWriter, make_output_format  
+from stable_baselines3.common.logger import Logger, KVWriter, make_output_format
+from rl.evaluation import evaluate_ARC_policy 
+from utils.plotting import plot_grid
 class MonitorCallback(EvalCallback):
     def __init__(
             self,
@@ -14,9 +16,7 @@ class MonitorCallback(EvalCallback):
             eval_start: int = 1,
             n_eval_episodes: int = 1,
             max_episode_length: int = None,
-            verbose = False,    
-            verbose_prefix: str = '',
-            env_label: str = '', 
+            verbose = True,    
             n_envs: int = 1, 
             max_rewards: dict = {},
             log_path:str = None,
@@ -30,16 +30,13 @@ class MonitorCallback(EvalCallback):
         self.n_eval_episodes = n_eval_episodes
         self.last_eval: int = -1 
         self.n_eval = 0
-        self.evaluations_episodes = []
         self.verbose = verbose      
-        self.verbose_prefix = verbose_prefix
-        self.pre_auc = 0
-        self.auc = 0
-        self.env_label = env_label
-        self.last_eval = 0
         self.n_envs = eval_env.num_envs if hasattr(eval_env, 'envs') else 1
         self.log_path = log_path
         self.debug = debug
+        self.episode_accs = []
+        self.episode_mean_lens = []
+        self.episode_grid_preds = []
         if self.debug:
             #values to track
             self.train_rewards = [[] for _ in range(self.n_envs)]
@@ -115,11 +112,6 @@ class MonitorCallback(EvalCallback):
         pass
     
     def _evaluate(self):
-        try:
-            self.env.start_evaluation()
-        except AttributeError:
-            pass
-
         if self.model.get_vec_normalize_env() is not None:
             try:
                 sync_envs_normalization(self.training_env, self.eval_env)
@@ -129,28 +121,27 @@ class MonitorCallback(EvalCallback):
                     "see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
                     "and warning above."
                 )
+        acc, mean_len, grid_pred = evaluate_ARC_policy(
+                                                        self.model,
+                                                        self.eval_env,
+                                                        n_eval_episodes=self.n_eval_episodes,
+                                                        deterministic=self.deterministic,
+                                                        callback=self._log_success_callback,
+                                                      )
 
-        episode_rewards, episode_lengths = evaluate_policy(
-            self.model,
-            self.eval_env,
-            n_eval_episodes=self.n_eval_episodes,
-            deterministic=self.deterministic,
-            callback=self._log_success_callback,
-            return_episode_rewards=True
-        )
-
-        assert len(episode_lengths) == len(episode_rewards)
-        mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
-        mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
-        self.last_mean_reward = mean_reward
+        self.episode_accs.append(acc)
+        self.episode_mean_lens.append(mean_len)
+        self.episode_grid_preds.append(grid_pred)
+        
+        if self.verbose:
+            print(f'After {(self.num_timesteps/self.model._total_timesteps)*100:.2f}% of training: Accuracy: {acc:.2f}, Mean episode length: {mean_len:.2f}')
+            plot_grid(grid_pred)
 
         try:
             self.env.stop_evaluation()
         except AttributeError:
             pass
     
-        self.pre_auc += self.last_mean_reward * (self.num_timesteps-self.last_eval) / self.n_envs
-        self.auc = float((self.pre_auc + self.last_mean_reward * (self.model._total_timesteps - self.num_timesteps/self.n_envs)) / self.model._total_timesteps)
         self.last_eval = self.num_timesteps
         self.n_eval += 1
 
@@ -161,9 +152,6 @@ class MonitorCallback(EvalCallback):
         self.last_eval = 0
         self.n_eval = 0
         self.n_calls = 0
-        self.evaluations_episodes = []
-        self.pre_auc = 0
-        self.auc = 0
         pass
         
     def _on_training_end(self) -> None:

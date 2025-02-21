@@ -18,7 +18,7 @@ rl_config = {
     'padding': (15, 15),
     'random_start': True,
     'input_pattern': True,
-    'milestones_rewards': [0,1,3,6],
+    'milestones_rewards': [1,2,3,4],
     'pad_val': -0.1,
     'int_colors': False
     }
@@ -61,14 +61,14 @@ def load_PPO_config():
     'policy': ARCCustomActorCriticPolicy,
     'actor_arch': [128, 128, 128],
     'critic_arch': [128, 128, 128],
-    'activation_fn': torch.nn.Tanh,
-    'pos_enc_dim': 128,
+    'activation_fn': torch.nn.ReLU,
+    'pos_enc_dim': 32,
     'cnn_arch': cnn
     }
 
 cnn =  nn.Sequential(
-                nn.Conv2d(1, 32, kernel_size=2, stride=1, padding=0),
+                nn.Conv2d(1, 16, kernel_size=2, stride=1, padding=0),
                 nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=2, stride=1, padding=0),
+                nn.Conv2d(16, 32, kernel_size=2, stride=1, padding=0),
                 nn.ReLU(),
                 nn.Flatten(),)

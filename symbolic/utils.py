@@ -241,3 +241,14 @@ def check_grid_values(grid:np.array):
     for v in range(1, 10):
         check *= grid != v * 0.01
     return np.all(check)
+
+def pad_grid(grid:np.array, target_shape, pad_val):
+    """Create padded array of given shape using defined padding value."""
+    shape_x, shape_y = grid.shape
+    left_pad = (target_shape[0]-shape_x)//2
+    right_pad = target_shape[0] - shape_x - left_pad
+    upper_pad = (target_shape[1]-shape_y)//2
+    down_pad = target_shape[1] - shape_y - upper_pad
+    padded_grid = np.pad(grid, pad_width=[(left_pad,right_pad), (upper_pad, down_pad)], constant_values=pad_val)
+    return padded_grid
+    

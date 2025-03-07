@@ -1,4 +1,4 @@
-import copy
+from copy import copy, deepcopy
 import typing
 from typing import List
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes

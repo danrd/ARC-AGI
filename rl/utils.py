@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from symbolic.utils import crop_pad, adjust_grid_shape
+from rl.ARC_task import ARCTask
 
 def linear_schedule(initial_value: float, final_value: float = 0.0):
     """
@@ -108,3 +109,15 @@ def repad(subtask, max_shape=(15,15)):
     subtask.train_out = adjust_grid_shape(crop_pad(subtask.train_out, pad_val=1), 
                                           target_shape=max_shape, pad_value=-0.1, normalize=False)
     return subtask
+
+def define_padding(task:ARCTask):
+    """Define max padding for specific task"""
+    max_i = 0
+    max_j = 0
+    for subtask in task.subtasks:
+        out_shape = subtask.train_out_shape
+        if out_shape[0] > max_i:
+            max_i = out_shape[0]
+        if out_shape[1] > max_j:
+            max_j = out_shape[1]
+    return (max_i, max_j)

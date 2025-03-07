@@ -59,8 +59,8 @@ def load_PPO_config():
     'vf_coef': 0.5,
     'use_sde': False, 
     'policy': ARCCustomActorCriticPolicy,
-    'actor_arch': [128, 128, 128],
-    'critic_arch': [128, 128, 128],
+    'actor_arch': [256, 256, 256],
+    'critic_arch': [256, 256, 256],
     'activation_fn': torch.nn.ReLU,
     'pos_enc_dim': 32,
     'cnn_arch': cnn

@@ -115,7 +115,12 @@ def define_padding(task:ARCTask):
     max_i = 0
     max_j = 0
     for subtask in task.subtasks:
+        inp_shape = subtask.train_inp_shape
         out_shape = subtask.train_out_shape
+        if inp_shape[0] > max_i:
+            max_i = inp_shape[0]
+        if inp_shape[1] > max_j:
+            max_j = inp_shape[1]
         if out_shape[0] > max_i:
             max_i = out_shape[0]
         if out_shape[1] > max_j:

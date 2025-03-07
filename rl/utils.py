@@ -103,11 +103,11 @@ def get_position(obs_pos_vector):
         positions.append(pos.nonzero())
     return positions
 
-def repad(subtask, max_shape=(15,15)):
+def repad(subtask, max_shape=(15,15), pad_val=-0.1):
     subtask.train_inp = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=1), 
-                                                    target_shape=max_shape, pad_value=-0.1, normalize=False)
+                                                    target_shape=max_shape, pad_value=pad_val, normalize=False)
     subtask.train_out = adjust_grid_shape(crop_pad(subtask.train_out, pad_val=1), 
-                                          target_shape=max_shape, pad_value=-0.1, normalize=False)
+                                          target_shape=max_shape, pad_value=pad_val, normalize=False)
     return subtask
 
 def define_padding(task:ARCTask):

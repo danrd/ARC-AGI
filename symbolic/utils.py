@@ -197,13 +197,21 @@ def grid_formatting(grid:Union[np.array, torch.Tensor, List[list], List[tuple]])
     else:
       return (grid*10).astype(int)      
 
-def crop_pad(grid:np.array, pad_val=10)->np.array:
-    """Return grid without padding"""
-    i, j = np.where(grid!=pad_val)
-    i_shape = max(i) - min(i) + 1
-    j_shape = max(j) - min(j) + 1
-    croped_grid = grid[coords_transform(list(zip(i, j)))].reshape((i_shape, j_shape))
-    return croped_grid
+def crop_pad(grid: np.ndarray, pad_val=10) -> np.ndarray:
+    """Return grid without padding."""
+    # Find non-padding elements
+    i, j = np.where(grid != pad_val)
+    
+    if len(i) == 0:  # Handle empty grids
+        return grid
+    
+    # Find the boundaries
+    min_i, max_i = min(i), max(i)
+    min_j, max_j = min(j), max(j)
+    
+    # Extract the cropped region directly
+    cropped_grid = grid[min_i:max_i+1, min_j:max_j+1]
+    return cropped_grid
 
 def adjust_grid_shape(grid:np.array, target_shape:tuple=(30,30), pad_value:int=10, normalize:bool=True)->np.array:
     """Transform any grid to target shape with padding."""

@@ -495,8 +495,8 @@ def genetate_markup(shape:tuple)->typing.Dict[str, List[List[tuple]]]:
     possible = lines_partition(shape)
     return {'definite':definite, 'possible':possible}
 
-def generate_patterns(grid_size:tuple, multithreading:bool=True)->dict:
-    """Generate all types of patterns."""
+def generate_patterns(grid_size:tuple, shape_types:List[str], multithreading:bool=True)->dict:
+    """Generate specified types of patterns."""
     if multithreading:
         with ThreadPoolExecutor() as executor:
             lines = executor.submit(lines_coords, grid_size)
@@ -513,6 +513,7 @@ def generate_patterns(grid_size:tuple, multithreading:bool=True)->dict:
             all_figures = {'line':lines.result(), 'rectangle':rectangles.result(), 'l_shape':l_shapes.result(), 
                            't_shape':t_shapes.result(), 's_shape':s_shapes.result(), 'tv_shape':tv_shapes.result(), 
                            'hs_shape':hs_shapes.result(), 'cross':crosses.result(), 'flower':flowers.result(), 'diagonal':diagonals.result(), 'markup':markup.result()}
+            figures_after_filtering = {k:v for k,v in all_figures.items() if k in shape_types}
     else:
         lines = lines_coords(grid_size)
         rectangles = rectangles_coords(grid_size)
@@ -528,4 +529,5 @@ def generate_patterns(grid_size:tuple, multithreading:bool=True)->dict:
         all_figures = {'line':lines, 'rectangle':rectangles, 'l_shape':l_shapes, 
                        't_shape':t_shapes, 's_shape':s_shapes, 'tv_shape':tv_shapes, 
                        'hs_shape':hs_shapes, 'cross':crosses, 'flower':flowers, 'diagonal':diagonals, 'markup':markup}
-    return all_figures
+        figures_after_filtering = {k:v for k,v in all_figures.items() if k in shape_types}
+    return figures_after_filtering

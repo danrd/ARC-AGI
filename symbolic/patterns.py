@@ -487,7 +487,164 @@ def matrix_partition(grid_size:tuple)->List[List[tuple]]:
                     grid.extend([(line_start_i+ul[0], j+ul[1]) for j in range(grid_size[1]) for line_start_i in lines_starts])
                     grid.extend([(i+ul[0], line_start_j+ul[1]) for i in range(grid_size[0]) for line_start_j in lines_starts])
                     patterns.append([grid])   
-    return patterns   
+    return patterns  
+
+def find_connected_components(grid):
+    """
+    Find all connected components in a grid where cells with the same color are connected.
+    
+    Args:
+    grid: A 2D NumPy array or list where each cell contains a color identifier
+    
+    Returns:
+        A list of connected components, where each component is a list of (row, col) coordinates
+    """
+    # Handle both NumPy arrays and regular lists
+    if isinstance(grid, np.ndarray):
+        if grid.size == 0:
+            return []
+        rows, cols = grid.shape
+    else:
+        if not grid or not grid[0]:
+            return []
+        rows, cols = len(grid), len(grid[0])
+        
+    visited = np.zeros((rows, cols), dtype=bool)
+    components = []
+    
+    # Directions: up, right, down, left
+    directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+    
+    def is_valid(r, c):
+        return 0 <= r < rows and 0 <= c < cols
+    
+    def dfs(r, c, color, component):
+        if not is_valid(r, c) or visited[r, c] or grid[r, c] != color:
+            return
+        
+        visited[r, c] = True
+        component.append((r, c))
+        
+        for dr, dc in directions:
+            dfs(r + dr, c + dc, color, component)
+    
+    for r in range(rows):
+        for c in range(cols):
+            if not visited[r, c]:
+                color = grid[r, c]
+                component = []
+                dfs(r, c, color, component)
+                if component:
+                    components.append(component)
+    
+    return components
+
+def find_connected_components_with_color(grid, target_color):
+    """
+    Find all connected components in a grid with specified color.
+    
+    Args:
+        grid: A 2D NumPy array or list where each cell contains a color identifier
+        target_color: The color value to find
+        
+    Returns:
+        A list of connected components, where each component is a list of (row, col) coordinates
+    """
+    # Handle both NumPy arrays and regular lists
+    if isinstance(grid, np.ndarray):
+        if grid.size == 0:
+            return []
+        rows, cols = grid.shape
+    else:
+        if not grid or not grid[0]:
+            return []
+        rows, cols = len(grid), len(grid[0])
+        
+    visited = np.zeros((rows, cols), dtype=bool)
+    components = []
+    
+    # Directions: up, right, down, left
+    directions = [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, 1), (1, -1), (-1, 1)]
+    
+    def is_valid(r, c):
+        return 0 <= r < rows and 0 <= c < cols
+    
+    def dfs(r, c, target_color, component):
+        if not is_valid(r, c) or visited[r, c] or grid[r, c] != target_color:
+            return
+        
+        visited[r, c] = True
+        component.append((r, c))
+        
+        for dr, dc in directions:
+            dfs(r + dr, c + dc, target_color, component)
+    
+    for r in range(rows):
+        for c in range(cols):
+            if not visited[r, c]:
+                component = []
+                dfs(r, c, target_color, component)
+                if component:
+                    components.append(component)
+    return components
+
+
+def find_connected_components_excluding_colors(grid, font_color=0.0, pad_val=1):
+    """
+    Find all connected components in a grid where cells have any color except the specified font color.
+    
+    Args:
+        grid: A 2D NumPy array or list where each cell contains a color identifier
+        font_color: The color value to exclude (typically the background color)
+        
+    Returns:
+        A list of connected components, where each component is a list of (row, col) coordinates
+    """
+    # Handle both NumPy arrays and regular lists
+    if isinstance(grid, np.ndarray):
+        if grid.size == 0:
+            return []
+        rows, cols = grid.shape
+    else:
+        if not grid or not grid[0]:
+            return []
+        rows, cols = len(grid), len(grid[0])
+        
+    visited = np.zeros((rows, cols), dtype=bool)
+    components = []
+    
+    # Directions: up, right, down, left
+    directions = [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, 1), (1, -1), (-1, 1)]
+    
+    def is_valid(r, c):
+        return 0 <= r < rows and 0 <= c < cols
+    
+    def dfs(r, c, color, component):
+        if not is_valid(r, c) or visited[r, c] or grid[r, c] == font_color or grid[r, c] == pad_val:
+            return
+        
+        visited[r, c] = True
+        component.append((r, c))
+        
+        for dr, dc in directions:
+            dfs(r + dr, c + dc, color, component)
+    
+    # First pass: mark all font_color cells as visited
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r, c] == font_color:
+                visited[r, c] = True
+    
+    # Second pass: find connected components of other colors
+    for r in range(rows):
+        for c in range(cols):
+            if not visited[r, c]:
+                color = grid[r, c]
+                component = []
+                dfs(r, c, color, component)
+                if component:
+                    components.append(component)
+    return components 
 
 def genetate_markup(shape:tuple)->typing.Dict[str, List[List[tuple]]]:
     """Create patterns to identify possible grid markup."""

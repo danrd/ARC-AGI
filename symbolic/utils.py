@@ -168,6 +168,7 @@ def is_admissible2(grid_admissible:List[tuple], shape:List[tuple])->bool:
 
 def multiplicate_shapes2(shapes, grid_size:tuple)->dict:
     """Multiplicates shapes shifting their coordinates inside grid."""
+    ul = find_upper_left_corner(grid_size)
     grid_admissible = [(ul[0]+i, ul[1]+j) for i in range(grid_size[0]) for j in range(grid_size[1])]
     multiplied_shapes = []
     for shape in shapes:

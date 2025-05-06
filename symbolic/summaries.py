@@ -5,8 +5,7 @@ import copy
 from collections import defaultdict, Counter
 from itertools import product
 from rl.ARC_task import ARCTask, ARCSubtask
-from symbolic.objects_analysis import GridObject, ObjectCombiner, ObjectsFilter, RelationAnalyzer
-from utils.plotting import plot_grid
+from symbolic.objects_analysis import GridObject, ObjectsFilter, RelationAnalyzer
 from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list
 from symbolic.patterns import generate_patterns, find_connected_components_with_color, find_connected_components_excluding_colors
 from llm.prompts import COLOR_MAPPING

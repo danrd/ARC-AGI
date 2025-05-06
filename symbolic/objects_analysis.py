@@ -5,10 +5,8 @@ from collections import defaultdict
 from utils.plotting import plot_grid
 from symbolic.utils import check_subset_condition, find_upper_left_corner, coords_transform
 from symbolic.patterns import find_connected_components_excluding_colors
-from symbolic.summaries import SubtaskSummary
 from collections import Counter
 from llm.prompts import COLOR_MAPPING
-from rl.ARC_task import ARCTask
 
 colors_mapping = {
     0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 

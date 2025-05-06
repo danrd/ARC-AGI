@@ -733,17 +733,6 @@ class RelationAnalyzer():
                 relation_statistics[f"y_aligned_with"] += 1 
         return triples, relation_statistics
 
-class TaskSummary():
-    def __init__(self, task:ARCTask, patterns:dict):
-        self.patterns = patterns
-        self.train_subtasks = task.subtasks
-        self.test_subtask = task.test_subtask
-        self.train_subtasks_summaries = []
-   
-    def obtain_summaries(self):
-        for subtask in self.train_subtasks:
-            self.train_subtasks_summaries.append(SubtaskSummary(subtask, self.patterns))
-
 class RelationAnalyzer():
     """Class for setting relations between objects on a grid."""
     def __init__(self, object_1:GridObject=None, object_2:GridObject=None, shape:tuple=None):

@@ -1,6 +1,7 @@
 from copy import copy, deepcopy
 import typing
 from typing import List
+import functools
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes
 from concurrent.futures import ThreadPoolExecutor
 
@@ -20,13 +21,13 @@ def left_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
         new_cell = (i+offset_i, j+offset_j)
         if new_cell[0] in i_coords and new_cell[1] in j_coords:
             base.append(new_cell)
-            lines.append(copy.copy(base))
+            lines.append(copy(base))
         offset_ii += 1
         offset_jj += 1
         new_cell = (i+offset_ii, j+offset_jj)
         if new_cell[0] in i_coords and new_cell[1] in j_coords:
             base.append(new_cell)
-            lines.append(copy.copy(base))
+            lines.append(copy(base))
     return lines
 
 def right_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
@@ -46,13 +47,13 @@ def right_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
         new_cell = (i+offset_i, j+offset_j)
         if new_cell[0] in i_coords and new_cell[1] in j_coords:
             base.append(new_cell)
-            lines.append(copy.copy(base))
+            lines.append(copy(base))
         offset_ii += 1
         offset_jj += -1
         new_cell = (i+offset_ii, j+offset_jj)
         if new_cell[0] in i_coords and new_cell[1] in j_coords:
             base.append(new_cell)
-            lines.append(copy.copy(base))
+            lines.append(copy(base))
     return lines
 
 def diagonals_coords(grid_size:tuple)->List[List[List[tuple]]]:
@@ -83,8 +84,8 @@ def lines_coords(grid_size:tuple)->List[List[List[tuple]]]:
                 for k in range(1, grid_size[1]-j):
                     l = (i+ul[0], j+k+ul[1])
                     line.append(l)
-                    lines.append((copy.copy(line)))
-                hor_lines.append(copy.copy(lines))
+                    lines.append((copy(line)))
+                hor_lines.append(copy(lines))
         return hor_lines
     def vert_lines_coords(grid_size:tuple)->List[List[List[tuple]]]:
         ul = find_upper_left_corner(grid_size)
@@ -96,12 +97,13 @@ def lines_coords(grid_size:tuple)->List[List[List[tuple]]]:
                 for k in range(1, grid_size[0]-i):
                     l = (i+k+ul[0], j+ul[1])
                     line.append(l)
-                    lines.append((copy.copy(line)))           
-                vert_lines.append(copy.copy(lines))
+                    lines.append((copy(line)))           
+                vert_lines.append(copy(lines))
         return vert_lines
     coords = hor_lines_coords(grid_size) + vert_lines_coords(grid_size)
     return coords
 
+@functools.lru_cache(maxsize=128)
 def rectangles_coords(grid_size:tuple)->List[List[List[tuple]]]:
     """Create rectangle patterns for given grid_size."""
     def i_expansion(grid_size):
@@ -109,63 +111,41 @@ def rectangles_coords(grid_size:tuple)->List[List[List[tuple]]]:
         ul = find_upper_left_corner(grid_size)
         coords = []
         for size_i in range(2, grid_size[0]+1):
-            cache = []
             hor_rects = []
+            hor_rects_2 = [[] for _ in range(2, size_i)]
+            hor_rects_3 = [[] for _ in range(1, grid_size[1]-1)]
             for size_j in range(2, grid_size[1]+1):
-                base_hor = [(ii+ul[0], jj+ul[1]) for ii in range(size_i) for jj in range(size_j)]
-                hor_rects.append(copy.copy(base_hor))
-            coords.append(copy.copy(hor_rects)) 
-            cache.append(copy.copy(hor_rects)) 
-            for i in range(size_i-2):
-                hor_rects_2 = []
-                for idx, rect in enumerate(hor_rects):
-                    crop_rect = rect[(i+1)*(idx+2):]
-                    if len(crop_rect) >= 4:
-                        hor_rects_2.append(crop_rect)
-                coords.append(copy.copy(hor_rects_2)) 
-                cache.append(copy.copy(hor_rects_2)) 
-            for hor_rect_list in cache:
-                hor_rects_3 = [[] for i in range(2, grid_size[1])]
-                for idx_1, rect in enumerate(hor_rect_list):
-                    rect.sort(key=lambda x: x[1])
-                    for idx_2 in range(idx_1):
-                        crop_rect = rect[size_i*(idx_2+1):]
-                        if len(crop_rect) >= 4:
-                            hor_rects_3[idx_2].append(crop_rect)
-                coords.extend(copy.copy(hor_rects_3))   
-                size_i += -1
+                base_hor = [(ii+ul[0], jj+ul[1]) for jj in range(size_j) for ii in range(size_i)]
+                base_hor_inv = [(ii+ul[0], jj+ul[1]) for ii in range(size_i) for jj in range(size_j)]
+                hor_rects.append(copy(base_hor))
+                for i in range(1, size_i-1):   
+                   hor_rects_2[i-1].append(copy(base_hor[i*size_j:]))
+                for j in range(1, size_j-1):
+                   hor_rects_3[j-1].append(copy(base_hor_inv[j*size_i:]))           
+            coords.append(hor_rects)
+            coords.extend(hor_rects_2)
+            coords.extend(hor_rects_3)
         return coords
-    
+
     def j_expansion(grid_size):
         """Patterns expanding along j axis."""
         ul = find_upper_left_corner(grid_size)
         coords = []
         for size_j in range(2, grid_size[1]+1):
-            cache = []
             hor_rects = []
+            hor_rects_2 = [[] for _ in range(2, size_j)]
+            hor_rects_3 = [[] for _ in range(1, grid_size[0]-1)]
             for size_i in range(2, grid_size[0]+1):
                 base_hor = [(ii+ul[0], jj+ul[1]) for jj in range(size_j) for ii in range(size_i)]
-                hor_rects.append(copy.copy(base_hor))
-            coords.append(copy.copy(hor_rects)) 
-            cache.append(copy.copy(hor_rects)) 
-            for j in range(size_j-2):
-                hor_rects_2 = []
-                for idx, rect in enumerate(hor_rects):
-                    crop_rect = rect[(j+1)*(idx+2):]
-                    if len(crop_rect) >= 4:
-                        hor_rects_2.append(crop_rect)
-                coords.append(copy.copy(hor_rects_2)) 
-                cache.append(copy.copy(hor_rects_2)) 
-            for hor_rect_list in cache:
-                hor_rects_3 = [[] for i in range(2, grid_size[0])]
-                for idx_1, rect in enumerate(hor_rect_list):
-                    rect.sort(key=lambda x: x[0])
-                    for idx_2 in range(idx_1):
-                        crop_rect = rect[size_j*(idx_2+1):]
-                        if len(crop_rect) >= 4:
-                            hor_rects_3[idx_2].append(crop_rect)
-                coords.extend(copy.copy(hor_rects_3))   
-                size_j += -1
+                base_hor_inv = [(ii+ul[0], jj+ul[1]) for ii in range(size_i) for jj in range(size_j)]
+                hor_rects.append(copy(base_hor))
+                for j in range(1, size_j-1):   
+                   hor_rects_2[j-1].append(copy(base_hor[j*size_i:]))
+                for i in range(1, size_i-1):
+                   hor_rects_3[i-1].append(copy(base_hor_inv[i*size_j:]))           
+            coords.append(hor_rects)
+            coords.extend(hor_rects_2)
+            coords.extend(hor_rects_3)
         return coords
     
     def i_j_expansion(grid_size):
@@ -178,25 +158,14 @@ def rectangles_coords(grid_size:tuple)->List[List[List[tuple]]]:
                 min_dim = min(grid_size[0]-i+1, grid_size[1]-j+1)
                 for size in range(2, min_dim):
                     base_sq = [(ii+ul[0]+i, jj+ul[1]+j) for ii in range(size) for jj in range(size)]
-                    sq_rects.append(copy.copy(base_sq))
-                coords.append(copy.copy(sorted(sq_rects, key=lambda x: x[0]))) 
+                    sq_rects.append(copy(base_sq))
+                coords.append(copy(sorted(sq_rects, key=lambda x: x[0]))) 
         return coords
 
-    with ThreadPoolExecutor() as executor: # multithreading for better perfomance
-        ul = find_upper_left_corner(grid_size)
-        coords = []
-        coords_1 = []
-        coords_2 = []
-        coords_3 = []
-        i_coords = executor.submit(i_expansion, grid_size)
-        j_coords = executor.submit(j_expansion, grid_size)
-        i_j_coords = executor.submit(i_j_expansion, grid_size)
-        coords_1.append(i_coords.result())
-        coords_2.append(j_coords.result())
-        coords_3.append(i_j_coords.result())
-        coords.extend(coords_1[0])
-        coords.extend(coords_2[0])
-        coords.extend(coords_3[0])
+    coords = []
+    coords.extend(i_expansion(grid_size))
+    coords.extend(j_expansion(grid_size))
+    coords.extend(i_j_expansion(grid_size))
     return coords
 
 def rectangles_coords2(grid_size:tuple)->List[List[List[tuple]]]:
@@ -208,20 +177,20 @@ def rectangles_coords2(grid_size:tuple)->List[List[List[tuple]]]:
                 hor_rects = []
                 for size_j in range(2, grid_size[1]-j+1):
                     base_hor = [(ii+ul[0]+i, jj+ul[1]+j) for ii in range(size_i) for jj in range(size_j)]
-                    hor_rects.append(copy.copy(sorted(base_hor, key=lambda x: x[0])))
-                coords.append(copy.copy(sorted(hor_rects, key=lambda x:x[0]))) 
+                    hor_rects.append(copy(sorted(base_hor, key=lambda x: x[0])))
+                coords.append(copy(sorted(hor_rects, key=lambda x:x[0]))) 
             for size_j in range(2, grid_size[1]-j+1):
                 vert_rects = []
                 for size_i in range(2, grid_size[0]-i+1):
                     base_vert = [(ii+ul[0]+i, jj+ul[1]+j) for jj in range(size_j) for ii in range(size_i)]
-                    vert_rects.append(copy.copy(sorted(base_vert, key=lambda x: x[0])))
-                coords.append(copy.copy(sorted(vert_rects, key=lambda x: x[0]))) 
+                    vert_rects.append(copy(sorted(base_vert, key=lambda x: x[0])))
+                coords.append(copy(sorted(vert_rects, key=lambda x: x[0]))) 
             sq_rects = []
             min_dim = min(grid_size[0]-i+1, grid_size[1]-j+1)
             for size in range(2, min_dim):
                 base_sq = [(ii+ul[0]+i, jj+ul[1]+j) for ii in range(size) for jj in range(size)]
-                sq_rects.append(copy.copy(base_sq))
-            coords.append(copy.copy(sorted(sq_rects, key=lambda x: x[0]))) 
+                sq_rects.append(copy(base_sq))
+            coords.append(copy(sorted(sq_rects, key=lambda x: x[0]))) 
     return coords  
 
 def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]]:
@@ -242,9 +211,9 @@ def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]
                     base.append(new_cell_left)
                     new_cell_right = (i+ul[0], j-1+ul[1])
                     base.append(new_cell_right)
-                    cache.append(copy.copy(base))
+                    cache.append(copy(base))
                 if cache != []:
-                    hs_shapes.append(copy.copy(cache))
+                    hs_shapes.append(copy(cache))
             for j in range(3, max_j_increment):
                 cache = []
                 max_expanding_increment =  min(3, grid_size[0] - i_pos) if short else grid_size[0] - i_pos
@@ -255,9 +224,9 @@ def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]
                         base.append(new_cell_left)
                         new_cell_right = (ii+ul[0], j-1+ul[1])
                         base.append(new_cell_right)
-                    cache.append(copy.copy(base))
+                    cache.append(copy(base))
                 if cache != []: 
-                    hs_shapes.append(copy.copy(cache))
+                    hs_shapes.append(copy(cache))
             for i in range(3, max_i_increment):
                 base = [(k+ul[0], ul[1]) for k in range(i)] # create base line     
                 cache = []
@@ -267,9 +236,9 @@ def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]
                     base.append(new_cell_left)
                     new_cell_right = (i-1+ul[0], j+ul[1]) 
                     base.append(new_cell_right)
-                    cache.append(copy.copy(base))
+                    cache.append(copy(base))
                 if cache != []:
-                    hs_shapes.append(copy.copy(cache))
+                    hs_shapes.append(copy(cache))
             for i in range(3, max_i_increment):
                 cache = []
                 max_expanding_increment = min(3, grid_size[1] - j_pos) if short else grid_size[1] - j_pos
@@ -280,9 +249,9 @@ def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]
                         base.append(new_cell_left)
                         new_cell_right = (ul[0], jj+ul[1])
                         base.append(new_cell_right)
-                    cache.append(copy.copy(base))
+                    cache.append(copy(base))
                 if cache != []: 
-                    hs_shapes.append(copy.copy(cache))
+                    hs_shapes.append(copy(cache))
     return hs_shapes
 
 def generate_l_shapes(grid_size:tuple, regime:str='short')->List[List[List[tuple]]]:
@@ -309,33 +278,33 @@ def generate_l_shapes(grid_size:tuple, regime:str='short')->List[List[List[tuple
         l_shapes.append(shape_br_2)
     
     if regime == 'full': # create all possible l_shapes patterns
-        shape_ul_j = copy.copy(shape_ul)
+        shape_ul_j = copy(shape_ul)
         for j in range(1, grid_size[1]):
             new_cell = (0+ul[0], j+ul[1])
             if new_cell not in shape_ul_j:
                 shape_ul_j.append(new_cell)
-                l_shapes.append(copy.copy(shape_ul_j))
-            shape_ul_i = copy.copy(shape_ul_j)    
+                l_shapes.append(copy(shape_ul_j))
+            shape_ul_i = copy(shape_ul_j)    
             for i in range(2, grid_size[0]):
                 new_cell = (i+ul[0], 0+ul[1])
                 shape_ul_i.append(new_cell)
-                l_shapes.append(copy.copy(shape_ul_i))
+                l_shapes.append(copy(shape_ul_i))
         for j in range(1, grid_size[1]):
             base = [(0+ul[0], k+ul[1]) for k in range(j+1)]
-            shape_ur_i = copy.copy(base)
+            shape_ur_i = copy(base)
             for i in range(1, grid_size[0]):
                 new_cell = (i+ul[0], j+ul[1])
                 shape_ur_i.append(new_cell)
                 if shape_ur_i not in l_shapes:
-                    l_shapes.append(copy.copy(shape_ur_i))
+                    l_shapes.append(copy(shape_ur_i))
         for i in range(1, grid_size[0]):
             base = [(k+ul[0], 0+ul[1]) for k in range(i+1)]
-            shape_ur_i = copy.copy(base)
+            shape_ur_i = copy(base)
             for j in range(1, grid_size[1]):
                 new_cell = (i+ul[0], j+ul[1])
                 shape_ur_i.append(new_cell)
                 if shape_ur_i not in l_shapes:
-                    l_shapes.append(copy.copy(shape_ur_i))   
+                    l_shapes.append(copy(shape_ur_i))   
     l_shapes = multiplicate_shapes(l_shapes, grid_size)
     return l_shapes
 
@@ -427,7 +396,7 @@ def generate_tv_shapes(grid_size:tuple)->List[List[List[tuple]]]:
             tv.append(new_cell_3)
             new_cell_4 = (i+ul[0], k+ul[1])
             tv.append(new_cell_4)
-        tv_shapes.append(copy.copy(sorted(tv, key=lambda x: x[0])))
+        tv_shapes.append(copy(sorted(tv, key=lambda x: x[0])))
     tv_shapes = multiplicate_shapes(tv_shapes, grid_size)
     return tv_shapes
 
@@ -442,52 +411,61 @@ def generate_flowers(grid_size:tuple)->List[List[List[tuple]]]:
     flowers = multiplicate_shapes(flowers, grid_size)
     return flowers
 
-
 def lines_partition(grid_size:tuple)->List[List[tuple]]:
     """Create markup patterns with lines partition."""
     patterns = []
     ul = find_upper_left_corner(grid_size)
-    if grid_size >= (5,5): # splitting in halves
-        if grid_size[0]%2 == 1:
+    if grid_size[0] >= 3 or grid_size[1] >= 3: # splitting in halves
+        if grid_size[0] % 2 == 1:
             mid_i = grid_size[0]//2 + ul[0]
-            patterns.append([(mid_i, j+ul[1]) for j in range(grid_size[1])])
-        if grid_size[1]%2 == 1:
+            patterns.append([[(mid_i, j+ul[1]) for j in range(grid_size[1])]])
+        if grid_size[1] % 2 == 1:
             mid_j = grid_size[1]//2 + ul[1]
-            patterns.append([(i+ul[0], mid_j) for i in range(grid_size[0])])
-    if grid_size >= (8,8): # splitting in thirds
-        if grid_size[0]%3 == 2:
-            pattern = []
+            patterns.append([[(i+ul[0], mid_j) for i in range(grid_size[0])]])
+    if grid_size[0] >= 8 or grid_size[1] >= 8: # splitting in thirds
+        if grid_size[0] % 3 == 2:
             mid_i_1 = grid_size[0]//3 + ul[0]
-            pattern.extend([(mid_i_1, j+ul[1]) for j in range(grid_size[1])])
+            patterns.append([[(mid_i_1, j+ul[1]) for j in range(grid_size[1])]])
             mid_i_2 = mid_i_1 + grid_size[0]//3 + 1
-            pattern.extend([(mid_i_2, j+ul[1]) for j in range(grid_size[1])])
-            patterns.append(pattern)
-        if grid_size[1]%3 == 2:
-            pattern = []
+            patterns.append([[(mid_i_2, j+ul[1]) for j in range(grid_size[1])]])
+        if grid_size[1] % 3 == 2:
             mid_j_1 = grid_size[1]//3 + ul[1]
-            pattern.extend([(i+ul[0], mid_j_1) for i in range(grid_size[0])])
+            patterns.append([[(i+ul[0], mid_j_1) for i in range(grid_size[0])]])
             mid_j_2 = mid_j_1 + grid_size[1]//3 + 1
-            pattern.extend([(i+ul[0], mid_j_2 ) for i in range(grid_size[0])])
-            patterns.append(pattern)
-    return patterns   
+            patterns.append([[(i+ul[0], mid_j_2 ) for i in range(grid_size[0])]])
+    if grid_size[0] >= 11 or grid_size[1] >= 11: # splitting in fourths
+        if grid_size[0] % 4 == 3:
+            mid_i_1 = grid_size[0]//4 + ul[0]
+            patterns.append([[(mid_i_1, j+ul[1]) for j in range(grid_size[1])]])
+            mid_i_2 = mid_i_1 + grid_size[0]//4 + 1
+            patterns.append([[(mid_i_2, j+ul[1]) for j in range(grid_size[1])]])
+            mid_i_3 = mid_i_2 + grid_size[0]//4 + 1
+            patterns.append([[(mid_i_3, j+ul[1]) for j in range(grid_size[1])]])
+        if grid_size[1] % 4 == 3:
+            mid_j_1 = grid_size[1]//4 + ul[1]
+            patterns.append([[(i+ul[0], mid_j_1) for i in range(grid_size[0])]])
+            mid_j_2 = mid_j_1 + grid_size[1]//4 + 1
+            patterns.append([[(i+ul[0], mid_j_2 ) for i in range(grid_size[0])]])
+            mid_j_3 = mid_j_2 + grid_size[1]//4 + 1
+            patterns.append([[(i+ul[0], mid_j_3 ) for i in range(grid_size[0])]])
+    return patterns
 
 def matrix_partition(grid_size:tuple)->List[List[tuple]]:
     """Create markup patterns with matrix partition."""
     patterns = []
     ul = find_upper_left_corner(grid_size)
-    if grid_size[0] == grid_size[1]:
-        for size in range(2, grid_size[0]):
-            if size*2+1 > grid_size[0]:
-                break
-            else:
-                if (grid_size[0])%(size+1) == size:
-                    n = (grid_size[0]//(size+1))
-                    grid = []
-                    lines_starts = [size+k*(size+1) for k in range(n)]
-                    grid.extend([(line_start_i+ul[0], j+ul[1]) for j in range(grid_size[1]) for line_start_i in lines_starts])
-                    grid.extend([(i+ul[0], line_start_j+ul[1]) for i in range(grid_size[0]) for line_start_j in lines_starts])
-                    patterns.append([grid])   
-    return patterns  
+    for size_1 in range(2, (grid_size[0]//2+1)):
+        markup = []
+        for size_2 in range(2, (grid_size[1]//2+1)): 
+            if grid_size[0]//size_1 == (grid_size[0]%size_1)+1 == grid_size[1]//size_2 == (grid_size[1]%size_2)+1:
+                    n = (grid_size[0] // size_1) - 1
+                    k = (grid_size[1] // size_2) - 1
+                    line_starts_i = [ul[0]+size_1*i+(i-1) for i in range(1, n+1)]
+                    line_starts_j = [ul[1]+size_2*j+(j-1) for j in range(1, k+1)]       
+                    markup.extend([(line_start_i, j+ul[1]) for j in range(grid_size[1]) for line_start_i in line_starts_i])
+                    markup.extend([(i+ul[0], line_start_j) for i in range(grid_size[0]) for line_start_j in line_starts_j])
+                    patterns.append([markup])   
+    return patterns
 
 def find_connected_components(grid):
     """

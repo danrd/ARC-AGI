@@ -1,7 +1,7 @@
 import typing
 from typing import List
 import numpy as np
-import copy
+from copy import copy
 from collections import defaultdict, Counter
 from itertools import product
 from rl.ARC_task import ARCTask, ARCSubtask

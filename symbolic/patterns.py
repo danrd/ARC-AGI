@@ -1,5 +1,6 @@
 from copy import copy, deepcopy
 import typing
+import numpy as np
 from typing import List
 import functools
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes

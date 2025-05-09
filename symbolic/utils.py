@@ -10,7 +10,7 @@ def find_upper_left_corner(grid_size:tuple)->tuple:
     """Finds left upper corner of the grid to take into account padding."""
     i = min(14-(grid_size[0]%2)*((grid_size[0]//2)), 14-((grid_size[0]-1)%2)*(((grid_size[0]-1)//2)))
     j = min(14-(grid_size[1]%2)*((grid_size[1]//2)), 14-((grid_size[1]-1)%2)*(((grid_size[1]-1)//2)))
-    return (i, j)
+    return (0, 0)
 
 def calculate_size(shapes):
     """Calculation to control a size of pregenerated shapes."""

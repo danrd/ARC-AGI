@@ -236,7 +236,7 @@ class GridObject():
             self.inner_holes, self.outer_holes = self.define_holes()
         # Color update if grid provided
         if grid is not None:
-            colors = [grid[i, j] for i, j in self.coords]
+            colors = [grid[i, j] for i, j in self.coords if i<grid.shape[0] and j<grid.shape[1]]
             self.color_numbers = list(set(colors))
             self.colors = [colors_mapping[color] for color in self.color_numbers]
             self.color_homo = True if len(self.color_numbers) else False

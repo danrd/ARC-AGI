@@ -241,7 +241,7 @@ class GridObject():
             self.colors = [colors_mapping[color] for color in self.color_numbers]
             self.color_homo = True if len(self.color_numbers) else False
     
-    def check_equality(self, other_object:GridObject):
+    def check_equality(self, other_object):
         coords_1_shifted = [(tup[0]-self.min_i, tup[1]-self.min_j) for tup in self.coords]
         coords_1_shifted.sort(key=lambda x: x[0])
         coords_2_shifted = [(tup[0]-other_object.min_i, tup[1]-self.othet_object.min_j) for tup in other_object]

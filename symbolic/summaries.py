@@ -53,7 +53,7 @@ class GridSummary():
         self.shape = shape
         self.shape_types = ['line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
                             'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex'] if shape_types == None else shape_types
-        self.patterns = generate_patterns(self.shape)
+        self.patterns = generate_patterns(self.shape, self.shape_types)
         self.grid_corners = self.define_grid_corners()
         self.objects_dict = {}
         self.initial_objects = self.retrieve_objects(self.grid, self.patterns, self.shape)

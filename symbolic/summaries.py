@@ -46,17 +46,6 @@ class SubtaskSummary():
         features['grids_x_ratio'] = self.grids_x_ratio
         features['grids_y_ratio'] = self.grids_y_ratio 
         return features
-
-def prepare_features(inp_grid_summary:GridSummary, out_grid_summary:GridSummary):
-    obj_summary_1 = inp_grid_summary.objects_summary
-    rel_summary_1 = inp_grid_summary.relations_summary
-    obj_summary_2 = out_grid_summary.objects_summary
-    rel_summary_2 = out_grid_summary.relations_summary
-    inp = obj_summary_1 | obj_summary_1['shapes'] | obj_summary_1['colors'] | rel_summary_1  
-    out = obj_summary_2 | obj_summary_2['shapes'] | obj_summary_2['colors'] | rel_summary_2 
-    summary_diff = {k:(out[k]-inp[k]) for k in inp.keys() if k not in ['shape2size', 'size2shape', 'shapes', 'colors']}
-    return summary_diff
-
 class GridSummary():
     """Class for creating summary for a given grid."""
     def __init__(self, grid:np.array, shape:tuple, shape_types=None):

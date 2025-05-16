@@ -15,40 +15,47 @@ colors_mapping = {
     0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
 }
 class TaskSummary():
-    """Class for inferencing information about a task."""
     def __init__(self, task:ARCTask, patterns:dict):
         self.patterns = patterns
-        self.train_subtasks = task.subtasks[:-1]
-        self.test_subtask = task.subtasks[-1]
+        self.train_subtasks = task.subtasks
+        self.test_subtask = task.test_subtask
         self.train_subtasks_summaries = []
-        self.grid_shapes_ratios = self.compare_grid_shapes()
-        self.need_resize = bool(1-all(self.grid_shapes_ratios))
-    
-    def compare_grid_shapes(self):
-        """Compare the shapes of the grids in the train subtasks with the test subtask."""
-        ratios = []
-        for subtask in self.train_subtasks:
-            ratios.append(subtask.train_inp_shape/subtask.train_out_shape)
-        return ratios
    
     def obtain_summaries(self):
-        """Obtain the summaries of the train subtasks."""
         for subtask in self.train_subtasks:
             self.train_subtasks_summaries.append(SubtaskSummary(subtask, self.patterns))
 
 class SubtaskSummary():
-    """Class for inferencing information about a subtask."""
-    def __init__(self, subtask:ARCSubtask, train:bool=True, need_resize=None):
+    def __init__(self, subtask:ARCSubtask, train:bool=True):
         self.subtask = subtask
-        self.subtask_label = self.subtask_label
-        self.need_resize = need_resize
+        self.subtask_label = subtask.label
+        self.inp_grid_summary = GridSummary(self.subtask.train_inp, self.subtask.train_inp_shape)
         if train:
-            self.out_grid_summary = GridSummary(subtask.train_out)
-        self.grids_intersection = self.analyze_grids_intersection()
-        self.inp_grid_summary = GridSummary(self.subtask.train_inp, self.subtask.train_inp_shape, self.subtask_label)
+            self.out_grid_summary = GridSummary(subtask.train_out, self.subtask.train_out_shape)
+            self.grids_x_ratio = self.subtask.train_inp_shape[0] / self.subtask.train_out_shape[0]
+            self.grids_y_ratio = self.subtask.train_inp_shape[1] / self.subtask.train_out_shape[1]       
 
-    def analyze_grids_intersection(self):
-        pass
+    def prepare_features(self):
+        obj_summary_1 = self.inp_grid_summary.objects_summary
+        rel_summary_1 = self.inp_grid_summary.relations_summary
+        obj_summary_2 = self.out_grid_summary.objects_summary
+        rel_summary_2 = self.out_grid_summary.relations_summary
+        inp = obj_summary_1 | obj_summary_1['shapes'] | obj_summary_1['colors'] | rel_summary_1  
+        out = obj_summary_2 | obj_summary_2['shapes'] | obj_summary_2['colors'] | rel_summary_2 
+        features = {k:(out[k]-inp[k]) for k in inp.keys() if k not in ['shape2size', 'size2shape', 'shapes', 'colors']}
+        features['grids_x_ratio'] = self.grids_x_ratio
+        features['grids_y_ratio'] = self.grids_y_ratio 
+        return features
+
+def prepare_features(inp_grid_summary:GridSummary, out_grid_summary:GridSummary):
+    obj_summary_1 = inp_grid_summary.objects_summary
+    rel_summary_1 = inp_grid_summary.relations_summary
+    obj_summary_2 = out_grid_summary.objects_summary
+    rel_summary_2 = out_grid_summary.relations_summary
+    inp = obj_summary_1 | obj_summary_1['shapes'] | obj_summary_1['colors'] | rel_summary_1  
+    out = obj_summary_2 | obj_summary_2['shapes'] | obj_summary_2['colors'] | rel_summary_2 
+    summary_diff = {k:(out[k]-inp[k]) for k in inp.keys() if k not in ['shape2size', 'size2shape', 'shapes', 'colors']}
+    return summary_diff
 
 class GridSummary():
     """Class for creating summary for a given grid."""
@@ -57,11 +64,12 @@ class GridSummary():
         self.shape = shape
         self.shape_types = ['line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
                             'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex'] if shape_types == None else shape_types
-        self.patterns = generate_patterns(self.shape, self.shape_types)
+        self.patterns = generate_patterns(self.shape)
         self.grid_corners = self.define_grid_corners()
         self.objects_dict = {}
         self.initial_objects = self.retrieve_objects(self.grid, self.patterns, self.shape)
         self.connected_components = self.retrieve_connected_components(self.grid) 
+        self.font_segments = find_connected_components_with_color(self.grid, target_color=0.0)
         self.relations_for_stats = ["same_color", "same_shape", "same_size", "in_contour", 
                                     "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with"]
         self.repr_levels = self.set_repr_levels()
@@ -94,135 +102,6 @@ class GridSummary():
         return {f'objects':dict_to_list(copy(level_objects)), f'objects_summary':copy(level_objects_summary), 
                 f'triples':copy(level_triples), f'relation_statistics':copy(level_relation_statistics),
                 f'relations_summary': copy(level_relations_summary)}
-
-    def define_object_positioning(self, object_coords: List[tuple]):
-        """
-        Identify if an object is located at specific positions on the grid.
-        Supports grids from 1x1 to 30x30 and identifies various positioning attributes.
-        """
-        positioning = []
-        
-        # If no coordinates provided, return empty list
-        if not object_coords:
-            return positioning
-        
-        # Get grid dimensions
-        rows, cols = self.shape
-        
-        # Define grid corners
-        ul, bl, ur, br = self.grid_corners
-        
-        # Check if object is in corners
-        if ul in object_coords:
-            positioning.append('in_top_left_corner')
-        if bl in object_coords:
-            positioning.append('in_bottom_left_corner')  
-        if ur in object_coords:
-            positioning.append('in_top_right_corner')             
-        if br in object_coords:
-            positioning.append('in_bottom_right_corner') 
-        
-        # Get separate lists of row and column indices
-        list_i, list_j = coords_transform(object_coords)
-        
-        # Check if object is at edges
-        if ul[0] in list_i:
-            positioning.append('at_top_edge')
-        if ul[1] in list_j:
-            positioning.append('at_left_edge')
-        if br[0] in list_i:
-            positioning.append('at_bottom_edge')
-        if br[1] in list_j:
-            positioning.append('at_right_edge')
-        
-        # Calculate halves
-        top_half_rows = range(ul[0], ul[0]+(rows // 2))
-        bottom_half_rows = range(ul[0]+(rows // 2), (ul[0]+rows))
-        left_half_cols = range(ul[1], ul[1]+(cols//2))
-        right_half_cols = range(ul[1]+(cols//2), (ul[1]+cols))
-        
-        # Check if object is entirely in halves
-        if all(i in top_half_rows for i in list_i):
-            positioning.append('at_top_half')
-        if all(i in bottom_half_rows for i in list_i):
-            positioning.append('at_bottom_half')
-        if all(j in left_half_cols for j in list_j):
-            positioning.append('at_left_half')
-        if all(j in right_half_cols for j in list_j):
-            positioning.append('at_right_half')
-        
-        # Check if object is entirely in quarters
-        if all(i in top_half_rows for i in list_i) and all(j in left_half_cols for j in list_j):
-            positioning.append('at_top_left_quarter')
-        if all(i in bottom_half_rows for i in list_i) and all(j in left_half_cols for j in list_j):
-            positioning.append('at_bottom_left_quarter')
-        if all(i in top_half_rows for i in list_i) and all(j in right_half_cols for j in list_j):
-            positioning.append('at_top_right_quarter')
-        if all(i in bottom_half_rows for i in list_i) and all(j in right_half_cols for j in list_j):
-            positioning.append('at_bottom_right_quarter')
-        
-        # Additional: Check if object spans across halves (crosses the middle)
-        if any(i in top_half_rows for i in list_i) and any(i in bottom_half_rows for i in list_i):
-            positioning.append('spans_vertical_middle')
-        if any(j in left_half_cols for j in list_j) and any(j in right_half_cols for j in list_j):
-            positioning.append('spans_horizontal_middle')
-        
-        # For larger grids, add matrix-like segment positioning
-        if rows >= 3 and cols >= 3:
-            # Define functions to create segments for different grid sizes
-            def add_matrix_segments(n_segments):
-                if rows < n_segments or cols < n_segments:
-                    return
-                    
-                # Calculate segment boundaries
-                row_segments = [range(i * rows // n_segments, (i + 1) * rows // n_segments) for i in range(n_segments)]
-                col_segments = [range(j * cols // n_segments, (j + 1) * cols // n_segments) for j in range(n_segments)]
-                
-                # Check if object is entirely in each segment
-                for i, row_seg in enumerate(row_segments):
-                    for j, col_seg in enumerate(col_segments):
-                        if all(r in row_seg for r in list_i) and all(c in col_seg for c in list_j):
-                            positioning.append(f'in_segment_{i}_{j}_of_{n_segments}x{n_segments}')
-            
-            # Add 3x3, 4x4, 5x5 matrix segments for larger grids
-            add_matrix_segments(3)  # 3x3 grid
-            if rows >= 4 and cols >= 4:
-                add_matrix_segments(4)  # 4x4 grid
-            if rows >= 5 and cols >= 5:
-                add_matrix_segments(5)  # 5x5 grid
-        
-        # Additional: Check for central positioning
-        if rows >= 3 and cols >= 3:
-            center_row = rows // 2
-            center_col = cols // 2
-            
-            # Define central area (single center cell for odd dimensions, 2x2 area for even dimensions)
-            central_rows = [center_row] if rows % 2 == 1 else [center_row - 1, center_row]
-            central_cols = [center_col] if cols % 2 == 1 else [center_col - 1, center_col]
-            
-            # Check if any part of the object is in the central area
-            if any(i in central_rows for i in list_i) and any(j in central_cols for j in list_j):
-                positioning.append('touches_center')
-                
-                # Check if the object is fully contained in the central area
-                if all(i in central_rows for i in list_i) and all(j in central_cols for j in list_j):
-                    positioning.append('fully_in_center')
-        
-        # Additional property: Check if the object forms a diagonal
-        if len(object_coords) > 1:
-            # Check for main diagonal (top-left to bottom-right)
-            if all((i == j) for i, j in object_coords):
-                positioning.append('on_main_diagonal')
-            
-            # Check for counter diagonal (top-right to bottom-left)
-            if all((i + j == rows - 1) for i, j in object_coords):
-                positioning.append('on_counter_diagonal')
-        
-        # Additional property: Check if object is a perimeter object
-        if all(i == 0 or i == rows - 1 or j == 0 or j == cols - 1 for i, j in object_coords):
-            positioning.append('on_perimeter_only')
-        
-        return positioning
         
     def retrieve_objects(self, grid:np.array, patterns:typing.Dict['str', List[List[List[tuple]]]], shape:tuple)->typing.Dict[str, List[GridObject]]:
         """Retrieve all possible objects from the grid and return corresponding GridObject instances."""
@@ -241,8 +120,7 @@ class GridSummary():
                         color = retrieval.pop()
                         if color != 0 and (k != 'diagonal' or count_unique_cells(k, pattern, used_coordinates)) > 0:
                             label = f'{k}_{idx}'
-                            object_positioning = self.define_object_positioning(pattern)
-                            obj = GridObject(k, pattern, [color], label, object_positioning) # otherwise create candidate object
+                            obj = GridObject(k, pattern, [color], label, self.shape) # otherwise create candidate object
                             self.objects_dict[label] = obj
                             used_coordinates.extend(pattern) # save occupied cells 
                             candidate = True
@@ -257,7 +135,7 @@ class GridSummary():
             color = grid[cell]
             if color != 0:
                 label = f'cell_{idx}'
-                obj = GridObject('cell', [cell], [grid[cell]], label)
+                obj = GridObject('cell', [cell], [grid[cell]], label, self.shape)
                 objects['cell'].append(obj)
         return objects
 
@@ -270,8 +148,7 @@ class GridSummary():
             if len(comp) > 1:
                 color_numbers = list(set([grid[coord] for coord in comp]))
                 label = f'complex_{comp_idx}'
-                object_positioning = self.define_object_positioning(comp)
-                obj = GridObject('complex', comp, color_numbers, label, object_positioning) # otherwise create candidate object
+                obj = GridObject('complex', comp, color_numbers, label, self.shape) # otherwise create candidate object
                 components[label] = obj
                 comp_idx += 1
         for i in range(1, 10):
@@ -281,8 +158,7 @@ class GridSummary():
                 if comp not in heter_components:
                     if len(comp) > 1:
                         label = f'complex_{comp_idx}'
-                        object_positioning = self.define_object_positioning(comp)
-                        obj = GridObject('complex', comp, [col], label, object_positioning) # otherwise create candidate object
+                        obj = GridObject('complex', comp, [col], label, self.shape) # otherwise create candidate object
                         components[label] = obj
                         comp_idx += 1 
         self.initial_objects['complex'] = list(components.values())
@@ -390,10 +266,15 @@ class GridSummary():
         all_objects = dict_to_list(objects)
         for idx, obj_1 in enumerate(all_objects):
             for obj_2 in all_objects[idx+1:]: 
-                analyzer = RelationAnalyzer(obj_1, obj_2, self.shape)
-                triples = analyzer.triples
-                relation_counter = analyzer.relation_counter
-                all_triples.extend(triples)
-                relation_statistics.update(relation_counter)
-                distances[f'{obj_1.label}-{obj_2.label}'] = self.calculate_distance(obj_1, obj_2)
+                if obj_2.label not in obj_1.relations.keys():
+                    analyzer = RelationAnalyzer(obj_1, obj_2, self.shape)
+                    triples = analyzer.triples
+                    relation_counter = analyzer.relation_counter
+                    all_triples.extend(triples)
+                    relation_statistics.update(relation_counter)
+                    # distance calculation
+                    distance = self.calculate_distance(obj_1, obj_2)
+                    obj_1.distances[obj_2.label] = distance
+                    obj_2.distances[obj_1.label] = distance
+                    distances[f'{obj_1.label}-{obj_2.label}'] = obj_1.distances[obj_2.label]
         return all_triples, relation_statistics

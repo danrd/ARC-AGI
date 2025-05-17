@@ -12,6 +12,10 @@ colors_mapping = {
     0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 
     0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
 }
+colors_mapping = {
+    0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 
+    0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
+}
 class GridObject():
     """Class for storing identified objects on a grid."""
     def __init__(self, shape:str, coords:List[tuple], color:List[float], label:str, grid_shape:tuple):
@@ -236,7 +240,7 @@ class GridObject():
             self.inner_holes, self.outer_holes = self.define_holes()
         # Color update if grid provided
         if grid is not None:
-            colors = [grid[i, j] for i, j in self.coords if i<grid.shape[0] and j<grid.shape[1]]
+            colors = [grid[i, j] for i, j in self.coords]
             self.color_numbers = list(set(colors))
             self.colors = [colors_mapping[color] for color in self.color_numbers]
             self.color_homo = True if len(self.color_numbers) else False
@@ -426,6 +430,100 @@ class GridObject():
                            'color_description':color2description
                           }
         self.objects_summary = objects_summary
+    
+    def create_embedding(self):
+        """
+        Creates a vector embedding representation of the GridObject with the following features:
+        - color_enc: One-hot encoding for 10 possible colors [0/1]
+        - hor_size: Fraction of grid width [0-1]
+        - vert_size: Fraction of grid height [0-1]
+        - size: Fraction of total grid size [0-1]
+        - i_center: Normalized center i-coordinate [0-1]
+        - j_center: Normalized center j-coordinate [0-1]
+        - min_i: Normalized minimum i-coordinate [0-1]
+        - min_j: Normalized minimum j-coordinate [0-1]
+        - max_i: Normalized maximum i-coordinate [0-1]
+        - max_j: Normalized maximum j-coordinate [0-1]
+        - inner_holes: Number of inner holes, normalized to range [0-1]
+        - outer_holes: Number of outer holes, normalized to range [0-1]
+        - symmetry_type: Boolean value indicating symmetry [0/1]
+        
+        Returns:
+            dict: Dictionary with named features and their values
+            list: Flat vector representation of all features
+        """
+        # Get grid dimensions
+        grid_rows, grid_cols = self.grid_shape
+        
+        # Initialize the embedding dictionary
+        embedding_dict = {}
+        
+        # 1. Color encoding (one-hot vector for 10 colors)
+        colors = ["black", "blue", "red", "green", "yellow", "gray", "magenta", "orange", "sky", "brown"]
+        color_enc = [0] * len(colors)
+        
+        if hasattr(self, 'colors'):
+            for color in self.colors:
+                if color in colors:
+                    color_enc[colors.index(color)] = 1
+        
+        embedding_dict["color_enc"] = color_enc
+        
+        # 2-4. Size metrics
+        embedding_dict["hor_size"] = self.hor_size / grid_cols if grid_cols > 0 else 0
+        embedding_dict["vert_size"] = self.vert_size / grid_rows if grid_rows > 0 else 0
+        embedding_dict["size"] = self.size / (grid_rows * grid_cols) if (grid_rows * grid_cols) > 0 else 0
+        
+        # 5-6. Center position
+        i_center, j_center = self.center
+        embedding_dict["i_center"] = i_center / grid_rows if grid_rows > 0 else 0
+        embedding_dict["j_center"] = j_center / grid_cols if grid_cols > 0 else 0
+        
+        # 7-10. Boundary positions
+        embedding_dict["min_i"] = self.min_i / grid_rows if grid_rows > 0 else 0
+        embedding_dict["min_j"] = self.min_j / grid_cols if grid_cols > 0 else 0
+        embedding_dict["max_i"] = self.max_i / grid_rows if grid_rows > 0 else 0
+        embedding_dict["max_j"] = self.max_j / grid_cols if grid_cols > 0 else 0
+        
+        # 11-12. Holes
+        if self.shape not in ['inner_hole', 'outer_hole']:
+            n_inner_holes = len(self.inner_holes)
+            n_outer_holes = len(self.outer_holes)
+            embedding_dict["inner_holes"] = 1.0 if n_inner_holes >= 5 else n_inner_holes / 5
+            embedding_dict["outer_holes"] = 1.0 if n_outer_holes >= 5 else n_outer_holes / 5
+        else:
+            # For hole objects themselves, set holes to 0
+            embedding_dict["inner_holes"] = 0.0
+            embedding_dict["outer_holes"] = 0.0
+        
+        # 13. Symmetry type
+        if self.shape not in ['inner_hole', 'outer_hole']:
+            has_symmetry = int(self.symmetry != 'assymetry')
+            embedding_dict["symmetry_type"] = has_symmetry
+        else:
+            embedding_dict["symmetry_type"] = 0
+        
+        # Create flat vector from all features
+        flat_vector = []
+        flat_vector.extend(color_enc)  # 10 elements for colors
+        flat_vector.append(embedding_dict["hor_size"])
+        flat_vector.append(embedding_dict["vert_size"])
+        flat_vector.append(embedding_dict["size"])
+        flat_vector.append(embedding_dict["i_center"])
+        flat_vector.append(embedding_dict["j_center"])
+        flat_vector.append(embedding_dict["min_i"])
+        flat_vector.append(embedding_dict["min_j"])
+        flat_vector.append(embedding_dict["max_i"])
+        flat_vector.append(embedding_dict["max_j"])
+        flat_vector.append(embedding_dict["inner_holes"])
+        flat_vector.append(embedding_dict["outer_holes"])
+        flat_vector.append(embedding_dict["symmetry_type"])
+        
+        # Store the embedding in the object for later use
+        self.embedding_dict = embedding_dict
+        self.embedding_vector = flat_vector
+    
+        return flat_vector
     
     def plot(self):
         """Plot the object."""

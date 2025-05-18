@@ -92,10 +92,12 @@ class GridSummary():
         level_objects = self.filter_objects(init_objects, level)
         level_objects_summary = self.create_objects_summary(level_objects)
         level_triples, level_relation_statistics = self.set_relations(level_objects)
-        level_relations_summary = self.create_relations_summary(level_objects, level_relation_statistics)        
+        level_relations_summary = self.create_relations_summary(level_objects, level_relation_statistics)
+        cell2obj = self.grid_markup(dict_to_list(level_objects))
         return {f'objects':dict_to_list(copy(level_objects)), f'objects_summary':copy(level_objects_summary), 
                 f'triples':copy(level_triples), f'relation_statistics':copy(level_relation_statistics),
-                f'relations_summary': copy(level_relations_summary)}
+                f'relations_summary': copy(level_relations_summary),
+                f'cell2obj':copy(cell2obj)}
 
     def process_cell_level(self):
         """Process cell level representation (level 5)."""
@@ -190,6 +192,13 @@ class GridSummary():
                         comp_idx += 1 
         self.initial_objects['complex'] = list(components.values())
         return components
+    
+    def grid_markup(self, level_objects:List[GridObject]):
+        cell2object = {}
+        for idx, obj in enumerate(level_objects):
+            for coord in obj.coords:
+                cell2object[coord] = idx
+        return cell2object
 
     @staticmethod
     def filter_objects(objects, repr_level:int=1):

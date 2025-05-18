@@ -236,6 +236,7 @@ class GridObject():
         self.max_j = self.edges[3]
         if self.shape not in ['inner_hole', 'outer_hole']:
             self.inner_contour = self.define_inner_contour()
+            self.inner_part, self.contour = self.inner_contour_split()
             self.non_object_coords = list(set(self.inner_contour).difference(set(self.coords)))
             self.inner_holes, self.outer_holes = self.define_holes()
         # Color update if grid provided

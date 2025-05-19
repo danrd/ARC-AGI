@@ -63,7 +63,19 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     ax.set_xticks([x-0.5 for x in range(1 + len(input_matrix[0]))])     
     ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])   
     ax.set_title(train_or_test + ' ' + input_or_output, fontweight='bold')
-            
+
+def plot_multiple_tasks(task_ids: list[str], dataset: ARCDataset):
+    """
+    Plots the training and test pairs for multiple tasks, each in its own figure,
+    using the same color scheme as the ARC app.
+    Args:
+        task_ids (list[str]): List of task IDs to plot.
+        dataset (ARCDataset): The dataset containing training challenges and solutions.
+    """
+    for task_id in task_ids:
+        print(task_id)
+        plot_task(dataset.tasks[task_id].label, dataset)
+
 def plot_grid(grid):
     grid = crop_pad(grid_formatting(grid))
     cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 

@@ -64,7 +64,7 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])   
     ax.set_title(train_or_test + ' ' + input_or_output, fontweight='bold')
 
-def plot_multiple_tasks(task_ids: list[str], dataset: ARCDataset):
+def plot_multiple_tasks(task_ids: List[str], dataset: ARCDataset):
     """
     Plots the training and test pairs for multiple tasks, each in its own figure,
     using the same color scheme as the ARC app.
@@ -85,7 +85,18 @@ def plot_grid(grid):
     plt.grid(True,which='both',color='lightgrey', linewidth=0.5) 
     plt.xticks(np.arange(-0.5, grid.shape[1]), [])
     plt.yticks(np.arange(-0.5, grid.shape[0]), [])
-    plt.xlim(-0.5, grid.shape[1]-0.5)         
+    plt.xlim(-0.5, grid.shape[1]-0.5)  
+
+def plot_multiple_grids(grids: List[np.array]):
+    """
+    Plots the training and test pairs for multiple tasks, each in its own figure,
+    using the same color scheme as the ARC app.
+    Args:
+        task_ids (list[str]): List of task IDs to plot.
+        dataset (ARCDataset): The dataset containing training challenges and solutions.
+    """
+    for grid in grids:
+        plot_grid(grid)       
  
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""

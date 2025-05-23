@@ -89,11 +89,9 @@ def plot_grid(grid):
 
 def plot_multiple_grids(grids: List[np.array]):
     """
-    Plots the training and test pairs for multiple tasks, each in its own figure,
-    using the same color scheme as the ARC app.
+    Plots each grid from given list.
     Args:
-        task_ids (list[str]): List of task IDs to plot.
-        dataset (ARCDataset): The dataset containing training challenges and solutions.
+        grids (List[np.array]): List of grids.
     """
     for grid in grids:
         plot_grid(grid)       

@@ -94,7 +94,46 @@ def plot_multiple_grids(grids: List[np.array]):
         grids (List[np.array]): List of grids.
     """
     for grid in grids:
-        plot_grid(grid)       
+        plot_grid(grid)  
+
+def plot_preds(prediction_grids: List[tuple], task_idxs: List[int], dataset):
+    """
+    Plots tiplet input_grid-predicton-output_grid in a single row.
+    
+    Args:
+        prediction_grids (List[List[np.array, float]]): List of prediction grids with similarity score.
+        task_idxs (List[int]): List task idxs.
+        dataset: ARC dataset
+    
+    Raises:
+        ValueError: If the lengths of the input lists differ.
+    """
+    if len(prediction_grids) != len(task_idxs):
+        raise ValueError("Prediction and target grids lists must have the same length.")
+    n = len(prediction_grids)
+    input_grids =[crop_pad(dataset.tasks[idx].test_subtask.train_inp, pad_val=1) for idx in task_idxs]
+    target_grids = [crop_pad(dataset.tasks[idx].test_subtask.train_out, pad_val=1) for idx in task_idxs]
+    for i in range(n):
+        # Create a figure with one row and two columns
+        fig, axes = plt.subplots(1, 3, figsize=(10, 5))
+        
+        # Plot prediction grid on the left
+        plt.sca(axes[0])  # Set current axis to the first subplot
+        plot_grid(input_grids[i])
+        plt.title("Input")
+
+        # Plot prediction grid on the left
+        plt.sca(axes[1])  # Set current axis to the first subplot
+        plot_grid(prediction_grids[i])
+        plt.title("Prediction")
+        
+        # Plot target grid on the right
+        plt.sca(axes[2])  # Set current axis to the second subplot
+        plot_grid(target_grids[i])
+        plt.title("Target")
+        
+        plt.tight_layout()
+        plt.show()     
  
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""

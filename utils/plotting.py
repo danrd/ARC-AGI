@@ -96,23 +96,24 @@ def plot_multiple_grids(grids: List[np.array]):
     for grid in grids:
         plot_grid(grid)  
 
-def plot_preds(prediction_grids: List[tuple], task_idxs: List[int], dataset):
+def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
     """
     Plots tiplet input_grid-predicton-output_grid in a single row.
     
     Args:
-        prediction_grids (List[List[np.array, float]]): List of prediction grids with similarity score.
+        predictions (List[List[np.array, float]]): List of prediction grids with similarity score.
         task_idxs (List[int]): List task idxs.
         dataset: ARC dataset
     
     Raises:
         ValueError: If the lengths of the input lists differ.
     """
-    if len(prediction_grids) != len(task_idxs):
+    if len(predictions) != len(task_idxs):
         raise ValueError("Prediction and target grids lists must have the same length.")
-    n = len(prediction_grids)
     input_grids =[crop_pad(dataset.tasks[idx].test_subtask.train_inp, pad_val=1) for idx in task_idxs]
+    prediction_grids =[pred[0] for pred in predictions]
     target_grids = [crop_pad(dataset.tasks[idx].test_subtask.train_out, pad_val=1) for idx in task_idxs]
+    n = len(prediction_grids)
     for i in range(n):
         # Create a figure with one row and two columns
         fig, axes = plt.subplots(1, 3, figsize=(10, 5))
@@ -125,7 +126,7 @@ def plot_preds(prediction_grids: List[tuple], task_idxs: List[int], dataset):
         # Plot prediction grid on the left
         plt.sca(axes[1])  # Set current axis to the first subplot
         plot_grid(prediction_grids[i])
-        plt.title("Prediction")
+        plt.title(f"Prediction_with_similarity_{predictions[i][1]}")
         
         # Plot target grid on the right
         plt.sca(axes[2])  # Set current axis to the second subplot
@@ -133,7 +134,7 @@ def plot_preds(prediction_grids: List[tuple], task_idxs: List[int], dataset):
         plt.title("Target")
         
         plt.tight_layout()
-        plt.show()     
+        plt.show()    
  
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""

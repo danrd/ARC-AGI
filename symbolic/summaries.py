@@ -6,7 +6,7 @@ from collections import defaultdict, Counter
 from itertools import product
 from rl.ARC_task import ARCTask, ARCSubtask
 from symbolic.objects_analysis import GridObject, ObjectsFilter, RelationAnalyzer
-from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list
+from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list, check_subset_condition
 from symbolic.patterns import generate_patterns, find_connected_components_with_color, find_connected_components_excluding_colors
 from llm.prompts import COLOR_MAPPING
 
@@ -51,17 +51,16 @@ class GridSummary():
     def __init__(self, grid:np.array, shape:tuple, font_color:float=0.0, shape_types=None):
         self.grid = grid
         self.shape = shape
-        self.shape_types = ['line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
-                            'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex'] if shape_types == None else shape_types
+        self.shape_types = ('line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
+                            'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex') if shape_types == None else shape_types
         self.font_color = font_color
-        self.patterns = generate_patterns(self.shape, self.shape_types)
         self.grid_corners = self.define_grid_corners()
         self.objects_dict = {}
-        self.initial_objects = self.retrieve_objects(self.grid, self.patterns, self.shape)
+        self.initial_objects = self.retrieve_objects(self.grid, self.shape, self.shape_types)
         self.connected_components = self.retrieve_connected_components(self.grid) 
         self.font_segments = find_connected_components_with_color(self.grid, target_color=self.font_color)
-        self.relations_for_stats = ["same_color", "same_shape", "same_size", "in_contour", 
-                                    "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with"]
+        self.relations_for_stats = ("same_color", "same_shape", "same_size", "in_contour", 
+                                    "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with")
         self.repr_levels = self.set_repr_levels()
 
     def define_grid_corners(self):
@@ -71,6 +70,19 @@ class GridSummary():
         ur = (ul[0], ul[1]+grid_size[1]-1)
         br = (ul[0]+grid_size[0]-1, ul[1]+grid_size[1]-1)
         return (ul, bl, ur, br)
+
+    def get_triples(self, repr_level=1):
+        """Extract unique triples from a nested defaultdict structure."""
+        relation_data = self.repr_levels[repr_level]['triples']
+        unique = set()
+        # Iterate through all source complexes
+        for source in relation_data:
+            # Iterate through all target complexes
+            for target in relation_data[source]:
+                # Add each triple to the set (automatically handles uniqueness)
+                for triple in relation_data[source][target]:
+                    unique.add(triple)
+        return list(unique)
 
     def set_repr_levels(self):
         """Create representation levels for grid objects based on their properties."""
@@ -114,7 +126,7 @@ class GridSummary():
                 
                 # Add non-font-colored cells (assuming font_color is 0.0 by default)
                 if cell_color != 0 and cell_color != self.font_color:
-                    label = f'cell_level5_{i}_{j}'
+                    label = f'cell_{i}_{j}'
                     cell = (grid_i, grid_j)
                     obj = GridObject('cell', [cell], [cell_color], label, self.shape)
                     cell_objects['cell'].append(obj)
@@ -132,8 +144,9 @@ class GridSummary():
             'relations_summary': copy(level_relations_summary)
     }
         
-    def retrieve_objects(self, grid:np.array, patterns:typing.Dict['str', List[List[List[tuple]]]], shape:tuple)->typing.Dict[str, List[GridObject]]:
+    def retrieve_objects(self, grid:np.array, shape:tuple, shape_types:tuple)->typing.Dict[str, List[GridObject]]:
         """Retrieve all possible objects from the grid and return corresponding GridObject instances."""
+        patterns = generate_patterns(shape, shape_types)
         objects = defaultdict(list)
         candidate = False # flag indicating existance of candidate figure
         used_coordinates = [] # save occupied cells
@@ -192,7 +205,7 @@ class GridSummary():
                         comp_idx += 1 
         self.initial_objects['complex'] = list(components.values())
         return components
-    
+
     def grid_markup(self, level_objects:List[GridObject]):
         cell2object = {}
         for idx, obj in enumerate(level_objects):
@@ -302,18 +315,23 @@ class GridSummary():
         all_objects = dict_to_list(objects)
         for idx, obj_1 in enumerate(all_objects):
             for obj_2 in all_objects[idx+1:]: 
-                if obj_2.label not in obj_1.relations.keys():
-                    analyzer = RelationAnalyzer(obj_1, obj_2, self.shape)
-                    triples = analyzer.triples
-                    relation_counter = analyzer.relation_counter
-                    all_triples[obj_1.label][obj_2.label] = triples[0]
-                    all_triples[obj_2.label][obj_1.label] = triples[0]
-                    relation_statistics.update(relation_counter)
-                    # distance calculation
-                    distance = self.calculate_distance(obj_1, obj_2)
-                    obj_1.distances[obj_2.label] = distance
-                    obj_2.distances[obj_1.label] = distance
-                    distances[f'{obj_1.label}-{obj_2.label}'] = obj_1.distances[obj_2.label]
+                # if obj_2.label not in obj_1.relations.keys():
+                analyzer = RelationAnalyzer(obj_1, obj_2, self.shape)
+                triples = analyzer.triples
+                relation_counter = analyzer.relation_counter
+                all_triples[obj_1.label][obj_2.label] = triples[0]
+                all_triples[obj_2.label][obj_1.label] = triples[1]
+                relation_statistics.update(relation_counter)
+                # distance calculation
+                # distance = self.calculate_distance(obj_1, obj_2)
+                # obj_1.distances[obj_2.label] = distance
+                # obj_2.distances[obj_1.label] = distance
+                # else:
+                #     all_triples[obj_1.label][obj_2.label] = [(obj_1.label, relation ,obj_2.label) for relation in obj_1.relations[obj_2.label]]
+                #     all_triples[obj_2.label][obj_1.label] = [(obj_2.label, relation ,obj_1.label) for relation in obj_2.relations[obj_1.label]]
+                #     relation_counter = {triple[1]:1 for triple in obj_1.relations[obj_2.label]}
+                #     relation_statistics.update(relation_counter)
+                # distances[f'{obj_1.label}-{obj_2.label}'] = obj_1.distances[obj_2.label]
         return all_triples, relation_statistics
     
     def create_embedding(self, obj_1, obj_2):
@@ -554,4 +572,481 @@ class GridSummary():
                     # Add to the result array at the correct position
                     result[i, col_idx:col_idx+sample_length] = embedding
                     col_idx += sample_length
+        
         return result
+            
+class ObjectsFilter():
+    """Class for filtering out potentialy unimportant objects."""
+    def __init__(self, objects:typing.Dict[str, List[GridObject]], repr_level:int):
+        self.objects = objects
+        self.repr_level = repr_level
+
+    @staticmethod
+    def merge_rectangles(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out smaller rectangles each of which is subset of some larger rectangle."""
+        rects = defaultdict(list)
+        deletion_list = [] 
+        for obj in objects['rectangle']: # sort rectangles based on size
+            key = obj.size
+            rects[key].append((obj, set(obj.coords)))
+        keys = list(rects.keys()) # iterate over each possible size from larger to smaller
+        keys.sort(reverse=True)
+        for key_larger in keys[:-1]:
+            for key_smaller in keys[1:]:
+                for obj_larger in rects[key_larger]:
+                    for idx, obj_smaller in enumerate(rects[key_smaller]):
+                        if obj_smaller[0].size != obj_larger[0].size and obj_smaller[1].issubset(obj_larger[1]): # if smaller rectangle in larger rectangle - delete smaller
+                            deletion_list.append((key_smaller, idx)) # save position of smaller rectangle
+                            # Add smaller object to parts list of larger object
+                            obj_larger[0].sub_objects[obj_smaller[0].shape].append(obj_smaller[0])
+        deletion_list = list(set(deletion_list))
+        sorted_rects = [] # save rectangles that are not from deletion_list
+        used_shapes = [] # save coordinates to exclude rectangles with the same coordinates
+        for k, v in rects.items():
+            for idx, rect in enumerate(v):
+                if (k, idx) not in deletion_list and sorted(rect[0].coords) not in used_shapes:
+                    sorted_rects.append(rect[0])
+                    used_shapes.append(sorted(rect[0].coords))
+        objects['rectangle'] = sorted_rects
+        return objects
+    
+    @staticmethod
+    def merge_lines(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out smaller lines each of which is subset of some larger line."""
+        lines = defaultdict(list)
+        deletion_list = []
+        for obj in objects['line']: # sort lines based on size
+            key = obj.size
+            lines[key].append((obj, set(obj.coords)))     
+        keys = list(lines.keys())# iterate over each possible size from larger to smaller
+        keys.sort(reverse=True)
+        for key_larger in keys[:-1]:
+            for key_smaller in keys[1:]:
+                for obj_larger in lines[key_larger]:
+                    for idx, obj_smaller in enumerate(lines[key_smaller]):
+                        if obj_smaller[0].size != obj_larger[0].size and obj_smaller[1].issubset(obj_larger[1]): # if smaller line in larger line - delete smaller
+                            deletion_list.append((key_smaller, idx)) # save position of smaller line
+                            # Add smaller object to parts list of larger object
+                            obj_larger[0].sub_objects[obj_smaller[0].shape].append(obj_smaller[0])
+        deletion_list = list(set(deletion_list))
+        sorted_lines = [] # save rectangles that are not from deletion_list
+        for k, v in lines.items():
+            for idx, line in enumerate(v):
+                if (k, idx) not in deletion_list and line[0].coords not in sorted_lines:
+                    sorted_lines.append(line[0])
+            objects['line'] = sorted_lines
+        return objects
+    
+    @staticmethod
+    def merge_in_rectangles(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out objects each of which is subset of some rectangle."""
+        deletion_list = []
+        select_shapes = ['rectangle', 'cell', 'complex']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k in select_shapes} 
+        other_objects = {k:v for k, v in objects.items() if k not in select_shapes}
+        for rect in filtered_objects['rectangle']: # iterate over each rectangle
+            rect_set = set(rect.coords)
+            for k, v in other_objects.items(): # iterate over each shape from select_shapes
+                
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(rect_set, shape.coords): # delete shape if it is inside rectangle
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of rectangle
+                        rect.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_objects.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects
+
+    @staticmethod
+    def merge_in_t_shapes(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out objects each of which is subset of some t_shape."""
+        deletion_list = []
+        select_shapes = ['l_shape', 'line']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes} 
+        other_objects = {k:v for k, v in objects.items() if k in select_shapes}
+        for t_shape in filtered_objects['t_shape']: # iterate over each t_shape
+            t_shape_set = set(t_shape.coords)
+            for k, v in other_objects.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(t_shape_set, shape.coords): # delete shape if it is inside t_shape
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of t_shape
+                        t_shape.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_objects.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects       
+    
+    @staticmethod
+    def merge_in_s_shapes(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out objects each of which is subset of some s_shape."""
+        deletion_list = []
+        select_shapes = ['l_shape', 'line']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes} 
+        other_objects = {k:v for k, v in objects.items() if k in select_shapes}
+        for s_shape in filtered_objects['s_shape']: # iterate over each s_shape
+            s_shape_set = set(s_shape.coords)
+            for k, v in other_objects.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(s_shape_set, shape.coords): # delete shape if it is inside s_shape
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of s_shape
+                        s_shape.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_objects.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects  
+    
+    @staticmethod
+    def merge_in_hs_shapes(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]: 
+        """Filter out objects each of which is subset of some hs_shape."""
+        deletion_list = []
+        select_shapes = ['l_shape', 'line']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes} 
+        other_objects = {k:v for k, v in objects.items() if k in select_shapes}
+        for hs_shape in filtered_objects['hs_shape']: # iterate over each hs_shape
+            hs_shape_set = set(hs_shape.coords)
+            for k, v in other_objects.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(hs_shape_set, shape.coords): # delete shape if it is inside hs_shape
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of hs_shape
+                        hs_shape.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_objects.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects  
+    
+    @staticmethod
+    def merge_in_tv_shapes(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]: 
+        """Filter out objects each of which is subset of some tv_shape."""
+        deletion_list = []
+        select_shapes = ['l_shape', 'line', 'flower', 'hs_shape']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes} 
+        other_objects = {k:v for k, v in objects.items() if k in select_shapes}
+        for tv_shape in filtered_objects['tv_shape']: # iterate over each tv_shape
+            tv_shape_set = set(tv_shape.coords)
+            for k, v in other_objects.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(tv_shape_set, shape.coords): # delete shape if it is inside tv_shape
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of tv_shape
+                        tv_shape.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_objects.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects  
+    
+    @staticmethod
+    def merge_in_crosses(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:  
+        """Filter out objects each of which is subset of some cross shape."""
+        deletion_list = []
+        select_shapes = ['l_shape', 'line', 't_shape', 'flower']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes} 
+        other_objects = {k:v for k, v in objects.items() if k in select_shapes}
+        for cross in filtered_objects['cross']: # iterate over each cross
+            cross_set = set(cross.coords)
+            for k, v in other_objects.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(cross_set, shape.coords): # delete shape if it is inside cross
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of cross
+                        cross.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_objects.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects  
+    
+    @staticmethod
+    def merge_in_markup(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out objects instersecting with markup."""
+        deletion_list = []
+        select_shapes = ['cross', 'l_shape', 'tv_shape', 'line', 't_shape']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes}      
+        other_shapes = {k:v for k, v in objects.items() if k in select_shapes} 
+        for markup in filtered_objects['markup_matrix']: # iterate over each markup
+            markup_set = set(markup.coords)
+            for k, v in other_shapes.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(markup_set, shape.coords): # delete shape if it is inside markup
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of markup
+                        markup.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_shapes.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects
+
+    @staticmethod
+    def merge_in_components(objects:typing.Dict[str, GridObject])->typing.Dict[str, GridObject]:
+        """Filter out objects instersecting with connected components."""
+        deletion_list = []
+        select_shapes = ['cross', 'l_shape', 'tv_shape', 's_shape', 't_shape', 'hs_shape', 'rectangle', 'line', 'diagonal', 'flower', 'cell']
+        filtered_objects = defaultdict(list) | {k:v for k, v in objects.items() if k not in select_shapes}      
+        other_shapes = {k:v for k, v in objects.items() if k in select_shapes} 
+        for component in filtered_objects['complex']: # iterate over each markup
+            component_set = set(component.coords)
+            for k, v in other_shapes.items(): # iterate over each shape from select_shapes
+                for idx, shape in enumerate(v):
+                    if check_subset_condition(component_set, shape.coords): # delete shape if it is inside markup
+                        deletion_list.append((k, idx))
+                        # Add smaller object to parts list of markup
+                        component.sub_objects[shape.shape].append(shape)
+        deletion_list = list(set(deletion_list))
+        for k, v in other_shapes.items(): # keep only objects not from deletion_list
+            for idx, shape in enumerate(v):
+                if (k, idx) not in deletion_list:
+                    filtered_objects[k].append(shape)
+        return filtered_objects
+       
+    def filter_objects(self):
+        """Apply all filtration approaches for the objects."""
+        objects_after_rectangle_merging = self.merge_rectangles(self.objects)
+        objects_after_lines_merging = self.merge_lines(objects_after_rectangle_merging)
+        if self.repr_level <= 3:
+            objects_after_merging_in_rectangles = self.merge_in_rectangles(objects_after_lines_merging)
+            objects_after_merging_in_t_shapes = self.merge_in_t_shapes(objects_after_merging_in_rectangles) 
+            objects_after_merging_in_s_shapes = self.merge_in_s_shapes(objects_after_merging_in_t_shapes) 
+            objects_after_merging_in_hs_shapes = self.merge_in_hs_shapes(objects_after_merging_in_s_shapes)  
+            objects_after_merging_in_tv_shapes = self.merge_in_tv_shapes(objects_after_merging_in_hs_shapes)
+            objects_after_merging_crosses = self.merge_in_crosses(objects_after_merging_in_tv_shapes)  
+            objects_after_merging_in_markup = self.merge_in_markup(objects_after_merging_crosses)
+            if self.repr_level <= 2:
+                objects_after_merging_in_components = self.merge_in_components(objects_after_merging_in_markup) 
+                return objects_after_merging_in_components
+            else:
+                return objects_after_merging_in_markup
+        return objects_after_lines_merging
+
+class RelationAnalyzer():
+    """Class for setting relations between objects on a grid."""
+    def __init__(self, object_1:GridObject=None, object_2:GridObject=None, shape:tuple=None):
+        self.object_1 = object_1
+        self.object_2 = object_2
+        self.shape = shape
+        self.triples, self.relation_counter = self.set_relations()
+    
+    @staticmethod
+    def rotation_symmetry(coords_1:List[tuple], coords_2:List[tuple], shape:tuple):
+        """Identify rotation relations between objects."""
+        rotations = []
+        if len(coords_1) > 1 and len(coords_2) > 1: # exclude cells
+            if len(coords_1) == len(coords_2):
+                ul = find_upper_left_corner(shape)
+                coords_1_shifted = [(tup[0]-ul[0], tup[1]-ul[1]) for tup in coords_1]
+                coords_2_shifted = [(tup[0]-ul[0], tup[1]-ul[1]) for tup in coords_2]
+                grid_1 = np.zeros((max(shape), max(shape)))
+                i_1, j_1 = coords_transform(coords_1_shifted)
+                grid_1[i_1, j_1] = 1
+                grid_2 = np.zeros((max(shape), max(shape)))
+                i_2, j_2 = coords_transform(coords_2_shifted)
+                grid_2[i_2, j_2] = 1
+                if (grid_1 == np.rot90(grid_2, k=1)).all():
+                    rotations.append('rotation_90')
+                if (grid_1 == np.rot90(grid_2, k=2)).all():
+                    rotations.append('rotation_180')
+                if (grid_1 == np.rot90(grid_2, k=3)).all():
+                    rotations.append('rotation_270')
+                if (grid_1 == np.flipud(grid_2)).all():
+                    rotations.append('horizontal_symmetry')
+                if (grid_1 == np.fliplr(grid_2)).all():
+                    if 'horizontal_symmetry' in rotations:
+                        rotations.pop()
+                        rotations.append('horizontal_and_vertical_symmetry')  
+                    else:
+                        rotations.append('vertical_symmetry')               
+        return rotations  
+    
+    @staticmethod
+    def translation_symmetry(coords_1:List[tuple], coords_2:List[tuple], shape:tuple):
+        """Identify if each coordinate of object_1 equals each coordinate of object_2 after some shifting."""   
+        if len(coords_1) == len(coords_2):
+            ul = find_upper_left_corner(shape)
+            coords_1_shifted = np.array([(tup[0] - ul[0], tup[1] - ul[1]) for tup in coords_1])
+            coords_2_shifted = np.array([(tup[0] - ul[0], tup[1] - ul[1]) for tup in coords_2])
+            offsets = coords_1_shifted - coords_2_shifted
+            unique_offsets = np.unique(offsets, axis=0)
+            if unique_offsets.shape[0] == 1:
+                return tuple(unique_offsets[0])
+        return (0, 0)
+
+    @staticmethod
+    def in_contour(object_1:GridObject, object_2:GridObject):
+        """Identify if all coordinates of object_1 are surrounded by coordinates of object_2 or in the reverse order."""
+        in_contour = None
+        if object_2.max_i < object_1.max_i and object_2.max_j < object_1.max_j and object_2.min_i > object_1.min_i and object_2.min_j > object_1.min_j:
+            in_contour = 'object_2'
+        if object_1.max_i < object_2.max_i and object_1.max_j < object_2.max_j and object_1.min_i > object_2.min_i and object_1.min_j > object_2.min_j:
+            in_contour = 'object_1'        
+        return in_contour   
+
+    @staticmethod
+    def find_connection_cells(object_1: GridObject, object_2: GridObject):
+        """Find all cells from both objects that are at the minimum distance from each other."""
+        min_distance = float('inf')
+        
+        # First pass: find the minimum distance
+        for coord1 in object_1.coords:
+            for coord2 in object_2.coords:
+                # Calculate Manhattan distance
+                distance = abs(coord1[0] - coord2[0]) + abs(coord1[1] - coord2[1])
+                if distance < min_distance:
+                    min_distance = distance
+        
+        # Second pass: collect all cell pairs at minimum distance
+        connection_cells_1 = []
+        connection_cells_2 = []
+        connection_pairs = []
+        
+        for coord1 in object_1.coords:
+            for coord2 in object_2.coords:
+                distance = abs(coord1[0] - coord2[0]) + abs(coord1[1] - coord2[1])
+                if distance == min_distance:
+                    if coord1 not in connection_cells_1:
+                        connection_cells_1.append(coord1)
+                    if coord2 not in connection_cells_2:
+                        connection_cells_2.append(coord2)
+                    connection_pairs.append((coord1, coord2))
+        
+        return connection_cells_1, connection_cells_2, connection_pairs, min_distance
+    
+    def in_diagonal(self, object_1: GridObject, object_2: GridObject):
+        """Identify if object_1 and object_2 can be connected by diagonal."""
+        # Get connection cells
+        conn_cells_1, conn_cells_2, conn_pairs, distance = self.find_connection_cells(object_1, object_2)
+        
+        # Check if any connection forms a diagonal (not in same row or column)
+        diagonal_pairs = []
+        for pair in conn_pairs:
+            coord1, coord2 = pair
+            if coord1[0] != coord2[0] and coord1[1] != coord2[1]:
+                diagonal_pairs.append(pair)
+        
+        if diagonal_pairs:
+            diagonal_cells_1 = [pair[0] for pair in diagonal_pairs]
+            diagonal_cells_2 = [pair[1] for pair in diagonal_pairs]
+            return True, diagonal_cells_1, diagonal_cells_2
+        
+        return False, None, None
+
+    def in_line(self, object_1: GridObject, object_2: GridObject):
+        """Identify if object_1 and object_2 can be connected by line."""
+        # Get connection cells
+        conn_cells_1, conn_cells_2, conn_pairs, distance = self.find_connection_cells(object_1, object_2)
+        
+        # Check if any connection forms a line (same row or column)
+        line_pairs = []
+        for pair in conn_pairs:
+            coord1, coord2 = pair
+            if coord1[0] == coord2[0] or coord1[1] == coord2[1]:
+                line_pairs.append(pair)
+        
+        if line_pairs:
+            line_cells_1 = [pair[0] for pair in line_pairs]
+            line_cells_2 = [pair[1] for pair in line_pairs]
+            return True, line_cells_1, line_cells_2
+        
+        return False, None, None
+
+    @staticmethod
+    def x_alignment(object_1:GridObject, object_2:GridObject):
+        """Identify if object_1 and object_2 are aligned in relation to x axis."""
+        return object_1.max_i == object_2.max_i and object_1.min_i == object_2.min_i 
+
+    @staticmethod
+    def y_alignment(object_1:GridObject, object_2:GridObject):
+        """Identify if object_1 and object_2 are aligned in relation to y axis."""
+        return object_1.max_j == object_2.max_j and object_1.min_j == object_2.min_j     
+            
+    def set_relations(self):
+        """Set all considered relations."""
+        assert self.object_1!=None and self.object_2!=None and self.shape!=None, f"Object_1, Object_2 and grid shape should be specified"       
+        triples1 = []
+        triples2 = []
+        relation_statistics = Counter()
+
+        if self.object_1.colors == self.object_2.colors:
+            triples2.append((self.object_2.label, f"same_color", self.object_1.label))
+            triples1.append((self.object_1.label, f"same_color", self.object_2.label))
+            relation_statistics[f"same_color"] += 1 
+            
+        if self.object_1.shape == self.object_2.shape:
+            triples2.append((self.object_2.label, f"same_shape", self.object_1.label))
+            triples1.append((self.object_1.label, f"same_shape", self.object_2.label))
+            relation_statistics[f"same_shape"] += 1  
+            
+        if self.object_1.size == self.object_2.size:
+            triples2.append((self.object_2.label, f"same_size", self.object_1.label))
+            triples1.append((self.object_1.label, f"same_size", self.object_2.label))
+            relation_statistics[f"same_size"] += 1  
+            
+        rotations = self.rotation_symmetry(self.object_1.coords, self.object_2.coords, self.shape)
+        if rotations != []:
+            for rotation in rotations:
+                triples1.append((self.object_1.label, rotation, self.object_2.label))
+                triples2.append((self.object_2.label, rotation, self.object_1.label))         
+        
+        (i_offset, j_offset) = self.translation_symmetry(self.object_1.coords, self.object_2.coords, self.shape)
+        if i_offset != 0 and j_offset != 0:
+            triples1.append((self.object_1.label, f"translation_symmetry", self.object_2.label))
+            triples2.append((self.object_2.label, f"translation_symmetry", self.object_1.label))          
+
+        in_contour = self.in_contour(self.object_1, self.object_2)
+        if in_contour == "object_2":
+            triples2.append((self.object_2.label, f"in_contour", self.object_1.label))
+            triples1.append((self.object_1.label, f"has_in_contour", self.object_2.label))
+            relation_statistics[f"in_contour"] += 1 
+        
+        if in_contour == "object_1":
+            triples1.append((self.object_1.label, f"in_contour", self.object_2.label))
+            triples2.append((self.object_2.label, f"has_in_contour", self.object_1.label))
+          
+        # Check for in_line relation with connection cells
+        is_in_line, line_cells_1, line_cells_2 = self.in_line(self.object_1, self.object_2)
+        if is_in_line:
+            triples1.append((self.object_1.label, f"in_line", self.object_2.label))
+            triples2.append((self.object_2.label, f"in_line", self.object_1.label))  
+            relation_statistics[f"in_line"] += 1
+    
+        # Check for in_diagonal relation with connection cells
+        is_diagonal, diag_cells_1, diag_cells_2 = self.in_diagonal(self.object_1, self.object_2)
+        if is_diagonal:
+            triples1.append((self.object_1.label, f"in_diagonal", self.object_2.label))
+            triples2.append((self.object_2.label, f"in_diagonal", self.object_1.label))  
+            relation_statistics[f"in_diagonal"] += 1
+
+        x_alignment = self.x_alignment(self.object_1, self.object_2)
+        y_alignment = self.y_alignment(self.object_1, self.object_2)
+        if x_alignment and y_alignment:
+            triples1.append((self.object_1.label, f"x_y_aligned_with", self.object_2.label))
+            triples2.append((self.object_2.label, f"x_y_aligned_with", self.object_1.label))
+            relation_statistics[f"x_y_aligned_with"] += 1  
+
+        else:    
+            if self.x_alignment(self.object_1, self.object_2):
+                triples1.append((self.object_1.label, f"x_aligned_with", self.object_2.label))
+                triples2.append((self.object_2.label, f"x_aligned_with", self.object_1.label))
+                relation_statistics[f"x_aligned_with"] += 1 
+
+            
+            if self.y_alignment(self.object_1, self.object_2):
+                triples1.append((self.object_1.label, f"y_aligned_with", self.object_2.label))
+                triples2.append((self.object_2.label, f"y_aligned_with", self.object_1.label))
+                relation_statistics[f"y_aligned_with"] += 1 
+
+        return (triples1, triples2), relation_statistics

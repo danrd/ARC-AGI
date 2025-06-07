@@ -134,7 +134,9 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
         plt.title("Target")
         
         plt.tight_layout()
-        plt.show()    
+        plt.show() 
+        if n == 1:
+            return fig   
  
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""

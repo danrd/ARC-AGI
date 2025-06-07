@@ -126,7 +126,7 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
         # Plot prediction grid on the left
         plt.sca(axes[1])  # Set current axis to the first subplot
         plot_grid(prediction_grids[i])
-        plt.title(f"Prediction_with_similarity_{predictions[i][1]}")
+        plt.title(f"Prediction with similarity {predictions[i][1]}")
         
         # Plot target grid on the right
         plt.sca(axes[2])  # Set current axis to the second subplot

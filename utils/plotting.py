@@ -121,7 +121,7 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
         # Plot prediction grid on the left
         plt.sca(axes[0])  # Set current axis to the first subplot
         plot_grid(input_grids[i])
-        plt.title("Input")
+        plt.title(f"Task {task_idxs[i]} input")
 
         # Plot prediction grid on the left
         plt.sca(axes[1])  # Set current axis to the first subplot
@@ -131,7 +131,7 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
         # Plot target grid on the right
         plt.sca(axes[2])  # Set current axis to the second subplot
         plot_grid(target_grids[i])
-        plt.title("Target")
+        plt.title(f"Task {task_idxs[i]} target")
         
         plt.tight_layout()
         plt.show() 

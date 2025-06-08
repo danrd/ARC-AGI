@@ -48,7 +48,7 @@ class SubtaskSummary():
         return features
 class GridSummary():
     """Class for creating summary for a given grid."""
-    def __init__(self, grid:np.array, shape:tuple, font_color:float=0.0, shape_types=None):
+    def __init__(self, grid:np.array, shape:tuple, font_color:float=0.0, levels:List[int]=[1], shape_types=None):
         self.grid = grid
         self.shape = shape
         self.shape_types = ('line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
@@ -61,6 +61,7 @@ class GridSummary():
         self.font_segments = find_connected_components_with_color(self.grid, target_color=self.font_color)
         self.relations_for_stats = ("same_color", "same_shape", "same_size", "in_contour", 
                                     "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with")
+        self.levels = levels 
         self.repr_levels = self.set_repr_levels()
 
     def define_grid_corners(self):
@@ -71,26 +72,13 @@ class GridSummary():
         br = (ul[0]+grid_size[0]-1, ul[1]+grid_size[1]-1)
         return (ul, bl, ur, br)
 
-    def get_triples(self, repr_level=1):
-        """Extract unique triples from a nested defaultdict structure."""
-        relation_data = self.repr_levels[repr_level]['triples']
-        unique = set()
-        # Iterate through all source complexes
-        for source in relation_data:
-            # Iterate through all target complexes
-            for target in relation_data[source]:
-                # Add each triple to the set (automatically handles uniqueness)
-                for triple in relation_data[source][target]:
-                    unique.add(triple)
-        return list(unique)
-
     def set_repr_levels(self):
         """Create representation levels for grid objects based on their properties."""
         repr_levels = {}
         level1_init_objects = copy(self.initial_objects)
         init_objects = copy(self.initial_objects)
         init_objects['complex'] = [obj for obj in init_objects['complex'] if obj.color_homo]
-        for level in range(1, 6):  # Changed to include level 5
+        for level in self.levels:  # Changed to include level 5
             if level == 1:
                 repr_levels[level] = self.process_repr_level(level1_init_objects, level)
             elif level == 5:
@@ -104,11 +92,9 @@ class GridSummary():
         level_objects = self.filter_objects(init_objects, level)
         level_objects_summary = self.create_objects_summary(level_objects)
         level_triples, level_relation_statistics = self.set_relations(level_objects)
-        level_relations_summary = self.create_relations_summary(level_objects, level_relation_statistics)
         cell2obj = self.grid_markup(dict_to_list(level_objects))
-        return {f'objects':dict_to_list(copy(level_objects)), f'objects_summary':copy(level_objects_summary), 
+        return {f'objects':tuple(dict_to_list(copy(level_objects))), f'objects_summary':copy(level_objects_summary), 
                 f'triples':copy(level_triples), f'relation_statistics':copy(level_relation_statistics),
-                f'relations_summary': copy(level_relations_summary),
                 f'cell2obj':copy(cell2obj)}
 
     def process_cell_level(self):
@@ -134,14 +120,12 @@ class GridSummary():
         # Process the cell level objects the same way as other levels
         level_objects_summary = self.create_objects_summary(cell_objects)
         level_triples, level_relation_statistics = self.set_relations(cell_objects)
-        level_relations_summary = self.create_relations_summary(cell_objects, level_relation_statistics)
         
         return {
             'objects': dict_to_list(copy(cell_objects)), 
             'objects_summary': copy(level_objects_summary), 
             'triples': copy(level_triples), 
             'relation_statistics': copy(level_relation_statistics),
-            'relations_summary': copy(level_relations_summary)
     }
         
     def retrieve_objects(self, grid:np.array, shape:tuple, shape_types:tuple)->typing.Dict[str, List[GridObject]]:
@@ -295,17 +279,6 @@ class GridSummary():
                            'color_description':color2description,      
                            }
         return objects_summary
-     
-    def create_relations_summary(self, objects, relation_statistics):
-        """Create a summary for relation between grid objects to get useful information for reasoning.""" 
-        relations_summary = relation_statistics
-        objects_properties = {'symmetry':0}
-        for k, v in objects.items():
-            for idx, obj in enumerate(v):
-                if obj.symmetry != [] and obj.symmetry != 'assymetry':
-                    objects_properties['symmetry'] += 1
-        relations_summary.update(objects_properties)       
-        return relations_summary
         
     def set_relations(self, objects):
         """Iterate over objects to identify relations between them.""" 
@@ -335,110 +308,66 @@ class GridSummary():
         return all_triples, relation_statistics
     
     def create_embedding(self, obj_1, obj_2):
-        """Create embedding vector for a pair of objects based on their relations."""
-        # Initialize with zeros
-        relation_feature_names = [
-            'same_color', 'same_size', 'same_vert_size', 'same_hor_size', 
-            'translation_symmetry', 'in_contour', 'has_in_contour',
-            'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with', 'distance'
-        ]
-        embedding = np.zeros(len(relation_feature_names))
-        
-        # Get the existing triple relations between objects
-        obj_triples = {}
-        if obj_1.label in self.repr_levels[1]['triples']:
-            if obj_2.label in self.repr_levels[1]['triples'][obj_1.label]:
-                obj_triples = self.repr_levels[1]['triples'][obj_1.label][obj_2.label]
-        
-        # Set boolean values based on relations
-        feature_idx = 0
-        
-        # Same color relation
-        embedding[feature_idx] = 1 if obj_1.colors == obj_2.colors else 0
-        feature_idx += 1
-        
-        # Same size relation
-        embedding[feature_idx] = 1 if obj_1.size == obj_2.size else 0
-        feature_idx += 1
-        
-        # Same vertical size relation
-        embedding[feature_idx] = 1 if obj_1.vert_size == obj_2.vert_size else 0
-        feature_idx += 1
-        
-        # Same horizontal size relation
-        embedding[feature_idx] = 1 if obj_1.hor_size == obj_2.hor_size else 0
-        feature_idx += 1
-        
-        # Translation symmetry relation (same shape)
-        has_translation = False
-        for triple in obj_triples:
-            if triple[1] == "translation_symmetry":
-                has_translation = True
-                break
-        embedding[feature_idx] = 1 if has_translation else 0
-        feature_idx += 1
-        
-        # In contour relation
-        has_in_contour = False
-        for triple in obj_triples:
-            if triple[1] == "in_contour":
-                has_in_contour = True
-                break
-        embedding[feature_idx] = 1 if has_in_contour else 0
-        feature_idx += 1
-        
-        # Has in contour relation
-        has_has_in_contour = False
-        for triple in obj_triples:
-            if triple[1] == "has_in_contour":
-                has_has_in_contour = True
-                break
-        embedding[feature_idx] = 1 if has_has_in_contour else 0
-        feature_idx += 1
-        
-        # In line relation
-        has_in_line = False
-        for triple in obj_triples:
-            if triple[1] == "in_line":
-                has_in_line = True
-                break
-        embedding[feature_idx] = 1 if has_in_line or "in_line" in obj_1.relations.get(obj_2.label, []) else 0
-        feature_idx += 1
-        
-        # In diagonal relation
-        has_in_diagonal = False
-        for triple in obj_triples:
-            if triple[1] == "in_diagonal":
-                has_in_diagonal = True
-                break
-        embedding[feature_idx] = 1 if has_in_diagonal or "in_diagonal" in obj_1.relations.get(obj_2.label, []) else 0
-        feature_idx += 1
-        
-        # X aligned with relation
-        has_x_aligned = False
-        for triple in obj_triples:
-            if triple[1] == "x_aligned_with":
-                has_x_aligned = True
-                break
-        embedding[feature_idx] = 1 if has_x_aligned else 0
-        feature_idx += 1
-        
-        # Y aligned with relation
-        has_y_aligned = False
-        for triple in obj_triples:
-            if triple[1] == "y_aligned_with":
-                has_y_aligned = True
-                break
-        embedding[feature_idx] = 1 if has_y_aligned else 0
-        feature_idx += 1
-        
-        # Distance relation (normalized)
-        grid_size = max(self.shape)
-        distance = obj_1.distances.get(obj_2.label, 0)
-        normalized_distance = min(distance / grid_size, 1.0)  # Capped at 1.0
-        embedding[feature_idx] = normalized_distance
-        
-        return embedding
+            """Create embedding vector for a pair of objects based on their relations."""
+            # Initialize with zeros
+            relation_feature_names = (
+                'same_color', 'same_size', 'same_vert_size', 'same_hor_size', 
+                'translation_symmetry', 'in_contour', 'has_in_contour',
+                'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with', 'distance'
+            )
+            embedding = np.zeros(len(relation_feature_names))
+            
+            # Get the existing triple relations between objects
+            obj_triples = {}
+            if obj_1.label in self.repr_levels[1]['triples']:
+                if obj_2.label in self.repr_levels[1]['triples'][obj_1.label]:
+                    obj_triples = self.repr_levels[1]['triples'][obj_1.label][obj_2.label]
+            
+            # Set boolean values based on relations
+            feature_idx = 0
+            
+            # Same color relation
+            obj1_colors = getattr(obj_1, 'colors', ())
+            obj2_colors = getattr(obj_2, 'colors', ())
+            embedding[feature_idx] = 1 if obj1_colors == obj2_colors else 0
+            feature_idx += 1
+            
+            # Same size relation
+            obj1_size = getattr(obj_1, 'size', 0)
+            obj2_size = getattr(obj_2, 'size', 0)
+            embedding[feature_idx] = 1 if obj1_size == obj2_size else 0
+            feature_idx += 1
+            
+            # Same vertical size relation
+            obj1_vert = getattr(obj_1, 'vert_size', 0)
+            obj2_vert = getattr(obj_2, 'vert_size', 0)
+            embedding[feature_idx] = 1 if obj1_vert == obj2_vert else 0
+            feature_idx += 1
+            
+            # Same horizontal size relation
+            obj1_hor = getattr(obj_1, 'hor_size', 0)
+            obj2_hor = getattr(obj_2, 'hor_size', 0)
+            embedding[feature_idx] = 1 if obj1_hor == obj2_hor else 0
+            feature_idx += 1
+            
+            # Check for specific relations in triples
+            relation_checks = [
+                "translation_symmetry", "in_contour", "has_in_contour", 
+                "in_line", "in_diagonal", "x_aligned_with", "y_aligned_with"
+            ]
+            
+            for relation in relation_checks:
+                has_relation = any(triple[1] == relation for triple in obj_triples if len(triple) > 1)
+                embedding[feature_idx] = 1 if has_relation else 0
+                feature_idx += 1
+            
+            # Distance relation (normalized) with bounds checking
+            grid_size = max(self.shape) if hasattr(self, 'shape') and self.shape else 1
+            distance = getattr(obj_1, 'distances', {}).get(obj_2.label, 0)
+            normalized_distance = min(distance / grid_size, 1.0) if grid_size > 0 else 0.0
+            embedding[feature_idx] = normalized_distance
+            
+            return embedding
         
     def create_relation_embeddings(self, level=1):
         """Generate embeddings for all object pairs."""
@@ -472,17 +401,6 @@ class GridSummary():
         for obj in all_objects:
             if obj.label == changed_object.label:
                 continue
-            
-            # Remove changed object from other objects' relations
-            if changed_object.label in obj.relations:
-                del obj.relations[changed_object.label]
-            
-            # Remove other objects from changed object's relations
-            if obj.label in changed_object.relations:
-                del changed_object.relations[obj.label]
-        
-        # Reset distances dictionary for changed object
-        changed_object.distances = {}
         
         # Re-analyze relations with all other objects
         for obj in all_objects:
@@ -521,15 +439,11 @@ class GridSummary():
 
     def get_relation_embeddings_as_numpy(self, level=1):
         """
-        Return all relation embeddings for the specified level in numpy array format.
-        Each column is the concatenation of all relation embeddings for an object with all other objects.
-        
-        Args:
-            level (int): The representation level to get embeddings from
-            
-        Returns:
-            np.ndarray: A numpy array containing relation embeddings
+        Return all relation embeddings for the specified level in numpy array format with validation.
         """
+        # Validate level exists
+        if not hasattr(self, 'repr_levels') or level not in self.repr_levels:
+            raise ValueError(f"Level {level} not found in repr_levels")
         
         # Get relation embeddings from the specified level
         if 'relation_embeddings' not in self.repr_levels[level]:
@@ -539,38 +453,48 @@ class GridSummary():
         all_objects = self.repr_levels[level]['objects']
         n_objects = len(all_objects)
         
+        # Handle edge cases
+        if n_objects <= 1:
+            return np.array([])
+        
         # Determine the length of a single embedding
         sample_length = 0
         for obj1_label, embeddings_dict in relation_embeddings.items():
             for obj2_label, embedding in embeddings_dict.items():
-                sample_length = len(embedding)
-                break
+                if hasattr(embedding, '__len__'):
+                    sample_length = len(embedding)
+                    break
             if sample_length > 0:
                 break
         
-        # Initialize the numpy array to store all embeddings
-        # Shape will be (n_objects, (n_objects-1) * embedding_length)
-        if n_objects <= 1:
+        if sample_length == 0:
             return np.array([])
         
+        # Initialize the numpy array to store all embeddings
         result = np.zeros((n_objects, (n_objects-1) * sample_length))
         
         # Fill the array with concatenated embeddings
         for i, obj in enumerate(all_objects):
+            if not hasattr(obj, 'label'):
+                continue
+                
             obj_label = obj.label
             col_idx = 0
             
             # Concatenate embeddings for this object with all other objects
             for other_obj in all_objects:
-                other_label = other_obj.label
-                if obj_label == other_label:
-                    continue  # Skip same object
+                if not hasattr(other_obj, 'label') or obj_label == other_obj.label:
+                    continue
                     
-                if other_label in relation_embeddings[obj_label]:
+                other_label = other_obj.label
+                
+                if (obj_label in relation_embeddings and 
+                    other_label in relation_embeddings[obj_label]):
                     # Get embedding for this object pair
                     embedding = relation_embeddings[obj_label][other_label]
-                    # Add to the result array at the correct position
-                    result[i, col_idx:col_idx+sample_length] = embedding
+                    if hasattr(embedding, '__len__') and len(embedding) == sample_length:
+                        # Add to the result array at the correct position
+                        result[i, col_idx:col_idx+sample_length] = embedding
                     col_idx += sample_length
         
         return result

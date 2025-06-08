@@ -12,19 +12,15 @@ colors_mapping = {
     0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 
     0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
 }
-colors_mapping = {
-    0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 
-    0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
-}
 class GridObject():
     """Class for storing identified objects on a grid."""
     def __init__(self, shape:str, coords:List[tuple], color:List[float], label:str, grid_shape:tuple):
         self.shape = shape
         self.grid_shape = grid_shape
         self.coords = tuple(sorted(coords, key=lambda x: (x[1],x[0])))
-        self.center = self.find_object_center()
-        self.coords_offsets = ((coord[0]-self.coords[0][0], coord[1]-self.coords[0][1]) for coord in self.coords)
         self.size = len(coords)
+        self.center = self.find_object_center()
+        self.coords_offsets = tuple((coord[0]-self.coords[0][0], coord[1]-self.coords[0][1]) for coord in self.coords)
         self.positioning = self.define_positioning()
         self.edges = self.define_edges()
         self.hor_size = self.edges[1] - self.edges[0] + 1
@@ -40,7 +36,7 @@ class GridObject():
         if self.shape not in ['inner_hole', 'outer_hole']:
             self.inner_contour = self.define_inner_contour()
             self.inner_part, self.contour = self.inner_contour_split()
-            self.non_object_coords = list(set(self.inner_contour).difference(set(self.coords)))
+            self.non_object_coords = tuple(set(self.inner_contour).difference(set(self.coords)))
             self.inner_holes, self.outer_holes = self.define_holes()
             self.symmetry = self.check_symmetry() if self.shape != 'cell' else 'horizontal_and_vertical_symmetry'
             self.sub_objects = defaultdict(list)
@@ -49,7 +45,7 @@ class GridObject():
         if self.shape != 'complex' and self.shape not in ['inner_hole', 'outer_hole']:
             representation = (
                 f"{self.symmetry} {self.colors[0]} {self.shape} with size {self.size}, "
-                f"horizontal size {self.hor_size} and vertical size {self.vert_size} "
+                f"with dimensions {self.hor_size}x{self.vert_size} (horizontal x vertical), "
                 f"with center at {self.center}, with (min_i, max_i, min_j, max_j) = ({self.min_i}, {self.max_i}, {self.min_j}, {self.max_j}), "
                 f"positioning {self.positioning}, {len(self.inner_holes)} inner holes "
                 f"and {len(self.outer_holes)} outer holes"
@@ -57,14 +53,14 @@ class GridObject():
         elif self.shape  in ['inner_hole', 'outer_hole']:
             representation = (
                 f"{self.colors[0]} {self.shape} with size {self.size}, "
-                f"horizontal size {self.hor_size} and vertical size {self.vert_size} "
+                f"with dimensions {self.hor_size}x{self.vert_size} (horizontal x vertical), "
                 f"with center at {self.center},"
                 f"with (min_i, max_i, min_j, max_j) = ({self.min_i}, {self.max_i}, {self.min_j}, {self.max_j}),"
             )  
         else:
             representation = (
                 f"{self.symmetry} {self.colors[0]} segment with size {self.size}, "
-                f"horizontal size {self.hor_size} and vertical size {self.vert_size} "
+                f"with dimensions {self.hor_size}x{self.vert_size} (horizontal x vertical), "
                 f"with center at {self.center}, with (min_i, max_i, min_j, max_j) = ({self.min_i}, {self.max_i}, {self.min_j}, {self.max_j}), "
                 f"positioning {self.positioning}, {len(self.inner_holes)} inner holes "
                 f"and {len(self.outer_holes)} outer holes"
@@ -150,16 +146,6 @@ class GridObject():
         left_half_cols = range(ul[1], ul[1]+(cols//2))
         right_half_cols = range(ul[1]+(cols//2), (ul[1]+cols))
         
-        # Check if object is entirely in halves
-        # if all(i in top_half_rows for i in list_i):
-        #     positioning.append('at_top_half')
-        # if all(i in bottom_half_rows for i in list_i):
-        #     positioning.append('at_bottom_half')
-        # if all(j in left_half_cols for j in list_j):
-        #     positioning.append('at_left_half')
-        # if all(j in right_half_cols for j in list_j):
-        #     positioning.append('at_right_half')
-        
         # Check if object is entirely in quarters
         if all(i in top_half_rows for i in list_i) and all(j in left_half_cols for j in list_j):
             positioning.append('at_top_left_quarter')
@@ -170,73 +156,21 @@ class GridObject():
         if all(i in bottom_half_rows for i in list_i) and all(j in right_half_cols for j in list_j):
             positioning.append('at_bottom_right_quarter')
         
-        # Additional: Check if object spans across halves (crosses the middle)
-        # if any(i in top_half_rows for i in list_i) and any(i in bottom_half_rows for i in list_i):
-        #     positioning.append('spans_vertical_middle')
-        # if any(j in left_half_cols for j in list_j) and any(j in right_half_cols for j in list_j):
-        #     positioning.append('spans_horizontal_middle')
-        
-        # For larger grids, add matrix-like segment positioning
-        # if rows >= 3 and cols >= 3:
-        #     # Define functions to create segments for different grid sizes
-        #     def add_matrix_segments(n_segments):
-        #         if rows < n_segments or cols < n_segments:
-        #             return
-                    
-        #         # Calculate segment boundaries
-        #         row_segments = [range(i * rows // n_segments, (i + 1) * rows // n_segments) for i in range(n_segments)]
-        #         col_segments = [range(j * cols // n_segments, (j + 1) * cols // n_segments) for j in range(n_segments)]
-                
-        #         # Check if object is entirely in each segment
-        #         for i, row_seg in enumerate(row_segments):
-        #             for j, col_seg in enumerate(col_segments):
-        #                 if all(r in row_seg for r in list_i) and all(c in col_seg for c in list_j):
-        #                     # positioning.append(f'in_segment_{i}_{j}_of_{n_segments}x{n_segments}')
-            
-        #     # Add 3x3, 4x4, 5x5 matrix segments for larger grids
-        #     add_matrix_segments(3)  # 3x3 grid
-        #     if rows >= 4 and cols >= 4:
-        #         add_matrix_segments(4)  # 4x4 grid
-        #     if rows >= 5 and cols >= 5:
-        #         add_matrix_segments(5)  # 5x5 grid
-        
-        # Additional: Check for central positioning
-        if rows >= 3 and cols >= 3:
-            center_row = rows // 2
-            center_col = cols // 2
-            
-            # Define central area (single center cell for odd dimensions, 2x2 area for even dimensions)
-            central_rows = [center_row] if rows % 2 == 1 else [center_row - 1, center_row]
-            central_cols = [center_col] if cols % 2 == 1 else [center_col - 1, center_col]
-            
-            # # Check if any part of the object is in the central area
-            # if any(i in central_rows for i in list_i) and any(j in central_cols for j in list_j):
-            #     positioning.append('touches_center')
-                
-            # Check if the object is fully contained in the central area
-            if all(i in central_rows for i in list_i) and all(j in central_cols for j in list_j):
-                positioning.append('fully_in_center')
-        
         # Additional property: Check if the object forms a diagonal
         if len(self.coords) > 1:
             # Check for main diagonal (top-left to bottom-right)
             if all((i == j) for i, j in self.coords):
-                positioning.append('on_main_diagonal')
-            
+                positioning.append('on_main_diagonal')         
             # Check for counter diagonal (top-right to bottom-left)
             if all((i + j == rows - 1) for i, j in self.coords):
                 positioning.append('on_counter_diagonal')
-        
-        # # Additional property: Check if object is a perimeter object
-        # if all(i == 0 or i == rows - 1 or j == 0 or j == cols - 1 for i, j in self.coords):
-        #     positioning.append('on_perimeter_only')
         
         return positioning
             
     def reinit_obj(self, new_coords:List[tuple], grid:np.array=None):
         """Updated object attributed based on new coordinates."""
-        self.coords = new_coords
-        self.coords_offsets = [(coord[0]-self.coords[0][0], coord[1]-self.coords[0][1]) for coord in self.coords]
+        self.coords = tuple(sorted(new_coords, key=lambda x: (x[1],x[0]))) 
+        self.coords_offsets = tuple((coord[0]-self.coords[0][0], coord[1]-self.coords[0][1]) for coord in self.coords)
         self.center = self.find_object_center()
         self.edges = self.define_edges()
         self.size = len(self.coords)
@@ -250,19 +184,19 @@ class GridObject():
         if self.shape not in ['inner_hole', 'outer_hole']:
             self.inner_contour = self.define_inner_contour()
             self.inner_part, self.contour = self.inner_contour_split()
-            self.non_object_coords = list(set(self.inner_contour).difference(set(self.coords)))
+            self.non_object_coords = tuple(set(self.inner_contour).difference(set(self.coords)))
             self.inner_holes, self.outer_holes = self.define_holes()
         # Color update if grid provided
         if grid is not None:
-            colors = [grid[i, j] for i, j in self.coords]
-            self.color_numbers = list(set(colors))
-            self.colors = [colors_mapping[color] for color in self.color_numbers]
-            self.color_homo = True if len(self.color_numbers) else False
+            colors = tuple(grid[i, j] for i, j in self.coords)
+            self.color_numbers = tuple(set(colors))
+            self.colors = tuple(colors_mapping[color] for color in self.color_numbers)
+            self.color_homo = True if len(self.color_numbers) == 1 else False
     
     def check_equality(self, other_object):
         coords_1_shifted = [(tup[0]-self.min_i, tup[1]-self.min_j) for tup in self.coords]
         coords_1_shifted.sort(key=lambda x: x[0])
-        coords_2_shifted = [(tup[0]-other_object.min_i, tup[1]-self.othet_object.min_j) for tup in other_object]
+        coords_2_shifted = [(tup[0]-other_object.min_i, tup[1]-self.other_object.min_j) for tup in other_object]
         coords_2_shifted.sort(key=lambda x: x[0])
         return coords_1_shifted == coords_2_shifted
     
@@ -291,17 +225,6 @@ class GridObject():
         else: 
             return symmetries[0]
 
-    def create_object_triples(self):
-        """Create triples based on objects properties."""
-        triples = [] 
-        for position in self.positioning:
-            triples.append((self.label, 'located', position))
-        triples.append((self.label, 'has_shape', self.shape))
-        triples.append((self.label, 'has_color', self.color[0]))
-        triples.append((self.label, 'has_size', self.size))
-        triples.append((self.label, 'has', self.symmetry))
-        return triples
-
     def define_inner_contour(self):
         """
         Returns the minimal bounding rectangle around the shape.
@@ -326,13 +249,12 @@ class GridObject():
         """
         inner_part = []
         contour = [] 
-        
         contour.extend([(self.min_i, j) for j in range(self.min_j, self.max_j+1)])
         contour.extend([(i, self.min_j) for i in range(self.min_i, self.max_i+1)])
         contour.extend([(i, self.max_j) for i in range(self.min_i, self.max_i+1)]) 
         contour.extend([(self.max_i, j) for j in range(self.min_j, self.max_j+1)])
         inner_part = list(set(self.inner_contour).difference(set(contour)))
-        return inner_part, contour
+        return tuple(inner_part), tuple(contour)
     
     def define_holes(self):
         inner_holes = []
@@ -354,39 +276,22 @@ class GridObject():
                 inner_holes.append(hole_object)
             else:
                 outer_holes.append(hole_object)
-        return inner_holes, outer_holes
+        return tuple(inner_holes), tuple(outer_holes)
 
     def find_object_center(self):
-        """
-        Find the center cell of an object represented as a list of coordinate tuples.
-        
-        Parameters:
-        -----------
-        object_cells : list of tuples
-            List of (x, y) coordinates representing cells of the object
-        
-        Returns:
-        --------
-        tuple:
-            (center_x, center_y) - the coordinates of the cell closest to the geometric center
-            This will be one of the actual cells from the input list
-        """
-        object_cells = self.coords
-        if not object_cells:
-            raise ValueError("Object must contain at least one cell")
-        
+        """ Find the center cell of an object represented as a tuple of coordinate tuples."""
         # Calculate the geometric center (may be floating point)
-        sum_x = sum(cell[0] for cell in object_cells)
-        sum_y = sum(cell[1] for cell in object_cells)
-        num_cells = len(object_cells)
+        sum_x = sum(cell[0] for cell in self.coords)
+        sum_y = sum(cell[1] for cell in self.coords)
+        num_cells = self.size
         geometric_center_x = int(sum_x / num_cells)
         geometric_center_y = int(sum_y / num_cells)   
         return (geometric_center_x, geometric_center_y)
                 
     def structure_analysis(self):
         """Get destributions describing object inner structure in terms of shapes and colors.""" 
-        shape_types = ['line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
-                            'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex']        
+        shape_types = ('line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape', 
+                            'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex')        
         size2shape = defaultdict(list)
         shape2size = {}
         hor_size2shape = defaultdict(list)
@@ -436,20 +341,10 @@ class GridObject():
         color2description = {colors_reversed[color2freq_values[i]]:f'{i+1} by color freq' for i in range(10)}    
         # aggregating
         objects_summary = {
-            'size2shape': size2shape,
-            'shape2size': shape2size,
-            'hor_size2shape': hor_size2shape,
-            'shape2hor_size': shape2hor_size,
-            'vert_size2shape': vert_size2shape,
-            'shape2vert_size': shape2vert_size,
-            'shapes': shapes,
-            'shape_colors': shape_colors,
-            'colors': colors,
-            'shape_hor_size_description': hor_size2description,
-            'shape_vert_size_description': vert_size2description,
-            'shape_size_description': size2description,
-            'shape_color_description': shape_color2description,
-            'color_description': color2description
+            'size2shape': size2shape, 'shape2size': shape2size, 'hor_size2shape': hor_size2shape, 'shape2hor_size': shape2hor_size,
+            'vert_size2shape': vert_size2shape, 'shape2vert_size': shape2vert_size, 'shapes': shapes, 'shape_colors': shape_colors,
+            'colors': colors, 'shape_hor_size_description': hor_size2description, 'shape_vert_size_description': vert_size2description,
+            'shape_size_description': size2description, 'shape_color_description': shape_color2description, 'color_description': color2description
         }
         self.objects_summary = objects_summary
     
@@ -476,6 +371,10 @@ class GridObject():
         """
         # Get grid dimensions
         grid_rows, grid_cols = self.grid_shape
+
+        # Validate grid dimensions
+        if grid_rows <= 0 or grid_cols <= 0:
+            raise ValueError(f"Invalid grid dimensions: {self.grid_shape}")
         
         # Initialize the embedding dictionary
         embedding_dict = {}
@@ -484,68 +383,69 @@ class GridObject():
         colors = ["black", "blue", "red", "green", "yellow", "gray", "magenta", "orange", "sky", "brown"]
         color_enc = [0] * len(colors)
         
-        if hasattr(self, 'colors'):
+        if hasattr(self, 'colors') and self.colors:
             for color in self.colors:
                 if color in colors:
                     color_enc[colors.index(color)] = 1
         
         embedding_dict["color_enc"] = color_enc
         
-        # 2-4. Size metrics
-        embedding_dict["hor_size"] = self.hor_size / grid_cols if grid_cols > 0 else 0
-        embedding_dict["vert_size"] = self.vert_size / grid_rows if grid_rows > 0 else 0
-        embedding_dict["size"] = self.size / (grid_rows * grid_cols) if (grid_rows * grid_cols) > 0 else 0
+        # 2-4. Size metrics with bounds checking
+        embedding_dict["hor_size"] = min(1.0, self.hor_size / grid_cols)
+        embedding_dict["vert_size"] = min(1.0, self.vert_size / grid_rows)
+        embedding_dict["size"] = min(1.0, self.size / (grid_rows * grid_cols))
         
-        # 5-6. Center position
+        # 5-6. Center position with bounds checking
         i_center, j_center = self.center
-        embedding_dict["i_center"] = i_center / grid_rows if grid_rows > 0 else 0
-        embedding_dict["j_center"] = j_center / grid_cols if grid_cols > 0 else 0
+        embedding_dict["i_center"] = min(1.0, max(0.0, i_center / grid_rows))
+        embedding_dict["j_center"] = min(1.0, max(0.0, j_center / grid_cols))
         
-        # 7-10. Boundary positions
-        embedding_dict["min_i"] = self.min_i / grid_rows if grid_rows > 0 else 0
-        embedding_dict["min_j"] = self.min_j / grid_cols if grid_cols > 0 else 0
-        embedding_dict["max_i"] = self.max_i / grid_rows if grid_rows > 0 else 0
-        embedding_dict["max_j"] = self.max_j / grid_cols if grid_cols > 0 else 0
+        # 7-10. Boundary positions with bounds checking
+        embedding_dict["min_i"] = min(1.0, max(0.0, self.min_i / grid_rows))
+        embedding_dict["min_j"] = min(1.0, max(0.0, self.min_j / grid_cols))
+        embedding_dict["max_i"] = min(1.0, max(0.0, self.max_i / grid_rows))
+        embedding_dict["max_j"] = min(1.0, max(0.0, self.max_j / grid_cols))
         
         # 11-12. Holes
         if self.shape not in ['inner_hole', 'outer_hole']:
             n_inner_holes = len(self.inner_holes)
             n_outer_holes = len(self.outer_holes)
-            embedding_dict["inner_holes"] = 1.0 if n_inner_holes >= 5 else n_inner_holes / 5
-            embedding_dict["outer_holes"] = 1.0 if n_outer_holes >= 5 else n_outer_holes / 5
+            embedding_dict["inner_holes"] = min(1.0, n_inner_holes / 5)  # Simplified
+            embedding_dict["outer_holes"] = min(1.0, n_outer_holes / 5)  # Simplified
         else:
-            # For hole objects themselves, set holes to 0
             embedding_dict["inner_holes"] = 0.0
             embedding_dict["outer_holes"] = 0.0
         
         # 13. Symmetry type
         if self.shape not in ['inner_hole', 'outer_hole']:
-            has_symmetry = int(self.symmetry != 'assymetry')
+            has_symmetry = int(hasattr(self, 'symmetry') and self.symmetry != 'assymetry')
             embedding_dict["symmetry_type"] = has_symmetry
         else:
             embedding_dict["symmetry_type"] = 0
         
-        # Create flat vector from all features
+        # Create flat vector from all features (immutable)
         flat_vector = []
         flat_vector.extend(color_enc)  # 10 elements for colors
-        flat_vector.append(embedding_dict["hor_size"])
-        flat_vector.append(embedding_dict["vert_size"])
-        flat_vector.append(embedding_dict["size"])
-        flat_vector.append(embedding_dict["i_center"])
-        flat_vector.append(embedding_dict["j_center"])
-        flat_vector.append(embedding_dict["min_i"])
-        flat_vector.append(embedding_dict["min_j"])
-        flat_vector.append(embedding_dict["max_i"])
-        flat_vector.append(embedding_dict["max_j"])
-        flat_vector.append(embedding_dict["inner_holes"])
-        flat_vector.append(embedding_dict["outer_holes"])
-        flat_vector.append(embedding_dict["symmetry_type"])
+        flat_vector.extend([
+            embedding_dict["hor_size"],
+            embedding_dict["vert_size"],
+            embedding_dict["size"],
+            embedding_dict["i_center"],
+            embedding_dict["j_center"],
+            embedding_dict["min_i"],
+            embedding_dict["min_j"],
+            embedding_dict["max_i"],
+            embedding_dict["max_j"],
+            embedding_dict["inner_holes"],
+            embedding_dict["outer_holes"],
+            embedding_dict["symmetry_type"]
+        ])
         
-        # Store the embedding in the object for later use
-        self.embedding_dict = embedding_dict
-        self.embedding_vector = flat_vector
-    
-        return flat_vector
+        # Store as immutable tuples
+        self.embedding_dict = dict(embedding_dict)  # Shallow copy to prevent external mutation
+        self.embedding_vector = tuple(flat_vector)  # Make immutable
+        
+        return tuple(flat_vector)  # Return immutable
 
 class ObjectsFilter():
     """Class for filtering out potentialy unimportant objects."""

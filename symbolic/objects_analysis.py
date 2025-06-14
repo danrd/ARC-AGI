@@ -29,7 +29,7 @@ class GridObject():
         self.max_i = self.edges[1]
         self.min_j = self.edges[2]
         self.max_j = self.edges[3]
-        self.color_numbers = color
+        self.color_numbers = tuple(color)
         self.colors = tuple([colors_mapping[color] for color in self.color_numbers])
         self.color_homo = True if len(self.color_numbers) else False
         self.label = label

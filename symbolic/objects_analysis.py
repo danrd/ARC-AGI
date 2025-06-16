@@ -276,7 +276,7 @@ class GridObject():
             self.inner_contour = self.define_inner_contour()
             self.inner_part, self.contour = self.inner_contour_split()
             self.non_object_coords = tuple(set(self.inner_contour).difference(set(self.coords)))
-            self.inner_holes, self.outer_holes = self.define_holes()
+            self.inner_holes, self.outer_holes = self.define_holes(grid)
             self.hu_moments = self.calculate_hu_moments()
             self.compactness = self.calculate_compactness()
             self.inner_holes_share = self.calculate_inner_holes_share()

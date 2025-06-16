@@ -974,3 +974,536 @@ class RelationAnalyzer():
                 relation_statistics[f"y_aligned_with"] += 1 
 
         return (triples1, triples2), relation_statistics
+    
+
+
+colors_mapping = {
+    0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 
+    0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
+}
+
+inverse_colors_mapping = {v:k for k, v in colors_mapping.items()}
+
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Set, Optional
+import numpy as np
+from collections import defaultdict, Counter
+
+@dataclass(frozen=True)
+class RelationStatistics:
+    """Statistics about spatial relationships between objects."""
+    same_color: int
+    same_shape: int
+    same_size: int
+    in_contour: int
+    in_line: int
+    x_y_aligned_with: int
+    x_aligned_with: int
+    y_aligned_with: int
+
+@dataclass(frozen=True)
+class ObjectChange:
+    """Represents a change to a single object."""
+    obj_label: str
+    change_type: str  # 'added', 'removed', 'modified', 'moved'
+    old_coords: Optional[Tuple[Tuple[int, int], ...]] = None
+    new_coords: Optional[Tuple[Tuple[int, int], ...]] = None
+    old_color: Optional[str] = None
+    new_color: Optional[str] = None
+    movement_vector: Optional[Tuple[int, int]] = None
+    size_change: Optional[int] = None
+
+@dataclass(frozen=True)
+class GridChangeSummary:
+    """Concise summary of changes between input and output grids."""
+    # Grid-level changes
+    grid_size_change: Tuple[int, int]  # (rows_delta, cols_delta)
+    
+    # Object-level changes
+    objects_added: int
+    objects_removed: int
+    objects_moved: int
+    objects_recolored: int
+    objects_resized: int
+    
+    # Color changes
+    colors_added: Set[str]
+    colors_removed: Set[str]
+    dominant_color_change: Optional[Tuple[str, str]]  # (from, to)
+    
+    # Spatial patterns
+    common_movement_vector: Optional[Tuple[int, int]]
+    common_scaling_factor: Optional[float]
+    
+    # Shape patterns
+    shape_transformations: Dict[str, str]  # old_shape -> new_shape
+    
+    # Detailed changes (for complex cases)
+    object_changes: Tuple[ObjectChange, ...]
+    
+    # High-level operation summary
+    operation_type: str  # 'recolor', 'move', 'copy', 'scale', 'rotate', 'fill', 'complex'
+    operation_description: str  # Human-readable description
+
+    median_size_change: Optional[float]
+    colors_change: Dict[str, int]  # color -> count_delta
+    shape_colors_change: Dict[str, int]  # color -> count_delta
+    relation_stats_change: Optional[RelationStatistics]
+
+class GridChangeAnalyzer:
+    """Analyzes changes between input and output grids."""
+    
+    def __init__(self, input_summary: GridSummary, output_summary: GridSummary):
+        self.input_summary = input_summary
+        self.output_summary = output_summary
+        self.input_grid = input_summary.grid
+        self.output_grid = output_summary.grid
+        
+    def analyze_changes(self, level: int = 1) -> GridChangeSummary:
+        """Generate comprehensive change summary."""
+        input_objects = self.input_summary.repr_levels[level].objects
+        output_objects = self.output_summary.repr_levels[level].objects
+        
+        # Grid size changes
+        grid_size_change = self._calculate_grid_size_change()
+        
+        # Object matching and change detection
+        object_changes, change_counts = self._analyze_object_changes(input_objects, output_objects)
+        
+        # Color analysis
+        color_changes = self._analyze_color_changes()
+        
+        # Pattern detection
+        movement_vector = self._detect_common_movement(object_changes)
+        scaling_factor = self._detect_common_scaling(object_changes)
+        shape_transformations = self._detect_shape_transformations(object_changes)
+        
+        # Summary statistics changes
+        median_size_change = self._calculate_median_size_change(level)
+        colors_change = self._calculate_colors_change(level)
+        shape_colors_change = self._calculate_shape_colors_change(level)
+        relation_stats_change = self._calculate_relation_stats_change(level)
+        
+        # High-level operation detection
+        operation_type, operation_description = self._detect_operation_type(
+            object_changes, change_counts, color_changes, movement_vector
+        )
+        
+        return GridChangeSummary(
+            grid_size_change=grid_size_change,
+            objects_added=change_counts['added'],
+            objects_removed=change_counts['removed'],
+            objects_moved=change_counts['moved'],
+            objects_recolored=change_counts['recolored'],
+            objects_resized=change_counts['resized'],
+            colors_added=color_changes['added'],
+            colors_removed=color_changes['removed'],
+            dominant_color_change=color_changes['dominant_change'],
+            common_movement_vector=movement_vector,
+            common_scaling_factor=scaling_factor,
+            shape_transformations=shape_transformations,
+            object_changes=tuple(object_changes),
+            operation_type=operation_type,
+            operation_description=operation_description,
+            median_size_change=median_size_change,
+            colors_change=colors_change,
+            shape_colors_change=shape_colors_change,
+            relation_stats_change=relation_stats_change
+        )
+
+
+    def _calculate_median_size_change(self, level) -> Optional[float]:
+        """Calculate change in median size between input and output."""
+        if (hasattr(self.input_summary.repr_levels[level], 'objects_summary') and 
+            hasattr(self.output_summary.repr_levels[level], 'objects_summary')):
+            input_median = self.input_summary.repr_levels[level].objects_summary.median_size
+            output_median = self.output_summary.repr_levels[level].objects_summary.median_size
+            return output_median - input_median
+        return None
+    
+    def _calculate_colors_change(self, level) -> Dict[str, int]:
+        """Calculate change in color counts between input and output."""
+        colors_change = {}
+        if (hasattr(self.input_summary.repr_levels[level], 'objects_summary') and 
+            hasattr(self.output_summary.repr_levels[level], 'objects_summary')):
+            input_colors = self.input_summary.repr_levels[level].objects_summary.colors
+            output_colors = self.output_summary.repr_levels[level].objects_summary.colors
+
+            input_colors = {int(inverse_colors_mapping[k]*10):v for k,v in input_colors.items()} 
+            output_colors = {int(inverse_colors_mapping[k]*10):v for k,v in output_colors.items()}       
+            
+            # Get all colors that appear in either input or output
+            all_colors = set(input_colors.keys()) | set(output_colors.keys())
+            
+            for color in all_colors:
+                input_count = input_colors.get(color, 0)
+                output_count = output_colors.get(color, 0)
+                delta = output_count - input_count
+                if delta != 0:
+                    colors_change[color] = delta
+        
+        return colors_change
+    
+    def _calculate_shape_colors_change(self, level) -> Dict[str, int]:
+        """Calculate change in shape color counts between input and output."""
+        shape_colors_change = {}
+        if (hasattr(self.input_summary.repr_levels[level], 'objects_summary') and 
+            hasattr(self.output_summary.repr_levels[level], 'objects_summary')):
+            input_shape_colors = self.input_summary.repr_levels[level].objects_summary.shape_colors
+            output_shape_colors = self.output_summary.repr_levels[level].objects_summary.shape_colors
+
+            input_shape_colors = {int(inverse_colors_mapping[k]*10):v for k,v in input_shape_colors .items() if k!='multicolor'} | {'multicolor': input_shape_colors['multicolor']}
+            output_shape_colors = {int(inverse_colors_mapping[k]*10):v for k,v in output_shape_colors.items() if k!='multicolor'} | {'multicolor': output_shape_colors ['multicolor']}
+            # Get all colors that appear in either input or output
+            all_colors = set(input_shape_colors.keys()) | set(output_shape_colors.keys())
+            
+            for color in all_colors:
+                input_count = input_shape_colors.get(color, 0)
+                output_count = output_shape_colors.get(color, 0)
+                delta = output_count - input_count
+                if delta != 0:
+                    shape_colors_change[color] = delta
+        
+        return shape_colors_change
+    
+    def _calculate_relation_stats_change(self,level) -> Optional[RelationStatistics]:
+        """Calculate change in relation statistics between input and output."""
+        if (hasattr(self.input_summary.repr_levels[level], 'relation_statistics') and 
+            hasattr(self.output_summary.repr_levels[level], 'relation_statistics')):
+            input_stats = self.input_summary.repr_levels[level].relation_statistics
+            output_stats = self.output_summary.repr_levels[level].relation_statistics
+            
+            return RelationStatistics(
+                same_color=output_stats.same_color - input_stats.same_color,
+                same_shape=output_stats.same_shape - input_stats.same_shape,
+                same_size=output_stats.same_size - input_stats.same_size,
+                in_contour=output_stats.in_contour - input_stats.in_contour,
+                in_line=output_stats.in_line - input_stats.in_line,
+                x_y_aligned_with=output_stats.x_y_aligned_with - input_stats.x_y_aligned_with,
+                x_aligned_with=output_stats.x_aligned_with - input_stats.x_aligned_with,
+                y_aligned_with=output_stats.y_aligned_with - input_stats.y_aligned_with
+            )
+        return None
+    
+    def _calculate_grid_size_change(self) -> Tuple[int, int]:
+        """Calculate change in grid dimensions."""
+        input_shape = self.input_summary.shape
+        output_shape = self.output_summary.shape
+        return (output_shape[0] - input_shape[0], output_shape[1] - input_shape[1])
+    
+    def _analyze_object_changes(self, input_objects, output_objects) -> Tuple[List[ObjectChange], Dict[str, int]]:
+        """Analyze changes in objects between input and output."""
+        object_changes = []
+        change_counts = {'recolored':0, 'moved':0, 'resized':0, 'removed':0, 'added':0}
+        
+        # Create mappings for easier comparison
+        input_by_coords = {obj.coords: obj for obj in input_objects}
+        output_by_coords = {obj.coords: obj for obj in output_objects}
+        
+        # Track matched objects to identify additions/removals
+        matched_input = set()
+        matched_output = set()
+        
+        # Find exact matches (same coordinates)
+        for coords, input_obj in input_by_coords.items():
+            if coords in output_by_coords:
+                output_obj = output_by_coords[coords]
+                matched_input.add(input_obj.label)
+                matched_output.add(output_obj.label)
+                
+                # Check for color changes
+                if input_obj.colors != output_obj.colors:
+                    change_counts['recolored'] += 1
+                    object_changes.append(ObjectChange(
+                        obj_label=input_obj.label,
+                        change_type='modified',
+                        old_coords=input_obj.coords,
+                        new_coords=output_obj.coords,
+                        old_color=input_obj.colors[0] if input_obj.colors else None,
+                        new_color=output_obj.colors[0] if output_obj.colors else None
+                    ))
+        
+        # Find moved objects (same shape/color, different position)
+        unmatched_input = [obj for obj in input_objects if obj.label not in matched_input]
+        unmatched_output = [obj for obj in output_objects if obj.label not in matched_output]
+        
+        for input_obj in unmatched_input:
+            for output_obj in unmatched_output:
+                if (input_obj.shape == output_obj.shape and 
+                    input_obj.colors == output_obj.colors and
+                    input_obj.size == output_obj.size):
+                    
+                    # Calculate movement vector
+                    input_center = input_obj.center
+                    output_center = output_obj.center
+                    movement = (output_center[0] - input_center[0], 
+                              output_center[1] - input_center[1])
+                    
+                    change_counts['moved'] += 1
+                    object_changes.append(ObjectChange(
+                        obj_label=input_obj.label,
+                        change_type='moved',
+                        old_coords=input_obj.coords,
+                        new_coords=output_obj.coords,
+                        movement_vector=movement
+                    ))
+                    
+                    matched_input.add(input_obj.label)
+                    matched_output.add(output_obj.label)
+                    break
+        
+        # Find resized objects (same position/color, different size)
+        remaining_input = [obj for obj in input_objects if obj.label not in matched_input]
+        remaining_output = [obj for obj in output_objects if obj.label not in matched_output]
+        
+        for input_obj in remaining_input:
+            for output_obj in remaining_output:
+                if (input_obj.center == output_obj.center and
+                    input_obj.colors == output_obj.colors and
+                    input_obj.shape == output_obj.shape):
+                    
+                    size_change = output_obj.size - input_obj.size
+                    change_counts['resized'] += 1
+                    object_changes.append(ObjectChange(
+                        obj_label=input_obj.label,
+                        change_type='modified',
+                        old_coords=input_obj.coords,
+                        new_coords=output_obj.coords,
+                        size_change=size_change
+                    ))
+                    
+                    matched_input.add(input_obj.label)
+                    matched_output.add(output_obj.label)
+                    break
+        
+        # Remaining unmatched objects are additions/removals
+        final_unmatched_input = [obj for obj in input_objects if obj.label not in matched_input]
+        final_unmatched_output = [obj for obj in output_objects if obj.label not in matched_output]
+        
+        for obj in final_unmatched_input:
+            change_counts['removed'] += 1
+            object_changes.append(ObjectChange(
+                obj_label=obj.label,
+                change_type='removed',
+                old_coords=obj.coords
+            ))
+        
+        for obj in final_unmatched_output:
+            change_counts['added'] += 1
+            object_changes.append(ObjectChange(
+                obj_label=obj.label,
+                change_type='added',
+                new_coords=obj.coords
+            ))
+        
+        return object_changes, dict(change_counts)
+    
+    def _analyze_color_changes(self) -> Dict:
+        """Analyze color changes in the grids."""
+        input_colors = set(np.unique(self.input_grid))
+        output_colors = set(np.unique(self.output_grid))
+        
+        # Convert to color names
+        input_color_names = {str(int(c*10)) for c in input_colors}
+        output_color_names = {str(int(c*10)) for c in output_colors}
+        
+        added_colors = output_color_names - input_color_names
+        removed_colors = input_color_names - output_color_names
+        
+        # Find dominant color change
+        input_counts = Counter([str(int(el*10)) for el in self.input_grid.flatten() if el != self.input_summary.font_color])
+        output_counts = Counter([str(int(el*10)) for el in self.output_grid.flatten() if el != self.output_summary.font_color])
+        
+        dominant_change = None
+        if len(input_counts) > 0 and len(output_counts) > 0:
+            input_dominant = f'({str(int(input_counts.most_common(2)[0][0]*10))})'
+            output_dominant = f'({str(int(input_counts.most_common(2)[0][0]*10))})'
+            if input_dominant != output_dominant:
+                dominant_change = (input_dominant, output_dominant)
+        
+        return {
+            'added': added_colors,
+            'removed': removed_colors,
+            'dominant_change': dominant_change
+        }
+    
+    def _detect_common_movement(self, object_changes: List[ObjectChange]) -> Optional[Tuple[int, int]]:
+        """Detect if there's a common movement pattern."""
+        movements = [change.movement_vector for change in object_changes 
+                    if change.movement_vector is not None]
+        
+        if not movements:
+            return None
+        
+        # Find most common movement
+        movement_counts = Counter(movements)
+        if len(movement_counts) > 0:
+            most_common = movement_counts.most_common(1)[0]
+            if most_common[1] >= len(movements) * 0.5:  # At least 50% of movements
+                return most_common[0]
+        
+        return None
+    
+    def _detect_common_scaling(self, object_changes: List[ObjectChange]) -> Optional[float]:
+        """Detect common scaling factor."""
+        size_changes = [change.size_change for change in object_changes 
+                       if change.size_change is not None and change.size_change != 0]
+        
+        if not size_changes:
+            return None
+        
+        # Simple scaling detection - could be more sophisticated
+        if len(set(size_changes)) == 1:
+            return size_changes[0]
+        
+        return None
+    
+    def _detect_shape_transformations(self, object_changes: List[ObjectChange]) -> Dict[str, str]:
+        """Detect shape transformation patterns."""
+        transformations = {}
+        # This would need access to shape information from objects
+        # Simplified implementation
+        return transformations
+    
+    def _detect_operation_type(self, object_changes: List[ObjectChange], 
+                              change_counts: Dict[str, int],
+                              color_changes: Dict,
+                              movement_vector: Optional[Tuple[int, int]]) -> Tuple[str, str]:
+        """Detect the high-level operation type and generate description."""
+        
+        total_changes = sum(change_counts.values())
+        
+        if total_changes == 0:
+            return 'none', 'No changes detected'
+        
+        # Recoloring operation
+        if change_counts.get('recolored', 0) > 0 and total_changes == change_counts['recolored']:
+            if color_changes['dominant_change']:
+                old_color, new_color = color_changes['dominant_change']
+                return 'recolor', f'All objects recolored from {old_color} to {new_color}'
+            return 'recolor', 'Objects recolored'
+        
+        # Movement operation
+        if change_counts.get('moved', 0) > 0 and movement_vector:
+            direction = self._describe_movement(movement_vector)
+            return 'move', f'Objects moved {direction} by {movement_vector}'
+        
+        # Addition operation
+        if change_counts.get('added', 0) > 0 and change_counts.get('removed', 0) == 0:
+            return 'add', f'{change_counts["added"]} objects added'
+        
+        # Removal operation
+        if change_counts.get('removed', 0) > 0 and change_counts.get('added', 0) == 0:
+            return 'remove', f'{change_counts["removed"]} objects removed'
+        
+        # Copy operation (more additions than removals)
+        if change_counts.get('added', 0) > change_counts.get('removed', 0):
+            return 'copy', f'Objects copied ({change_counts["added"]} added, {change_counts["removed"]} removed)'
+        
+        # Scaling/resizing
+        if change_counts.get('resized', 0) > 0:
+            return 'scale', f'{change_counts["resized"]} objects resized'
+        
+        # Complex transformation
+        return 'complex', f'Complex transformation: {total_changes} total changes'
+    
+    def _describe_movement(self, movement_vector: Tuple[int, int]) -> str:
+        """Convert movement vector to human-readable direction."""
+        di, dj = movement_vector
+        
+        if di == 0 and dj == 0:
+            return 'no movement'
+        elif di == 0:
+            return 'right' if dj > 0 else 'left'
+        elif dj == 0:
+            return 'down' if di > 0 else 'up'
+        else:
+            vertical = 'down' if di > 0 else 'up'
+            horizontal = 'right' if dj > 0 else 'left'
+            return f'{vertical}-{horizontal}'
+
+def summarize_training_pair(input_grid_summary: GridSummary, output_grid_summary: GridSummary, 
+                            levels: List[int] = [1]) -> str:
+    """Generate a concise text summary of changes for LLM consumption."""
+    analyzer = GridChangeAnalyzer(input_grid_summary, output_grid_summary)
+    summary = analyzer.analyze_changes(level=levels[0])
+    
+    lines = []
+    lines.append(f"Operation: {summary.operation_description}")
+    
+    if summary.grid_size_change != (0, 0):
+        lines.append(f"Grid size changed by {summary.grid_size_change}")
+    
+    if summary.objects_added > 0:
+        lines.append(f"Added {summary.objects_added} objects")
+    
+    if summary.objects_removed > 0:
+        lines.append(f"Removed {summary.objects_removed} objects")
+    
+    if summary.objects_moved > 0:
+        if summary.common_movement_vector:
+            direction = analyzer._describe_movement(summary.common_movement_vector)
+            lines.append(f"Moved {summary.objects_moved} objects {direction}")
+        else:
+            lines.append(f"Moved {summary.objects_moved} objects")
+    
+    if summary.objects_recolored > 0:
+        if summary.dominant_color_change:
+            old_color, new_color = summary.dominant_color_change
+            lines.append(f"Recolored {summary.objects_recolored} objects from {old_color} to {new_color}")
+        else:
+            lines.append(f"Recolored {summary.objects_recolored} objects")
+    
+    if summary.colors_added:
+        lines.append(f"New colors: {', '.join(summary.colors_added)}")
+    
+    if summary.colors_removed:
+        lines.append(f"Removed colors: {', '.join(summary.colors_removed)}")
+
+    if summary.median_size_change is not None and summary.median_size_change != 0:
+        lines.append(f"Median size changed by {summary.median_size_change}")
+    
+    if summary.colors_change:
+        color_changes_desc = []
+        for color, delta in summary.colors_change.items():
+            if delta > 0:
+                color_changes_desc.append(f"+{delta} color ({color})")
+            else:
+                color_changes_desc.append(f"+{delta} color ({color})")
+        if color_changes_desc:
+            lines.append(f"Color count changes: {', '.join(color_changes_desc)}")
+    
+    if summary.shape_colors_change:
+        shape_color_changes_desc = []
+        for color, delta in summary.shape_colors_change.items():
+            if delta > 0:
+                shape_color_changes_desc.append(f"+{delta} shapes with color ({color})")
+            else:
+                shape_color_changes_desc.append(f"+{delta} shapes with color ({color})")
+        if shape_color_changes_desc:
+            lines.append(f"Shape color changes: {', '.join(shape_color_changes_desc)}")
+    
+    if summary.relation_stats_change:
+        relation_changes = []
+        stats = summary.relation_stats_change
+        if stats.same_color != 0:
+            relation_changes.append(f"same_color: {stats.same_color:+d}")
+        if stats.same_shape != 0:
+            relation_changes.append(f"same_shape: {stats.same_shape:+d}")
+        if stats.same_size != 0:
+            relation_changes.append(f"same_size: {stats.same_size:+d}")
+        if stats.in_contour != 0:
+            relation_changes.append(f"in_contour: {stats.in_contour:+d}")
+        if stats.in_line != 0:
+            relation_changes.append(f"in_line: {stats.in_line:+d}")
+        if stats.x_y_aligned_with != 0:
+            relation_changes.append(f"x_y_aligned: {stats.x_y_aligned_with:+d}")
+        if stats.x_aligned_with != 0:
+            relation_changes.append(f"x_aligned: {stats.x_aligned_with:+d}")
+        if stats.y_aligned_with != 0:
+            relation_changes.append(f"y_aligned: {stats.y_aligned_with:+d}")
+        
+        if relation_changes:
+            lines.append(f"Relation changes: {', '.join(relation_changes)}")
+    
+    return "; ".join(lines)

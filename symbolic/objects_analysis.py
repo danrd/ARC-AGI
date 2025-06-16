@@ -14,7 +14,7 @@ colors_mapping = {
 }
 class GridObject():
     """Class for storing identified objects on a grid."""
-    def __init__(self, shape:str, coords:List[tuple], color:List[float], label:str, grid_shape:tuple):
+    def __init__(self, shape:str, coords:List[tuple], color:List[float], label:str, grid_shape:tuple, font_color=None, grid=None):
         self.shape = shape
         self.grid_shape = grid_shape
         self.coords = tuple(sorted(coords, key=lambda x: (x[1],x[0])))
@@ -29,17 +29,23 @@ class GridObject():
         self.max_i = self.edges[1]
         self.min_j = self.edges[2]
         self.max_j = self.edges[3]
+        self.font_color = font_color
         self.color_numbers = tuple(color)
         self.colors = tuple([colors_mapping[color] for color in self.color_numbers])
         self.color_homo = True if len(self.color_numbers) else False
+        self.color_structure = grid[self.min_i:self.max_i+1, self.min_j:self.max_j+1].copy()
+        self.color_shares = self.calculate_color_shares()
         self.label = label
         if self.shape not in ['inner_hole', 'outer_hole']:
             self.inner_contour = self.define_inner_contour()
             self.inner_part, self.contour = self.inner_contour_split()
             self.non_object_coords = tuple(set(self.inner_contour).difference(set(self.coords)))
-            self.inner_holes, self.outer_holes = self.define_holes()
+            self.inner_holes, self.outer_holes = self.define_holes(grid)
             self.symmetry = self.check_symmetry() if self.shape != 'cell' else 'horizontal_and_vertical_symmetry'
             self.sub_objects = defaultdict(list)
+            self.hu_moments = self.calculate_hu_moments()
+            self.compactness = self.calculate_compactness()
+            self.inner_holes_share = self.calculate_inner_holes_share()
         
     def __repr__(self):
         if self.shape != 'complex' and self.shape not in ['inner_hole', 'outer_hole']:
@@ -100,6 +106,91 @@ class GridObject():
         
         print(f"\nCoordinates: {self.coords[:5]}{' ...' if len(self.coords) > 20 else ''}")
         print("=" * (len(self.label) + 12))
+
+
+    def calculate_color_shares(self):
+        unique_elements, counts = np.unique(self.color_structure, return_counts=True)
+        nomalized_counts = counts / sum(counts)
+        return dict(zip(unique_elements, nomalized_counts))
+
+    def calculate_hu_moments(self):
+        """Calculate Hu moments for shape identification using discrete grid coordinates."""
+        if len(self.coords) < 2:
+            return tuple([0.0] * 7)
+        
+        # Convert coordinates to relative positions (centered)
+        coords_array = np.array(self.coords)
+        center_i, center_j = self.center
+        
+        # Calculate central moments up to order 3
+        def central_moment(p: int, q: int) -> float:
+            moment = 0.0
+            for coord in self.coords:
+                i, j = coord
+                moment += ((i - center_i) ** p) * ((j - center_j) ** q)
+            return moment
+        
+        # Calculate moments
+        m00 = len(self.coords)  # Number of pixels
+        m20 = central_moment(2, 0)
+        m02 = central_moment(0, 2)
+        m11 = central_moment(1, 1)
+        m30 = central_moment(3, 0)
+        m03 = central_moment(0, 3)
+        m21 = central_moment(2, 1)
+        m12 = central_moment(1, 2)
+        
+        # Normalize central moments
+        if m00 == 0:
+            return tuple([0.0] * 7)
+        
+        mu20 = m20 / m00
+        mu02 = m02 / m00
+        mu11 = m11 / m00
+        mu30 = m30 / (m00 ** 1.5)
+        mu03 = m03 / (m00 ** 1.5)
+        mu21 = m21 / (m00 ** 1.5)
+        mu12 = m12 / (m00 ** 1.5)
+        
+        # Calculate 7 Hu moments
+        hu1 = mu20 + mu02
+        hu2 = (mu20 - mu02) ** 2 + 4 * mu11 ** 2
+        hu3 = (mu30 - 3 * mu12) ** 2 + (3 * mu21 - mu03) ** 2
+        hu4 = (mu30 + mu12) ** 2 + (mu21 + mu03) ** 2
+        hu5 = (mu30 - 3 * mu12) * (mu30 + mu12) * ((mu30 + mu12) ** 2 - 3 * (mu21 + mu03) ** 2) + \
+              (3 * mu21 - mu03) * (mu21 + mu03) * (3 * (mu30 + mu12) ** 2 - (mu21 + mu03) ** 2)
+        hu6 = (mu20 - mu02) * ((mu30 + mu12) ** 2 - (mu21 + mu03) ** 2) + \
+              4 * mu11 * (mu30 + mu12) * (mu21 + mu03)
+        hu7 = (3 * mu21 - mu03) * (mu30 + mu12) * ((mu30 + mu12) ** 2 - 3 * (mu21 + mu03) ** 2) - \
+              (mu30 - 3 * mu12) * (mu21 + mu03) * (3 * (mu30 + mu12) ** 2 - (mu21 + mu03) ** 2)
+        
+        # Apply log transform and normalize for small discrete grids
+        hu_moments = [hu1, hu2, hu3, hu4, hu5, hu6, hu7]
+        hu_normalized = []
+        for hu in hu_moments:
+            if abs(hu) < 1e-10:
+                hu_normalized.append(0.0)
+            else:
+                # Scale down for small grids and apply tanh for bounded output
+                scaled_hu = hu / (self.size ** 2)  # Scale by object size squared
+                hu_normalized.append(np.tanh(scaled_hu))
+        
+        return tuple(hu_normalized)
+
+    def calculate_compactness(self):
+        """Calculate what share of rectangle contour is filled with non-font colors."""
+        total_contour_cells = self.hor_size * self.vert_size
+        filled_cells = len([coord for coord in self.coords if coord not in self.non_object_coords])
+        return filled_cells / total_contour_cells if total_contour_cells > 0 else 0.0
+
+    def calculate_inner_holes_share(self):
+        """Calculate share of object that is related to inner_holes."""
+        if not hasattr(self, 'inner_holes') or not self.inner_holes:
+            return 0.0
+        
+        total_inner_hole_size = sum(hole.size for hole in self.inner_holes)
+        total_object_area = len(self.inner_contour)  # Total area including holes
+        return total_inner_hole_size / total_object_area if total_object_area > 0 else 0.0
 
     def define_positioning(self):
         """
@@ -186,6 +277,9 @@ class GridObject():
             self.inner_part, self.contour = self.inner_contour_split()
             self.non_object_coords = tuple(set(self.inner_contour).difference(set(self.coords)))
             self.inner_holes, self.outer_holes = self.define_holes()
+            self.hu_moments = self.calculate_hu_moments()
+            self.compactness = self.calculate_compactness()
+            self.inner_holes_share = self.calculate_inner_holes_share()
         # Color update if grid provided
         if grid is not None:
             colors = tuple(grid[i, j] for i, j in self.coords)
@@ -256,7 +350,7 @@ class GridObject():
         inner_part = list(set(self.inner_contour).difference(set(contour)))
         return tuple(inner_part), tuple(contour)
     
-    def define_holes(self):
+    def define_holes(self, grid):
         inner_holes = []
         outer_holes = []
         offset_i = self.min_i
@@ -271,7 +365,7 @@ class GridObject():
                 real_coord = (coord[0]+offset_i, coord[1]+offset_j)
                 hole.append(real_coord)
             label = f'{hole_type}_hole_{idx}_of_{self.label}'
-            hole_object = GridObject(hole_type, hole, [0], label, self.grid_shape) # otherwise create candidate object
+            hole_object = GridObject(hole_type, hole, [0], label, self.grid_shape, self.font_color, grid) # otherwise create candidate object
             if hole_type == 'inner_hole':
                 inner_holes.append(hole_object)
             else:
@@ -351,12 +445,12 @@ class GridObject():
     def create_embedding(self):
         """
         Creates a vector embedding representation of the GridObject with the following features:
-        - color_enc: One-hot encoding for 10 possible colors [0/1]
+        - color_shares: Color distribution based on actual color shares (up to 10 colors)
         - hor_size: Fraction of grid width [0-1]
-        - vert_size: Fraction of grid height [0-1]
+        - vert_size: Fraction of grid height [0-1] 
         - size: Fraction of total grid size [0-1]
         - i_center: Normalized center i-coordinate [0-1]
-        - j_center: Normalized center j-coordinate [0-1]
+        - j_center: Normalized center j-coordinate [0-1] 
         - min_i: Normalized minimum i-coordinate [0-1]
         - min_j: Normalized minimum j-coordinate [0-1]
         - max_i: Normalized maximum i-coordinate [0-1]
@@ -364,10 +458,12 @@ class GridObject():
         - inner_holes: Number of inner holes, normalized to range [0-1]
         - outer_holes: Number of outer holes, normalized to range [0-1]
         - symmetry_type: Boolean value indicating symmetry [0/1]
+        - hu_moments: 7 Hu moments for shape identification
+        - compactness: Share of rectangle contour filled with non-font colors [0-1]
+        - inner_holes_share: Share of object related to inner holes [0-1]
         
         Returns:
-            dict: Dictionary with named features and their values
-            list: Flat vector representation of all features
+            tuple: Flat vector representation of all features
         """
         # Get grid dimensions
         grid_rows, grid_cols = self.grid_shape
@@ -379,16 +475,14 @@ class GridObject():
         # Initialize the embedding dictionary
         embedding_dict = {}
         
-        # 1. Color encoding (one-hot vector for 10 colors)
-        colors = ["black", "blue", "red", "green", "yellow", "gray", "magenta", "orange", "sky", "brown"]
-        color_enc = [0] * len(colors)
+        # 1. Color shares (based on actual color distribution)
+        color_values = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]  # 10 possible colors
+        color_shares_vec = []
+        for color_val in color_values:
+            share = self.color_shares.get(color_val, 0.0)
+            color_shares_vec.append(share)
         
-        if hasattr(self, 'colors') and self.colors:
-            for color in self.colors:
-                if color in colors:
-                    color_enc[colors.index(color)] = 1
-        
-        embedding_dict["color_enc"] = color_enc
+        embedding_dict["color_shares"] = color_shares_vec
         
         # 2-4. Size metrics with bounds checking
         embedding_dict["hor_size"] = min(1.0, self.hor_size / grid_cols)
@@ -422,10 +516,30 @@ class GridObject():
             embedding_dict["symmetry_type"] = has_symmetry
         else:
             embedding_dict["symmetry_type"] = 0
+
+        # 14. Hu moments (7 values)
+        if self.shape not in ['inner_hole', 'outer_hole'] and hasattr(self, 'hu_moments'):
+            # Normalize Hu moments to [0,1] range using tanh
+            hu_normalized = [max(0, min(1, (np.tanh(hu/10) + 1) / 2)) for hu in self.hu_moments]
+            embedding_dict["hu_moments"] = hu_normalized
+        else:
+            embedding_dict["hu_moments"] = [0.0] * 7
+
+        # 15. Compactness
+        if self.shape not in ['inner_hole', 'outer_hole'] and hasattr(self, 'compactness'):
+            embedding_dict["compactness"] = round(self.compactness, 3)
+        else:
+            embedding_dict["compactness"] = 0.0
+
+        # 16. Inner holes share
+        if self.shape not in ['inner_hole', 'outer_hole'] and hasattr(self, 'inner_holes_share'):
+            embedding_dict["inner_holes_share"] = round(self.inner_holes_share, 3)
+        else:
+            embedding_dict["inner_holes_share"] = 0.0
         
         # Create flat vector from all features (immutable)
         flat_vector = []
-        flat_vector.extend(color_enc)  # 10 elements for colors
+        flat_vector.extend(color_shares_vec)  # 10 elements for color shares
         flat_vector.extend([
             embedding_dict["hor_size"],
             embedding_dict["vert_size"],
@@ -439,6 +553,11 @@ class GridObject():
             embedding_dict["inner_holes"],
             embedding_dict["outer_holes"],
             embedding_dict["symmetry_type"]
+        ])
+        flat_vector.extend(embedding_dict["hu_moments"])  # 7 elements
+        flat_vector.extend([
+            embedding_dict["compactness"],
+            embedding_dict["inner_holes_share"]
         ])
         
         # Store as immutable tuples

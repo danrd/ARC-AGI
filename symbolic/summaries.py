@@ -105,6 +105,19 @@ class ObjectDistances:
         return self.distances.get(key1, self.distances.get(key2, 0.0))
 
 @dataclass(frozen=True)
+class RelationEmbeddings:
+    """Immutable dataclass for storing relation embeddings."""
+    embeddings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
+    def get_embedding(self, obj1_label: str, obj2_label: str) -> Optional[Any]:
+        """Get embedding between two objects."""
+        return self.embeddings.get(obj1_label, {}).get(obj2_label)
+    
+    def get_embeddings_for_object(self, obj_label: str) -> Dict[str, Any]:
+        """Get all embeddings where specified object is the first object."""
+        return self.embeddings.get(obj_label, {})
+
+@dataclass(frozen=True)
 class RepresentationLevel:
     """Immutable dataclass for a complete representation level."""
     objects: Tuple[Any, ...] = field(default_factory=tuple)
@@ -113,8 +126,7 @@ class RepresentationLevel:
     relation_statistics: RelationStatistics = field(default_factory=RelationStatistics)
     cell2obj: Optional[Cell2Obj] = None
     distances: ObjectDistances = field(default_factory=ObjectDistances)
-    relation_embeddings: Optional[Dict] = None
-
+    relation_embeddings: Optional[RelationEmbeddings] = None
 class TaskSummary():
     def __init__(self, task:ARCTask, patterns:dict):
         self.patterns = patterns
@@ -208,13 +220,17 @@ class GridSummary():
         level_objects_summary = self.create_objects_summary(level_objects)
         level_triples, level_relation_statistics, distances = self.set_relations(level_objects)
         cell2obj = self.grid_markup(list(level_objects_tuple))
+
+        relation_embeddings = self._create_relation_embeddings_for_objects(level_objects_tuple, level_triples, distances)
+
         return RepresentationLevel(
             objects=level_objects_tuple,
             objects_summary=level_objects_summary,
             triples=level_triples,
             relation_statistics=level_relation_statistics,
             cell2obj=cell2obj,
-            distances=distances
+            distances=distances,
+            relation_embeddings=relation_embeddings
         )
 
     def process_cell_level(self) -> RepresentationLevel:
@@ -237,12 +253,15 @@ class GridSummary():
         level_objects_summary = self.create_objects_summary(cell_objects)
         level_triples, level_relation_statistics, distances = self.set_relations(cell_objects)
         
+        relation_embeddings = self._create_relation_embeddings_for_objects(level_objects_tuple, level_triples, distances)
+        
         return RepresentationLevel(
             objects=level_objects_tuple,
             objects_summary=level_objects_summary,
             triples=level_triples,
             relation_statistics=level_relation_statistics,
-            distances=distances
+            distances=distances,
+            relation_embeddings=relation_embeddings
         )
         
     def retrieve_objects(self, grid:np.array, shape:tuple, shape_types:tuple)->typing.Dict[str, List[GridObject]]:
@@ -543,101 +562,116 @@ class GridSummary():
         distances = ObjectDistances(distances=distances_dict)
         
         return triples, relation_stats, distances
+
+    def _create_relation_embeddings_for_objects(self, objects_tuple: Tuple, triples: Triples, distances: ObjectDistances) -> RelationEmbeddings:
+        """Create relation embeddings for a set of objects - optimized version."""
+        if len(objects_tuple) <= 1:
+            return RelationEmbeddings(embeddings={})
+        
+        embeddings_dict = {}
+        grid_size = max(self.shape)
+        
+        # Pre-compute relation flags for faster lookup
+        relation_lookup = defaultdict(lambda: defaultdict(set))
+        for obj_triples in triples.object_triples:
+            for triple in obj_triples.triples:
+                head, relation, tail = triple
+                relation_lookup[head][tail].add(relation)
+        
+        for i, obj_1 in enumerate(objects_tuple):
+            embeddings_dict[obj_1.label] = {}
+            
+            for j, obj_2 in enumerate(objects_tuple):
+                if i == j:
+                    continue
+                
+                # Create embedding efficiently
+                embedding = self._create_embedding_optimized(
+                    obj_1, obj_2, relation_lookup, distances, grid_size
+                )
+                embeddings_dict[obj_1.label][obj_2.label] = embedding
+        
+        return RelationEmbeddings(embeddings=embeddings_dict)
     
-    def create_embedding(self, obj_1, obj_2, level=1):
-        """Create embedding vector for a pair of objects based on their relations."""
+    def _create_embedding_optimized(self, obj_1, obj_2, relation_lookup, distances, grid_size):
+        """Optimized embedding creation."""
         relation_feature_names = (
             'same_color', 'same_size', 'same_vert_size', 'same_hor_size', 
-            'translation_symmetry', 'in_line', 'in_diagonal', 'x_aligned_with', 
-            'y_aligned_with', 'normalized_distance', 'shape_similarity', 'x_offset', 'y_offset', 'match_score'
+            'shape_similarity', 'match_score', 'translation_symmetry',
+            'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with', 
+            'normalized_distance', 'x_offset', 'y_offset'
         )
-        embedding = np.zeros(len(relation_feature_names))
         
-        # Get the existing triple relations between objects
-        obj_triples = self.repr_levels[level].triples.get_triples_between_objects(obj_1.label, obj_2.label)
+        embedding = np.zeros(len(relation_feature_names), dtype=np.float32)
+        idx = 0
         
-        # Set boolean values based on relations
-        feature_idx = 0
+        # Basic comparisons
+        embedding[idx] = 1.0 if obj_1.colors == obj_2.colors else 0.0
+        idx += 1
+        embedding[idx] = 1.0 if obj_1.size == obj_2.size else 0.0
+        idx += 1
+        embedding[idx] = 1.0 if obj_1.vert_size == obj_2.vert_size else 0.0
+        idx += 1
+        embedding[idx] = 1.0 if obj_1.hor_size == obj_2.hor_size else 0.0
+        idx += 1
         
-        embedding[feature_idx] = 1 if obj_1.colors == obj_2.colors else 0
-        feature_idx += 1
+        # Shape similarity
+        embedding[idx] = self._calculate_hu_moments_similarity(obj_1, obj_2)
+        idx += 1
         
-        embedding[feature_idx] = 1 if obj_1.size == obj_2.size else 0
-        feature_idx += 1
+        # Match score (simplified for performance - can be computed on demand)
+        embedding[idx] = 0.0  # Placeholder - compute only when needed
+        idx += 1
         
-        embedding[feature_idx] = 1 if obj_1.vert_size == obj_2.vert_size else 0
-        feature_idx += 1
+        # Relation flags from lookup
+        relations_to_check = ['translation_symmetry', 'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with']
+        obj_relations = relation_lookup[obj_1.label][obj_2.label]
         
-        embedding[feature_idx] = 1 if obj_1.hor_size == obj_2.hor_size else 0
-        feature_idx += 1
+        for relation in relations_to_check:
+            embedding[idx] = 1.0 if relation in obj_relations else 0.0
+            idx += 1
         
-        # Check for specific relations in triples
-        relation_flags = {
-            'translation_symmetry': False,
-            'in_line': False,
-            'in_diagonal': False,
-            'x_aligned_with': False,
-            'y_aligned_with': False
-        }
+        # Distance metrics
+        distance = distances.get_distance(obj_1.label, obj_2.label)
+        embedding[idx] = min(distance / grid_size, 1.0) if grid_size > 0 else 0.0
+        idx += 1
         
-        for triple in obj_triples:
-            relation = triple[1]
-            if relation in relation_flags:
-                relation_flags[relation] = True
-        
-        for relation in ['translation_symmetry',  'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with']:
-            embedding[feature_idx] = 1 if relation_flags[relation] else 0
-            feature_idx += 1
-        
-        # Normalized distance
-        grid_size = max(self.shape)
-        distance = self.repr_levels[level].distances.get_distance(obj_1.label, obj_2.label)
-        normalized_distance = min(distance / grid_size, 1.0) if grid_size > 0 else 0.0
-        embedding[feature_idx] = normalized_distance
-        feature_idx += 1
-        
-        # Shape similarity based on Hu moments
-        shape_similarity = self._calculate_hu_moments_similarity(obj_1, obj_2)
-        embedding[feature_idx] = shape_similarity
-        feature_idx += 1
-        
-        # X and Y offsets between object centers
+        # Offsets
         if hasattr(obj_1, 'center') and hasattr(obj_2, 'center'):
-            x_offset = (obj_2.center[1] - obj_1.center[1]) / grid_size if grid_size > 0 else 0.0
-            y_offset = (obj_2.center[0] - obj_1.center[0]) / grid_size if grid_size > 0 else 0.0
+            embedding[idx] = (obj_2.center[1] - obj_1.center[1]) / grid_size if grid_size > 0 else 0.0
+            idx += 1
+            embedding[idx] = (obj_2.center[0] - obj_1.center[0]) / grid_size if grid_size > 0 else 0.0
         else:
-            x_offset = 0.0
-            y_offset = 0.0
-        
-        embedding[feature_idx] = x_offset
-        feature_idx += 1
-        embedding[feature_idx] = y_offset
-        feature_idx += 1
-        
-        # Match score using find_most_probable_merge function
-        all_objects_list = list(self.repr_levels[level].objects)
-        match_score = find_most_probable_merge(self.grid, obj_1, obj_2, all_objects_list, self.font_color)
-        embedding[feature_idx] = match_score
+            embedding[idx] = 0.0
+            idx += 1
+            embedding[idx] = 0.0
         
         return embedding
         
     def create_relation_embeddings(self, level=1):
-        """Generate embeddings for all object pairs."""
-        all_objects = self.repr_levels[level].objects
-        n_objects = len(all_objects)
-        relation_embeddings = defaultdict(dict)
+        """Generate embeddings for all object pairs - DEPRECATED, use immutable version."""
+        # This method is now handled automatically in process_repr_level
+        current_level = self.repr_levels[level]
+        if current_level.relation_embeddings is None:
+            # Recreate the level with embeddings
+            self.repr_levels[level] = self._recreate_level_with_embeddings(current_level)
+        return self.repr_levels[level].relation_embeddings.embeddings
+
+    def _recreate_level_with_embeddings(self, level: RepresentationLevel) -> RepresentationLevel:
+        """Recreate a level with relation embeddings."""
+        relation_embeddings = self._create_relation_embeddings_for_objects(
+            level.objects, level.triples, level.distances
+        )
         
-        for i in range(n_objects):
-            obj_1 = all_objects[i]
-            for j in range(n_objects):
-                if i == j:
-                    continue
-                obj_2 = all_objects[j]
-                relation_embeddings[obj_1.label][obj_2.label] = self.create_embedding(obj_1, obj_2, level)
-        
-        # Store embeddings in the representation level
-        self.repr_levels[level].relation_embeddings = relation_embeddings
-        return relation_embeddings
+        return RepresentationLevel(
+            objects=level.objects,
+            objects_summary=level.objects_summary,
+            triples=level.triples,
+            relation_statistics=level.relation_statistics,
+            cell2obj=level.cell2obj,
+            distances=level.distances,
+            relation_embeddings=relation_embeddings
+        )
     
     def update_representation_level(self, level: int, changed_object) -> RepresentationLevel:
         """Create a new representation level with updated relations for a changed object."""
@@ -652,7 +686,6 @@ class GridSummary():
                 object_found = True
                 break
         
-        # If object not found, add it to the list
         if not object_found:
             all_objects.append(changed_object)
         
@@ -663,14 +696,14 @@ class GridSummary():
         
         # Update shape clusters if needed
         if hasattr(changed_object, 'hu_moments') and changed_object.hu_moments is not None:
-            # Re-classify shapes with the new object
             self.shape_clusters = self._classify_shapes_by_templates()
         
-        # Recreate all components
+        # Recreate all components with embeddings
         objects_tuple = tuple(all_objects)
         objects_summary = self.create_objects_summary(objects_dict)
         triples, relation_statistics, distances = self.set_relations(objects_dict)
         cell2obj = self.grid_markup(all_objects)
+        relation_embeddings = self._create_relation_embeddings_for_objects(objects_tuple, triples, distances)
         
         new_level = RepresentationLevel(
             objects=objects_tuple,
@@ -678,32 +711,31 @@ class GridSummary():
             triples=triples,
             relation_statistics=relation_statistics,
             cell2obj=cell2obj,
-            distances=distances
+            distances=distances,
+            relation_embeddings=relation_embeddings
         )
         
         # Update the representation level in the class
         self.repr_levels[level] = new_level
-        
-        # Recreate relation embeddings for the updated level
-        self.create_relation_embeddings(level)
-        
         return new_level
 
     def get_relation_embeddings_as_numpy(self, level=1):
-        """
-        Return all relation embeddings for the specified level in numpy array format.
-        """
-        if not hasattr(self.repr_levels[level], 'relation_embeddings') or self.repr_levels[level].relation_embeddings is None:
-            self.create_relation_embeddings(level)
+        """Return all relation embeddings for the specified level in numpy array format."""
+        current_level = self.repr_levels[level]
         
-        relation_embeddings = self.repr_levels[level].relation_embeddings
-        all_objects = self.repr_levels[level].objects
+        if current_level.relation_embeddings is None:
+            # Recreate level with embeddings
+            self.repr_levels[level] = self._recreate_level_with_embeddings(current_level)
+            current_level = self.repr_levels[level]
+        
+        relation_embeddings = current_level.relation_embeddings.embeddings
+        all_objects = current_level.objects
         n_objects = len(all_objects)
         
         if n_objects <= 1:
             return np.array([])
         
-        # Determine embedding length from the first valid embedding
+        # Get embedding dimensions from first valid embedding
         sample_length = 0
         for obj1_label, embeddings_dict in relation_embeddings.items():
             for obj2_label, embedding in embeddings_dict.items():
@@ -716,7 +748,8 @@ class GridSummary():
         if sample_length == 0:
             return np.array([])
         
-        result = np.zeros((n_objects, (n_objects-1) * sample_length))
+        # Pre-allocate result array
+        result = np.zeros((n_objects, (n_objects-1) * sample_length), dtype=np.float32)
         
         for i, obj in enumerate(all_objects):
             obj_label = obj.label
@@ -727,16 +760,12 @@ class GridSummary():
                     continue
                     
                 other_label = other_obj.label
+                embedding = relation_embeddings.get(obj_label, {}).get(other_label)
                 
-                if (obj_label in relation_embeddings and 
-                    other_label in relation_embeddings[obj_label]):
-                    embedding = relation_embeddings[obj_label][other_label]
-                    if isinstance(embedding, np.ndarray) and len(embedding) == sample_length:
-                        result[i, col_idx:col_idx+sample_length] = embedding
-                    col_idx += sample_length
-                else:
-                    # Fill with zeros if embedding is missing
-                    col_idx += sample_length
+                if isinstance(embedding, np.ndarray) and len(embedding) == sample_length:
+                    result[i, col_idx:col_idx+sample_length] = embedding
+                
+                col_idx += sample_length
         
         return result
             

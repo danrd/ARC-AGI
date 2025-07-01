@@ -142,8 +142,9 @@ class GridObject():
         
         # Normalize central moments
         if m00 == 0:
-            return tuple([0.0] * 7)
+            return [0.0] * 7
         
+        # Correct normalization for central moments
         mu20 = m20 / m00
         mu02 = m02 / m00
         mu11 = m11 / m00
@@ -171,11 +172,10 @@ class GridObject():
             if abs(hu) < 1e-10:
                 hu_normalized.append(0.0)
             else:
-                # Scale down for small grids and apply tanh for bounded output
-                scaled_hu = hu / (self.size ** 2)  # Scale by object size squared
-                hu_normalized.append(np.tanh(scaled_hu))
+                # Use log transform instead of tanh for better discrimination
+                hu_normalized.append(-np.sign(hu) * np.log10(abs(hu) + 1e-10))
         
-        return tuple(hu_normalized)
+        return hu_normalized
 
     def calculate_compactness(self):
         """Calculate what share of rectangle contour is filled with non-font colors."""
@@ -335,7 +335,7 @@ class GridObject():
                     obj_structure[i-offset[0], j-offset[1]] = self.coords.index((i, j)) + 1
         self.obj_mask = obj_mask
         self.obj_structure = obj_structure
-        return contour 
+        return tuple(set(contour)) 
 
     def inner_contour_split(self):
         """
@@ -348,7 +348,7 @@ class GridObject():
         contour.extend([(i, self.max_j) for i in range(self.min_i, self.max_i+1)]) 
         contour.extend([(self.max_i, j) for j in range(self.min_j, self.max_j+1)])
         inner_part = list(set(self.inner_contour).difference(set(contour)))
-        return tuple(inner_part), tuple(contour)
+        return tuple(set(inner_part)), tuple(set(contour))
     
     def define_holes(self, grid):
         inner_holes = []
@@ -455,11 +455,12 @@ class GridObject():
         - min_j: Normalized minimum j-coordinate [0-1]
         - max_i: Normalized maximum i-coordinate [0-1]
         - max_j: Normalized maximum j-coordinate [0-1]
+        - hu_moments: 7 Hu moments for shape identification
+        - symmetry_type: Boolean value indicating symmetry [0/1]
+        - compactness: Share of rectangle contour filled with non-font colors [0-1]
+        - closure: Boolean value indicating closure [0/1]
         - inner_holes: Number of inner holes, normalized to range [0-1]
         - outer_holes: Number of outer holes, normalized to range [0-1]
-        - symmetry_type: Boolean value indicating symmetry [0/1]
-        - hu_moments: 7 Hu moments for shape identification
-        - compactness: Share of rectangle contour filled with non-font colors [0-1]
         - inner_holes_share: Share of object related to inner holes [0-1]
         
         Returns:
@@ -499,25 +500,8 @@ class GridObject():
         embedding_dict["min_j"] = min(1.0, max(0.0, self.min_j / grid_cols))
         embedding_dict["max_i"] = min(1.0, max(0.0, self.max_i / grid_rows))
         embedding_dict["max_j"] = min(1.0, max(0.0, self.max_j / grid_cols))
-        
-        # 11-12. Holes
-        if self.shape not in ['inner_hole', 'outer_hole']:
-            n_inner_holes = len(self.inner_holes)
-            n_outer_holes = len(self.outer_holes)
-            embedding_dict["inner_holes"] = min(1.0, n_inner_holes / 5)  # Simplified
-            embedding_dict["outer_holes"] = min(1.0, n_outer_holes / 5)  # Simplified
-        else:
-            embedding_dict["inner_holes"] = 0.0
-            embedding_dict["outer_holes"] = 0.0
-        
-        # 13. Symmetry type
-        if self.shape not in ['inner_hole', 'outer_hole']:
-            has_symmetry = int(hasattr(self, 'symmetry') and self.symmetry != 'assymetry')
-            embedding_dict["symmetry_type"] = has_symmetry
-        else:
-            embedding_dict["symmetry_type"] = 0
 
-        # 14. Hu moments (7 values)
+        # 11. Hu moments (7 values)
         if self.shape not in ['inner_hole', 'outer_hole'] and hasattr(self, 'hu_moments'):
             # Normalize Hu moments to [0,1] range using tanh
             hu_normalized = [max(0, min(1, (np.tanh(hu/10) + 1) / 2)) for hu in self.hu_moments]
@@ -525,13 +509,36 @@ class GridObject():
         else:
             embedding_dict["hu_moments"] = [0.0] * 7
 
-        # 15. Compactness
+        # 12. Symmetry type
+        if self.shape not in ['inner_hole', 'outer_hole']:
+            has_symmetry = int(hasattr(self, 'symmetry') and self.symmetry != 'assymetry')
+            embedding_dict["symmetry_type"] = has_symmetry
+        else:
+            embedding_dict["symmetry_type"] = 0
+
+        # 13. Compactness
         if self.shape not in ['inner_hole', 'outer_hole'] and hasattr(self, 'compactness'):
             embedding_dict["compactness"] = round(self.compactness, 3)
         else:
             embedding_dict["compactness"] = 0.0
 
-        # 16. Inner holes share
+        # 14. Closure
+        if all(elem in self.coords for elem in self.contour):
+            embedding_dict["closure"] = 1.0
+        else:
+            embedding_dict["closure"] = 0.0
+        
+        # 15-16. Holes
+        if self.shape not in ['inner_hole', 'outer_hole']:
+            n_inner_holes = len(self.inner_holes)
+            n_outer_holes = len(self.outer_holes)
+            embedding_dict["inner_holes"] = min(1.0, n_inner_holes / 5)  # Simplified
+            embedding_dict["outer_holes"] = min(1.0, n_outer_holes / 5)  # Simplified
+        else:
+            embedding_dict["inner_holes"] = 0.0
+            embedding_dict["outer_holes"] = 0.0        
+
+        # 17. Inner holes share
         if self.shape not in ['inner_hole', 'outer_hole'] and hasattr(self, 'inner_holes_share'):
             embedding_dict["inner_holes_share"] = round(self.inner_holes_share, 3)
         else:
@@ -550,13 +557,17 @@ class GridObject():
             embedding_dict["min_j"],
             embedding_dict["max_i"],
             embedding_dict["max_j"],
-            embedding_dict["inner_holes"],
-            embedding_dict["outer_holes"],
-            embedding_dict["symmetry_type"]
         ])
         flat_vector.extend(embedding_dict["hu_moments"])  # 7 elements
+        flat_vector.extend([embedding_dict["symmetry_type"]])
         flat_vector.extend([
             embedding_dict["compactness"],
+        ])     
+        flat_vector.extend([
+            embedding_dict["inner_holes"],
+            embedding_dict["outer_holes"],
+        ])
+        flat_vector.extend([
             embedding_dict["inner_holes_share"]
         ])
         

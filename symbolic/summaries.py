@@ -183,10 +183,9 @@ class GridSummary():
         self.initial_objects = self.retrieve_objects(self.grid, self.shape, self.shape_types)
         self.connected_components = self.retrieve_connected_components(self.grid) 
         self.font_segments = find_connected_components_with_color(self.grid, target_color=self.font_color)
-        self.relations_for_stats = ("same_color", "same_shape", "same_size",
+        self.relations_for_stats = ("same_color", "same_shape", "same_size", "rotation", "horizontal_symmetry", "vertical_symmetry",
                                     "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with")
         self.levels = levels 
-        self.shape_clusters = self._classify_shapes_by_templates()
         self.repr_levels = self.set_repr_levels()
 
     def define_grid_corners(self):
@@ -340,50 +339,14 @@ class GridSummary():
                 cell_mappings[coord] = idx
         return Cell2Obj(cell_mappings=cell_mappings)
 
-    def _classify_shapes_by_templates(self) -> Dict[str, str]:
-        """Classify objects based on similarity to shape templates using Hu moments."""
-        
-        all_objects = []
-        for shape_type, objects in self.initial_objects.items():
-            all_objects.extend(objects)
-        
-        if len(all_objects) == 0:
-            return {}
-        
-        obj_to_shape_class = {}
-        
-        for obj in all_objects:
-            if hasattr(obj, 'hu_moments') and obj.hu_moments is not None:
-                best_match = None
-                min_distance = float('inf')
-                
-                # Compare with each template
-                for template_name, template_hu_moments in shape_templates.items():
-                    if template_hu_moments is not None:
-                        distance = euclidean(obj.hu_moments, template_hu_moments)
-                        if distance < min_distance:
-                            min_distance = distance
-                            best_match = template_name
-                
-                if best_match is not None:
-                    obj_to_shape_class[obj.label] = best_match
-                else:
-                    # Fallback to original shape if no good match found
-                    obj_to_shape_class[obj.label] = obj.shape
-            else:
-                # Fallback to original shape if no hu_moments available
-                obj_to_shape_class[obj.label] = obj.shape
-        
-        return obj_to_shape_class
-
-    def _calculate_hu_moments_similarity(self, obj_1, obj_2):
+    def _calculate_hu_moments_similarity(self, obj1, obj2):
         """Calculate shape similarity based on Hu moments."""
-        if not (hasattr(obj_1, 'hu_moments') and hasattr(obj_2, 'hu_moments') and 
-                obj_1.hu_moments is not None and obj_2.hu_moments is not None):
+        if not (hasattr(obj1, 'hu_moments') and hasattr(obj2, 'hu_moments') and 
+                obj1.hu_moments is not None and obj2.hu_moments is not None):
             return 0.0
         
         # Calculate Euclidean distance between Hu moments
-        distance = euclidean(obj_1.hu_moments, obj_2.hu_moments)
+        distance = euclidean(obj1.hu_moments, obj2.hu_moments)
         # Convert to similarity (0 = identical, higher values = more different)
         # Use exponential decay to convert distance to similarity [0,1]
         similarity = np.exp(-distance)
@@ -395,12 +358,12 @@ class GridSummary():
         return ObjectsFilter(objects, repr_level).filter_objects()
     
     @staticmethod 
-    def calculate_distance(obj_1, obj_2):
+    def calculate_distance(obj1, obj2):
         """Calculate distance between objects."""
-        i_dist = min(abs(obj_1.max_i - obj_2.max_i), abs(obj_1.max_i - obj_2.min_i), 
-                    abs(obj_1.min_i - obj_2.max_i), abs(obj_1.min_i - obj_2.min_i)) 
-        j_dist = min(abs(obj_1.max_j - obj_2.max_j), abs(obj_1.max_j - obj_2.min_j), 
-                    abs(obj_1.min_j - obj_2.max_j), abs(obj_1.min_j - obj_2.min_j)) 
+        i_dist = min(abs(obj1.max_i - obj2.max_i), abs(obj1.max_i - obj2.min_i), 
+                    abs(obj1.min_i - obj2.max_i), abs(obj1.min_i - obj2.min_i)) 
+        j_dist = min(abs(obj1.max_j - obj2.max_j), abs(obj1.max_j - obj2.min_j), 
+                    abs(obj1.min_j - obj2.max_j), abs(obj1.min_j - obj2.min_j)) 
         return min(i_dist, j_dist)
 
     def create_objects_summary(self, objects) -> ObjectsSummary:
@@ -431,10 +394,6 @@ class GridSummary():
                 shape2hor_size[obj.label] = obj.hor_size
                 shape2vert_size[obj.label] = obj.vert_size
                 shapes[obj.shape] += 1
-                
-                # Add cluster-based shape counting
-                if obj.label in self.shape_clusters:
-                    cluster_shapes[self.shape_clusters[obj.label]] += 1
                 
                 if obj.shape != 'complex':
                     color = obj.colors[0]
@@ -520,24 +479,24 @@ class GridSummary():
         # Create mapping from label to triples for each object
         object_to_triples = defaultdict(list)
         
-        for idx, obj_1 in enumerate(all_objects):
-            for obj_2 in all_objects[idx+1:]: 
-                analyzer = RelationAnalyzer(obj_1, obj_2, self.shape)
+        for idx, obj1 in enumerate(all_objects):
+            for obj2 in all_objects[idx+1:]: 
+                analyzer = RelationAnalyzer(obj1, obj2, self.shape)
                 triples = analyzer.triples
                 relation_counter = analyzer.relation_counter
                 
                 # Add triples for both objects
-                for triple in triples[0]:  # obj_1 as head
-                    object_to_triples[obj_1.label].append(triple)
-                for triple in triples[1]:  # obj_2 as head
-                    object_to_triples[obj_2.label].append(triple)
+                for triple in triples[0]:  # obj1 as head
+                    object_to_triples[obj1.label].append(triple)
+                for triple in triples[1]:  # obj2 as head
+                    object_to_triples[obj2.label].append(triple)
                 
                 relation_statistics.update(relation_counter)
                 
                 # Distance calculation
-                distance = self.calculate_distance(obj_1, obj_2)
-                distances_dict[(obj_1.label, obj_2.label)] = distance
-                distances_dict[(obj_2.label, obj_1.label)] = distance
+                distance = self.calculate_distance(obj1, obj2)
+                distances_dict[(obj1.label, obj2.label)] = distance
+                distances_dict[(obj2.label, obj1.label)] = distance
         
         # Create ObjectTriples for each object
         for obj in all_objects:
@@ -578,69 +537,69 @@ class GridSummary():
                 head, relation, tail = triple
                 relation_lookup[head][tail].add(relation)
         
-        for i, obj_1 in enumerate(objects_tuple):
-            embeddings_dict[obj_1.label] = {}
+        for i, obj1 in enumerate(objects_tuple):
+            embeddings_dict[obj1.label] = {}
             
-            for j, obj_2 in enumerate(objects_tuple):
+            for j, obj2 in enumerate(objects_tuple):
                 if i == j:
                     continue
                 
                 # Create embedding efficiently
                 embedding = self._create_embedding_optimized(
-                    obj_1, obj_2, relation_lookup, distances, grid_size
+                    obj1, obj2, relation_lookup, distances, grid_size, objects_tuple
                 )
-                embeddings_dict[obj_1.label][obj_2.label] = embedding
+                embeddings_dict[obj1.label][obj2.label] = embedding
         
         return RelationEmbeddings(embeddings=embeddings_dict)
     
-    def _create_embedding_optimized(self, obj_1, obj_2, relation_lookup, distances, grid_size):
+    def _create_embedding_optimized(self, obj1, obj2, relation_lookup, distances, grid_size, objects_tuple):
         """Optimized embedding creation."""
         relation_feature_names = (
             'same_color', 'same_size', 'same_vert_size', 'same_hor_size', 
             'shape_similarity', 'match_score', 'translation_symmetry',
+            'horizontal_symmetry', "vertical_symmetry", 'rotation',
             'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with', 
             'normalized_distance', 'x_offset', 'y_offset'
         )
-        
         embedding = np.zeros(len(relation_feature_names), dtype=np.float32)
         idx = 0
         
         # Basic comparisons
-        embedding[idx] = 1.0 if obj_1.colors == obj_2.colors else 0.0
+        embedding[idx] = 1.0 if obj1.colors == obj2.colors else 0.0
         idx += 1
-        embedding[idx] = 1.0 if obj_1.size == obj_2.size else 0.0
+        embedding[idx] = 1.0 if obj1.size == obj2.size else 0.0
         idx += 1
-        embedding[idx] = 1.0 if obj_1.vert_size == obj_2.vert_size else 0.0
+        embedding[idx] = 1.0 if obj1.vert_size == obj2.vert_size else 0.0
         idx += 1
-        embedding[idx] = 1.0 if obj_1.hor_size == obj_2.hor_size else 0.0
+        embedding[idx] = 1.0 if obj1.hor_size == obj2.hor_size else 0.0
         idx += 1
-        
         # Shape similarity
-        embedding[idx] = self._calculate_hu_moments_similarity(obj_1, obj_2)
+        embedding[idx] = self._calculate_hu_moments_similarity(obj1, obj2)
         idx += 1
+
         
         # Match score (simplified for performance - can be computed on demand)
-        embedding[idx] = 0.0  # Placeholder - compute only when needed
+        embedding[idx] = calculate_match_score(self.grid, obj1, obj2, objects_tuple, self.font_color)  # Placeholder - compute only when needed
         idx += 1
-        
         # Relation flags from lookup
-        relations_to_check = ['translation_symmetry', 'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with']
-        obj_relations = relation_lookup[obj_1.label][obj_2.label]
+        relations_to_check = ['translation_symmetry', 'horizontal_symmetry', 'vertical_symmetry', 
+                              'rotation', 'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with']
+        obj_relations = relation_lookup[obj1.label][obj2.label]
         
         for relation in relations_to_check:
             embedding[idx] = 1.0 if relation in obj_relations else 0.0
             idx += 1
         
         # Distance metrics
-        distance = distances.get_distance(obj_1.label, obj_2.label)
+        distance = distances.get_distance(obj1.label, obj2.label)
         embedding[idx] = min(distance / grid_size, 1.0) if grid_size > 0 else 0.0
         idx += 1
         
         # Offsets
-        if hasattr(obj_1, 'center') and hasattr(obj_2, 'center'):
-            embedding[idx] = (obj_2.center[1] - obj_1.center[1]) / grid_size if grid_size > 0 else 0.0
+        if hasattr(obj1, 'center') and hasattr(obj2, 'center'):
+            embedding[idx] = (obj2.center[1] - obj1.center[1]) / grid_size if grid_size > 0 else 0.0
             idx += 1
-            embedding[idx] = (obj_2.center[0] - obj_1.center[0]) / grid_size if grid_size > 0 else 0.0
+            embedding[idx] = (obj2.center[0] - obj1.center[0]) / grid_size if grid_size > 0 else 0.0
         else:
             embedding[idx] = 0.0
             idx += 1
@@ -648,15 +607,6 @@ class GridSummary():
         
         return embedding
         
-    def create_relation_embeddings(self, level=1):
-        """Generate embeddings for all object pairs - DEPRECATED, use immutable version."""
-        # This method is now handled automatically in process_repr_level
-        current_level = self.repr_levels[level]
-        if current_level.relation_embeddings is None:
-            # Recreate the level with embeddings
-            self.repr_levels[level] = self._recreate_level_with_embeddings(current_level)
-        return self.repr_levels[level].relation_embeddings.embeddings
-
     def _recreate_level_with_embeddings(self, level: RepresentationLevel) -> RepresentationLevel:
         """Recreate a level with relation embeddings."""
         relation_embeddings = self._create_relation_embeddings_for_objects(
@@ -693,10 +643,6 @@ class GridSummary():
         objects_dict = defaultdict(list)
         for obj in all_objects:
             objects_dict[obj.shape].append(obj)
-        
-        # Update shape clusters if needed
-        if hasattr(changed_object, 'hu_moments') and changed_object.hu_moments is not None:
-            self.shape_clusters = self._classify_shapes_by_templates()
         
         # Recreate all components with embeddings
         objects_tuple = tuple(all_objects)

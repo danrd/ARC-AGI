@@ -1998,3 +1998,278 @@ def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridOb
             best_match = match
     
     return best_score
+
+def get_rotations(coords: List[tuple]) -> List[List[tuple]]:
+    """
+    Generate all possible 90-degree rotations of a set of coordinates.
+    
+    Args:
+        coords: List of (x, y) coordinate tuples
+    
+    Returns:
+        List of lists of coordinate tuples, each representing a rotation
+    """
+    if not coords:
+        return []
+    
+    # Sort coordinates for consistency
+    coords = sorted(coords, key=lambda x: (x[1], x[0]))
+    
+    # Get reference point (top-left)
+    ref_x, ref_y = coords[0]
+    
+    # Normalize coordinates relative to reference point
+    normalized = [(x - ref_x, y - ref_y) for x, y in coords]
+    
+    # Find the size of the bounding box
+    max_x = max(x for x, y in normalized)
+    max_y = max(y for x, y in normalized)
+    
+    rotations = []
+    # Original orientation
+    rotations.append(coords.copy())
+    
+    # 90 degrees clockwise - (x, y) -> (y, -x + max_x)
+    rot_90 = [(ref_x + y, ref_y + (max_x - x)) for x, y in normalized]
+    rotations.append(sorted(rot_90, key=lambda x: (x[1], x[0])))
+    
+    # 180 degrees - (x, y) -> (-x + max_x, -y + max_y)
+    rot_180 = [(ref_x + (max_x - x), ref_y + (max_y - y)) for x, y in normalized]
+    rotations.append(sorted(rot_180, key=lambda x: (x[1], x[0])))
+    
+    # 270 degrees clockwise - (x, y) -> (-y + max_y, x)
+    rot_270 = [(ref_x + (max_y - y), ref_y + x) for x, y in normalized]
+    rotations.append(sorted(rot_270, key=lambda x: (x[1], x[0])))
+    
+    return rotations
+
+def calculate_adjacency_positions(obj: 'GridObject') -> List[tuple]:
+    """
+    Calculate all possible positions adjacent to an object where another object could be placed.
+    
+    Args:
+        obj: GridObject to find adjacency positions for
+    
+    Returns:
+        List of (x, y) coordinate tuples representing adjacent positions
+    """
+    adjacent_positions = set()
+    directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    
+    for x, y in obj.coords:
+        for dx, dy in directions:
+            adjacent_pos = (x + dx, y + dy)
+            if adjacent_pos not in obj.coords:
+                adjacent_positions.add(adjacent_pos)
+    return list(adjacent_positions)
+
+def count_holes(obj: 'GridObject') -> int:
+    """
+    Count the total number of holes in a GridObject.
+    
+    Args:
+        obj: GridObject to count holes for
+    
+    Returns:
+        Total number of inner and outer holes
+    """
+    if obj.shape in ['inner_hole', 'outer_hole']:
+        return 0
+    return len(obj.inner_holes) + len(obj.outer_holes)
+
+def check_intersection(coords1: List[tuple], coords2: List[tuple]) -> bool:
+    """
+    Check if two sets of coordinates intersect.
+    
+    Args:
+        coords1: First set of coordinates
+        coords2: Second set of coordinates
+    
+    Returns:
+        True if there's an intersection, False otherwise
+    """
+    return bool(set(coords1).intersection(set(coords2)))
+
+def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject', 
+                                 position: tuple, rotation_idx: int,
+                                 all_grid_objects: List['GridObject'], 
+                                 grid_shape:tuple, font_color,
+                                 grid) -> Dict:
+    """
+    Evaluate a potential match configuration between two objects.
+    
+    Args:
+        obj1: First GridObject
+        obj2: Second GridObject
+        position: Position to place obj2 (reference point)
+        rotation_idx: Index of rotation to use for obj2
+        all_grid_objects: List of all objects on the grid to check for intersections
+    
+    Returns:
+        Dictionary with evaluation metrics:
+        - valid: Whether the configuration is valid
+        - hole_reduction: Reduction in holes (higher is better)
+        - compactness: Measure of how compact the resulting shape is
+    """
+    # Get the rotated coordinates for obj2
+    rotation_coords = get_rotations(obj2.coords)[rotation_idx]
+    
+    # Calculate the offset based on position and reference point 
+    offset_x = position[0] - rotation_coords[0][0]
+    offset_y = position[1] - rotation_coords[0][1]
+    
+    # Apply offset to all coordinates in the rotation
+    shifted_coords = [(x + offset_x, y + offset_y) for x, y in rotation_coords]
+    
+    # Check if the shifted obj2 intersects with obj1 coords
+    if not check_intersection(obj1.coords, shifted_coords):
+        # Check if shifted obj2 intersects with any other grid objects
+        for other_obj in all_grid_objects:
+            # Fix the object equality check - avoid direct comparison
+            if id(other_obj) != id(obj1) and id(other_obj) != id(obj2):
+                if check_intersection(other_obj.coords, shifted_coords):
+                    return {"valid": False, "hole_reduction": 0, "compactness": 0}
+        
+        # Create a temporary merged object to evaluate
+        merged_coords = tuple(set(obj1.coords + tuple(shifted_coords)))
+        merged_obj = GridObject(
+            shape="complex",
+            coords=merged_coords,
+            color=obj1.color_numbers+obj2.color_numbers,  # Assume we keep the color of obj1
+            label=f"merged_{obj1.label}_{obj2.label}",
+            grid_shape=grid_shape,  # Assume we keep the positioning of obj1
+            font_color=font_color,
+            grid=grid
+        )
+        
+        # Calculate hole reduction
+        original_holes = count_holes(obj1) + count_holes(obj2)
+        merged_holes = count_holes(merged_obj)
+        hole_reduction = original_holes - merged_holes
+        
+        # Calculate compactness (area of bounding box / number of cells)
+        merged_area = merged_obj.hor_size * merged_obj.vert_size
+        merged_cells = len(merged_coords)
+        compactness = merged_cells / merged_area if merged_area > 0 else 0
+        
+        return {
+            "valid": True,
+            "hole_reduction": hole_reduction,
+            "compactness": compactness,
+            "shifted_coords": shifted_coords,
+            "merged_obj": merged_obj
+        }
+    
+    return {"valid": False, "hole_reduction": 0, "compactness": 0}
+
+def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject', 
+                           all_grid_objects: List['GridObject'], grid_shape:tuple,
+                           font_color, grid) -> Dict:
+    """
+    Find the best match configuration between two grid objects.
+    
+    Args:
+        obj1: First GridObject
+        obj2: Second GridObject
+        all_grid_objects: List of all objects on the grid
+    
+    Returns:
+        Dictionary with the best match configuration, or None if no valid match exists
+    """
+    best_match = None
+    best_score = -float('inf')
+    
+    # Get all possible adjacent positions for obj1
+    adjacent_positions = calculate_adjacency_positions(obj1)
+    
+    # Try all rotations of obj2
+    for rotation_idx in range(4):
+        # Try placing obj2 at each adjacent position of obj1
+        for position in adjacent_positions:
+            match_config = evaluate_match_configuration(
+                obj1, obj2, position, rotation_idx, all_grid_objects, grid_shape, font_color, grid
+            )
+            
+            if match_config["valid"]:
+                # Calculate a score based on hole reduction and compactness
+                # Weight hole reduction higher than compactness
+                score = match_config["hole_reduction"] * 10 + match_config["compactness"]
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = match_config
+                    best_match["rotation_idx"] = rotation_idx
+                    best_match["position"] = position
+    
+    return best_match
+
+def merge_objects(grid:np.ndarray, obj1:GridObject, obj2:GridObject, match_config:Dict, font_color:float):
+    """
+    Merge two objects based on a match configuration.
+    
+    Args:
+        obj1: First GridObject
+        obj2: Second GridObject
+        match_config: Match configuration from find_best_object_match
+        grid: The current grid array
+    
+    Returns:
+        Tuple of (merged_object, updated_grid)
+    """
+    # Create the merged object
+    shifted_coords = match_config["shifted_coords"]
+
+    height, width = grid.shape
+    # Update the grid
+    updated_grid = grid.copy()
+    
+    for x, y in obj2.coords:
+        updated_grid[x, y] = font_color
+    
+    # Add the merged object to the grid
+    for x, y in shifted_coords:
+        if x < height and y < width:
+            updated_grid[x, y] = obj2.color_numbers[0]  # Use the color of obj2
+
+    updated_obj = copy(obj2)
+    updated_obj.reinit_obj(shifted_coords, updated_grid)
+    
+    return updated_obj, updated_grid
+
+def calculate_match_score(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridObject', 
+                           all_grid_objects: List['GridObject'], font_color) -> Dict:
+    """
+    Find the most probable merge configuration between two specific objects.
+    
+    Args:
+        obj1: First GridObject
+        obj2: Second GridObject
+        all_grid_objects: List of all GridObjects on the grid (to check for intersections)
+        grid: The current grid array
+    
+    Returns:
+        Dictionary with the best match configuration, or None if no valid match exists
+    """
+    # Skip if either object is a hole
+    if obj1.shape in ['inner_hole', 'outer_hole'] or obj2.shape in ['inner_hole', 'outer_hole']:
+        return None
+    
+    # Use a filtered list of grid objects that excludes the two objects we're working with
+    # to avoid the equality comparison issue
+    filtered_grid_objects = [obj for obj in all_grid_objects if id(obj) != id(obj1) and id(obj) != id(obj2)]
+    
+    # Try matching in both directions
+    match = find_best_object_match(obj1, obj2, [obj1, obj2] + filtered_grid_objects, grid.shape, font_color, grid)
+    
+    best_match = None
+    best_score = -float('inf')
+    
+    if match and match["valid"]:
+        match["obj1"] = obj1
+        match["obj2"] = obj2
+        match["score"] = match["hole_reduction"] * 10 + match["compactness"]
+        if match["score"] > best_score:
+            best_score = match["score"]
+            best_match = match
+    
+    return best_score

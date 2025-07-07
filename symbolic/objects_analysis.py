@@ -564,6 +564,9 @@ class GridObject():
             embedding_dict["compactness"],
         ])     
         flat_vector.extend([
+            embedding_dict["closure"],
+        ])     
+        flat_vector.extend([
             embedding_dict["inner_holes"],
             embedding_dict["outer_holes"],
         ])
@@ -575,7 +578,7 @@ class GridObject():
         self.embedding_dict = dict(embedding_dict)  # Shallow copy to prevent external mutation
         self.embedding_vector = tuple(flat_vector)  # Make immutable
         
-        return tuple(flat_vector)  # Return immutable
+        return tuple(flat_vector)  # Return immutable # Return immutable
 
 class ObjectsFilter():
     """Class for filtering out potentialy unimportant objects."""

@@ -14,8 +14,7 @@ class ARCDataset:
     def __init__(self, additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
                                                 'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
                                                 'tama_arc', 'com_arc'], 
-                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False, validate:bool=False):
-        self.validate = validate
+                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False):
         self.load_dataset(additional_datasets, filter_tasks)
         self.tasks = self.create_tasks(augmentation)
         self.easy_tasks, self.hard_tasks = self.difficulty_filter()
@@ -91,9 +90,9 @@ class ARCDataset:
             subtasks = []
             for i in range(len(train_inp)):
                 label = f'{key}_{i}'
-                subtask = ARCSubtask(label, train_inp[i], train_out[i], self.validate)
+                subtask = ARCSubtask(label, train_inp[i], train_out[i])
                 subtasks.append(subtask)
-            task = ARCTask(key, subtasks, test_inp, test_out, self.validate)
+            task = ARCTask(key, subtasks, test_inp, test_out)
             tasks.append(task) 
             if augmentation:
                 aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, key)
@@ -114,14 +113,14 @@ class ARCDataset:
             train_out_aug_grids = augment_grid(subtask.train_out)
             for j in range(14):
                 label = f'{aug_key}_{j}'
-                new_subtask = ARCSubtask(label, train_inp_aug_grids[j], train_out_aug_grids[j], self.validate)
+                new_subtask = ARCSubtask(label, train_inp_aug_grids[j], train_out_aug_grids[j])
                 aug_subtasks[j].append(new_subtask)
         test_inp_aug_grids = augment_grid(test_inp)
         test_out_aug_grids = augment_grid(test_out)
         for i in range(14):
             key = f'{aug_key}_{i}'
             self.task2difficulty[key] = difficulty
-            task = ARCTask(key, aug_subtasks[i], test_inp_aug_grids[i], test_out_aug_grids[i], self.validate)
+            task = ARCTask(key, aug_subtasks[i], test_inp_aug_grids[i], test_out_aug_grids[i])
             aug_tasks.append(task)
         return aug_tasks
 
@@ -151,11 +150,11 @@ class ARCDataset:
             subtasks = []
             for i in range(n-1):
                 label = f'{ttt_key}_{i}'
-                subtask = ARCSubtask(label, train_inp[i], train_out[i], self.validate)
+                subtask = ARCSubtask(label, train_inp[i], train_out[i])
                 subtasks.append(subtask)
             difficulty = self.task2difficulty[key]
             self.task2difficulty[ttt_key] = difficulty
-            task = ARCTask(ttt_key, subtasks, test_inp, test_out, self.validate)
+            task = ARCTask(ttt_key, subtasks, test_inp, test_out)
             ttt_tasks.append(task) 
             if augmentation:
                 aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, ttt_key)
@@ -180,9 +179,9 @@ def prepare_dataset(tokenizer,
                     prompts_modifications={}, max_tokens:int=None,
                     cur_learning:bool=False, seed:int=42,
                     grid_repr_type:str='ascii', filter_tasks:bool=False,
-                    validate:bool=False, max_eval_grid_shape:tuple=(15,15)):
+                    max_eval_grid_shape:tuple=(15,15)):
     """Prepare dataset creating prompts for all tasks."""
-    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks, validate)
+    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks)
     train_set_easy = []
     train_set_hard = []
     test_set = []

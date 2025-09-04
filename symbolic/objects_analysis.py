@@ -9,8 +9,8 @@ from collections import Counter
 from llm.prompts import COLOR_MAPPING
 
 colors_mapping = {
-    0: 'black', 0.1: 'blue', 0.2: 'red', 0.3: 'green', 0.4: 'yellow', 
-    0.5: 'gray', 0.6: 'magenta', 0.7: 'orange', 0.8: 'sky', 0.9: 'brown', 1: 'white'
+    0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow', 
+    5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
 }
 class GridObject():
     """Class for storing identified objects on a grid."""

@@ -110,9 +110,9 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
     """
     if len(predictions) != len(task_idxs):
         raise ValueError("Prediction and target grids lists must have the same length.")
-    input_grids = [crop_pad(dataset.tasks[idx].test_subtask.train_inp, pad_val=1) for idx in task_idxs]
+    input_grids = [dataset.tasks[idx].test_subtask.train_inp for idx in task_idxs]
     prediction_grids = [pred[0] for pred in predictions]
-    target_grids = [crop_pad(dataset.tasks[idx].test_subtask.train_out, pad_val=1) for idx in task_idxs]
+    target_grids = [dataset.tasks[idx].test_subtask.train_out for idx in task_idxs]
     n = len(prediction_grids)
     for i in range(n):
         # Create a figure with one row and two columns

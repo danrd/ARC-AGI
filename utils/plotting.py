@@ -168,7 +168,7 @@ def plot_shape(shape:List[tuple]):
     
 def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]):
     """Plot intersection with defined shape."""
-    grid = copy.deepcopy(grid)
+    grid = deepcopy(grid)
     if type(shape) == list:
         shape_union = []
         for sh in shape:

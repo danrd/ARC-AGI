@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib import colors
 import numpy as np
-import copy
+from copy import copy, deepcopy
 import os
 import pandas as pd
 from typing import List, Union
@@ -38,7 +39,7 @@ def plot_task(task_id:str, dataset:ARCDataset):
     axs[1, j+1].set_xticks([x-0.5 for x in range(1 + len(answer[0]))])     
     axs[1, j+1].set_xticklabels([])
     axs[1, j+1].set_yticklabels([])
-    axs[1, j+1].set_title('TEST OUTPUT', color = 'green', fontweight='bold')
+    axs[1, j+1].set_title('Test output', fontweight='bold')
 
     fig.patch.set_linewidth(5)
     fig.patch.set_edgecolor('black')  # substitute 'k' for black
@@ -62,7 +63,8 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     plt.setp(plt.gcf().get_axes(), xticklabels=[], yticklabels=[])
     ax.set_xticks([x-0.5 for x in range(1 + len(input_matrix[0]))])     
     ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])   
-    ax.set_title(train_or_test + ' ' + input_or_output, fontweight='bold')
+    title_prefix = f'Example {i+1}' if train_or_test == "train" else 'Test'
+    ax.set_title(title_prefix + ' ' + input_or_output, fontweight='bold')
 
 def plot_multiple_tasks(task_ids: List[str], dataset: ARCDataset):
     """
@@ -251,6 +253,67 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
     
     plt.tight_layout()
     plt.show()
+
+def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar'):
+    """
+    Alternative version using matplotlib colormaps for color generation.
+    Better for very large numbers of objects.
+    """
+    grid = deepcopy(grid)
+    
+    # Prepare the plot
+    plt.figure(figsize=(12, 10))
+    
+    object_values = {}
+    legend_handles = []
+    
+    n_objects = len(objects)
+    
+    # Generate colormap for given number of objects
+    colormap = plt.colormaps[colormap_name]
+    
+    # Process each object
+    for idx, obj in enumerate(objects):
+        obj_value = 12 + idx
+        color = colormap(idx)
+        hex_color = colors.to_hex(color)
+        object_values[obj_value] = (obj.label, hex_color)
+        
+        coords = obj.coords
+        for coord in coords:
+            x, y = coord
+            if 0 <= x < grid.shape[0] and 0 <= y < grid.shape[1]:
+                grid[x, y] = obj_value 
+        
+        legend_handles.append(mpatches.Patch(color=hex_color, label=obj.label))
+    
+    # Create colormap
+    original_colors = ['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
+                      '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff', '#002f1f']
+    
+    all_colors = original_colors + [object_values[val][1] for val in sorted(object_values.keys())]
+    
+    cmap = colors.ListedColormap(all_colors)
+    norm = colors.Normalize(vmin=0, vmax=len(all_colors)-1)
+    
+    plt.imshow(np.flipud(grid), cmap=cmap, norm=norm, origin='upper')
+    plt.grid(True, which='both', color='lightgrey', linewidth=0.5)
+    plt.xticks(np.arange(-0.5, grid.shape[0]), [])
+    plt.yticks(np.arange(-0.5, grid.shape[1]), [])
+    plt.xlim(-0.5, grid.shape[0]-0.5)
+    plt.ylim(-0.5, grid.shape[0]-0.5)
+    
+    plt.xlabel('X coordinate')
+    plt.ylabel('Y coordinate')
+    
+    # Adaptive legend
+    n_cols = max(2, min(4, n_objects // 15))
+    plt.legend(handles=legend_handles, bbox_to_anchor=(1.05, 1), loc='upper left', 
+              ncol=n_cols, fontsize='small')
+    
+    plt.tight_layout()
+    plt.show()
+    return grid
 class TaskIterator:
     def __init__(self, start=0, end=0, tasks_keys=False):
         self.current = start

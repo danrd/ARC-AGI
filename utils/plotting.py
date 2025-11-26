@@ -254,10 +254,10 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
     plt.tight_layout()
     plt.show()
 
-def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar'):
+def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_distinct_colors=50):
     """
-    Alternative version using matplotlib colormaps for color generation.
-    Better for very large numbers of objects.
+    Enhanced version with better color distinction for many objects.
+    Fixed grid display to prevent cutting off and ensure even cell sizes.
     """
     grid = deepcopy(grid)
     
@@ -269,13 +269,53 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar'):
     
     n_objects = len(objects)
     
-    # Generate colormap for given number of objects
-    colormap = plt.colormaps[colormap_name]
+    # Generate distinct colors using multiple strategies
+    def generate_distinct_colors(n_colors):
+        if n_colors <= 20:
+            # Use tab20 colormap for small numbers - most distinct
+            cmap = plt.colormaps['tab20']
+            return [cmap(i % 20) for i in range(n_colors)]
+        elif n_colors <= max_distinct_colors:
+            # Combine multiple qualitative colormaps
+            colors_list = []
+            qualitative_maps = ['tab20', 'Set3', 'Pastel1', 'Pastel2', 'Dark2', 'Paired']
+            for cmap_name in qualitative_maps:
+                cmap = plt.colormaps[cmap_name]
+                colors_list.extend([cmap(i) for i in range(cmap.N)])
+                if len(colors_list) >= n_colors:
+                    break
+            return colors_list[:n_colors]
+        else:
+            # For very large numbers, use multiple strategies
+            colors_list = []
+            
+            # Strategy 1: Use multiple colormaps with different ranges
+            colormaps = [
+                ('gist_ncar', 0.0, 0.8),    # Avoid very end of colormap
+                ('hsv', 0.0, 0.8),
+                ('viridis', 0.2, 0.8),
+                ('plasma', 0.2, 0.8)
+            ]
+            
+            # Strategy 2: Generate colors with varied hue, saturation, brightness
+            import colorsys
+            for i in range(n_colors):
+                # Vary hue systematically, but also vary saturation and value
+                hue = (i * 0.618033988749895) % 1.0  # Golden ratio conjugate for distribution
+                saturation = 0.6 + 0.3 * (i % 3) / 3  # Vary saturation
+                value = 0.7 + 0.2 * (i % 4) / 4      # Vary brightness
+                rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+                colors_list.append(rgb)
+            
+            return colors_list
+    
+    # Get distinct colors for all objects
+    distinct_colors = generate_distinct_colors(n_objects)
     
     # Process each object
     for idx, obj in enumerate(objects):
         obj_value = 12 + idx
-        color = colormap(idx)
+        color = distinct_colors[idx]
         hex_color = colors.to_hex(color)
         object_values[obj_value] = (obj.label, hex_color)
         
@@ -296,24 +336,53 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar'):
     cmap = colors.ListedColormap(all_colors)
     norm = colors.Normalize(vmin=0, vmax=len(all_colors)-1)
     
-    plt.imshow(np.flipud(grid), cmap=cmap, norm=norm, origin='upper')
-    plt.grid(True, which='both', color='lightgrey', linewidth=0.5)
-    plt.xticks(np.arange(-0.5, grid.shape[0]), [])
-    plt.yticks(np.arange(-0.5, grid.shape[1]), [])
-    plt.xlim(-0.5, grid.shape[0]-0.5)
-    plt.ylim(-0.5, grid.shape[0]-0.5)
+    # FIXED: Use pcolormesh for even cell sizes and proper grid alignment
+    height, width = grid.shape
+    
+    # Create coordinate arrays for pcolormesh
+    # pcolormesh needs the edges of each cell, so we create arrays from -0.5 to dim+0.5
+    x_edges = np.arange(-0.5, width + 0.5, 1)
+    y_edges = np.arange(-0.5, height + 0.5, 1)
+    
+    # Create meshgrid for the edges
+    X, Y = np.meshgrid(x_edges, y_edges)
+    
+    # Plot with pcolormesh - this ensures square cells
+    mesh = plt.pcolormesh(X, Y, grid, cmap=cmap, norm=norm, edgecolor='lightgrey', linewidth=0.5)
+    
+    # Set equal aspect ratio to ensure square cells
+    plt.gca().set_aspect('equal')
+    
+    # Set limits to show entire grid
+    plt.xlim(-0.5, width - 0.5)
+    plt.ylim(-0.5, height - 0.5)
+    
+    # Set ticks at integer positions
+    plt.xticks(np.arange(0, width, 1))
+    plt.yticks(np.arange(0, height, 1))
     
     plt.xlabel('X coordinate')
     plt.ylabel('Y coordinate')
     
-    # Adaptive legend
-    n_cols = max(2, min(4, n_objects // 15))
-    plt.legend(handles=legend_handles, bbox_to_anchor=(1.05, 1), loc='upper left', 
-              ncol=n_cols, fontsize='small')
+    # Enhanced legend for many objects
+    if n_objects > 30:
+        n_cols = max(2, min(6, n_objects // 10))
+        legend_fontsize = 'x-small' if n_objects > 50 else 'small'
+    else:
+        n_cols = max(2, min(4, n_objects // 15))
+        legend_fontsize = 'small'
+    
+    plt.legend(handles=legend_handles, 
+               bbox_to_anchor=(1.05, 1), 
+               loc='upper left', 
+               ncol=n_cols, 
+               fontsize=legend_fontsize,
+               framealpha=0.9)
     
     plt.tight_layout()
     plt.show()
     return grid
+
 class TaskIterator:
     def __init__(self, start=0, end=0, tasks_keys=False):
         self.current = start

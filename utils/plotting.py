@@ -381,7 +381,7 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_d
     
     plt.tight_layout()
     plt.show()
-    return grid
+    return
 
 class TaskIterator:
     def __init__(self, start=0, end=0, tasks_keys=False):

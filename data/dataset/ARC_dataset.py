@@ -78,10 +78,10 @@ class ARCDataset:
         additional_datasets : Union[List[str], bool]
             If provided - list of additional datasets.
         """    
-        training_challenges = load_json('data/dataset/training_challenges.json')
-        training_solutions = load_json('data/dataset/training_solutions.json')
-        evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
-        evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
+        training_challenges = load_json('data/dataset/ARC2/arc-agi_training_challenges.json')
+        training_solutions = load_json('data/dataset/ARC2/arc-agi_training_solutions.json')
+        evaluation_challenges = load_json('data/dataset/ARC2/arc-agi_evaluation_challenges.json')
+        evaluation_solutions = load_json('data/dataset/ARC2/arc-agi_evaluation_solutions.json')
         tasks_keys = list(training_challenges.keys()) + list(evaluation_challenges.keys())
         training_challenges = training_challenges | evaluation_challenges
         training_solutions = training_solutions | evaluation_solutions
@@ -95,7 +95,8 @@ class ARCDataset:
                 subtasks.append(subtask)
             task = ARCTask(key, subtasks, test_inp, test_out)
             tasks.append(task)
-        self.tasks = self.tasks.extend(tasks)
+        if tasks != []:
+            self.tasks.extend(tasks)
     
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):

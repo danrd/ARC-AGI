@@ -14,13 +14,16 @@ class ARCDataset:
     def __init__(self, additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
                                                 'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
                                                 'tama_arc', 'com_arc'], 
-                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False):
+                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False,
+                 ver2:bool=False):
         self.load_dataset(additional_datasets, filter_tasks)
         self.tasks = self.create_tasks(augmentation)
         self.easy_tasks, self.hard_tasks = self.difficulty_filter()
         if ttt_augmentation:
             self.ttt_tasks = self.ttt_augmentation(augmentation)
-    
+        if ver2:
+            self.load_ARC2()
+
     def task_to_lists(self, task_key:str)-> Union[List[np.array], List[np.array], np.array]:
         """Transform dictionary with task data into several lists for convenience."""
         train_inp = []
@@ -69,6 +72,32 @@ class ARCDataset:
                 self.training_solutions |= dataset_solutions
                 self.tasks_keys.extend(dataset_tasks_keys)
         self.aug_start_idx = self.cur_idx + 400 * 14
+
+    def load_ARC2(self):
+        """Load dataset files and set splitting for training.
+        Parameters
+        ----------
+        additional_datasets : Union[List[str], bool]
+            If provided - list of additional datasets.
+        """    
+        training_challenges = load_json('data/dataset/training_challenges.json')
+        training_solutions = load_json('data/dataset/training_solutions.json')
+        evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
+        evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
+        tasks_keys = list(training_challenges.keys()) + list(evaluation_challenges.keys())
+        training_challenges = training_challenges | evaluation_challenges
+        training_solutions = training_solutions | evaluation_solutions
+        tasks = []
+        for idx, key in enumerate(self.tasks_keys[0:]):
+            train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
+            subtasks = []
+            for i in range(len(train_inp)):
+                label = f'{key}_{i}'
+                subtask = ARCSubtask(label, train_inp[i], train_out[i])
+                subtasks.append(subtask)
+            task = ARCTask(key, subtasks, test_inp, test_out)
+            tasks.append(task)
+        self.tasks2 = tasks
     
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):

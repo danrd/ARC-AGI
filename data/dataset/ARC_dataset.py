@@ -11,10 +11,8 @@ from rl.ARC_task import ARCTask, ARCSubtask
 from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
-    def __init__(self, additional_datasets:bool=['mini_arc', 're_arc', 'synth_arc', 'concept_arc', 
-                                                'pqa_arc', 'so_arc', 'dbigham_arc', 'ns_arc',
-                                                'tama_arc', 'com_arc'], 
-                 augmentation:bool=False, ttt_augmentation:bool=False, filter_tasks:bool=False,
+    def __init__(self, additional_datasets:bool=False, augmentation:bool=False, 
+                 ttt_augmentation:bool=False, filter_tasks:bool=False,
                  ver2:bool=False):
         self.load_dataset(additional_datasets, filter_tasks)
         self.tasks = self.create_tasks(augmentation)
@@ -97,7 +95,7 @@ class ARCDataset:
                 subtasks.append(subtask)
             task = ARCTask(key, subtasks, test_inp, test_out)
             tasks.append(task)
-        self.tasks2 = tasks
+        self.tasks = self.tasks.extend(tasks)
     
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):

@@ -82,11 +82,13 @@ class ARCDataset:
         training_solutions = load_json('data/dataset/ARC2/arc-agi_training_solutions.json')
         evaluation_challenges = load_json('data/dataset/ARC2/arc-agi_evaluation_challenges.json')
         evaluation_solutions = load_json('data/dataset/ARC2/arc-agi_evaluation_solutions.json')
-        tasks_keys = list(training_challenges.keys()) + list(evaluation_challenges.keys())
         training_challenges = training_challenges | evaluation_challenges
         training_solutions = training_solutions | evaluation_solutions
+        self.training_challenges =  self.training_challenges | training_challenges
+        self.training_solutions = self.training_solutions | training_solutions
+        tasks_keys = list(training_challenges.keys())
         tasks = []
-        for idx, key in enumerate(self.tasks_keys[0:]):
+        for idx, key in enumerate(tasks_keys):
             train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
             subtasks = []
             for i in range(len(train_inp)):
@@ -95,8 +97,7 @@ class ARCDataset:
                 subtasks.append(subtask)
             task = ARCTask(key, subtasks, test_inp, test_out)
             tasks.append(task)
-        if tasks != []:
-            self.tasks.extend(tasks)
+        self.tasks.extend(tasks)
     
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):

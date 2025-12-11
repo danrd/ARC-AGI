@@ -14,8 +14,13 @@ def plot_task(task_id:str, dataset:ARCDataset):
     """Plots the train and test pairs of a specified task, using same color scheme as the ARC app."""   
     all_challenges = dataset.training_challenges
     all_solutions = dataset.training_solutions
-    task = all_challenges[task_id]
-    task_solution = all_solutions[task_id][0]
+    if "_" in task_id:
+        main,test_idx = task_id.split('_')
+        task = all_challenges[main]
+        task_solutions = all_solutions[main]
+    else:
+        task = all_challenges[task_id]
+        task_solutions = all_solutions[task_id]
     num_train = len(task['train'])
     num_test  = len(task['test'])
     w = num_train + num_test
@@ -25,21 +30,20 @@ def plot_task(task_id:str, dataset:ARCDataset):
     for j in range(num_train):     
         plot_one(axs[0, j], j, task, 'train', 'input')
         plot_one(axs[1, j], j, task, 'train', 'output')        
-    
-    plot_one(axs[0, j+1], 0, task, 'test', 'input')
 
     cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
                                  '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
     norm = colors.Normalize(vmin=0, vmax=10)
-    answer = task_solution
-    
-    axs[1, j+1].imshow(answer, cmap=cmap, norm=norm)
-    axs[1, j+1].grid(True, which = 'both',color = 'lightgrey', linewidth = 0.5)
-    axs[1, j+1].set_yticks([x-0.5 for x in range(1 + len(answer))])
-    axs[1, j+1].set_xticks([x-0.5 for x in range(1 + len(answer[0]))])     
-    axs[1, j+1].set_xticklabels([])
-    axs[1, j+1].set_yticklabels([])
-    axs[1, j+1].set_title('Test output', fontweight='bold')
+    for inc in range(num_test):
+        answer = task_solutions[inc]
+        plot_one(axs[0, j+1+inc], 0+inc, task, 'test', 'input')
+        axs[1, j+1+inc].imshow(answer, cmap=cmap, norm=norm)
+        axs[1, j+1+inc].grid(True, which = 'both',color = 'lightgrey', linewidth = 0.5)
+        axs[1, j+1+inc].set_yticks([x-0.5 for x in range(1 + len(answer))])
+        axs[1, j+1+inc].set_xticks([x-0.5 for x in range(1 + len(answer[0]))])     
+        axs[1, j+1+inc].set_xticklabels([])
+        axs[1, j+1+inc].set_yticklabels([])
+        axs[1, j+1+inc].set_title(f'Test output {inc+1}', fontweight='bold')
 
     fig.patch.set_linewidth(5)
     fig.patch.set_edgecolor('black')  # substitute 'k' for black
@@ -63,7 +67,7 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     plt.setp(plt.gcf().get_axes(), xticklabels=[], yticklabels=[])
     ax.set_xticks([x-0.5 for x in range(1 + len(input_matrix[0]))])     
     ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])   
-    title_prefix = f'Example {i+1}' if train_or_test == "train" else 'Test'
+    title_prefix = f'Example {i+1}' if train_or_test == "train" else f'Test {i+1}'
     ax.set_title(title_prefix + ' ' + input_or_output, fontweight='bold')
 
 def plot_multiple_tasks(task_ids: List[str], dataset: ARCDataset):

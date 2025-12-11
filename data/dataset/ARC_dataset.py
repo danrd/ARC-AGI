@@ -162,41 +162,10 @@ class ARCDataset:
         if augmentation:
             tasks += self.aug_tasks[0:5600] + self.aug_tasks[11200:] # excluding aug tasks for test set 
         return tasks
-    
-    @staticmethod
-    def filter_tasks(challenges, solutions, rejected_tasks):
-        exclude_list = []
-        for key in challenges.keys():
-            if key in rejected_tasks:
-               exclude_list.append(key)
-        for key in exclude_list:
-            del challenges[key]
-            del solutions[key]
-        return challenges, solutions 
-
-    def create_tasks(self, augmentation):
-        """Create a list of tasks for current splitting setting."""
-        tasks = []
-        self.aug_tasks = []
-        for idx, key in enumerate(self.tasks_keys[0:]):
-            train_inp, train_out, test_inp, test_out = self.task_to_lists(key)
-            subtasks = []
-            for i in range(len(train_inp)):
-                label = f'{key}_{i}'
-                subtask = ARCSubtask(label, train_inp[i], train_out[i])
-                subtasks.append(subtask)
-            task = ARCTask(key, subtasks, test_inp, test_out)
-            tasks.append(task) 
-            if augmentation:
-                aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, key)
-                self.aug_tasks.extend(aug_task)
-        if augmentation:
-            tasks += self.aug_tasks[0:5600] + self.aug_tasks[11200:] # excluding aug tasks for test set 
-        return tasks
 
     def augment_task(self, subtasks:List[ARCSubtask], test_inp:np.array, 
                      test_out:np.array, key:str)->List[List[ARCSubtask]]:
-        """Create a list of additional tasks based on subtasks of a given initial task using grid augmentation"""
+        """Create a list of additional tasks based on subtasks of a given initial task using grid augmentation."""
         aug_subtasks = [[] for _ in range(14)] # as with augmentation we have 14 new grids
         aug_tasks = []
         difficulty = self.task2difficulty[key]
@@ -218,7 +187,7 @@ class ARCDataset:
         return aug_tasks
 
     def difficulty_filter(self):
-        """Split tasks based on their predifined difficulty"""
+        """Split tasks based on their predifined difficulty."""
         easy_tasks = []
         hard_tasks = []
         for task in self.tasks:

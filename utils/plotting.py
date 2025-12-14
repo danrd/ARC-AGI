@@ -43,7 +43,7 @@ def plot_task(task_id:str, dataset:ARCDataset):
         axs[1, j+1+inc].set_xticks([x-0.5 for x in range(1 + len(answer[0]))])     
         axs[1, j+1+inc].set_xticklabels([])
         axs[1, j+1+inc].set_yticklabels([])
-        axs[1, j+1+inc].set_title(f'Test output {inc+1}', fontweight='bold')
+        axs[1, j+1+inc].set_title(f'Test {inc+1} output', fontweight='bold')
 
     fig.patch.set_linewidth(5)
     fig.patch.set_edgecolor('black')  # substitute 'k' for black

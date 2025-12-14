@@ -25,7 +25,6 @@ class ARCDataset:
             self.load_ARC2()
         self.tasks.extend(self.additional_tasks)
         self.idx2label = {idx:task.label for idx, task in enumerate(self.tasks)}
-        self.label2idx = {task.label:idx for idx, task in enumerate(self.tasks)}
 
     def task_to_lists(self, task_key:str)-> Union[List[np.array], List[np.array], np.array]:
         """Transform dictionary with task data into several lists for convenience."""

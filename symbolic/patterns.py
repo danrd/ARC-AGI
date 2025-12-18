@@ -1,7 +1,7 @@
 from copy import copy
 import typing
 import functools
-from typing import List
+from typing import List, Tuple
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque

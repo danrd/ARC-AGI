@@ -6,6 +6,7 @@ from collections import defaultdict, Counter
 from dataclasses import dataclass, field
 from itertools import product
 from scipy.spatial.distance import euclidean
+from scipy import stats as st
 from rl.ARC_task import ARCTask, ARCSubtask
 from symbolic.objects_analysis import GridObject
 from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list, check_subset_condition
@@ -16,7 +17,6 @@ colors_mapping = {
     5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
 }
 inverse_colors_mapping = {v:k for k, v in colors_mapping.items()}
-
 
 # Immutable dataclasses for representation levels
 @dataclass(frozen=True)
@@ -131,8 +131,8 @@ class SubtaskSummary:
     """Immutable dataclass for subtask summary."""
     subtask: ARCSubtask = None
     subtask_label: str = None
-    inp_grid_summary: GridSummary = None
-    out_grid_summary: Optional[GridSummary] = None
+    inp_grid_summary = None
+    out_grid_summary = None
     grids_x_ratio: float = 1.0
     grids_y_ratio: float = 1.0
     
@@ -332,8 +332,8 @@ class SubtaskSummary:
         }
 
 def prepare_features(
-    inp_grid_summary: GridSummary, 
-    out_grid_summary: GridSummary,
+    inp_grid_summary, 
+    out_grid_summary,
     level : int,
 ) -> Dict[str, float]:
     """Standalone function to prepare features from grid summaries."""
@@ -1435,7 +1435,47 @@ class TransformationPattern:
     supporting_evidence: Tuple[str, ...] = field(default_factory=tuple)
     parameters: Dict[str, Any] = field(default_factory=dict)
 
-
+def calculate_shape_similarity(obj1, obj2):
+    """Shape similarity calculation based on binary masks overlap ratio."""
+    # Quick size filter
+    size_ratio = min(obj1.size, obj2.size) / max(obj1.size, obj2.size)
+    if size_ratio < 0.5:
+        return 0.0
+    
+    mask1 = obj1.obj_mask
+    mask2 = obj2.obj_mask
+    
+    h1, w1 = mask1.shape
+    h2, w2 = mask2.shape
+    
+    # Use smaller dimensions
+    h = min(h1, h2)
+    w = min(w1, w2)
+    
+    def compute_iou_for_crop(start1, start2):
+        """Helper function to compute IoU for specific crop positions."""
+        # Crop both masks
+        m1_crop = mask1[start1[0]:start1[0]+h, start1[1]:start1[1]+w]
+        m2_crop = mask2[start2[0]:start2[0]+h, start2[1]:start2[1]+w]
+        
+        # Compute intersection and union
+        intersection = np.count_nonzero(m1_crop & m2_crop)
+        union = np.count_nonzero(m1_crop | m2_crop)
+        
+        # IoU (Jaccard similarity)
+        return intersection / union if union > 0 else 0.0
+    
+    # Upper-left corner cropping
+    ul_similarity = compute_iou_for_crop((0, 0), (0, 0))
+    
+    # Center cropping
+    center_similarity = compute_iou_for_crop(
+        ((h1-h)//2, (w1-w)//2), 
+        ((h2-h)//2, (w2-w)//2)
+    )
+    
+    # Return maximum similarity from both cropping methods
+    return max(ul_similarity, center_similarity)
 class SubtaskAnalysis:
     """Analyzes a single input-output example pair."""
     
@@ -2176,7 +2216,6 @@ class SubtaskAnalysis:
                 debug_info.append(f"  {prop}: {old_val} → {new_val}")
         
         return "\n".join(debug_info)
-
 
 class TaskAnalysis:
     """Analyzes a complete ARC task with multiple training examples and test cases."""

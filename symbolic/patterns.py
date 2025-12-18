@@ -1,13 +1,13 @@
-from copy import copy, deepcopy
+from copy import copy
 import typing
-import numpy as np
-from typing import List
 import functools
+from typing import List
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 
 def left_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
-    """Auxiliary function for diagonals creations."""
+    """Auxiliary function for left lines of diagonals creations."""
     lines = []
     ul = find_upper_left_corner(grid_size)
     i_coords = range(ul[0], grid_size[0]+ul[0])
@@ -32,7 +32,7 @@ def left_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
     return lines
 
 def right_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
-    """Auxiliary function for diagonals creations."""
+    """Auxiliary function for right lines of diagonals creations."""
     lines = []
     ul = find_upper_left_corner(grid_size)
     i_coords = range(ul[0], grid_size[0]+ul[0])
@@ -58,7 +58,7 @@ def right_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
     return lines
 
 def diagonals_coords(grid_size:tuple)->List[List[List[tuple]]]:
-    """Create diagonal patterns for given grid_size."""
+    """Create diagonal patterns for given grid size."""
     all_lines = []
     ul = find_upper_left_corner(grid_size)
     for i in range(grid_size[0]):
@@ -73,7 +73,7 @@ def diagonals_coords(grid_size:tuple)->List[List[List[tuple]]]:
     return all_lines
 
 def lines_coords(grid_size:tuple)->List[List[List[tuple]]]:
-    """Create line patterns for given grid_size."""
+    """Create line patterns for given grid size."""
     coords = []
     def hor_lines_coords(grid_size)->List[List[List[tuple]]]:
         ul = find_upper_left_corner(grid_size)
@@ -106,7 +106,7 @@ def lines_coords(grid_size:tuple)->List[List[List[tuple]]]:
 
 @functools.lru_cache(maxsize=128)
 def rectangles_coords(grid_size:tuple)->List[List[List[tuple]]]:
-    """Create rectangle patterns for given grid_size."""
+    """Create rectangle patterns for given grid size."""
     def i_expansion(grid_size):
         """Patterns expanding along i axis.""" 
         ul = find_upper_left_corner(grid_size)
@@ -169,33 +169,8 @@ def rectangles_coords(grid_size:tuple)->List[List[List[tuple]]]:
     coords.extend(i_j_expansion(grid_size))
     return coords
 
-def rectangles_coords2(grid_size:tuple)->List[List[List[tuple]]]:
-    ul = find_upper_left_corner(grid_size)
-    coords = []
-    for i in range(grid_size[0]-1):
-        for j in range(grid_size[1]-1):
-            for size_i in range(2, grid_size[0]-i+1):
-                hor_rects = []
-                for size_j in range(2, grid_size[1]-j+1):
-                    base_hor = [(ii+ul[0]+i, jj+ul[1]+j) for ii in range(size_i) for jj in range(size_j)]
-                    hor_rects.append(copy(sorted(base_hor, key=lambda x: x[0])))
-                coords.append(copy(sorted(hor_rects, key=lambda x:x[0]))) 
-            for size_j in range(2, grid_size[1]-j+1):
-                vert_rects = []
-                for size_i in range(2, grid_size[0]-i+1):
-                    base_vert = [(ii+ul[0]+i, jj+ul[1]+j) for jj in range(size_j) for ii in range(size_i)]
-                    vert_rects.append(copy(sorted(base_vert, key=lambda x: x[0])))
-                coords.append(copy(sorted(vert_rects, key=lambda x: x[0]))) 
-            sq_rects = []
-            min_dim = min(grid_size[0]-i+1, grid_size[1]-j+1)
-            for size in range(2, min_dim):
-                base_sq = [(ii+ul[0]+i, jj+ul[1]+j) for ii in range(size) for jj in range(size)]
-                sq_rects.append(copy(base_sq))
-            coords.append(copy(sorted(sq_rects, key=lambda x: x[0]))) 
-    return coords  
-
 def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]]:
-    """Create hs_shapes patterns for given grid_size."""
+    """Create hs-shapes patterns for given grid size."""
     hs_shapes = []
     ul_init = find_upper_left_corner(grid_size)
     for i_pos in range(grid_size[0]):
@@ -256,7 +231,7 @@ def generate_hs_shapes(grid_size:tuple, short:bool=True)->List[List[List[tuple]]
     return hs_shapes
 
 def generate_l_shapes(grid_size:tuple, regime:str='short')->List[List[List[tuple]]]:
-    """Create l_shapes patterns for given grid_size."""
+    """Create l-shapes patterns for given grid size."""
     ul = find_upper_left_corner(grid_size)
     if regime == 'short': # create only most common l_shapes patterns
         l_shapes = []
@@ -310,7 +285,7 @@ def generate_l_shapes(grid_size:tuple, regime:str='short')->List[List[List[tuple
     return l_shapes
 
 def generate_cross_shapes(grid_size:tuple)->List[List[List[tuple]]]:
-    """Create cross_shapes patterns for given grid_size."""
+    """Create cross_shapes patterns for given grid size."""
     cross_shapes = []
     ul = find_upper_left_corner(grid_size)
     cross_3_3 = [(0+ul[0], 1+ul[1]), (1+ul[0],0+ul[1]), (1+ul[0],1+ul[1]), (1+ul[0],2+ul[1]), (2+ul[0],1+ul[1])]
@@ -321,7 +296,7 @@ def generate_cross_shapes(grid_size:tuple)->List[List[List[tuple]]]:
     return cross_shapes
 
 def generate_t_shapes(grid_size:tuple, shapes:List[str]=['3_1', '3_2'])->List[List[List[tuple]]]:
-    """Create t_shapes patterns for given grid_size."""
+    """Create t-shapes patterns for given grid size."""
     t_shapes = []
     ul = find_upper_left_corner(grid_size)
     if '3_1' in shapes:
@@ -383,7 +358,7 @@ def generate_s_shapes(grid_size:tuple, shapes:List[str]=['4'])->List[List[List[t
     return s_shapes
 
 def generate_tv_shapes(grid_size:tuple)->List[List[List[tuple]]]:
-    """Create tv_shapes patterns for given grid_size."""
+    """Create tv-shapes patterns for given grid_size."""
     tv_shapes = []
     ul = find_upper_left_corner(grid_size)
     for k in range(2, min(grid_size)):
@@ -468,170 +443,114 @@ def matrix_partition(grid_size:tuple)->List[List[tuple]]:
                     patterns.append([markup])   
     return patterns
 
-def find_connected_components(grid):
-    """
-    Find all connected components in a grid where cells with the same color are connected.
-    
-    Args:
-    grid: A 2D NumPy array or list where each cell contains a color identifier
-    
-    Returns:
-        A list of connected components, where each component is a list of (row, col) coordinates
-    """
-    # Handle both NumPy arrays and regular lists
-    if isinstance(grid, np.ndarray):
-        if grid.size == 0:
-            return []
-        rows, cols = grid.shape
-    else:
-        if not grid or not grid[0]:
-            return []
-        rows, cols = len(grid), len(grid[0])
-        
-    visited = np.zeros((rows, cols), dtype=bool)
-    components = []
-    
-    # Directions: up, right, down, left
-    directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
-    
-    def is_valid(r, c):
-        return 0 <= r < rows and 0 <= c < cols
-    
-    def dfs(r, c, color, component):
-        if not is_valid(r, c) or visited[r, c] or grid[r, c] != color:
-            return
-        
-        visited[r, c] = True
-        component.append((r, c))
-        
-        for dr, dc in directions:
-            dfs(r + dr, c + dc, color, component)
-    
-    for r in range(rows):
-        for c in range(cols):
-            if not visited[r, c]:
-                color = grid[r, c]
-                component = []
-                dfs(r, c, color, component)
-                if component:
-                    components.append(component)
-    
-    return components
-
-def find_connected_components_with_color(grid, target_color):
+def find_connected_components_with_color(grid, target_color, folds=8):
     """
     Find all connected components in a grid with specified color.
-    
-    Args:
-        grid: A 2D NumPy array or list where each cell contains a color identifier
-        target_color: The color value to find
-        
-    Returns:
-        A list of connected components, where each component is a list of (row, col) coordinates
     """
-    # Handle both NumPy arrays and regular lists
     if isinstance(grid, np.ndarray):
         if grid.size == 0:
             return []
         rows, cols = grid.shape
+        is_numpy = True
     else:
         if not grid or not grid[0]:
             return []
         rows, cols = len(grid), len(grid[0])
-        
+        is_numpy = False
+    
     visited = np.zeros((rows, cols), dtype=bool)
     components = []
-    
-    # Directions: up, right, down, left
-    directions = [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, 1), (1, -1), (-1, 1)]
-    
-    def is_valid(r, c):
-        return 0 <= r < rows and 0 <= c < cols
-    
-    def dfs(r, c, target_color, component):
-        if not is_valid(r, c) or visited[r, c] or grid[r, c] != target_color:
-            return
+
+    # Precompute directions
+    if folds == 4:
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    else:
+        directions = [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, 1), (1, -1), (-1, 1)]
         
-        visited[r, c] = True
-        component.append((r, c))
-        
-        for dr, dc in directions:
-            dfs(r + dr, c + dc, target_color, component)
+    def get_cell_value(r, c):
+        return grid[r, c] if is_numpy else grid[r][c]
     
     for r in range(rows):
         for c in range(cols):
-            if not visited[r, c]:
+            if not visited[r, c] and get_cell_value(r, c) == target_color:
+                # Use BFS instead of DFS to avoid recursion depth issues
                 component = []
-                dfs(r, c, target_color, component)
-                if component:
-                    components.append(component)
+                queue = deque([(r, c)])
+                visited[r, c] = True
+                
+                while queue:
+                    curr_r, curr_c = queue.popleft()
+                    component.append((curr_r, curr_c))
+                    
+                    # Process neighbors without function call overhead
+                    for dr, dc in directions:
+                        nr, nc = curr_r + dr, curr_c + dc
+                        if (0 <= nr < rows and 0 <= nc < cols and 
+                            not visited[nr, nc] and get_cell_value(nr, nc) == target_color):
+                            visited[nr, nc] = True
+                            queue.append((nr, nc))
+                
+                components.append(component)
+    
     return components
 
-
-def find_connected_components_excluding_colors(grid, font_color=0.0, pad_val=1):
+def find_connected_components_excluding_colors(grid, font_color=0, pad_val=10, folds=8):
     """
     Find all connected components in a grid where cells have any color except the specified font color.
-    
-    Args:
-        grid: A 2D NumPy array or list where each cell contains a color identifier
-        font_color: The color value to exclude (typically the background color)
-        
-    Returns:
-        A list of connected components, where each component is a list of (row, col) coordinates
     """
-    # Handle both NumPy arrays and regular lists
     if isinstance(grid, np.ndarray):
         if grid.size == 0:
             return []
         rows, cols = grid.shape
+        is_numpy = True
     else:
         if not grid or not grid[0]:
             return []
         rows, cols = len(grid), len(grid[0])
-        
+        is_numpy = False
+    
     visited = np.zeros((rows, cols), dtype=bool)
     components = []
     
-    # Directions: up, right, down, left
-    directions = [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, 1), (1, -1), (-1, 1)]
+    # Precompute directions
+    if folds == 4:
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+    else:
+        directions = [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, 1), (1, -1), (-1, 1)]
     
-    def is_valid(r, c):
-        return 0 <= r < rows and 0 <= c < cols
+    def get_cell_value(r, c):
+        return grid[r, c] if is_numpy else grid[r][c]
     
-    def dfs(r, c, color, component):
-        if not is_valid(r, c) or visited[r, c] or grid[r, c] == font_color or grid[r, c] == pad_val:
-            return
-        
-        visited[r, c] = True
-        component.append((r, c))
-        
-        for dr, dc in directions:
-            dfs(r + dr, c + dc, color, component)
-    
-    # First pass: mark all font_color cells as visited
+    # Pre-mark excluded cells as visited
     for r in range(rows):
         for c in range(cols):
-            if grid[r, c] == font_color:
+            cell_value = get_cell_value(r, c)
+            if cell_value == font_color or cell_value == pad_val:
                 visited[r, c] = True
     
-    # Second pass: find connected components of other colors
+    # Find connected components using BFS
     for r in range(rows):
         for c in range(cols):
             if not visited[r, c]:
-                color = grid[r, c]
                 component = []
-                dfs(r, c, color, component)
-                if component:
-                    components.append(component)
-    return components 
+                queue = deque([(r, c)])
+                visited[r, c] = True
+                
+                while queue:
+                    curr_r, curr_c = queue.popleft()
+                    component.append((curr_r, curr_c))
+                    
+                    for dr, dc in directions:
+                        nr, nc = curr_r + dr, curr_c + dc
+                        if (0 <= nr < rows and 0 <= nc < cols and not visited[nr, nc]):
+                            visited[nr, nc] = True
+                            queue.append((nr, nc))
+                
+                components.append(component)
+    
+    return components
 
-def genetate_markup(shape:tuple)->typing.Dict[str, List[List[tuple]]]:
-    """Create patterns to identify possible grid markup."""
-    definite = matrix_partition(shape)
-    possible = lines_partition(shape)
-    return {'definite':definite, 'possible':possible}
-
-def generate_patterns(grid_size:tuple, shape_types:List[str], multithreading:bool=True)->dict:
+def generate_patterns(grid_size:tuple, shape_types:Tuple[str], multithreading:bool=True)->dict:
     """Generate specified types of patterns."""
     if multithreading:
         with ThreadPoolExecutor() as executor:
@@ -646,9 +565,11 @@ def generate_patterns(grid_size:tuple, shape_types:List[str], multithreading:boo
             crosses = executor.submit(generate_cross_shapes, grid_size)
             flowers = executor.submit(generate_flowers, grid_size)
             markup = executor.submit(matrix_partition, grid_size)
+            partition_lines = executor.submit(lines_partition, grid_size)
             all_figures = {'line':lines.result(), 'rectangle':rectangles.result(), 'l_shape':l_shapes.result(), 
                            't_shape':t_shapes.result(), 's_shape':s_shapes.result(), 'tv_shape':tv_shapes.result(), 
-                           'hs_shape':hs_shapes.result(), 'cross':crosses.result(), 'flower':flowers.result(), 'diagonal':diagonals.result(), 'markup':markup.result()}
+                           'hs_shape':hs_shapes.result(), 'cross':crosses.result(), 'flower':flowers.result(), 
+                           'diagonal':diagonals.result(), 'markup':markup.result(), 'partition_lines':partition_lines.result()}
             figures_after_filtering = {k:v for k,v in all_figures.items() if k in shape_types}
     else:
         lines = lines_coords(grid_size)
@@ -662,8 +583,31 @@ def generate_patterns(grid_size:tuple, shape_types:List[str], multithreading:boo
         crosses = generate_cross_shapes(grid_size)
         flowers = generate_flowers(grid_size)
         markup = matrix_partition(grid_size)
+        partition_lines = lines_partition(grid_size)
         all_figures = {'line':lines, 'rectangle':rectangles, 'l_shape':l_shapes, 
                        't_shape':t_shapes, 's_shape':s_shapes, 'tv_shape':tv_shapes, 
-                       'hs_shape':hs_shapes, 'cross':crosses, 'flower':flowers, 'diagonal':diagonals, 'markup':markup}
+                       'hs_shape':hs_shapes, 'cross':crosses, 'flower':flowers, 'diagonal':diagonals, 
+                       'markup':markup, 'partition_lines':partition_lines}
         figures_after_filtering = {k:v for k,v in all_figures.items() if k in shape_types}
     return figures_after_filtering
+
+def retrieve_shapes(grid, shape:tuple, shape_types:tuple, font_color=0):
+    """Retrieve specified shape types patterns."""
+    patterns = generate_patterns(shape, shape_types)
+    objects = defaultdict(list)
+    candidate = False
+    used_coordinates = []
+    grid = copy(grid)
+    for k, v in patterns.items():
+        shape_patterns = v
+        for idx, pattern_list in enumerate(shape_patterns):
+            for pattern in pattern_list:
+                i, j = coords_transform(pattern)
+                retrieval = set(grid[i, j])
+                if len(retrieval) > 1:
+                    break
+                else:
+                    color = retrieval.pop()
+                    if color != font_color and pattern not in objects[k]:
+                        objects[k].append(pattern)             
+    return objects

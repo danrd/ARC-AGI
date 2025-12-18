@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from itertools import product
 from scipy.spatial.distance import euclidean
 from rl.ARC_task import ARCTask, ARCSubtask
-from symbolic.objects_analysis import GridObject, ObjectsFilter, RelationAnalyzer
+from symbolic.objects_analysis import GridObject
 from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list, check_subset_condition
 from symbolic.patterns import generate_patterns, find_connected_components_with_color, find_connected_components_excluding_colors
 

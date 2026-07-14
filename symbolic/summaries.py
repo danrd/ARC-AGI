@@ -1476,6 +1476,7 @@ def calculate_shape_similarity(obj1, obj2):
     
     # Return maximum similarity from both cropping methods
     return max(ul_similarity, center_similarity)
+
 class SubtaskAnalysis:
     """Analyzes a single input-output example pair."""
     

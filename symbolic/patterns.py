@@ -5,6 +5,7 @@ from typing import List, Tuple
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
+import numpy as np
 
 def left_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
     """Auxiliary function for left lines of diagonals creations."""

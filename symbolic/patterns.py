@@ -1,11 +1,11 @@
-from copy import copy
+import numpy as np
 import typing
 import functools
 from typing import List, Tuple
+from copy import copy
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
-import numpy as np
 
 def left_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
     """Auxiliary function for left lines of diagonals creations."""
@@ -596,11 +596,8 @@ def retrieve_shapes(grid, shape:tuple, shape_types:tuple, font_color=0):
     """Retrieve specified shape types patterns."""
     patterns = generate_patterns(shape, shape_types)
     objects = defaultdict(list)
-    candidate = False
-    used_coordinates = []
     grid = copy(grid)
-    for k, v in patterns.items():
-        shape_patterns = v
+    for k, shape_patterns in patterns.items():
         for idx, pattern_list in enumerate(shape_patterns):
             for pattern in pattern_list:
                 i, j = coords_transform(pattern)

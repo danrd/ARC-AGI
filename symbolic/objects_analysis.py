@@ -4,6 +4,7 @@ from typing import List
 from collections import defaultdict
 from symbolic.utils import find_upper_left_corner, coords_transform
 from symbolic.patterns import find_connected_components_with_color
+from itertools import product
 
 colors_mapping = {
     0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow', 

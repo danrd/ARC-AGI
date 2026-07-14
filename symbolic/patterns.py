@@ -445,9 +445,7 @@ def matrix_partition(grid_size:tuple)->List[List[tuple]]:
     return patterns
 
 def find_connected_components_with_color(grid, target_color, folds=8):
-    """
-    Find all connected components in a grid with specified color.
-    """
+    """Find all connected components in a grid with specified color."""
     if isinstance(grid, np.ndarray):
         if grid.size == 0:
             return []

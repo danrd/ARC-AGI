@@ -91,3 +91,71 @@ def parse_ascii_grid(grid_str: str) -> np.array:
 def check_module_devices(model):
     for name, param in model.named_parameters():
         print(f"Parameter: {name}, Device: {param.device}")
+
+def parse_llm_output(text, colors_str=False, max_grid_dim=30):
+    """
+    Parse a string in the format:
+    n,m:
+    1 x_1 ... x_m
+    ...
+    n x_1 ... x_m
+    
+    Where n is the number of rows, m is the number of columns and x_i are the cell values.
+    
+    Args:
+        text (str): The text to parse
+        
+    Returns:
+        numpy.ndarray: A NumPy array of shape (n, m)
+    """
+    inverse_colors_mapping_short = {
+    'b':0, 'B':1, 'R':2, 'G':3, 'Y':4, 
+    'g':5, 'M':6, 'O':7, 'S':8, 'W':9 
+}
+    # Split the text into lines
+    lines = text.strip().split('\n')
+    
+    # Parse the header to get dimensions
+    dimensions = lines[0].strip().rstrip(':').split(',')
+    try: 
+        if len(dimensions) == 2 and int(dimensions[0]) in range(1, max_grid_dim + 1) and int(dimensions[1]) in range(1, max_grid_dim + 1):
+            n_rows = int(dimensions[0])
+            n_cols = int(dimensions[1])
+        else:
+            return ""
+    except ValueError:
+        return ""
+    
+    # Initialize the result array
+    result = np.zeros((n_rows, n_cols), dtype=int)
+    
+    # Parse each row
+    for i in range(1, n_rows + 1):
+        if i < len(lines):
+            line = lines[i].strip()
+            # Split by whitespace and remove the row number
+            parts = line.split()
+            try:
+                # Identify current row
+                row_num = int(parts[0])
+            except ValueError:
+                return ""
+            row_data = parts[1]
+            if len(parts) > 2:
+                return ""
+            # Check if there's a single string of values or separate values
+            elif len(parts) == 2 and len(row_data) == n_cols:
+                # Single string of values (like "000020000")
+                for j in range(n_cols):
+                    try:
+                        result[row_num-1, j] = int(row_data[j]) if not colors_str else inverse_colors_mapping_short[row_data[j]]
+                    except (ValueError, KeyError) as e:
+                        return ""
+            else:
+                # Multiple separate values (like "0 0 0 0 2 0 0 0 0")
+                for j in range(min(n_cols, len(row_data) - 1)):
+                    try: 
+                        result[row_num-1, j] = int(row_data[j]) if not colors_str else inverse_colors_mapping_short[row_data[j]]
+                    except (ValueError, KeyError) as e:
+                        return ""
+    return result

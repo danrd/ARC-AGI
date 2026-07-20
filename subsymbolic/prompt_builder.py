@@ -6,18 +6,19 @@ a `<name>/<version>.j2` template file under `config.blocks_dir` (default:
 `data/prompts/`), rendered with the shared `context` dict. Blocks are
 token-budgeted and joined according to `config.join_format`, or via
 `tokenizer.apply_chat_template` when `config.chat_template` is set.
-
 """
 from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict
 
 from arc_grid_formatting import format_grid
+
+BlockResolver = Callable[[Any, int, dict], Optional[str]]
 
 
 class BlockSpec(BaseModel):
@@ -49,16 +50,19 @@ class PromptingConfig(BaseModel):
     chat_template: Optional[Any] = None          # non-None => use tokenizer.apply_chat_template
     assistant_prefix: Optional[str] = None
     min_examples: int = 2                        # examples block must fit at least this many
-    include_transformation_summary: bool = False
 
 
 class PromptBuilder:
     """Composes a prompt string (or chat message list) from configured blocks."""
 
-    def __init__(self, config: PromptingConfig, tokenizer):
+    def __init__(self, config: PromptingConfig, tokenizer,
+                 resolvers: Optional[Dict[str, "BlockResolver"]] = None):
         self.config = config
         self.tokenizer = tokenizer
         self.env = self._make_env()
+        self.resolvers: Dict[str, "BlockResolver"] = {"examples": self._build_examples}
+        if resolvers:
+            self.resolvers.update(resolvers)
 
     def _make_env(self) -> Environment:
         env = Environment(
@@ -115,12 +119,12 @@ class PromptBuilder:
 
             if spec.name in overrides:
                 rendered = overrides[spec.name]
-            elif spec.name == "examples":
-                rendered = self._build_examples(
-                    task, budget=self.config.token_limit - used_tokens, context=context,
+            elif spec.name in self.resolvers:
+                rendered = self.resolvers[spec.name](
+                    task, self.config.token_limit - used_tokens, context,
                 )
                 if rendered is None:
-                    return None  # even min_examples didn't fit
+                    return None  # this resolver couldn't fit even its minimum
             else:
                 template = self.env.get_template(f"{spec.name}/{spec.version}.j2")
                 rendered = template.render(**context)
@@ -134,6 +138,10 @@ class PromptBuilder:
         return self._join(parts)
 
     def _build_examples(self, task, budget: int, context: dict) -> Optional[str]:
+        """Built-in default resolver for the "examples" block name — loops
+        task.subtasks, rendering each with examples/v1.j2, stopping once the
+        budget is exhausted (but requiring at least config.min_examples to
+        fit, or the whole block fails)."""
         template = self.env.get_template("examples/v1.j2")
         accumulated = ""
         accumulated_tokens = 0
@@ -145,9 +153,6 @@ class PromptBuilder:
                 "input_grid": subtask.train_inp,
                 "output_grid": subtask.train_out,
             }
-            if self.config.include_transformation_summary:
-                example_context["transformation_summary"] = self._transformation_summary(subtask)
-
             rendered = template.render(**example_context)
             cost = self._count_tokens(rendered)
             if accumulated_tokens + cost > budget:
@@ -158,12 +163,6 @@ class PromptBuilder:
             accumulated_tokens += cost
 
         return accumulated
-
-    def _transformation_summary(self, subtask) -> str:
-        """Hook for project-specific example enrichment (e.g. a symbolic
-        input/output diff via GridSummary). Override or monkeypatch this in
-        the project layer once that logic is wired back in."""
-        return ""
 
     def _count_tokens(self, text: str) -> int:
         return len(self.tokenizer.tokenize(text))

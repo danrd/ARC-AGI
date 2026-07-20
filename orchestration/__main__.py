@@ -30,12 +30,7 @@ class AgentInvConfig:
 
 @dataclass
 class AgentRunConfig:
-    """Execution settings for the agent-level (module) loop.
-
-    NOTE: renamed from the original `AgentConfig` to avoid a name collision —
-    the source file defined two different classes both called `AgentConfig`
-    (agent identity vs. agent execution settings).
-    """
+    """Execution settings for the agent-level (module) loop."""
     max_agent_iterations: int = 3
     verbose: bool = False
 

@@ -7,17 +7,6 @@ a `<name>/<version>.j2` template file under `config.blocks_dir` (default:
 token-budgeted and joined according to `config.join_format`, or via
 `tokenizer.apply_chat_template` when `config.chat_template` is set.
 
-This module is domain-agnostic. ARC-specific grid formatting, role texts,
-and instruction bodies live in `arc_grid_formatting.py` / `arc_blocks_data.py`
-/ the `.j2` files themselves — this file only knows how to assemble blocks.
-
-Editing while experimenting (e.g. from a notebook):
-    Templates are re-read from disk automatically (Environment(auto_reload=True)
-    compares each template file's mtime on every `get_template()` call), so
-    editing a .j2 file under `blocks_dir` and re-running `build()` picks up
-    the change without recreating the PromptBuilder. Use `render_block(...)`
-    to iterate on a single block without needing a full task/tokenizer setup,
-    and `list_blocks()` to see what's on disk.
 """
 from __future__ import annotations
 

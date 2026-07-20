@@ -1,0 +1,7 @@
+Training example {{ idx }}:
+Input:
+{{ input_grid | grid(type=grid_repr_type) }}
+Output:
+{{ output_grid | grid(type=grid_repr_type) }}
+{% if transformation_summary is defined and transformation_summary %}{{ transformation_summary }}
+{% endif %}

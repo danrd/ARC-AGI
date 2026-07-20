@@ -10,8 +10,7 @@ This is the STATIC counterpart to the dynamic path: a resolver here always
 runs when its block name appears in config.blocks (a config-time decision).
 The dynamic path (an agent deciding at runtime what extra info to fetch)
 instead populates context["auxiliary_info"] itself and relies on the generic
-`auxiliary_info/v1.j2` template to print whatever ends up there — see
-mas_langgraph.py's decision node for that side.
+`auxiliary_info/v1.j2`.
 """
 from typing import Optional
 

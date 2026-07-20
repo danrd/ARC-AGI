@@ -2,12 +2,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib import colors
 import numpy as np
-from copy import copy, deepcopy
+from copy import deepcopy
 import os
 import pandas as pd
 from typing import List, Union
-from utils.utils import load_json
-from data.dataset.ARC_dataset import ARCDataset
+from data.datasets.ARC.ARC_dataset import ARCDataset
 from symbolic.utils import coords_transform, grid_formatting, crop_pad
 
 def plot_task(task_id:str, dataset:ARCDataset):
@@ -173,7 +172,7 @@ def plot_shape(shape:List[tuple]):
 def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]):
     """Plot intersection with defined shape."""
     grid = deepcopy(grid)
-    if type(shape) == list:
+    if isinstance(shape, list):
         shape_union = []
         for sh in shape:
             shape_union.extend(sh)
@@ -186,11 +185,11 @@ def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]
 def plot_rewards(path_to_logs:str):
     """Plot rewards for RL agent."""
     file = pd.read_csv(path_to_logs)
-    plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label=f'Training mean reward')
+    plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label='Training mean reward')
     plt.xlabel("timesteps")
     plt.ylabel("reward")
     plt.legend()
-    if os.path.exists(path_to_logs)==True:
+    if os.path.exists(path_to_logs):
           os.remove(path_to_logs)
     plt.savefig(os.getcwd()+'/plot.png')
     plt.show()

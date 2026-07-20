@@ -1,17 +1,7 @@
 """ARC project prompt data that isn't itself a template: per-role instruction
 snippets, fed into `role_instruction/v1.j2` via context["role_text"].
-
-Everything that's pure static prose (general instruction, hints, output
-format, coordinator/decision instructions, validation criteria, ...) now
-lives directly in the corresponding `.j2` file under data/prompts/ instead
-of as a Python string constant — that's the whole point of moving to
-templates: editing the wording means editing the template, not this file.
 """
 
-# NOTE: the original `available_agents` list (in the legacy prompt module)
-# had Mixer's purpose copy-pasted from Modifier ("Transform object
-# coloration through pattern recognition") instead of describing its actual
-# role (grid-section interaction). Fixed here.
 ROLE_INSTRUCTIONS = {
     "Modifier": (
         "Role: Transform object coloration through pattern recognition\n"

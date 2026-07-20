@@ -5,11 +5,9 @@ from tqdm import tqdm
 import torch
 import json
 import os
-from transformers.trainer_utils import has_length
 from transformers import TrainerCallback, GenerationConfig
 from pytorch_lightning.callbacks import Callback
-from pytorch_lightning.trainer.states import TrainerFn
-from llm.utils import lev_sim
+from subsymbolic.utils import lev_sim
 
 class ProgressCallback(TrainerCallback):
     """

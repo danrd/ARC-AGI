@@ -190,7 +190,7 @@ def check_subset_condition(larger_obj:set, smaller_obj:list)->bool:
 
 def   grid_formatting(grid:Union[np.array, torch.Tensor, List[list], List[tuple]])->np.array:
     """Unify grid format for processing as there is initial dataset format with ints and normalized from ARCDataset with floats."""
-    if type(grid) != np.array:
+    if not isinstance(grid, np.array):
         grid = np.array(grid)
     max_el = grid.max()
     if max_el >= 1 and type(max_el) in [np.int64, np.int32, np.int16, np.int8]:

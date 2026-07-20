@@ -1,14 +1,15 @@
 import os
+import pandas as pd
 import gymnasium as gym
 import functools
 import matplotlib.pyplot as plt
 from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from stable_baselines3 import PPO, A2C, DQN
-from copy import copy, deepcopy
+from copy import deepcopy
 from rl.ARC_task import ARCTask, ARCSubtask
 from rl.evaluation import evaluate_ARC_policy
 from rl.callbacks import MonitorCallback, ARCLogger
-from data.configs.rl_configs import load_PPO_config
+from data.configs.rl_configs import load_PPO_config, A2C_config, DQN_config
 from utils.utils import seed_everything
 from utils.plotting import plot_grid
 
@@ -131,18 +132,18 @@ def train_on_dataset(dataset, rl_config:dict, tasks_interval:list=[], tasks_subs
     else:
         tasks = tasks_subset
     for idx, task in enumerate(tasks):
-        accs_for_subtasks, lens_for_subtasks, agent = train_on_task(task, rl_config, agent, verbose, plot_grid_pred)
+        accs_for_subtasks, lens_for_subtasks, agent = train_on_task(task, rl_config, verbose, plot_grid_pred)
         accs_for_tasks[idx] = accs_for_subtasks
         lens_for_subtasks[idx] = lens_for_subtasks
     return accs_for_tasks, lens_for_tasks, agent
 
 def plot_rewards(path_to_logs:str):
     file = pd.read_csv(path_to_logs)
-    plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label=f'Training mean reward')
+    plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label='Training mean reward')
     plt.xlabel("timesteps")
     plt.ylabel("reward")
     plt.legend()
-    if os.path.exists(path_to_logs)==True:
+    if os.path.exists(path_to_logs):
           os.remove(path_to_logs)
     plt.savefig(os.getcwd()+'/plot.png')
     plt.show()

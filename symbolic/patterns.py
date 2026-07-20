@@ -1,11 +1,11 @@
 import numpy as np
-import typing
 import functools
 from typing import List, Tuple
 from copy import copy
 from symbolic.utils import find_upper_left_corner, multiplicate_shapes
 from concurrent.futures import ThreadPoolExecutor
-from collections import deque
+from collections import deque, defaultdict
+from symbolic.utils import coords_transform
 
 def left_lines(grid_size:tuple, pos:tuple)->List[List[tuple]]:
     """Auxiliary function for left lines of diagonals creations."""

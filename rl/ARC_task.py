@@ -1,6 +1,5 @@
 from typing import List
 import numpy as np
-from symbolic.utils import adjust_grid_shape, check_grid_values
 
 class ARCSubtask:
     def __init__(self, label:str, train_inp:np.array, train_out:np.array):

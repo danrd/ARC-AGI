@@ -878,9 +878,9 @@ class TaskAnalysis:
                 continue
                 
             if pattern.pattern_type == 'color_mapping':
-                rules.append(f"Apply consistent color mapping")
+                rules.append("Apply consistent color mapping")
             elif pattern.pattern_type == 'size_scaling':
-                rules.append(f"Scale objects (pattern detected in multiple examples)")
+                rules.append("Scale objects (pattern detected in multiple examples)")
             elif pattern.pattern_type == 'object_addition':
                 rules.append("Add new objects to the output")
             elif pattern.pattern_type == 'object_deletion':
@@ -979,7 +979,7 @@ class TaskAnalysis:
                     hypothesis_parts.append(f"  • New objects are added {alignment} with existing objects")
                 
                 elif pattern.pattern_type == 'shape_duplication':
-                    hypothesis_parts.append(f"  • Shapes are duplicated from input to create new objects")
+                    hypothesis_parts.append("  • Shapes are duplicated from input to create new objects")
                 
                 elif pattern.pattern_type == 'color_based_deletion':
                     color = pattern.parameters.get('common_values', {}).get('color', 'unknown')
@@ -994,14 +994,14 @@ class TaskAnalysis:
                     hypothesis_parts.append(f"  • All objects are translated by {shift}")
                 
                 elif pattern.pattern_type == 'color_mapping':
-                    hypothesis_parts.append(f"  • Colors are mapped according to consistent rules")
+                    hypothesis_parts.append("  • Colors are mapped according to consistent rules")
                 
                 elif pattern.pattern_type == 'size_scaling':
                     factor = pattern.parameters.get('common_values', {}).get('scale_factor', 1.0)
                     if isinstance(factor, (int, float)):
-                        hypothesis_parts.append(f"  • Objects are scaled by factor {factor:.2f}")
+                        hypothesis_parts.append("  • Objects are scaled by factor {factor:.2f}")
                     else:
-                        hypothesis_parts.append(f"  • Objects are scaled (factor varies)")
+                        hypothesis_parts.append("  • Objects are scaled (factor varies)")
         
         if medium_confidence_patterns:
             hypothesis_parts.append("\nMEDIUM CONFIDENCE OBSERVATIONS:")

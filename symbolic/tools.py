@@ -321,7 +321,7 @@ def need_ranking(mappings):
             return True
         curent_val = None
         for mapping in mappings:
-            if key in mapping.keys() and curent_val == None:
+            if key in mapping.keys() and curent_val is None:
                 curent_val = mapping[key]
             elif key in mapping.keys() and curent_val != mapping[key]:
                 return True           
@@ -784,7 +784,7 @@ def mixer(task:ARCTask, font_val=0, pad_val=10) -> np.array:
             pos_solution = solver(segments, transf_type, solution, subtask_target, font_val, pad_val) # find params for solution or check already found
         except WrongCheck:
             raise NoAnswer
-        if pos_solution != False:
+        if pos_solution:
             solution = copy(pos_solution)
     if solution == []:
         raise NoAnswer 
@@ -839,7 +839,7 @@ def infer_grid(test_input, transf_type, solution, colors_mapper, font_val=0, pad
             segment = segments[i]
             j = (i+1) % (n_segments)
             unique_mask = aug_segmented_masks[i] != aug_segmented_masks[j]
-            seg_i, seg_j = np.where(unique_mask==True)
+            seg_i, seg_j = np.where(unique_mask)
             unique_coords = list(zip(seg_i, seg_j))
             for coord in unique_coords:
                 if segment[coord] != font_val:
@@ -922,7 +922,7 @@ def conjunction_search(segments:List[np.array], target:np.array, solution:List[s
             segment = aug(segments[i])
             j = (i+1) % n_segments
             unique_mask = aug_segmented_masks[i] != aug_segmented_masks[j]
-            seg_i, seg_j = np.where(unique_mask==True)
+            seg_i, seg_j = np.where(unique_mask)
             unique_coords = list(zip(seg_i, seg_j))
             for coord in unique_coords:
                 if segment[coord] != font_val:
@@ -937,7 +937,7 @@ def conjunction_search(segments:List[np.array], target:np.array, solution:List[s
                 segment_colors = []
                 j = (i+1) % n_segments
                 unique_mask = aug_segmented_masks[i] != aug_segmented_masks[j]
-                seg_i, seg_j = np.where(unique_mask==True)
+                seg_i, seg_j = np.where(unique_mask)
                 unique_coords = list(zip(seg_i, seg_j))
                 for coord in unique_coords:
                     if aug(target)[coord] != font_val and aug(segments[i])[coord] != font_val:
@@ -1155,7 +1155,7 @@ def restore_with_slices(grid:np.array, symmetry_type:str, font_val=0.0):
                     restored_grid[:, mid_i+i:] = np.rot90(bottom_slice, k=1, axes=(0,1))
                     restored_grid[:, :mid_i-i] = np.rot90(bottom_slice, k=1, axes=(1,0))
                 elif symmetry_type == "ud":
-                    restored_grid[:, :mid_j-j] = np.flipud(bottom_slice_slice)    
+                    restored_grid[:, :mid_j-j] = np.flipud(bottom_slice)    
             top_slice_verif = None
             bottom_slice_verif = None       
     return restored_grid

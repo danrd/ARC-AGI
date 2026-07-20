@@ -1,11 +1,5 @@
-import math
-import warnings
-import os
 import gymnasium
-from typing import Optional
 from gymnasium import spaces
-from gym import Env, Wrapper as gymWrapper
-from gym.spaces import Dict, Box, Discrete, Space
 import numpy as np
 from copy import copy, deepcopy
 from rl.ARC_world import World, Agent

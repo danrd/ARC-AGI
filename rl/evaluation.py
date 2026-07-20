@@ -2,7 +2,7 @@ import numpy as np
 from collections import defaultdict
 from stable_baselines3.common import base_class
 from stable_baselines3.common.vec_env import VecEnv
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, NamedTuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from rl.utils import vote_grid
 
 def evaluate_ARC_policy(

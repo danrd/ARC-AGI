@@ -1,10 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
-from typing import Callable, List,Tuple, Union
+from typing import List,Tuple, Union
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import sync_envs_normalization
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.logger import Logger, KVWriter, make_output_format
 from rl.evaluation import evaluate_ARC_policy 
 from utils.plotting import plot_grid

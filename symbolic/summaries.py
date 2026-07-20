@@ -1,5 +1,5 @@
 import typing
-from typing import Dict, List, Tuple, Set, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional
 import numpy as np
 from copy import copy
 from collections import defaultdict, Counter
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from itertools import product
 from scipy.spatial.distance import euclidean
 from scipy import stats as st
-from rl.ARC_task import ARCTask, ARCSubtask
+from rl.ARC_task import ARCSubtask
 from symbolic.objects_analysis import GridObject
 from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list, check_subset_condition
 from symbolic.patterns import generate_patterns, find_connected_components_with_color, find_connected_components_excluding_colors
@@ -1316,25 +1316,25 @@ class RelationAnalyzer():
             
     def set_relations(self):
         """Set all considered relations."""
-        assert self.obj1!=None and self.obj2!=None and self.shape!=None, f"Obj1, Obj2 and grid shape should be specified"       
+        assert self.obj1 is not None and self.obj2 is not None and self.shape is not None, "Obj1, Obj2 and grid shape should be specified"       
         triples1 = []
         triples2 = []
         relation_statistics = Counter()
 
         if self.obj1.colors == self.obj2.colors:
-            triples2.append((self.obj2.label, f"same_color", self.obj1.label))
-            triples1.append((self.obj1.label, f"same_color", self.obj2.label))
-            relation_statistics[f"same_color"] += 1 
+            triples2.append((self.obj2.label, "same_color", self.obj1.label))
+            triples1.append((self.obj1.label, "same_color", self.obj2.label))
+            relation_statistics["same_color"] += 1 
             
         if (self.obj1.obj_mask.shape == self.obj2.obj_mask.shape) and (self.obj1.obj_mask==self.obj2.obj_mask).all():
-            triples2.append((self.obj2.label, f"same_shape", self.obj1.label))
-            triples1.append((self.obj1.label, f"same_shape", self.obj2.label))
-            relation_statistics[f"same_shape"] += 1  
+            triples2.append((self.obj2.label, "same_shape", self.obj1.label))
+            triples1.append((self.obj1.label, "same_shape", self.obj2.label))
+            relation_statistics["same_shape"] += 1  
             
         if self.obj1.size == self.obj2.size:
-            triples2.append((self.obj2.label, f"same_size", self.obj1.label))
-            triples1.append((self.obj1.label, f"same_size", self.obj2.label))
-            relation_statistics[f"same_size"] += 1  
+            triples2.append((self.obj2.label, "same_size", self.obj1.label))
+            triples1.append((self.obj1.label, "same_size", self.obj2.label))
+            relation_statistics["same_size"] += 1  
             
         rotations = self.rotation_symmetry(self.obj1, self.obj2)
         if rotations != []:
@@ -1344,51 +1344,51 @@ class RelationAnalyzer():
         
         (i_offset, j_offset) = self.translation_symmetry(self.obj1.coords, self.obj2.coords, self.shape)
         if i_offset != 0 and j_offset != 0:
-            triples1.append((self.obj1.label, f"translation_symmetry", self.obj2.label))
-            triples2.append((self.obj2.label, f"translation_symmetry", self.obj1.label))          
+            triples1.append((self.obj1.label, "translation_symmetry", self.obj2.label))
+            triples2.append((self.obj2.label, "translation_symmetry", self.obj1.label))          
 
         in_contour = self.in_contour(self.obj1, self.obj2)
         if in_contour == "object_2":
-            triples2.append((self.obj2.label, f"in_contour", self.obj1.label))
-            triples1.append((self.obj1.label, f"has_in_contour", self.obj2.label))
-            relation_statistics[f"in_contour"] += 1 
+            triples2.append((self.obj2.label, "in_contour", self.obj1.label))
+            triples1.append((self.obj1.label, "has_in_contour", self.obj2.label))
+            relation_statistics["in_contour"] += 1 
         
         if in_contour == "object_1":
-            triples1.append((self.obj1.label, f"in_contour", self.obj2.label))
-            triples2.append((self.obj2.label, f"has_in_contour", self.obj1.label))
+            triples1.append((self.obj1.label, "in_contour", self.obj2.label))
+            triples2.append((self.obj2.label, "has_in_contour", self.obj1.label))
           
         # Check for in_line relation with connection cells
         is_in_line = self.in_line(self.obj1, self.obj2)
         if is_in_line:
-            triples1.append((self.obj1.label, f"in_line", self.obj2.label))
-            triples2.append((self.obj2.label, f"in_line", self.obj1.label))  
-            relation_statistics[f"in_line"] += 1
+            triples1.append((self.obj1.label, "in_line", self.obj2.label))
+            triples2.append((self.obj2.label, "in_line", self.obj1.label))  
+            relation_statistics["in_line"] += 1
     
         # Check for in_diagonal relation with connection cells
         is_diagonal = self.in_diagonal(self.obj1, self.obj2)
         if is_diagonal:
-            triples1.append((self.obj1.label, f"in_diagonal", self.obj2.label))
-            triples2.append((self.obj2.label, f"in_diagonal", self.obj1.label))  
-            relation_statistics[f"in_diagonal"] += 1
+            triples1.append((self.obj1.label, "in_diagonal", self.obj2.label))
+            triples2.append((self.obj2.label, "in_diagonal", self.obj1.label))  
+            relation_statistics["in_diagonal"] += 1
 
         x_alignment = self.x_alignment(self.obj1, self.obj2)
         y_alignment = self.y_alignment(self.obj1, self.obj2)
         if x_alignment and y_alignment:
-            triples1.append((self.obj1.label, f"x_y_aligned_with", self.obj2.label))
-            triples2.append((self.obj2.label, f"x_y_aligned_with", self.obj1.label))
-            relation_statistics[f"x_y_aligned_with"] += 1  
+            triples1.append((self.obj1.label, "x_y_aligned_with", self.obj2.label))
+            triples2.append((self.obj2.label, "x_y_aligned_with", self.obj1.label))
+            relation_statistics["x_y_aligned_with"] += 1  
 
         else:    
             if self.x_alignment(self.obj1, self.obj2):
-                triples1.append((self.obj1.label, f"x_aligned_with", self.obj2.label))
-                triples2.append((self.obj2.label, f"x_aligned_with", self.obj1.label))
-                relation_statistics[f"x_aligned_with"] += 1 
+                triples1.append((self.obj1.label, "x_aligned_with", self.obj2.label))
+                triples2.append((self.obj2.label, "x_aligned_with", self.obj1.label))
+                relation_statistics["x_aligned_with"] += 1 
 
             
             if self.y_alignment(self.obj1, self.obj2):
-                triples1.append((self.obj1.label, f"y_aligned_with", self.obj2.label))
-                triples2.append((self.obj2.label, f"y_aligned_with", self.obj1.label))
-                relation_statistics[f"y_aligned_with"] += 1 
+                triples1.append((self.obj1.label, "y_aligned_with", self.obj2.label))
+                triples2.append((self.obj2.label, "y_aligned_with", self.obj1.label))
+                relation_statistics["y_aligned_with"] += 1 
 
         return (triples1, triples2), relation_statistics
     

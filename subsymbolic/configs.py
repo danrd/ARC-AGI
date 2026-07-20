@@ -1,3 +1,4 @@
+from __future__ import annotations
 import yaml
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Any, Dict, List, Optional, Literal
@@ -82,6 +83,79 @@ class GenerationConfig(BaseModel):
             repetition_penalty=self.repetition_penalty,
             # defaults
         )
+    
+    def to_hf(self, seed: int) -> dict:
+        """Prepare generation config for HuggingFace Transformers."""
+        from transformers import set_seed
+        set_seed(seed)
+
+        if self.use_beam_search:
+            if self.temperature != 0.0:
+                raise ValueError(
+                    "HF beam search should be used with temperature=0.0 / do_sample=False."
+                )
+
+            params = {
+                "max_new_tokens": self.max_tokens,
+                "do_sample": False,
+                "num_beams": self.best_of,
+                "num_return_sequences": 1,
+                "early_stopping": True,
+                "repetition_penalty": self.repetition_penalty,
+                "stop_strings": self.stop
+            }
+            return params
+
+        do_sample = self.temperature > 0.0
+
+        params = {
+            "max_new_tokens": self.max_tokens,
+            "do_sample": do_sample,
+            "repetition_penalty": self.repetition_penalty,
+        }
+
+        if do_sample:
+            params.update(
+                {
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "top_k": self.top_k if self.top_k != -1 else 0,
+                }
+            )
+
+        if self.stop:
+            params["stop_strings"] = self.stop
+
+        return params
+
+    def to_open_router(self, seed: int) -> dict:
+        """Prepare generation config for OpenRouter Chat Completions API. """
+        if self.use_beam_search:
+            raise ValueError(
+                "OpenRouter API does not support beam search via `use_beam_search`."
+            )
+        if self.best_of != 1:
+            raise ValueError(
+                "OpenRouter API does not support `best_of` in the same way as vLLM. "
+                "Use best_of=1."
+            )
+
+        params = {
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "top_p": self.top_p,
+            "stop": self.stop if self.stop else None,
+            "repetition_penalty": self.repetition_penalty,
+            "frequency_penalty": self.frequency_penalty,
+        }
+
+        if self.top_k != -1:
+            params["top_k"] = self.top_k
+
+        if seed is not None:
+            params["seed"] = seed
+
+        return {k: v for k, v in params.items() if v is not None}
 
 class BlockSpec(BaseModel):
     """Prompt block specification."""
@@ -119,6 +193,12 @@ class ExperimentConfig(BaseModel):
     
     def to_vllm(self) -> dict:
         return self.generation.to_vllm(seed=self.base.seed)
+
+    def to_hf(self) -> dict:
+        return self.generation.to_hf(seed=self.base.seed)    
+
+    def to_open_router(self) -> dict:
+        return self.generation.to_open_router(seed=self.base.seed)  
 
     def dump(self):
         with open("exp.yaml", "w") as f:

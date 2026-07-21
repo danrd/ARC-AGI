@@ -3,7 +3,7 @@ import wandb
 import gc
 import torch
 from copy import copy 
-from rl.ARC_task import ARCTask, ARCSubtask
+from rl.ARC_task import ARCSubtask
 from rl.training import train_on_subtask, train_on_task
 from data.configs.rl_configs import load_PPO_config
 from data.datasets.ARC.ARC_dataset import ARCDataset

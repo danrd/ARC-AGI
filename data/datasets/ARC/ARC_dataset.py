@@ -8,7 +8,6 @@ from symbolic.utils import augment_grid
 from datasets import Dataset, DatasetDict
 from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
-from llm.prompts import compose_prompt, prepare_grid_for_prompt, DETAILED_PROMPT, BASE_PROMPT, CONCISE_PROMPT 
 
 class ARCDataset:
     def __init__(self, additional_datasets:bool=False, augmentation:bool=False, 
@@ -231,80 +230,6 @@ class ARCDataset:
             if shape[0] <= max_shape[0] and shape[1] <= max_shape[1]:
                 eval_dataset.append(task)
         return eval_dataset    
-    
-def prepare_dataset(tokenizer,
-                    additional_datasets=['mini_arc', 're_arc', 'synth_arc', 
-                                         'concept_arc', 'dbigham_arc', 'ns_arc',
-                                         'tama_arc', 'com_arc'], 
-                    augmentation=False, ttt_augmentation=False, 
-                    prompts_modifications={}, max_tokens:int=None,
-                    cur_learning:bool=False, seed:int=42,
-                    grid_repr_type:str='ascii', filter_tasks:bool=False,
-                    max_eval_grid_shape:tuple=(15,15)):
-    """Prepare dataset creating prompts for all tasks."""
-    ARC_dataset = ARCDataset(additional_datasets, augmentation, ttt_augmentation, filter_tasks)
-    train_set_easy = []
-    train_set_hard = []
-    test_set = []
-    train_tasks_easy = ARC_dataset.easy_tasks 
-    train_tasks_hard = ARC_dataset.hard_tasks[400:]
-    test_tasks = ARC_dataset.hard_tasks[0:400] if max_eval_grid_shape==(30,30) else ARC_dataset.prepare_eval_dataset(max_eval_grid_shape)
-    rejected_train = 0
-    rejected_test = 0
-    if ttt_augmentation: 
-        train_tasks_hard += ARC_dataset.ttt_tasks
-    for train_task in tqdm(train_tasks_easy):
-        train_text_easy = compose_prompt(train_task, BASE_PROMPT, 
-                                         prompts_modifications, tokenizer, 
-                                         max_tokens, grid_repr_type)
-        if train_text_easy:
-            ref_grid = prepare_grid_for_prompt(train_task.test_subtask.train_out, 
-                                               train_task.test_subtask.train_out_shape, 
-                                               grid_repr_type).split('grid shape: ')[1]    
-            train_task_dict_easy = {'text':train_text_easy, 
-                                    'labels':ref_grid}
-            train_set_easy.append(train_task_dict_easy)
-        else:
-            rejected_train += 1
-    for train_task in tqdm(train_tasks_hard):
-        train_text_hard = compose_prompt(train_task, BASE_PROMPT, 
-                                         prompts_modifications, tokenizer, 
-                                         max_tokens, grid_repr_type)
-        if train_text_hard:
-            ref_grid = prepare_grid_for_prompt(train_task.test_subtask.train_out, 
-                                               train_task.test_subtask.train_out_shape, 
-                                               grid_repr_type).split('grid shape: ')[1]
-            train_task_dict_hard = {'text':train_text_hard, 
-                                    'labels':ref_grid}
-            train_set_hard.append(train_task_dict_hard)   
-        else:
-            rejected_train += 1
-    for test_task in tqdm(test_tasks):
-        test_text = compose_prompt(test_task, BASE_PROMPT, 
-                                   prompts_modifications, tokenizer, 
-                                   max_tokens, grid_repr_type, 
-                                   train_example=False)
-        if test_text:
-            test_text += 'grid shape: '
-            ref_grid = prepare_grid_for_prompt(test_task.test_subtask.train_out, 
-                                               test_task.test_subtask.train_out_shape, 
-                                               grid_repr_type).split('grid shape: ')[1]
-            test_task_dict = {'text':test_text, 'labels':ref_grid}
-            test_set.append(test_task_dict)
-        else:
-            rejected_test += 1 
-    train_df_easy = pd.DataFrame(train_set_easy).sample(frac=1)
-    train_df_hard = pd.DataFrame(train_set_hard).sample(frac=1)
-    test_df = pd.DataFrame(test_set).sample(frac=1).reset_index(drop=True)
-    train_df = pd.concat([train_df_easy, train_df_hard], ignore_index = True).reset_index(drop=True)
-    train_dataset = Dataset.from_pandas(train_df)
-    if not cur_learning:
-        train_dataset.shuffle(seed=seed)
-    test_dataset = Dataset.from_pandas(test_df).shuffle(seed=seed)
-    dataset = DatasetDict({'train':train_dataset, 'test':test_dataset}) 
-    print(f"Train set: {len(dataset['train'])} examples\n Test set: {len(dataset['test'])} examples\n")
-    print(f"Number of train filtered out examples: {rejected_train}\nNumber of test filtered out examples: {rejected_test}")  
-    return dataset
 
 class CustomCollateFn:
     def __init__(self, tokenizer, eval:bool=True):
@@ -324,21 +249,3 @@ class CustomCollateFn:
             'input_ids': model_inputs['input_ids'],
             'attention_mask': model_inputs['attention_mask'],
             'labels': labels}
-    
-def check_subtasks_grids(subtasks, max_shape=(15,15)):
-    for subtask in subtasks:
-        cond_1 = subtask.train_inp_shape[0] > max_shape[0] or subtask.train_inp_shape[1] > max_shape[1]
-        cond_2 = subtask.train_out_shape[0] > max_shape[0] or subtask.train_out_shape[1] > max_shape[1]
-        if cond_1 or cond_2:
-            return False
-    return True
-
-def filtered_tasks(max_shape=(15, 15)):
-    dataset = ARCDataset(additional_datasets=False) 
-    tasks_idxs = []
-    for idx, task in enumerate(dataset.tasks):
-        subtasks = task.subtasks + [task.test_subtask]
-        valid_task = check_subtasks_grids(subtasks, max_shape)
-        if valid_task:
-            tasks_idxs.append(idx)
-    return tasks_idxs

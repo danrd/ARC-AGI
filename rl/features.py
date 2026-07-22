@@ -692,21 +692,5 @@ def create_object_extractor(subspace_shape):
     return OptimalObjectExtractor(subspace_shape, output_dim), output_dim
 
 
-def linear_schedule(initial_value: float, final_value: float = 0.0):
-    """Linear learning rate schedule.
-
-    Args:
-        initial_value: Initial learning rate.
-        final_value: Final learning rate.
-
-    Returns:
-        A function that takes the progress (from 1, at the start, decreasing
-        to 0, at the end) and returns the learning rate.
-    """
-    def func(progress: float) -> float:
-        return initial_value + (final_value - initial_value) * (1 - progress)
-
-    return func
-
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

@@ -1,3 +1,28 @@
+"""
+LangGraph-based multi-agent orchestration skeleton for ARC-AGI solving.
+
+Two-level graph:
+  - System graph (Coordinator): picks an Agent, gets its solution, validates
+    it, delegates to another Agent if rejected. Bounded by
+    SystemRunConfig.max_system_iterations.
+  - Agent graph (Decision module): gated + parallel module execution.
+        1. Symbolic runs synchronously first (cheap) — if it validates, done.
+        2. Otherwise RL training starts as a background subprocess
+           (RLJobHandle — non-blocking, cancellable) and, without waiting on
+           it, the LLM (Subsymbolic) is called (blocking, but fast — it's a
+           request to an already-running server).
+        3. Each time the LLM answers, the decision module looks at what's
+           available (LLM's answer, and RL's result if it happened to
+           already be ready) and picks ONE of: accept, retry the LLM with
+           different params (RL keeps running), or wait on RL once with a
+           bounded timeout. Whichever path ends the agent's turn cancels RL
+           if it's still running and wasn't the accepted source.
+    Bounded by AgentRunConfig.max_agent_iterations (counts symbolic + every
+    LLM attempt) and AgentRunConfig.rl_wait_timeout (the RL wait is one-shot
+    and bounded, never an open-ended loop).
+    Compiled as its own graph and invoked as a single node from the system
+    graph (standard LangGraph pattern for hierarchical agents).
+"""
 from __future__ import annotations
 
 import operator
@@ -5,6 +30,8 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, Callable, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+
+from rl_job import RLJobHandle, default_rl_start_fn
 
 
 # ============================================================================
@@ -30,8 +57,14 @@ class AgentInvConfig:
 
 @dataclass
 class AgentRunConfig:
-    """Execution settings for the agent-level (module) loop."""
+    """Execution settings for the agent-level (module) loop.
+
+    NOTE: renamed from the original `AgentConfig` to avoid a name collision —
+    the source file defined two different classes both called `AgentConfig`
+    (agent identity vs. agent execution settings).
+    """
     max_agent_iterations: int = 3
+    rl_wait_timeout: float = 30.0
     verbose: bool = False
 
 
@@ -47,14 +80,14 @@ class SystemRunConfig:
 class InteractionRecord:
     """One entry in the interaction history (agent- or system-level)."""
     iteration: int
-    level: str      # 'module' or 'agent'
+    level: str      # 'symbolic' | 'llm' | 'rl' | 'agent'
     name: str        # module_name or agent_name
     solution: str
-    status: str       # 'VALIDATED' | 'INVALID' | 'ERROR' | 'PENDING'
+    status: str       # 'VALIDATED' | 'INVALID' | 'ERROR' | 'PENDING' | 'CANCELLED'
 
 
 # ============================================================================
-# AGENT-LEVEL GRAPH (decision module <-> modules)
+# AGENT-LEVEL GRAPH: symbolic gate -> (LLM retry loop || background RL)
 # ============================================================================
 
 class AgentState(TypedDict, total=False):
@@ -63,19 +96,29 @@ class AgentState(TypedDict, total=False):
     auxiliary_info: Dict[str, Any]
     prompts_modifications: Dict[str, str]
 
-    current_module: ModuleInvConfig
+    current_module: ModuleInvConfig       # whichever module module_dispatch_fn should act on right now
+    symbolic_module: ModuleInvConfig
+    llm_module: ModuleInvConfig
     available_modules: List[Dict]
     run_config: AgentRunConfig
 
     iteration: int
-    solution: str
-    module_results: Dict[str, Any]
+    solution: str                          # last dispatched candidate's text (symbolic or llm)
+    module_results: Dict[str, Any]         # last dispatched candidate's raw results
+    last_dispatch: str                     # 'symbolic' | 'llm' — who state["solution"] came from
+
+    rl_handle: Optional[RLJobHandle]
+    rl_solution: Optional[Any]
+    rl_status: Optional[str]               # None (not resolved yet) | 'ok' | 'error'
+    rl_wait_used: bool
+
     status: str
     validated: bool
-    has_next: bool
-    fallback_used: bool
+    accepted_source: Optional[str]         # 'symbolic' | 'llm' | 'rl'
+    next_action: Optional[str]             # 'retry_llm' | 'wait_rl' | 'give_up' (set by decision nodes)
 
     module_dispatch_fn: Callable[["AgentState"], Dict[str, Any]]
+    rl_start_fn: Callable[[Any], RLJobHandle]
     decision_fn: Callable[["AgentState"], Dict[str, Any]]
 
     history: Annotated[List[InteractionRecord], operator.add]
@@ -83,92 +126,224 @@ class AgentState(TypedDict, total=False):
 
 def default_module_dispatch(state: AgentState) -> Dict[str, Any]:
     """Runs `current_module`. Placeholder — this is where the real
-    symbolic / subsymbolic (LLM) / interactive execution goes (the old
-    compose_prompt / process_prompt call sites)."""
+    symbolic / subsymbolic (LLM) execution goes (the old compose_prompt /
+    process_prompt call sites)."""
     return {"solution": "", "module_results": {"error": "module dispatch not wired up yet"}}
 
 
 def default_decision_fn(state: AgentState) -> Dict[str, Any]:
-    """Agent-level decision module: accept or delegate to another module.
-    Placeholder — replace with the real LLM-backed validator."""
-    return {"status": "VALIDATED", "next_module": None}
+    """Accepts whatever was most recently (successfully) dispatched, never
+    retries or waits on RL. Placeholder — replace with the real validator."""
+    if "error" in state.get("module_results", {}) or not state.get("solution"):
+        return {"status": "INVALID", "action": "give_up"}
+    return {"status": "VALIDATED", "source": state.get("last_dispatch", "symbolic")}
 
 
-def _execute_module_node(state: AgentState) -> Dict[str, Any]:
+def _cancel_rl_if_unused(state: AgentState, accepted_source: Optional[str]) -> None:
+    handle: Optional[RLJobHandle] = state.get("rl_handle")
+    if handle is not None and accepted_source != "rl" and handle.process.is_alive():
+        handle.cancel()
+
+
+def _max_iterations(state: AgentState) -> int:
+    run_config: AgentRunConfig = state.get("run_config") or AgentRunConfig()
+    return run_config.max_agent_iterations
+
+
+# -- nodes -------------------------------------------------------------------
+
+def _execute_symbolic_node(state: AgentState) -> Dict[str, Any]:
     iteration = state.get("iteration", 0) + 1
     dispatch_fn = state.get("module_dispatch_fn", default_module_dispatch)
-    result = dispatch_fn(state)
+    result = dispatch_fn({**state, "current_module": state["symbolic_module"]})
     solution = result.get("solution", "")
     module_results = result.get("module_results", {})
 
     record = InteractionRecord(
-        iteration=iteration, level="module",
-        name=state["current_module"].module_name,
-        solution=solution,
-        status="ERROR" if "error" in module_results else "PENDING",
+        iteration=iteration, level="symbolic", name=state["symbolic_module"].module_name,
+        solution=solution, status="ERROR" if "error" in module_results else "PENDING",
     )
     return {
-        "iteration": iteration,
-        "solution": solution,
-        "module_results": module_results,
-        "history": [record],
+        "iteration": iteration, "solution": solution, "module_results": module_results,
+        "last_dispatch": "symbolic", "history": [record],
     }
 
 
-def _find_subsymbolic_fallback(state: AgentState) -> Optional[ModuleInvConfig]:
-    """Look for a subsymbolic module among available_modules, other than the
-    one currently in use. Returns None if there isn't one."""
-    current_name = state["current_module"].module_name.lower()
-    for module in state.get("available_modules", []):
-        name = module.get("name", "")
-        if "subsymbolic" in name.lower() and name.lower() != current_name:
-            return ModuleInvConfig(module_index=module["index"], module_name=name, config_params={})
-    return None
-
-
-def _agent_decision_node(state: AgentState) -> Dict[str, Any]:
-    if "error" in state.get("module_results", {}):
-        # One-shot fallback: on module failure, try the subsymbolic module
-        # once before giving up (mirrors the original _select_fallback_module).
-        if not state.get("fallback_used"):
-            fallback = _find_subsymbolic_fallback(state)
-            if fallback is not None:
-                return {
-                    "status": "ERROR", "validated": False, "has_next": True,
-                    "current_module": fallback, "fallback_used": True,
-                }
-        return {"status": "ERROR", "validated": False, "has_next": False}
-
+def _decide_symbolic_node(state: AgentState) -> Dict[str, Any]:
     decision_fn = state.get("decision_fn", default_decision_fn)
     decision = decision_fn(state)
-    status = decision.get("status", "INVALID")
-    next_module = decision.get("next_module")
+    if decision.get("status") == "VALIDATED":
+        return {"validated": True, "accepted_source": "symbolic"}
+    return {"validated": False}
 
-    update: Dict[str, Any] = {"status": status, "validated": status == "VALIDATED", "has_next": False}
-    if status != "VALIDATED" and next_module is not None:
-        update["current_module"] = next_module
-        update["has_next"] = True
+
+def _dispatch_parallel_node(state: AgentState) -> Dict[str, Any]:
+    rl_start_fn = state.get("rl_start_fn", default_rl_start_fn)
+    rl_handle = rl_start_fn(state["task"])
+
+    iteration = state.get("iteration", 0) + 1
+    dispatch_fn = state.get("module_dispatch_fn", default_module_dispatch)
+    result = dispatch_fn({**state, "current_module": state["llm_module"]})
+    solution = result.get("solution", "")
+    module_results = result.get("module_results", {})
+
+    record = InteractionRecord(
+        iteration=iteration, level="llm", name=state["llm_module"].module_name,
+        solution=solution, status="ERROR" if "error" in module_results else "PENDING",
+    )
+    return {
+        "rl_handle": rl_handle, "rl_solution": None, "rl_status": None, "rl_wait_used": False,
+        "iteration": iteration, "solution": solution, "module_results": module_results,
+        "last_dispatch": "llm", "history": [record],
+    }
+
+
+def _call_llm_again_node(state: AgentState) -> Dict[str, Any]:
+    iteration = state.get("iteration", 0) + 1
+    dispatch_fn = state.get("module_dispatch_fn", default_module_dispatch)
+    result = dispatch_fn({**state, "current_module": state["llm_module"]})
+    solution = result.get("solution", "")
+    module_results = result.get("module_results", {})
+
+    record = InteractionRecord(
+        iteration=iteration, level="llm", name=state["llm_module"].module_name,
+        solution=solution, status="ERROR" if "error" in module_results else "PENDING",
+    )
+    return {
+        "iteration": iteration, "solution": solution, "module_results": module_results,
+        "last_dispatch": "llm", "history": [record],
+    }
+
+
+def _poll_rl(state: AgentState) -> Dict[str, Any]:
+    handle: Optional[RLJobHandle] = state.get("rl_handle")
+    if handle is None or state.get("rl_status") is not None:
+        return {}
+    result = handle.poll()
+    if result is None:
+        return {}
+    return {"rl_solution": result.get("solution"), "rl_status": result.get("status")}
+
+
+def _decide_after_llm_node(state: AgentState) -> Dict[str, Any]:
+    update = _poll_rl(state)
+    merged_state = {**state, **update}
+
+    decision_fn = merged_state.get("decision_fn", default_decision_fn)
+    decision = decision_fn(merged_state)
+    status = decision.get("status", "INVALID")
+
+    if status == "VALIDATED":
+        source = decision.get("source", "llm")
+        solution = merged_state["solution"] if source != "rl" else merged_state.get("rl_solution")
+        _cancel_rl_if_unused(merged_state, source)
+        update.update({"validated": True, "accepted_source": source, "solution": solution, "next_action": None})
+        return update
+
+    action = decision.get("action", "give_up")
+    if action == "retry_llm" and merged_state.get("iteration", 0) < _max_iterations(merged_state):
+        next_module = decision.get("next_module") or merged_state["llm_module"]
+        update.update({"validated": False, "next_action": "retry_llm", "llm_module": next_module})
+        return update
+
+    if action == "wait_rl" and not merged_state.get("rl_wait_used") and merged_state.get("rl_handle") is not None:
+        update.update({"validated": False, "next_action": "wait_rl"})
+        return update
+
+    _cancel_rl_if_unused(merged_state, accepted_source=None)
+    update.update({"validated": False, "next_action": "give_up"})
     return update
 
 
-def _agent_should_continue(state: AgentState) -> str:
+def _wait_for_rl_node(state: AgentState) -> Dict[str, Any]:
+    run_config: AgentRunConfig = state.get("run_config") or AgentRunConfig()
+    handle: Optional[RLJobHandle] = state.get("rl_handle")
+    result = handle.wait(timeout=run_config.rl_wait_timeout) if handle is not None else None
+
+    update: Dict[str, Any] = {"rl_wait_used": True}
+    if result is not None:
+        update["rl_solution"] = result.get("solution")
+        update["rl_status"] = result.get("status")
+        record = InteractionRecord(iteration=state.get("iteration", 0), level="rl",
+                                    name="rl", solution=str(result.get("solution")),
+                                    status="PENDING" if result.get("status") == "ok" else "ERROR")
+        update["history"] = [record]
+    else:
+        # timed out — give up on RL, we already spent the one wait we get
+        if handle is not None:
+            handle.cancel()
+        record = InteractionRecord(iteration=state.get("iteration", 0), level="rl",
+                                    name="rl", solution="", status="CANCELLED")
+        update["history"] = [record]
+    return update
+
+
+def _decide_final_node(state: AgentState) -> Dict[str, Any]:
+    decision_fn = state.get("decision_fn", default_decision_fn)
+    decision = decision_fn(state)
+    status = decision.get("status", "INVALID")
+
+    if status == "VALIDATED":
+        source = decision.get("source", "llm")
+        solution = state["solution"] if source != "rl" else state.get("rl_solution")
+        _cancel_rl_if_unused(state, source)
+        return {"validated": True, "accepted_source": source, "solution": solution, "next_action": None}
+
+    action = decision.get("action", "give_up")
+    if action == "retry_llm" and state.get("iteration", 0) < _max_iterations(state):
+        next_module = decision.get("next_module") or state["llm_module"]
+        return {"validated": False, "next_action": "retry_llm", "llm_module": next_module}
+
+    _cancel_rl_if_unused(state, accepted_source=None)
+    return {"validated": False, "next_action": "give_up"}
+
+
+# -- routing ------------------------------------------------------------------
+
+def _route_after_symbolic(state: AgentState) -> str:
+    return END if state.get("validated") else "dispatch_parallel"
+
+
+def _route_after_llm_decision(state: AgentState) -> str:
     if state.get("validated"):
         return END
-    run_config: AgentRunConfig = state.get("run_config") or AgentRunConfig()
-    if state.get("iteration", 0) >= run_config.max_agent_iterations:
+    action = state.get("next_action")
+    if action == "retry_llm":
+        return "call_llm_again"
+    if action == "wait_rl":
+        return "wait_for_rl"
+    return END
+
+
+def _route_after_final_decision(state: AgentState) -> str:
+    if state.get("validated"):
         return END
-    if not state.get("has_next"):
-        return END
-    return "execute_module"
+    if state.get("next_action") == "retry_llm":
+        return "call_llm_again"
+    return END
 
 
 def build_agent_graph():
     graph = StateGraph(AgentState)
-    graph.add_node("execute_module", _execute_module_node)
-    graph.add_node("decide", _agent_decision_node)
-    graph.add_edge(START, "execute_module")
-    graph.add_edge("execute_module", "decide")
-    graph.add_conditional_edges("decide", _agent_should_continue)
+    graph.add_node("execute_symbolic", _execute_symbolic_node)
+    graph.add_node("decide_symbolic", _decide_symbolic_node)
+    graph.add_node("dispatch_parallel", _dispatch_parallel_node)
+    graph.add_node("call_llm_again", _call_llm_again_node)
+    graph.add_node("decide_after_llm", _decide_after_llm_node)
+    graph.add_node("wait_for_rl", _wait_for_rl_node)
+    graph.add_node("decide_final", _decide_final_node)
+
+    graph.add_edge(START, "execute_symbolic")
+    graph.add_edge("execute_symbolic", "decide_symbolic")
+    graph.add_conditional_edges("decide_symbolic", _route_after_symbolic)
+
+    graph.add_edge("dispatch_parallel", "decide_after_llm")
+    graph.add_edge("call_llm_again", "decide_after_llm")
+    graph.add_conditional_edges("decide_after_llm", _route_after_llm_decision)
+
+    graph.add_edge("wait_for_rl", "decide_final")
+    graph.add_conditional_edges("decide_final", _route_after_final_decision)
+
     return graph.compile()
 
 
@@ -196,6 +371,7 @@ class SystemState(TypedDict, total=False):
     has_next: bool
 
     module_dispatch_fn: Callable[[AgentState], Dict[str, Any]]
+    rl_start_fn: Callable[[Any], RLJobHandle]
     agent_decision_fn: Callable[[AgentState], Dict[str, Any]]
     coordinator_fn: Callable[["SystemState"], Dict[str, Any]]
 
@@ -208,44 +384,53 @@ def default_coordinator_fn(state: SystemState) -> Dict[str, Any]:
     return {"status": "VALIDATED", "next_agent": None}
 
 
+def _find_module_by_type(available_modules: List[Dict], type_substr: str) -> Optional[ModuleInvConfig]:
+    for module in available_modules:
+        if type_substr in module.get("name", "").lower():
+            return ModuleInvConfig(module_index=module["index"], module_name=module["name"], config_params={})
+    return None
+
+
 def _run_agent_node(state: SystemState) -> Dict[str, Any]:
     iteration = state.get("iteration", 0) + 1
     agent = state["current_agent"]
     run_config: SystemRunConfig = state.get("run_config") or SystemRunConfig()
+
+    symbolic_module = _find_module_by_type(agent.available_modules, "symbolic") or agent.initial_module
+    # NOTE: "subsymbolic" contains "symbolic" as a substring, so it must be
+    # looked up with its own more specific match, not derived from the above.
+    llm_module = _find_module_by_type(agent.available_modules, "subsymbolic") or agent.initial_module
 
     agent_state: AgentState = {
         "task": state["task"],
         "task_repr": state["task_repr"],
         "auxiliary_info": state["auxiliary_info"],
         "prompts_modifications": state["prompts_modifications"],
-        "current_module": agent.initial_module,
+        "symbolic_module": symbolic_module,
+        "llm_module": llm_module,
         "available_modules": agent.available_modules,
         "run_config": run_config.agent_run_config,
         "iteration": 0,
         "module_dispatch_fn": state.get("module_dispatch_fn", default_module_dispatch),
+        "rl_start_fn": state.get("rl_start_fn", default_rl_start_fn),
         "decision_fn": state.get("agent_decision_fn", default_decision_fn),
     }
     agent_result = AGENT_GRAPH.invoke(agent_state)
     solution = agent_result.get("solution", "")
-    agent_status = agent_result.get("status")
 
     record = InteractionRecord(
         iteration=iteration, level="agent", name=agent.agent_name,
-        solution=solution,
-        status="ERROR" if agent_status == "ERROR" else "PENDING",
+        solution=str(solution),
+        status="VALIDATED" if agent_result.get("validated") else "INVALID",
     )
     return {
         "iteration": iteration,
         "solution": solution,
-        "status": "ERROR" if agent_status == "ERROR" else None,
         "history": [record],
     }
 
 
 def _coordinator_node(state: SystemState) -> Dict[str, Any]:
-    if state.get("status") == "ERROR":
-        return {"validated": False, "has_next": False}
-
     coordinator_fn = state.get("coordinator_fn", default_coordinator_fn)
     decision = coordinator_fn(state)
     status = decision.get("status", "INVALID")
@@ -259,7 +444,7 @@ def _coordinator_node(state: SystemState) -> Dict[str, Any]:
 
 
 def _system_should_continue(state: SystemState) -> str:
-    if state.get("validated") or state.get("status") == "ERROR":
+    if state.get("validated"):
         return END
     run_config: SystemRunConfig = state.get("run_config") or SystemRunConfig()
     if state.get("iteration", 0) >= run_config.max_system_iterations:
@@ -281,11 +466,10 @@ def build_system_graph():
 
 SYSTEM_GRAPH = build_system_graph()
 
-
 # ============================================================================
 # ENTRY POINT
 # ============================================================================
-
+ 
 def solve_task(
     task: Any,
     initial_agent: AgentInvConfig,
@@ -295,14 +479,15 @@ def solve_task(
     auxiliary_info: Optional[Dict[str, Any]] = None,
     prompts_modifications: Optional[Dict[str, str]] = None,
     module_dispatch_fn: Callable[[AgentState], Dict[str, Any]] = default_module_dispatch,
+    rl_start_fn: Callable[[Any], RLJobHandle] = default_rl_start_fn,
     agent_decision_fn: Callable[[AgentState], Dict[str, Any]] = default_decision_fn,
     coordinator_fn: Callable[[SystemState], Dict[str, Any]] = default_coordinator_fn,
 ) -> Dict[str, Any]:
     """Run the full coordinator -> agent -> module loop for a single task.
-
-    Returns the final SystemState dict (solution text, status, validated flag,
-    interaction history). Grid parsing and scoring against the target are
-    intentionally left to the caller — hook them onto result["solution"].
+ 
+    Returns the final SystemState dict (solution text, solution validated
+    flag, interaction history). Grid parsing and scoring against the target
+    are intentionally left to the caller — hook them onto result["solution"].
     """
     initial_state: SystemState = {
         "task": task,
@@ -314,6 +499,7 @@ def solve_task(
         "run_config": system_run_config or SystemRunConfig(),
         "iteration": 0,
         "module_dispatch_fn": module_dispatch_fn,
+        "rl_start_fn": rl_start_fn,
         "agent_decision_fn": agent_decision_fn,
         "coordinator_fn": coordinator_fn,
     }

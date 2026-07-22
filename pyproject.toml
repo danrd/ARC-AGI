@@ -4,7 +4,53 @@ version = "0.1.0"
 description = "Repository representing experimental ideas to deal with ARC-AGI benchmarks challenges"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "numpy",
+    "pandas==3.0.3",
+    "scipy==1.18.0",
+    "PyYAML==6.0.3",
+    "pydantic==2.13.4",
+    "Jinja2==3.1.6",
+    "tqdm==4.69.0",
+    "matplotlib==3.11.1",
+    "datasets",
+    "langgraph==1.2.9",
+]
+
+[project.optional-dependencies]
+rl = [
+    "gymnasium==1.3.0",
+    "stable-baselines3==2.9.0",
+    "torch",
+    "optuna==4.9.0",
+    "wandb==0.28.1",
+    "torch_geometric",
+]
+hf = [
+    "transformers==5.14.1",
+    "torch",
+    "pytorch-lightning==2.6.5",
+]
+vllm = [
+    "vllm>=0.6",
+]
+llama-cpp = [
+    "llama-cpp-python",
+]
+openrouter = [
+    "openai==2.46.0",
+]
+test = [
+    "pytest",
+    "huggingface_hub",
+    "arc-challenge[llama-cpp]",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel",
+    "pipreqs",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

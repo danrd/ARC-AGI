@@ -37,22 +37,21 @@ class ARCDataset:
         return train_inp, train_out, test_inp, test_out
     
     def load_dataset(self, additional_datasets, filter_tasks):
-        """Load dataset files and set splitting for training.
-        Parameters
-        ----------
-        additional_datasets : Union[List[str], bool]
-            If provided - list of additional datasets.
+        """
+        Load dataset files and set splitting for training.
+        Args:
+            additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
         """    
         self.datasets = {}
-        self.training_challenges = load_json('data/dataset/training_challenges.json')
-        self.training_solutions = load_json('data/dataset/training_solutions.json')
-        self.evaluation_challenges = load_json('data/dataset/evaluation_challenges.json')
-        self.evaluation_solutions = load_json('data/dataset/evaluation_solutions.json')
-        self.test_challenges = load_json('data/dataset/test_challenges.json')
+        self.training_challenges = load_json('data/datasets/ARC/training_challenges.json')
+        self.training_solutions = load_json('data/datasets/ARC/training_solutions.json')
+        self.evaluation_challenges = load_json('data/datasets/ARC/evaluation_challenges.json')
+        self.evaluation_solutions = load_json('data/datasets/ARC/evaluation_solutions.json')
+        self.test_challenges = load_json('data/datasets/ARC/test_challenges.json')
         self.tasks_keys = list(self.training_challenges.keys()) + list(self.evaluation_challenges.keys())
         self.training_challenges = self.training_challenges | self.evaluation_challenges
         self.training_solutions = self.training_solutions | self.evaluation_solutions
-        self.task2difficulty = load_json('data/dataset/task2difficulty.json')
+        self.task2difficulty = load_json('data/datasets/ARC/task2difficulty.json')
         self.task2dataset = {key : 'arc' for key in self.tasks_keys}
         self.datasets['arc'] = {'challenges':self.training_challenges, 'solutions':self.training_solutions, 'keys': self.tasks_keys}
         self.cur_idx = 800
@@ -75,11 +74,10 @@ class ARCDataset:
         self.aug_start_idx = self.cur_idx + 400 * 14
 
     def load_ARC2(self):
-        """Load dataset files and set splitting for training.
-        Parameters
-        ----------
-        additional_datasets : Union[List[str], bool]
-            If provided - list of additional datasets.
+        """
+        Load dataset files and set splitting for training.
+        Args:
+            additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
         """    
         training_challenges = load_json('data/dataset/ARC2/arc-agi_training_challenges.json')
         training_solutions = load_json('data/dataset/ARC2/arc-agi_training_solutions.json')

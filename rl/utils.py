@@ -141,12 +141,8 @@ def solution_description(actions, env):
                       'W': 'west',
                       'NW': 'north-west'
                      }
-    env = vec_env.envs[0]
-    sorted_actions = []
     actions_dict = env.action_name_to_idx
     idx2name = {v:k for k,v in actions_dict.items()}
-    all_actions =  [action[0] for action in actions]
-    action_names = list(set([idx2name[action] for action in all_actions]))
     description = ""
     for idx, action in enumerate(actions):
         if action[1] == action[2]:      

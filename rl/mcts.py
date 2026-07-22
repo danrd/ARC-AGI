@@ -246,15 +246,13 @@ class MCTSNode:
         total_reward = 0
         depth = 0
         done = False
-        current_obs = self.observation
         original_state =  env_simulator.env.get_state()
         while not done and depth < max_depth:
             action = env_simulator.sample_action()
-            next_obs, reward, done, truncated, _ = env_simulator.env.step(action)
+            _next_obs, reward, done, truncated, _ = env_simulator.env.step(action)
             total_reward += reward
             depth += 1
             done = done or truncated
-            current_obs = next_obs
         env_simulator.env.set_state(original_state)
         return total_reward
     

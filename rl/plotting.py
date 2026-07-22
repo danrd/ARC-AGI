@@ -76,7 +76,7 @@ def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None
         ax_grid = fig.add_subplot(gs[row_idx, col])
         grid = grids[i]
         grid = crop_pad(grid_formatting(grid))
-        im = ax_grid.imshow(grid, cmap=cmap, norm=norm)
+        ax_grid.imshow(grid, cmap=cmap, norm=norm)
         ax_grid.set_title(f'Step {indices[i]}, Reward: {rewards_to_plot[i] if rewards_to_plot[i] is not None else 0:.2f}')
         ax_grid.set_xticks([])
         ax_grid.set_yticks([])

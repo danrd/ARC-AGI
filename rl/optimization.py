@@ -57,7 +57,7 @@ def hp_tuning(task_idx:int, subtasks_idxs:list, rl_config_params, model_config_p
                     merged_config.update(model_config)
                     merged_config['task_idx'] = task_idx
                     merged_config['subtasks_idxs'] = subtasks_idxs
-                    run = wandb.init(project="ARC_RL", name='PPO', config=merged_config, group=str(merged_config['task_idx']))
+                    wandb.init(project="ARC_RL", name='PPO', config=merged_config, group=str(merged_config['task_idx']))
                     if subtasks_idxs[0] == -1:
                         task = dataset.tasks[task_idx]
                         accs_for_subtasks, lens_for_subtasks, agent, train_metrics = train_on_task(task=task, rl_config=rl_config, PPO_config=model_config, 

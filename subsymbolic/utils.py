@@ -149,13 +149,13 @@ def parse_llm_output(text, colors_str=False, max_grid_dim=30):
                 for j in range(n_cols):
                     try:
                         result[row_num-1, j] = int(row_data[j]) if not colors_str else inverse_colors_mapping_short[row_data[j]]
-                    except (ValueError, KeyError) as e:
+                    except (ValueError, KeyError):
                         return ""
             else:
                 # Multiple separate values (like "0 0 0 0 2 0 0 0 0")
                 for j in range(min(n_cols, len(row_data) - 1)):
                     try: 
                         result[row_num-1, j] = int(row_data[j]) if not colors_str else inverse_colors_mapping_short[row_data[j]]
-                    except (ValueError, KeyError) as e:
+                    except (ValueError, KeyError):
                         return ""
     return result

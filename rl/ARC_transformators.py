@@ -661,7 +661,6 @@ def gravity(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int):
     if len(path) < 3: # Objeact are already close enough
         return grid
     # Calculate the direction and distance to move obj_2
-    obj1_coords = obj1.coords
     obj2_coords = obj2.coords
     
     # Calculate the shift needed to make the closest points touch

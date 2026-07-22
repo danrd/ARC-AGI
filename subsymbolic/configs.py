@@ -161,7 +161,7 @@ class BlockSpec(BaseModel):
     tag: Optional[str] = None # specify tags for wrapping cusomization
 
     @classmethod
-    def parse(cls, spec: "str | tuple | Blockspec"):
+    def parse(cls, spec: "str | tuple | BlockSpec"):
         if isinstance(spec, str):
             return cls(name=spec)
         if isinstance(spec, tuple):

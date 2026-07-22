@@ -23,10 +23,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-from pydantic import BaseModel, ConfigDict
 
 from subsymbolic.arc_grid_formatting import format_grid
 from subsymbolic.configs import BlockSpec, PromptingConfig

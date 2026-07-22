@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import pytest
 
-from subsymbolic.arc_resolvers import build_examples_resolver
 from subsymbolic.configs import BaseConfig, ExperimentConfig, GenerationConfig
 from subsymbolic.llm_runtime import build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
@@ -58,11 +57,13 @@ def _make_config(blocks, join_format) -> PromptingConfig:
         join_format=join_format,
         token_limit=4096,
         min_examples=1,
+        filters=["grid"],
+        resolvers=["examples"],
     )
 
 
 def _make_builder(config: PromptingConfig, tokenizer) -> PromptBuilder:
-    return PromptBuilder(config, tokenizer, resolvers={"examples": build_examples_resolver})
+    return PromptBuilder(config, tokenizer)
 
 
 def _context_for(task) -> dict:

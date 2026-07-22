@@ -2,7 +2,6 @@ import gymnasium as gym
 import functools
 from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from stable_baselines3 import PPO
-from copy import deepcopy
 from rl.evaluation import evaluate_ARC_policy
 from rl.callbacks import MonitorCallback, ARCLogger
 from utils.utils import seed_everything
@@ -55,7 +54,6 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"]):
     """Auxiliary function for creating vectorized environment."""
-    subtask = deepcopy(subtasks)
     envs = [functools.partial(create_ARC_env, subtask=subtask, max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                               action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
                               seed=seed, font_color=font_color, padding=padding, input_pattern=input_pattern, repr_level=repr_level,

@@ -39,6 +39,8 @@ def evaluate_ARC_policy(
     observations = vec_env.reset()
     test_observation = test_env.reset()
     states = None
+    test_states = None
+    test_done = False
     while (episode_counts < episode_count_targets).any() and not test_done:
         actions, states = model.predict(
             observations,  # type: ignore[arg-type]
@@ -74,4 +76,4 @@ def evaluate_ARC_policy(
                     current_rewards[i] = 0
                     current_lengths[i] = 0 
         observations = new_observations
-    return episode_accs, episode_lengths, grid_pred
+    return episode_accs, episode_lengths, predicted_grids

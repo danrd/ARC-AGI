@@ -114,8 +114,6 @@ class GraphDataConstructor:
         Returns:
             PyTorch Geometric Data object
         """
-        num_objects = object_embeddings.shape[0]
-        
         # Node features are object embeddings
         x = object_embeddings
         

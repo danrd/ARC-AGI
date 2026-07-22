@@ -56,10 +56,6 @@ def _color_text(grid: np.ndarray, colors_mapping: dict) -> str:
 
 
 def _text_ascii(grid: np.ndarray, empty_symbol: str = ".", include_coordinates: bool = True) -> str:
-    # NOTE: the original array_to_ascii_grid also supported a `color_width`
-    # option to pad multi-character color codes, but the only codes it ever
-    # produced were single letters — that branch was dead complexity and is
-    # dropped here.
     header = f"grid shape: {grid.shape[0]},{grid.shape[1]}"
     rows = ["".join(_ASCII_LETTER_MAPPING.get(int(v), empty_symbol) for v in row) for row in grid]
     if include_coordinates:

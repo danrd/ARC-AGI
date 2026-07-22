@@ -6,6 +6,18 @@ a `<name>/<version>.j2` template file under `config.blocks_dir` (default:
 `data/prompts/`), rendered with the shared `context` dict. Blocks are
 token-budgeted and joined according to `config.join_format`, or via
 `tokenizer.apply_chat_template` when `config.chat_template` is set.
+
+This module is domain-agnostic. ARC-specific grid formatting, role texts,
+and instruction bodies live in `arc_grid_formatting.py` / `arc_blocks_data.py`
+/ the `.j2` files themselves — this file only knows how to assemble blocks.
+
+Editing while experimenting (e.g. from a notebook):
+    Templates are re-read from disk automatically (Environment(auto_reload=True)
+    compares each template file's mtime on every `get_template()` call), so
+    editing a .j2 file under `blocks_dir` and re-running `build()` picks up
+    the change without recreating the PromptBuilder. Use `render_block(...)`
+    to iterate on a single block without needing a full task/tokenizer setup,
+    and `list_blocks()` to see what's on disk.
 """
 from __future__ import annotations
 
@@ -18,7 +30,13 @@ from pydantic import BaseModel, ConfigDict
 
 from arc_grid_formatting import format_grid
 
-BlockResolver = Callable[[Any, int, dict], Optional[str]]
+# A resolver renders a block by computing its own text (instead of a .j2
+# template): (task, budget_tokens_remaining, context, builder) -> rendered
+# text, or None if it can't produce anything that fits the budget. `builder`
+# is the PromptBuilder instance itself — gives an external function access
+# to builder.env / builder.config / builder.count_tokens without needing to
+# be a method on the class.
+BlockResolver = Callable[[Any, int, dict, "PromptBuilder"], Optional[str]]
 
 
 class BlockSpec(BaseModel):
@@ -57,12 +75,26 @@ class PromptBuilder:
 
     def __init__(self, config: PromptingConfig, tokenizer,
                  resolvers: Optional[Dict[str, "BlockResolver"]] = None):
+        """
+        `resolvers` maps a block name to a function `(task, budget, context)
+        -> Optional[str]`, called INSTEAD of rendering a `.j2` template for
+        that name. This is the same mechanism the built-in "examples" block
+        already needs (it isn't a single static template — it's a per-example
+        loop with its own token budget), just generalized so a project can
+        register its own resolvers (e.g. a whole-task "transformation_summary"
+        block) without PromptBuilder knowing anything about what they compute.
+
+        Pass e.g. `resolvers={"examples": build_examples_resolver}` (see
+        arc_resolvers.py) to get the per-example loop, or
+        `resolvers={"transformation_summary": my_fn}` to add a new resolver-
+        backed block under that name. There is no built-in default resolver
+        — PromptBuilder itself makes no assumptions about what "examples"
+        even means; that's entirely project-supplied.
+        """
         self.config = config
         self.tokenizer = tokenizer
         self.env = self._make_env()
-        self.resolvers: Dict[str, "BlockResolver"] = {"examples": self._build_examples}
-        if resolvers:
-            self.resolvers.update(resolvers)
+        self.resolvers: Dict[str, BlockResolver] = dict(resolvers or {})
 
     def _make_env(self) -> Environment:
         env = Environment(
@@ -121,7 +153,7 @@ class PromptBuilder:
                 rendered = overrides[spec.name]
             elif spec.name in self.resolvers:
                 rendered = self.resolvers[spec.name](
-                    task, self.config.token_limit - used_tokens, context,
+                    task, self.config.token_limit - used_tokens, context, self,
                 )
                 if rendered is None:
                     return None  # this resolver couldn't fit even its minimum
@@ -129,7 +161,7 @@ class PromptBuilder:
                 template = self.env.get_template(f"{spec.name}/{spec.version}.j2")
                 rendered = template.render(**context)
 
-            cost = self._count_tokens(rendered)
+            cost = self.count_tokens(rendered)
             if used_tokens + cost > self.config.token_limit:
                 return None
             parts[spec.name] = (spec, rendered)
@@ -137,34 +169,7 @@ class PromptBuilder:
 
         return self._join(parts)
 
-    def _build_examples(self, task, budget: int, context: dict) -> Optional[str]:
-        """Built-in default resolver for the "examples" block name — loops
-        task.subtasks, rendering each with examples/v1.j2, stopping once the
-        budget is exhausted (but requiring at least config.min_examples to
-        fit, or the whole block fails)."""
-        template = self.env.get_template("examples/v1.j2")
-        accumulated = ""
-        accumulated_tokens = 0
-
-        for idx, subtask in enumerate(task.subtasks):
-            example_context = {
-                **context,
-                "idx": idx + 1,
-                "input_grid": subtask.train_inp,
-                "output_grid": subtask.train_out,
-            }
-            rendered = template.render(**example_context)
-            cost = self._count_tokens(rendered)
-            if accumulated_tokens + cost > budget:
-                if idx < self.config.min_examples:
-                    return None  # even the minimum didn't fit
-                break
-            accumulated += rendered
-            accumulated_tokens += cost
-
-        return accumulated
-
-    def _count_tokens(self, text: str) -> int:
+    def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.tokenize(text))
 
     def _join(self, parts: "OrderedDict[str, Tuple[BlockSpec, str]]") -> str:

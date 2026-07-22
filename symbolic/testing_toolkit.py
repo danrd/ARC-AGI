@@ -93,13 +93,16 @@ from typing import List, Dict, Tuple, Any, Callable
 from dataclasses import FrozenInstanceError
 import json
 import matplotlib.pyplot as plt
-from grid_summary import GridSummary
-from grid_object import GridObject
-from relation_analyzer import RelationAnalyzer
-from pattern_generation import generate_patterns, lines_coords, rectangles_coords, find_connected_components_excluding_colors
-from match_score import get_rotations
+from symbolic.summaries import GridSummary, RelationAnalyzer, get_rotations
+from symbolic.objects_analysis import GridObject
+from symbolic.patterns import (
+    generate_patterns,
+    lines_coords,
+    rectangles_coords,
+    find_connected_components_excluding_colors,
+    find_connected_components_with_color,
+)
 from utils.plotting import plot_grid
-from symbolic.patterns import find_connected_components_with_color
 
 # ============================================================================
 # TEST GRID LIBRARY

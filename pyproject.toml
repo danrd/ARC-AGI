@@ -5,3 +5,9 @@ description = "Repository representing experimental ideas to deal with ARC-AGI b
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gpu: requires a GPU; opt-in only, set ARC_TEST_GPU=1 to run (skipped by default)",
+]

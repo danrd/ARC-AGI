@@ -384,9 +384,12 @@ def default_coordinator_fn(state: SystemState) -> Dict[str, Any]:
     return {"status": "VALIDATED", "next_agent": None}
 
 
-def _find_module_by_type(available_modules: List[Dict], type_substr: str) -> Optional[ModuleInvConfig]:
+def _find_module_by_type(available_modules: List[Dict], type_name: str) -> Optional[ModuleInvConfig]:
+    """Exact (case-insensitive) match on module name — not substring, since
+    "symbolic" is itself a substring of "subsymbolic" and a substring match
+    would silently pick the wrong module depending on list order."""
     for module in available_modules:
-        if type_substr in module.get("name", "").lower():
+        if module.get("name", "").lower() == type_name:
             return ModuleInvConfig(module_index=module["index"], module_name=module["name"], config_params={})
     return None
 
@@ -397,8 +400,6 @@ def _run_agent_node(state: SystemState) -> Dict[str, Any]:
     run_config: SystemRunConfig = state.get("run_config") or SystemRunConfig()
 
     symbolic_module = _find_module_by_type(agent.available_modules, "symbolic") or agent.initial_module
-    # NOTE: "subsymbolic" contains "symbolic" as a substring, so it must be
-    # looked up with its own more specific match, not derived from the above.
     llm_module = _find_module_by_type(agent.available_modules, "subsymbolic") or agent.initial_module
 
     agent_state: AgentState = {

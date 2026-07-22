@@ -999,7 +999,7 @@ class TaskAnalysis:
                 elif pattern.pattern_type == 'size_scaling':
                     factor = pattern.parameters.get('common_values', {}).get('scale_factor', 1.0)
                     if isinstance(factor, (int, float)):
-                        hypothesis_parts.append("  • Objects are scaled by factor {factor:.2f}")
+                        hypothesis_parts.append(f"  • Objects are scaled by factor {factor:.2f}")
                     else:
                         hypothesis_parts.append("  • Objects are scaled (factor varies)")
         

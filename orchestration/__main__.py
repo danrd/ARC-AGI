@@ -57,12 +57,7 @@ class AgentInvConfig:
 
 @dataclass
 class AgentRunConfig:
-    """Execution settings for the agent-level (module) loop.
-
-    NOTE: renamed from the original `AgentConfig` to avoid a name collision —
-    the source file defined two different classes both called `AgentConfig`
-    (agent identity vs. agent execution settings).
-    """
+    """Execution settings for the agent-level (module) loop."""
     max_agent_iterations: int = 3
     rl_wait_timeout: float = 30.0
     verbose: bool = False
@@ -470,7 +465,7 @@ SYSTEM_GRAPH = build_system_graph()
 # ============================================================================
 # ENTRY POINT
 # ============================================================================
- 
+
 def solve_task(
     task: Any,
     initial_agent: AgentInvConfig,
@@ -485,7 +480,7 @@ def solve_task(
     coordinator_fn: Callable[[SystemState], Dict[str, Any]] = default_coordinator_fn,
 ) -> Dict[str, Any]:
     """Run the full coordinator -> agent -> module loop for a single task.
- 
+
     Returns the final SystemState dict (solution text, solution validated
     flag, interaction history). Grid parsing and scoring against the target
     are intentionally left to the caller — hook them onto result["solution"].

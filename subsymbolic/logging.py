@@ -7,7 +7,7 @@ def prepare_prompt_artifact(prompts_artifact, task_idx:int, prompt_data, report_
         # 1. JSON format (structured data)
         with prompts_artifact.new_file(f"task_{task_idx}_prompt.json") as f:
             json.dump(prompt_data, f, indent=2)
-    
+
     if 'txt' in report_types:
         # 2. Text format (human-readable, like print output)
         with prompts_artifact.new_file(f"task_{task_idx}_prompt_readable.txt") as f:
@@ -28,7 +28,7 @@ def load_checkpoint_from_wandb(run):
         # Try to get the latest checkpoint artifact
         checkpoint_artifact = run.use_artifact(f"checkpoint-{run.id}:latest", type="checkpoint")
         checkpoint_dir = checkpoint_artifact.download()
-        
+
         with open(f"{checkpoint_dir}/checkpoint.json", 'r') as f:
             checkpoint = json.load(f)
             return checkpoint
@@ -44,14 +44,14 @@ def save_checkpoint_to_wandb(run, tasks_summary, prompts_data, processed_tasks, 
         'prompts_data': prompts_data,
         'solved_tasks': solved_tasks,
     }
-    
+
     # Create checkpoint artifact
     checkpoint_artifact = wandb.Artifact(f"checkpoint-{run.id}", type="checkpoint")
-    
+
     # Save checkpoint data as JSON
     with checkpoint_artifact.new_file("checkpoint.json") as f:
         json.dump(checkpoint_data, f, indent=2)
-    
+
     # Log the artifact
     run.log_artifact(checkpoint_artifact)
     print(f"Checkpoint saved with {len(processed_tasks)} processed tasks")

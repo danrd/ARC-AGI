@@ -9,60 +9,60 @@ from data.configs.env_configs import colors_mapping
 def get_rotations(coords: List[tuple]) -> List[List[tuple]]:
     """
     Generate all possible 90-degree rotations of a set of coordinates.
-    
+
     Args:
         coords: List of (x, y) coordinate tuples
-    
+
     Returns:
         List of lists of coordinate tuples, each representing a rotation
     """
     if not coords:
         return []
-    
+
     # Sort coordinates for consistency
     coords = sorted(coords, key=lambda x: (x[1], x[0]))
-    
+
     # Get reference point (top-left)
     ref_x, ref_y = coords[0]
-    
+
     # Normalize coordinates relative to reference point
     normalized = [(x - ref_x, y - ref_y) for x, y in coords]
-    
+
     # Find the size of the bounding box
     max_x = max(x for x, y in normalized)
     max_y = max(y for x, y in normalized)
-    
+
     rotations = []
     # Original orientation
     rotations.append(coords.copy())
-    
+
     # 90 degrees clockwise - (x, y) -> (y, -x + max_x)
     rot_90 = [(ref_x + y, ref_y + (max_x - x)) for x, y in normalized]
     rotations.append(sorted(rot_90, key=lambda x: (x[1], x[0])))
-    
+
     # 180 degrees - (x, y) -> (-x + max_x, -y + max_y)
     rot_180 = [(ref_x + (max_x - x), ref_y + (max_y - y)) for x, y in normalized]
     rotations.append(sorted(rot_180, key=lambda x: (x[1], x[0])))
-    
+
     # 270 degrees clockwise - (x, y) -> (-y + max_y, x)
     rot_270 = [(ref_x + (max_y - y), ref_y + x) for x, y in normalized]
     rotations.append(sorted(rot_270, key=lambda x: (x[1], x[0])))
-    
+
     return rotations
 
 def calculate_adjacency_positions(obj: 'GridObject') -> List[tuple]:
     """
     Calculate all possible positions adjacent to an object where another object could be placed.
-    
+
     Args:
         obj: GridObject to find adjacency positions for
-    
+
     Returns:
         List of (x, y) coordinate tuples representing adjacent positions
     """
     adjacent_positions = set()
     directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-    
+
     for x, y in obj.coords:
         for dx, dy in directions:
             adjacent_pos = (x + dx, y + dy)
@@ -80,9 +80,9 @@ def check_intersection(coords1: List[tuple], coords2: List[tuple]) -> bool:
     """Check if two sets of coordinates intersect."""
     return bool(set(coords1).intersection(set(coords2)))
 
-def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject', 
+def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
                                  position: tuple, rotation_idx: int,
-                                 all_grid_objects: List['GridObject'], 
+                                 all_grid_objects: List['GridObject'],
                                  grid_shape:tuple) -> Dict:
     """
     Evaluate a potential match configuration between two objects.
@@ -100,14 +100,14 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
     """
     # Get the rotated coordinates for obj2
     rotation_coords = get_rotations(obj2.coords)[rotation_idx]
-    
-    # Calculate the offset based on position and reference point 
+
+    # Calculate the offset based on position and reference point
     offset_x = position[0] - rotation_coords[0][0]
     offset_y = position[1] - rotation_coords[0][1]
-    
+
     # Apply offset to all coordinates in the rotation
     shifted_coords = [(x + offset_x, y + offset_y) for x, y in rotation_coords]
-    
+
     # Check if the shifted obj2 intersects with obj1 coords
     if not check_intersection(obj1.coords, shifted_coords):
         # Check if shifted obj2 intersects with any other grid objects
@@ -116,7 +116,7 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
             if id(other_obj) != id(obj1) and id(other_obj) != id(obj2):
                 if check_intersection(other_obj.coords, shifted_coords):
                     return {"valid": False, "hole_reduction": 0, "compactness": 0}
-        
+
         # Create a temporary merged object to evaluate
         merged_coords = list(set(obj1.coords + shifted_coords))
         merged_obj = GridObject(
@@ -126,17 +126,17 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
             label=f"merged_{obj1.label}_{obj2.label}",
             grid_shape=grid_shape  # Assume we keep the positioning of obj1
         )
-        
+
         # Calculate hole reduction
         original_holes = count_holes(obj1) + count_holes(obj2)
         merged_holes = count_holes(merged_obj)
         hole_reduction = original_holes - merged_holes
-        
+
         # Calculate compactness (area of bounding box / number of cells)
         merged_area = merged_obj.hor_size * merged_obj.vert_size
         merged_cells = len(merged_coords)
         compactness = merged_cells / merged_area if merged_area > 0 else 0
-        
+
         return {
             "valid": True,
             "hole_reduction": hole_reduction,
@@ -144,28 +144,28 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
             "shifted_coords": shifted_coords,
             "merged_obj": merged_obj
         }
-    
+
     return {"valid": False, "hole_reduction": 0, "compactness": 0}
 
-def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject', 
+def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
                            all_grid_objects: List['GridObject'], grid_shape:tuple) -> Dict:
     """
     Find the best match configuration between two grid objects.
-    
+
     Args:
         obj1: First GridObject
         obj2: Second GridObject
         all_grid_objects: List of all objects on the grid
-    
+
     Returns:
         Dictionary with the best match configuration, or None if no valid match exists
     """
     best_match = None
     best_score = -float('inf')
-    
+
     # Get all possible adjacent positions for obj1
     adjacent_positions = calculate_adjacency_positions(obj1)
-    
+
     # Try all rotations of obj2
     for rotation_idx in range(4):
         # Try placing obj2 at each adjacent position of obj1
@@ -173,30 +173,30 @@ def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
             match_config = evaluate_match_configuration(
                 obj1, obj2, position, rotation_idx, all_grid_objects, grid_shape
             )
-            
+
             if match_config["valid"]:
                 # Calculate a score based on hole reduction and compactness
                 # Weight hole reduction higher than compactness
                 score = match_config["hole_reduction"] * 10 + match_config["compactness"]
-                
+
                 if score > best_score:
                     best_score = score
                     best_match = match_config
                     best_match["rotation_idx"] = rotation_idx
                     best_match["position"] = position
-    
+
     return best_match
 
 def merge_objects(grid:np.ndarray, obj1:GridObject, obj2:GridObject, match_config:Dict, font_color:int):
     """
     Merge two objects based on a match configuration.
-    
+
     Args:
         obj1: First GridObject
         obj2: Second GridObject
         match_config: Match configuration from find_best_object_match
         grid: The current grid array
-    
+
     Returns:
         Tuple of (merged_object, updated_grid)
     """
@@ -206,10 +206,10 @@ def merge_objects(grid:np.ndarray, obj1:GridObject, obj2:GridObject, match_confi
     height, width = grid.shape
     # Update the grid
     updated_grid = grid.copy()
-    
+
     for x, y in obj2.coords:
         updated_grid[x, y] = font_color
-    
+
     # Add the merged object to the grid
     for x, y in shifted_coords:
         if x < height and y < width:
@@ -217,37 +217,37 @@ def merge_objects(grid:np.ndarray, obj1:GridObject, obj2:GridObject, match_confi
 
     updated_obj = copy(obj2)
     updated_obj.reinit_obj(shifted_coords, updated_grid)
-    
+
     return updated_obj, updated_grid
 
-def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridObject', 
+def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridObject',
                            all_grid_objects: List['GridObject']):
     """
     Find the most probable merge configuration between two specific objects.
-    
+
     Args:
         obj1: First GridObject
         obj2: Second GridObject
         all_grid_objects: List of all GridObjects on the grid (to check for intersections)
         grid: The current grid array
-    
+
     Returns:
         Dictionary with the best match configuration, or None if no valid match exists
     """
     # Skip if either object is a hole
     if obj1.shape in ['inner_hole', 'outer_hole'] or obj2.shape in ['inner_hole', 'outer_hole']:
         return None
-    
+
     # Use a filtered list of grid objects that excludes the two objects we're working with
     # to avoid the equality comparison issue
     filtered_grid_objects = [obj for obj in all_grid_objects if id(obj) != id(obj1) and id(obj) != id(obj2)]
-    
+
     # Try matching in both directions
     match = find_best_object_match(obj1, obj2, [obj1, obj2] + filtered_grid_objects, grid.shape)
-    
+
     best_match = None
     best_score = -float('inf')
-    
+
     if match and match["valid"]:
         match["obj1"] = obj1
         match["obj2"] = obj2
@@ -255,36 +255,36 @@ def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridOb
         if match["score"] > best_score:
             best_score = match["score"]
             best_match = match
-    
+
     return best_match
 
-def perform_merge(grid:np.ndarray, obj1:GridObject, obj2:GridObject, 
+def perform_merge(grid:np.ndarray, obj1:GridObject, obj2:GridObject,
                   all_grid_objects:List[GridObject], font_color:int):
     """
     Find and perform the best merge between two specific objects.
-    
+
     Args:
         obj1: First GridObject
         obj2: Second GridObject
         all_grid_objects: List of all GridObjects on the grid
         grid: The current grid array
-    
+
     Returns:
         Tuple of (updated_grid_objects, updated_grid, match_info)
     """
     # Find the best match configuration
     best_match = find_most_probable_merge(grid, obj1, obj2, all_grid_objects)
-    
+
     if not best_match:
         return all_grid_objects, grid, {"status": "no_valid_match", "message": "No valid match found"}
-    
+
     # Extract the objects from the match
     first_obj = best_match["obj1"]
     second_obj = best_match["obj2"]
-    
+
     # Perform the merge
     updated_obj, updated_grid = merge_objects(grid, first_obj, second_obj, best_match, font_color)
-    
+
     return updated_grid
 
 def inverse_obj_color(grid:np.array, obj:GridObject, font_color:int):
@@ -309,7 +309,7 @@ def inverse_obj_color(grid:np.array, obj:GridObject, font_color:int):
 def find_shortest_distance(obj1, obj2, allow_diagonals=False):
     """
     Find the shortest distance between two objects and return the pair(s) of cells with minimal distance.
-    
+
     Args:
     -----------
     obj1 : list of tuples
@@ -319,7 +319,7 @@ def find_shortest_distance(obj1, obj2, allow_diagonals=False):
     allow_diagonals : bool, default=False
         If True, use Chebyshev distance (allows diagonals)
         If False, use Manhattan distance
-    
+
     Returns:
     --------
     list of tuples:
@@ -329,10 +329,10 @@ def find_shortest_distance(obj1, obj2, allow_diagonals=False):
     """
     if not obj1 or not obj2:
         raise ValueError("Both objects must contain at least one cell")
-    
+
     min_distance = float('inf')
     closest_pairs = []
-    
+
     for cell1 in obj1:
         for cell2 in obj2:
             # Calculate the distance based on the specified method
@@ -342,7 +342,7 @@ def find_shortest_distance(obj1, obj2, allow_diagonals=False):
             else:
                 # Manhattan distance (no diagonals) - sum of absolute differences
                 distance = abs(cell1[0] - cell2[0]) + abs(cell1[1] - cell2[1])
-                
+
             # If we found a new minimum distance, clear the previous closest pairs
             if distance < min_distance:
                 min_distance = distance
@@ -350,7 +350,7 @@ def find_shortest_distance(obj1, obj2, allow_diagonals=False):
             # If we found another pair with the same minimum distance, add it
             elif distance == min_distance:
                 closest_pairs.append((cell1, cell2))
-    
+
     return closest_pairs
 
 def add_color_to_object(obj, color):
@@ -360,7 +360,7 @@ def add_color_to_object(obj, color):
             obj.color_numbers.append(color)
         else:
             obj.color_numbers = obj.color_numbers + tuple([color])
-        
+
         # Update colors, filtering out None values
         if isinstance(obj.color_numbers, list):
             obj.colors = tuple([colors_mapping[c] for c in obj.color_numbers if c is not None])
@@ -371,33 +371,33 @@ def find_shortest_path(grid, start, end):
     """Find shortest path between two points using BFS."""
     if start == end:
         return [start]
-        
+
     rows, cols = grid.shape
     visited = set()
     queue = deque([(start, [start])])
-    
+
     max_iterations = rows * cols * 5 # Maximum possible states
     iterations = 0
-    
+
     while queue and iterations < max_iterations:
         iterations += 1
         (x, y), path = queue.popleft()
-        
+
         if (x, y) == end:
             return path
-            
+
         if (x, y) in visited:
             continue
-            
+
         visited.add((x, y))
-        
+
         # Check all four adjacent cells
         for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0), (-1, -1), (1, 1), (-1, 1), (1, -1)]:
             nx, ny = x + dx, y + dy
-            
+
             if 0 <= nx < rows and 0 <= ny < cols and (nx, ny) not in visited and grid[nx, ny] != 1.0:
                 queue.append(((nx, ny), path + [(nx, ny)]))
-                
+
     return []  # No path found
 
 def find_path_through_background(grid, start, end, font_color):
@@ -424,7 +424,7 @@ def find_path_through_background(grid, start, end, font_color):
     def get_straight_path_if_valid(p1, p2, is_p2_overall_end):
         # Path starts with p1
         path = [p1]
-        
+
         # If p1 and p2 are the same point
         if p1 == p2:
             # If this single point is the overall end, it's a valid path of one point.
@@ -443,7 +443,7 @@ def find_path_through_background(grid, start, end, font_color):
             x = p1[0]
             y_step = 1 if p2[1] > p1[1] else -1
             next_y = p1[1] + y_step
-            
+
             while True:
                 current_point = (x, next_y)
                 # Check bounds for the current point
@@ -451,19 +451,19 @@ def find_path_through_background(grid, start, end, font_color):
                     return None # Path goes out of bounds
 
                 is_current_point_p2 = (current_point == p2)
-                
+
                 # Validity check for current_point:
                 # If current_point is p2 AND p2 is the overall_end, it's allowed (color doesn't matter for overall end).
                 # Otherwise (it's an intermediate point, or p2 is a corner), it must be font_color.
                 if not (is_current_point_p2 and is_p2_overall_end):
                     if grid[x, next_y] != font_color:
                         return None # Invalid intermediate point
-                
+
                 path.append(current_point)
 
                 if is_current_point_p2: # Reached the end of the segment
-                    break 
-                
+                    break
+
                 next_y += y_step
             return path
 
@@ -482,15 +482,15 @@ def find_path_through_background(grid, start, end, font_color):
                 if not (is_current_point_p2 and is_p2_overall_end):
                     if grid[next_x, y] != font_color:
                         return None # Invalid intermediate point
-                
+
                 path.append(current_point)
 
                 if is_current_point_p2: # Reached the end of the segment
                     break
-                
+
                 next_x += x_step
             return path
-        
+
         return None # Not a straight line (neither vertical nor horizontal)
 
     # 1. Check for 1-line path (direct straight path from start to end)
@@ -505,13 +505,13 @@ def find_path_through_background(grid, start, end, font_color):
 
     # Path Type 1: Horizontal then Vertical (start -> corner1 -> end)
     # Corner1 is (end_x, start_y)
-    corner1 = (end[0], start[1]) 
+    corner1 = (end[0], start[1])
     if corner1 != start and corner1 != end and \
        0 <= corner1[0] < rows and 0 <= corner1[1] < cols and \
        grid[corner1[0], corner1[1]] == font_color:
-        
+
         # Segment from start to corner1. Corner1 is an intermediate point, so is_p2_overall_end is False.
-        segment1_to_c1 = get_straight_path_if_valid(start, corner1, False) 
+        segment1_to_c1 = get_straight_path_if_valid(start, corner1, False)
         if segment1_to_c1:
             # Segment from corner1 to end. End is the overall end, so is_p2_overall_end is True.
             segment2_from_c1_to_end = get_straight_path_if_valid(corner1, end, True)
@@ -541,19 +541,19 @@ def find_path_through_background(grid, start, end, font_color):
     # Priority queue stores: (f_score, tie_breaker_step_count, position)
     # f_score = g_score + h_score (heuristic)
     # Using step_count as a tiebreaker for items with equal f_score
-    open_set = [(manhattan_distance(start, end), 0, start)] 
+    open_set = [(manhattan_distance(start, end), 0, start)]
     g_score = {start: 0}  # Cost from start to current position (number of steps)
-    
+
     # step_count is used to ensure stable sorting in heapq if f_scores are equal
     # It does not represent path length for g_score.
-    a_star_step_counter = 0 
+    a_star_step_counter = 0
 
     while open_set:
         current_f_score, _, current_pos = heapq.heappop(open_set)
 
         if current_pos in visited:
             continue
-        
+
         if current_pos == end:
             # Reconstruct path
             path = [current_pos]
@@ -570,10 +570,10 @@ def find_path_through_background(grid, start, end, font_color):
             neighbor_pos = (nx, ny)
 
             # Check if neighbor is valid
-            if (0 <= nx < rows and 0 <= ny < cols and 
-                neighbor_pos not in visited and 
+            if (0 <= nx < rows and 0 <= ny < cols and
+                neighbor_pos not in visited and
                 (grid[nx, ny] == font_color or neighbor_pos == end)): # Valid move condition
-                
+
                 tentative_g_score = g_score[current_pos] + 1
 
                 if neighbor_pos not in g_score or tentative_g_score < g_score[neighbor_pos]:
@@ -582,20 +582,20 @@ def find_path_through_background(grid, start, end, font_color):
                     g_score[neighbor_pos] = tentative_g_score
                     h_score = manhattan_distance(neighbor_pos, end)
                     f_score = tentative_g_score + h_score
-                    
+
                     a_star_step_counter += 1
                     heapq.heappush(open_set, (f_score, a_star_step_counter, neighbor_pos))
-    
+
     return []  # No path found
-    
+
 def filter_paths(paths, obj1, obj2, preference='right'):
     """
     Filter paths based on specified criteria.
-    
+
     Args:
         paths: List of paths, where each path is a list of coordinate tuples [(x1, y1), (x2, y2), ...].
         preference: String 'left' or 'right' for tie-breaking when paths have the same number of turns.
-    
+
     Returns:
         Either a single path or list of paths based on the filtering criteria.
     """
@@ -607,40 +607,40 @@ def filter_paths(paths, obj1, obj2, preference='right'):
     # Check if all starting and ending points are different
     start_points = [path[0] for path in paths]
     end_points = [path[-1] for path in paths]
-    
+
     # Case 2: If all starting and ending coordinates are different
     if len(set(start_points)) == len(paths) and len(set(end_points)) == len(paths):
         return paths
-    
+
     # Case 3: Return the path with the least number of turns
     def count_turns(path):
         """Count the number of turns in a path."""
         if len(path) < 3:
             return 0
-            
+
         turns = 0
         for i in range(1, len(path) - 1):
             # Calculate direction changes
             dx1, dy1 = path[i][0] - path[i-1][0], path[i][1] - path[i-1][1]
             dx2, dy2 = path[i+1][0] - path[i][0], path[i+1][1] - path[i][1]
-            
+
             # If direction changes, it's a turn
             if dx1 != dx2 or dy1 != dy2:
                 turns += 1
-                
+
         return turns
-    
+
     # Calculate turns for each path
     turn_counts = [count_turns(path) for path in paths]
     min_turns = min(turn_counts)
-    
+
     # Find paths with minimum turns
     min_turn_paths = [path for path, turns in zip(paths, turn_counts) if turns == min_turns]
-    
+
     # If only one path has minimum turns, return it
     if len(min_turn_paths) == 1:
         return [min_turn_paths[0]]
-    
+
     # Case 3a: Tie-breaking based on preference
     # For this tie-breaker, we'll interpret 'left' as the first path in the list
     # and 'right' as the last path in the list with the minimum number of turns
@@ -662,21 +662,21 @@ def gravity(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int):
         return grid
     # Calculate the direction and distance to move obj_2
     obj2_coords = obj2.coords
-    
+
     # Calculate the shift needed to make the closest points touch
     shift_x = end[0] - start[0]
     shift_y = end[1] - start[1]
-    
+
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Store original colors of obj_2
     colors = {(x, y): grid[x, y] for x, y in obj2_coords}
-    
+
     # Clear original positions of object_2
     for x, y in obj2_coords:
         new_grid[x, y] = font_color
-    
+
     # Place object_2 in new position
     for x, y in obj2_coords:
         new_x, new_y = x + shift_x, y + shift_y
@@ -696,10 +696,10 @@ def edge_gravity(grid:np.array, obj1:GridObject, font_color:int, bottom_only=Fal
     new_coords = []
     obj_coords = obj1.coords
     min_x, max_x, min_y, max_y = obj1.min_i, obj1.max_i, obj1.min_j, obj1.max_j
-    
+
     # Get grid dimensions
     grid_height, grid_width = grid.shape
-    
+
     # If bottom_only, we just need to calculate movement to bottom
     if bottom_only:
         shift_x = grid_height - 1 - max_x  # Distance to bottom edge
@@ -710,10 +710,10 @@ def edge_gravity(grid:np.array, obj1:GridObject, font_color:int, bottom_only=Fal
         dist_to_bottom = grid_height - 1 - max_x
         dist_to_left = min_y
         dist_to_right = grid_width - 1 - max_y
-        
+
         # Find the nearest edge
         min_dist = min(dist_to_top, dist_to_bottom, dist_to_left, dist_to_right)
-        
+
         # Determine shift direction based on closest edge
         if min_dist == dist_to_top:
             shift_x = -dist_to_top
@@ -727,17 +727,17 @@ def edge_gravity(grid:np.array, obj1:GridObject, font_color:int, bottom_only=Fal
         else:  # Bottom is closest
             shift_x = 0
             shift_y = dist_to_right
-    
+
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Store original colors
     colors = {(x, y): grid[x, y] for x, y in obj_coords}
-    
+
     # Clear original positions
     for x, y in obj_coords:
         new_grid[x, y] = font_color
-    
+
     # Place object in new position
     for x, y in obj_coords:
         new_x, new_y = x + shift_x, y + shift_y
@@ -753,21 +753,21 @@ def x_alignment(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int)
     obj1_center_x = obj1.center[0]
     obj2_center_x = obj2.center[0]
     obj2_coords = obj2.coords
-    
+
     # Calculate shift needed to align centers on x-axis
     shift_x = obj1_center_x - obj2_center_x
     shift_y = 0  # No vertical shift
-    
+
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Store original colors of obj_2
     colors = {(x, y): grid[x, y] for x, y in obj2_coords}
-    
+
     # Clear original positions of object_2
     for x, y in obj2_coords:
         new_grid[x, y] = font_color
-    
+
     # Place object_2 in new position
     for x, y in obj2_coords:
         new_x, new_y = x + shift_x, y + shift_y
@@ -783,21 +783,21 @@ def y_alignment(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int)
     obj1_center_y = obj1.center[1]
     obj2_center_y = obj2.center[1]
     obj2_coords = obj2.coords
-    
+
     # Calculate shift needed to align centers on y-axis
     shift_x = 0  # No horizontal shift
     shift_y = obj1_center_y - obj2_center_y
-    
+
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Store original colors of obj_2
     colors = {(x, y): grid[x, y] for x, y in obj2_coords}
-    
+
     # Clear original positions of object_2
     for x, y in obj2_coords:
         new_grid[x, y] = font_color
-    
+
     # Place object_2 in new position
     for x, y in obj2_coords:
         new_x, new_y = x + shift_x, y + shift_y
@@ -809,7 +809,7 @@ def y_alignment(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int)
 
 def contour_connection(grid:np.array, obj1:GridObject, obj2:GridObject, contour_color:float, rectangle_color:float):
     """
-    If Object 1 and Object 2 are 'cell' type, connect them with contour and 
+    If Object 1 and Object 2 are 'cell' type, connect them with contour and
     color it with specified color to create rectangle.
     """
     # Get bounding box coordinates
@@ -817,10 +817,10 @@ def contour_connection(grid:np.array, obj1:GridObject, obj2:GridObject, contour_
     max_x = max(obj1.max_i, obj2.max_i)
     min_y = min(obj1.min_j, obj2.min_j)
     max_y = max(obj1.max_j, obj2.max_j)
-      
+
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Draw the rectangle edges (contour)
     for x in range(min_x, max_x + 1):
         # Top and bottom edges
@@ -829,7 +829,7 @@ def contour_connection(grid:np.array, obj1:GridObject, obj2:GridObject, contour_
                 new_grid[x, min_y] = contour_color
             if 0 <= max_y < grid.shape[1]:
                 new_grid[x, max_y] = contour_color
-    
+
     for y in range(min_y, max_y + 1):
         # Left and right edges
         if 0 <= y < grid.shape[1]:
@@ -860,7 +860,7 @@ def define_emission_center(obj:GridObject, direction):
     if type(center_x) is not int:
       center_x += adjustment[0]
     if type(center_y) is not int:
-      center_y += adjustment[1]    
+      center_y += adjustment[1]
     return int(center_x), int(center_y)
 
 def emission(grid:np.array, obj1:GridObject, color:float, direction:str):
@@ -870,7 +870,7 @@ def emission(grid:np.array, obj1:GridObject, color:float, direction:str):
     new_coords = []
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Define the 8 directions (N, NE, E, SE, S, SW, W, NW)
     directions = {
         'N':(-1, 0),  # North
@@ -884,7 +884,7 @@ def emission(grid:np.array, obj1:GridObject, color:float, direction:str):
     }
     dx, dy = directions[direction]
     x, y = define_emission_center(obj1, direction)
-    
+
     # Continue in direction until we hit the grid boundary
     while 0 <= x + dx < grid.shape[0] and 0 <= y + dy < grid.shape[1]:
         x += dx
@@ -897,8 +897,8 @@ def emission(grid:np.array, obj1:GridObject, color:float, direction:str):
     return new_grid
 
 
-def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float, 
-                            font_color:int, direction:str, collision_type:str, 
+def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float,
+                            font_color:int, direction:str, collision_type:str,
                             collision_color=None, cell2obj:Dict[Tuple[int, int], int]=None,
                             objects: List[GridObject]=None):
     """Emit lines with specified color for 8 directions from Object 1 with collision handling."""
@@ -908,7 +908,7 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
     collision_objects = []
     # Create a new grid to modify
     new_grid = grid.copy()
-    
+
     # Define the 8 directions (N, NE, E, SE, S, SW, W, NW)
     directions = {
         'N':(-1, 0),  # North
@@ -931,12 +931,12 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
         'W':['S', 'N'],  # West
         'NW':['SW', 'NE']  # Northwest
     }
-    
+
     dx, dy = directions[direction]
     dx_l, dy_l = directions[turn_directions[direction][0]]
     dx_r, dy_r = directions[turn_directions[direction][1]]
     x, y = define_emission_center(obj1, direction)
-    
+
     # Continue in direction until we hit the grid boundary
     while 0 <= x + dx < grid.shape[0] and 0 <= y + dy < grid.shape[1]:
         x += dx
@@ -946,11 +946,11 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
             new_coords.append((x, y))
             new_grid[x, y] = emission_color
             add_color_to_object(obj1, emission_color)
-            
+
         elif (x, y) not in obj1.coords and grid[x, y] != font_color:
             if collision_type == 'stop':
                 break
-                
+
             elif collision_type == 'recolor':
                 # Ensure collision_color is set, default to emission_color if None
                 if collision_color is None:
@@ -958,12 +958,12 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
                 new_coords.append((x, y))
                 new_grid[x, y] = collision_color
                 add_color_to_object(obj1, collision_color)
-                
-            elif collision_type == 'object_recolor': 
+
+            elif collision_type == 'object_recolor':
                 # Ensure collision_color is set for object recoloring
                 if collision_color is None:
                     collision_color = emission_color
-                    
+
                 collision_obj = None
                 try:
                     collision_obj = objects[cell2obj[(x,y)]]
@@ -971,9 +971,9 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
                     if objects:  # Safety check
                         for obj in objects:
                             if (x,y) in obj.coords:
-                                collision_obj = obj  
+                                collision_obj = obj
                                 break
-                                
+
                 if collision_obj and collision_obj.label not in collision_objects:
                     collision_objects.append(collision_obj.label)
                     if isinstance(collision_obj.color_numbers, list):
@@ -983,58 +983,58 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
                     collision_obj.colors = tuple([colors_mapping[collision_color]])
                     for cx, cy in collision_obj.coords:
                         new_grid[cx, cy] = collision_color
-                        
+
             elif collision_type == 'contour':
                 collision_cells.append((x, y))
-                
+
             elif collision_type in ['turn_left', 'turn_right']:
                 # Fixed turning logic with proper boundary checks and loop prevention
                 virt_x_l = x - dx
                 virt_y_l = y - dy
                 left_path = []
                 visited_left = set()
-                
+
                 # Explore left path with safety checks
-                while (0 <= virt_x_l + dx_l < grid.shape[0] and 
-                       0 <= virt_y_l + dy_l < grid.shape[1] and 
+                while (0 <= virt_x_l + dx_l < grid.shape[0] and
+                       0 <= virt_y_l + dy_l < grid.shape[1] and
                        (virt_x_l, virt_y_l) not in visited_left and
                        len(left_path) < grid.shape[0] * grid.shape[1]):  # Prevent infinite loops
-                    
+
                     visited_left.add((virt_x_l, virt_y_l))
                     virt_x_l += dx_l
                     virt_y_l += dy_l
-                    
+
                     # Check if the next cell in the new direction is valid
-                    if (0 <= virt_x_l < grid.shape[0] and 
+                    if (0 <= virt_x_l < grid.shape[0] and
                         0 <= virt_y_l < grid.shape[1] and
                         grid[virt_x_l, virt_y_l] == font_color):
                         left_path.append((virt_x_l, virt_y_l))
                     else:
                         break
-                
+
                 virt_x_r = x - dx
                 virt_y_r = y - dy
                 right_path = []
                 visited_right = set()
-                
+
                 # Explore right path with safety checks
-                while (0 <= virt_x_r + dx_r < grid.shape[0] and 
-                       0 <= virt_y_r + dy_r < grid.shape[1] and 
+                while (0 <= virt_x_r + dx_r < grid.shape[0] and
+                       0 <= virt_y_r + dy_r < grid.shape[1] and
                        (virt_x_r, virt_y_r) not in visited_right and
                        len(right_path) < grid.shape[0] * grid.shape[1]):  # Prevent infinite loops
-                    
+
                     visited_right.add((virt_x_r, virt_y_r))
                     virt_x_r += dx_r
                     virt_y_r += dy_r
-                    
+
                     # Check if the next cell in the new direction is valid
-                    if (0 <= virt_x_r < grid.shape[0] and 
+                    if (0 <= virt_x_r < grid.shape[0] and
                         0 <= virt_y_r < grid.shape[1] and
                         grid[virt_x_r, virt_y_r] == font_color):
                         right_path.append((virt_x_r, virt_y_r))
                     else:
                         break
-                
+
                 # Choose path and apply changes
                 if len(left_path) < len(right_path) or collision_type == 'turn_left':
                     for i, j in left_path:
@@ -1052,17 +1052,17 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
                     if right_path:
                         x, y = right_path[-1]
                         dx, dy = dx_r, dy_r  # Update direction for continued emission
-                
+
                 # If no valid path found, stop
                 if not left_path and not right_path:
                     break
-                    
+
     # Handle contour collision
-    if collision_cells:  
+    if collision_cells:
         # Ensure collision_color is set for contour
         if collision_color is None:
             collision_color = emission_color
-            
+
         contour_cells = []
         for cell in collision_cells:
             collision_contour = get_outer_contour(grid, [cell], font_color, recolor=True)
@@ -1070,10 +1070,10 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
         for x, y in collision_contour:
             new_grid[x, y] = collision_color
         collision_cells.extend(contour_cells)
-        
+
     # Update obj1 coordinates
     obj1.coords = tuple(new_coords)
-    
+
     return new_grid
 
 def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, recolor=False) -> List[Tuple[int, int]]:
@@ -1082,21 +1082,21 @@ def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, rec
     """
     i_coords = [cell[0] for cell in obj_coords]
     j_coords = [cell[1] for cell in obj_coords]
-    
+
     height, width = grid.shape
-    
+
     min_i = min(i_coords)
     min_j = min(j_coords)
     max_i = max(i_coords)
     max_j = max(j_coords)
-    
-    contour_min_i = max(min(i_coords) - 1, 0) 
+
+    contour_min_i = max(min(i_coords) - 1, 0)
     contour_min_j = max(min(j_coords) - 1, 0)
     contour_max_i = min(max(i_coords) + 1, height-1)
     contour_max_j = min(max(j_coords) + 1, width-1)
-    
+
     contour = []
-    
+
     if min_j > contour_min_j:
         left_line = [(i, contour_min_j) for i in range(contour_min_i, contour_max_i+1)]
         values_check = [grid[i, j]==font_color for i, j in left_line]
@@ -1104,7 +1104,7 @@ def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, rec
             contour.extend(left_line)
         else:
             return []
-            
+
     if max_j < contour_max_j:
         right_line = [(i, contour_max_j) for i in range(contour_min_i, contour_max_i+1)]
         values_check = [grid[i, j]==font_color for i, j in right_line]
@@ -1112,7 +1112,7 @@ def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, rec
             contour.extend(right_line)
         else:
             return []
-           
+
     if min_i > contour_min_i:
         upper_line = [(contour_min_i, j) for j in range(contour_min_j, contour_max_j+1)]
         values_check = [grid[i, j]==font_color for i, j in upper_line]
@@ -1120,7 +1120,7 @@ def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, rec
             contour.extend(upper_line)
         else:
             return []
-            
+
     if max_i < contour_max_i:
         bottom_line = [(contour_max_i, j) for j in range(contour_min_j, contour_max_j+1)]
         values_check = [grid[i, j]==font_color for i, j in bottom_line]
@@ -1128,9 +1128,9 @@ def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, rec
             contour.extend(bottom_line)
         else:
             return []
-    
-    contour = list(set(contour))  
-    
+
+    contour = list(set(contour))
+
     return contour
 
 def color_inner_holes(grid:np.array, obj1:GridObject, color:float):
@@ -1173,20 +1173,20 @@ def objects_swap(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int
     shift2_to_1_y = round(obj1_center_y - obj2_center_y)
     colors1 = {(x, y): grid[x, y] for x, y in obj1_coords}
     colors2 = {(x, y): grid[x, y] for x, y in obj2_coords}
-    
+
     # Clear original positions
     for x, y in obj1_coords:
         grid[x, y] = font_color
     for x, y in obj2_coords:
         grid[x, y] = font_color
-    
+
     # Place object_1 at object_2's position
     for x, y in obj1_coords:
         new_x, new_y = x + shift1_to_2_x, y + shift1_to_2_y
         if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
             new_coords1.append((new_x, new_y))
             grid[new_x, new_y] = colors1[(x, y)]
-            
+
     # Place object_2 at object_1's position
     for x, y in obj2_coords:
         new_x, new_y = x + shift2_to_1_x, y + shift2_to_1_y
@@ -1205,7 +1205,7 @@ def upscale(grid:np.array, obj1:GridObject, font_color:int):
     # Clear original positions
     for x, y in coords:
         grid[x, y] = font_color
-                        
+
     # Place upscaled object - each cell becomes a 2x2 square
     for orig_x, orig_y in coords:
         color = colors[(orig_x, orig_y)]
@@ -1226,11 +1226,11 @@ def define_coords(obj:GridObject, new_obj_structure:np.array):
     coords_mapping = {}
     max_size = max(obj.vert_size, obj.hor_size)
     old_max_i, old_max_j = obj.obj_structure.shape
-    old_extended_structure = np.zeros((max_size, max_size)) 
+    old_extended_structure = np.zeros((max_size, max_size))
     old_extended_structure[max_size-old_max_i:, max_size-old_max_j:] = obj.obj_structure
     new_max_i, new_max_j = new_obj_structure.shape
-    new_extended_structure = np.zeros((max_size, max_size)) 
-    new_extended_structure[max_size-new_max_i:, max_size-new_max_j:] = new_obj_structure 
+    new_extended_structure = np.zeros((max_size, max_size))
+    new_extended_structure[max_size-new_max_i:, max_size-new_max_j:] = new_obj_structure
     if obj.center in obj.coords:
         center_idx = obj.coords.index(obj.center) + 1
         center_in_old_structure = np.argwhere(old_extended_structure==center_idx)[0]
@@ -1274,7 +1274,7 @@ def object_rotation(obj:GridObject, transf_type:str):
         new_obj_structure = np.flipud(obj.obj_structure)
     elif transf_type == "fliplr":
         new_mask = np.fliplr(obj.obj_mask)
-        new_obj_structure = np.fliplr(obj.obj_structure)    
+        new_obj_structure = np.fliplr(obj.obj_structure)
     new_coords_offsets = define_coords_offsets(new_mask)
     new_coords, coords_mapping = define_coords(obj, new_obj_structure)
     return (new_mask, new_obj_structure, new_coords_offsets, new_coords, coords_mapping)
@@ -1286,7 +1286,7 @@ def symmetry_transformation(grid:np.array, obj1:GridObject, font_color:int, tran
     new_coords_on_grid = []
     old_center = obj1.center
     # Store original colors
-    colors = {(new_coords[0], new_coords[1]): grid[(old_coords[0], old_coords[1])] 
+    colors = {(new_coords[0], new_coords[1]): grid[(old_coords[0], old_coords[1])]
               for new_coords, old_coords in coords_mapping.items()}
     # Clear the original object
     for x, y in coords:
@@ -1312,15 +1312,15 @@ def shift_object(grid: np.array, obj1: GridObject, direction: str, font_color:in
         'W': (0, -1),    # West
         'NW': (-1, -1)   # Northwest
     }
-    
+
     # Get direction vector
     dx, dy = directions[direction]
-    
+
     # Create new coordinates list for the shifted object
     new_coords = []
     obj_coords = copy(obj1.coords)
     colors = {(x, y): grid[x, y] for x, y in obj_coords}
-    
+
     # Check if shift is possible (won't go out of bounds)
     valid_shift = True
     for x, y in obj_coords:
@@ -1328,21 +1328,21 @@ def shift_object(grid: np.array, obj1: GridObject, direction: str, font_color:in
         if not (0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]):
             valid_shift = False
             break
-    
+
     if valid_shift:
         # Clear original positions
         for x, y in obj_coords:
             grid[x, y] = font_color
-        
+
         # Place at new positions
         for x, y in obj_coords:
             new_x, new_y = x + dx, y + dy
             new_coords.append((new_x, new_y))
             grid[new_x, new_y] = colors[(x, y)]
-        
+
         # Update object coordinates
         obj1.reinit_obj(new_coords, grid)
-    
+
     return grid
 
 def color_inner_part(grid: np.array, obj1: GridObject, color: float):
@@ -1362,23 +1362,23 @@ def center_merge(grid: np.array, obj1: GridObject, obj2: GridObject, font_color:
     """Object 2 to be placed in center of Object_1."""
     # Get the center coordinates of object_1
     center_x, center_y = obj1.center
-    
+
     # Get the center coordinates of object_2
     obj2_center_x, obj2_center_y = obj2.center
-    
+
     # Calculate the shift needed to place object_2's center at object_1's center
     shift_x = round(center_x - obj2_center_x)
     shift_y = round(center_y - obj2_center_y)
-    
+
     # Create new coordinates list for the shifted object_2
     new_coords = []
     obj2_coords = copy(obj2.coords)
     colors = {(x, y): grid[x, y] for x, y in obj2_coords}
-    
+
     # Clear original positions of object_2
     for x, y in obj2_coords:
         grid[x, y] = font_color
-    
+
     # Place object_2 with its center at object_1's center
     for x, y in obj2_coords:
         new_x, new_y = x + shift_x, y + shift_y
@@ -1387,51 +1387,51 @@ def center_merge(grid: np.array, obj1: GridObject, obj2: GridObject, font_color:
             grid[new_x, new_y] = colors[(x, y)]
     # Update object_2 coordinates
     obj2.reinit_obj(new_coords, grid)
-    
+
     return grid
 
 def color_merge(grid: np.array, obj1: GridObject, obj2: GridObject, font_color:int):
     """If Object 1 has cells with the same color as in Object 2 - Object 2 to be placed in such cell closest to center."""
     # Find colors in object_2
     obj2_colors = set(obj2.color_numbers)
-    
+
     # Find cells in object_1 with matching colors
     matching_cells = []
     for x, y in obj1.coords:
         if grid[x, y] in obj2_colors:
             matching_cells.append((x, y))
-    
+
     if not matching_cells:
         # No matching colors found, return unchanged grid
         return grid
-    
+
     # Find the matching cell closest to object_1's center
     obj1_center_x, obj1_center_y = obj1.center
     obj2_center_x, obj2_center_y = obj2.center
-    
-    closest_cell = min(matching_cells, 
+
+    closest_cell = min(matching_cells,
                       key=lambda cell: abs(cell[0] - obj1_center_x) + abs(cell[1] - obj1_center_y))
-    
+
     # Calculate shift to place object_2 with its center at the chosen cell
     shift_x = round(closest_cell[0] - obj2_center_x)
     shift_y = round(closest_cell[1] - obj2_center_y)
-    
+
     # Create new coordinates list for the shifted object_2
     new_coords = []
     obj2_coords = copy(obj2.coords)
     colors = {(x, y): grid[x, y] for x, y in obj2_coords}
-    
+
     # Clear original positions of object_2
     for x, y in obj2_coords:
         grid[x, y] = font_color
-    
+
     # Place object_2 centered at the matching cell
     for x, y in obj2_coords:
         new_x, new_y = x + shift_x, y + shift_y
         new_coords.append((new_x, new_y))
         grid[new_x, new_y] = colors[(x, y)]
-    
+
     # Update object_2 coordinates
     obj2.reinit_obj(new_coords, grid)
-    
+
     return grid

@@ -44,7 +44,7 @@ class ProgressCallback(TrainerCallback):
 
     def on_epoch_end(self, args, state, control, model=None, eval_dataloader=None, **kwargs):
         file_name = args.output_dir + f'predictions_ep_{state.epoch}.json'
-        mean_sim, accuracy = evaluate_model(model, self.tokenizer, self.eval_dataloader, 
+        mean_sim, accuracy = evaluate_model(model, self.tokenizer, self.eval_dataloader,
                                             max_new_tokens=self.max_new_tokens, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
@@ -70,19 +70,19 @@ class PLProgressCallback(Callback):
 
     def on_train_epoch_end(self, trainer, pl_module):
         file_name = trainer.default_root + f'predictions_ep_{trainer.current_epoch}.json'
-        mean_sim, accuracy = evaluate_model(pl_module.model, self.tokenizer, self.eval_dataloader, 
+        mean_sim, accuracy = evaluate_model(pl_module.model, self.tokenizer, self.eval_dataloader,
                                             max_new_tokens=self.max_new_tokens, output_file=file_name)
         wandb.log({"mean_sim": mean_sim, "accuracy": accuracy})
 
-def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300, 
+def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
                    output_file='data/predictions.json', device=None,
                    generation_config=None):
         if generation_config:
             generation_config = generation_config
         else:
             generation_config = GenerationConfig(
-                                                num_beams=5,             
-                                                early_stopping=True, 
+                                                num_beams=5,
+                                                early_stopping=True,
                                                 num_return_sequences=1,
                                                 length_penalty=1,
                                                 )
@@ -107,7 +107,7 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
             inputs = torch.where(inputs==-100, tokenizer.pad_token_id, inputs).to('cpu')
             outputs = torch.where(outputs==-100, tokenizer.pad_token_id, outputs).to('cpu')
             labels = torch.where(batch["labels"]==-100, tokenizer.pad_token_id, batch["labels"]).to('cpu')
-            
+
             # Decode predictions and references
             decoded_inputs = tokenizer.batch_decode(inputs, skip_special_tokens=True)
             decoded_preds = tokenizer.batch_decode(outputs, skip_special_tokens=True)
@@ -117,7 +117,7 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
             for i in range(len(decoded_preds)):
             # Remove the input text from the prediction
                 decoded_preds[i] = decoded_preds[i][len(decoded_inputs[i]):]
-            
+
             predictions.extend(decoded_preds)
             references.extend(decoded_refs)
             torch.cuda.empty_cache()
@@ -142,4 +142,4 @@ def evaluate_model(model, tokenizer, eval_dataloader, max_new_tokens=300,
                 trues_list.append(0)
         mean_sim = np.mean(np.array(similarities))
         accuracy = sum(trues_list) / len(trues_list)
-        return mean_sim, accuracy 
+        return mean_sim, accuracy

@@ -15,34 +15,34 @@ FEATURES:
 QUICK START:
     # Run all tests
     python test_suite.py all
-    
+
     # Quick module test
     python test_suite.py quick object
-    
+
     # Validation only
     python test_suite.py validate
-    
+
     # Test specific grids
     python test_suite.py grids filled_rectangle nested_rectangles
 
 PYTHON API:
     from test_suite import *
-    
+
     # Run comprehensive tests
     runner = run_all_comprehensive_tests()
-    
+
     # Quick tests
     quick_test('object')
-    
+
     # Validation
     validate_implementation()
-    
+
     # Performance
     performance_test()
-    
+
     # List grids
     list_test_grids()
-    
+
 
 CONFIGURATION:
     Modify TestConfig class:
@@ -79,7 +79,7 @@ OUTPUT:
 REQUIREMENTS:
 - numpy
 - Optional: matplotlib (for visualizations)
-- Imports: pattern_generation, grid_object, grid_summary, 
+- Imports: pattern_generation, grid_object, grid_summary,
           objects_filter, relation_analyzer, match_score
 
 VERSION: 2.0
@@ -110,12 +110,12 @@ from utils.plotting import plot_grid
 
 class TestGridLibrary:
     """Library of predefined test grids covering various scenarios."""
-    
+
     @staticmethod
     def empty_grid(size=(10, 10)):
         """Empty grid - all zeros."""
         return np.zeros(size, dtype=int)
-    
+
     @staticmethod
     def single_pixel(size=(10, 10), color=1, pos=None):
         """Single colored pixel."""
@@ -123,21 +123,21 @@ class TestGridLibrary:
         pos = pos or (size[0]//2, size[1]//2)
         grid[pos] = color
         return grid
-    
+
     @staticmethod
     def horizontal_line(size=(10, 10), row=5, col_start=2, col_end=8, color=1):
         """Horizontal line."""
         grid = np.zeros(size, dtype=int)
         grid[row, col_start:col_end] = color
         return grid
-    
+
     @staticmethod
     def vertical_line(size=(10, 10), col=5, row_start=2, row_end=8, color=1):
         """Vertical line."""
         grid = np.zeros(size, dtype=int)
         grid[row_start:row_end, col] = color
         return grid
-    
+
     @staticmethod
     def diagonal_line(size=(10, 10), color=1, direction='main'):
         """Diagonal line (main or anti)."""
@@ -149,14 +149,14 @@ class TestGridLibrary:
             for i in range(min(size)):
                 grid[i, size[1]-1-i] = color
         return grid
-    
+
     @staticmethod
     def filled_rectangle(size=(10, 10), top=2, left=2, height=4, width=4, color=1):
         """Filled rectangle."""
         grid = np.zeros(size, dtype=int)
         grid[top:top+height, left:left+width] = color
         return grid
-    
+
     @staticmethod
     def hollow_rectangle(size=(10, 10), top=2, left=2, height=5, width=5, color=1):
         """Hollow rectangle (border only)."""
@@ -168,7 +168,7 @@ class TestGridLibrary:
         grid[top:top+height, left] = color
         grid[top:top+height, left+width-1] = color
         return grid
-    
+
     @staticmethod
     def l_shape(size=(10, 10), top=3, left=3, arm_length=3, color=1):
         """L-shaped pattern."""
@@ -178,7 +178,7 @@ class TestGridLibrary:
         # Horizontal arm
         grid[top+arm_length-1, left:left+arm_length] = color
         return grid
-    
+
     @staticmethod
     def t_shape(size=(10, 10), top=3, left=3, width=5, height=3, color=1):
         """T-shaped pattern."""
@@ -189,7 +189,7 @@ class TestGridLibrary:
         mid = left + width//2
         grid[top:top+height, mid] = color
         return grid
-    
+
     @staticmethod
     def cross_shape(size=(10, 10), center=(5, 5), arm_length=2, color=1):
         """Cross/plus shape."""
@@ -200,7 +200,7 @@ class TestGridLibrary:
         # Vertical line
         grid[max(0, cy-arm_length):min(size[0], cy+arm_length+1), cx] = color
         return grid
-    
+
     @staticmethod
     def checkerboard(size=(10, 10), color1=1, color2=2):
         """Checkerboard pattern."""
@@ -212,7 +212,7 @@ class TestGridLibrary:
                 else:
                     grid[i, j] = color2
         return grid
-    
+
     @staticmethod
     def scattered_pixels(size=(10, 10), num_pixels=10, colors=None):
         """Randomly scattered pixels."""
@@ -223,7 +223,7 @@ class TestGridLibrary:
             i, j = np.random.randint(0, size[0]), np.random.randint(0, size[1])
             grid[i, j] = np.random.choice(colors)
         return grid
-    
+
     @staticmethod
     def nested_rectangles(size=(15, 15)):
         """Nested rectangles with different colors."""
@@ -243,7 +243,7 @@ class TestGridLibrary:
         grid[8:11, 8:11] = 4  # Bottom-right yellow
         grid[5:7, 5:7] = 5    # Center purple
         return grid
-    
+
     @staticmethod
     def connected_components(size=(15, 15)):
         """Grid with multiple connected components."""
@@ -255,7 +255,7 @@ class TestGridLibrary:
         # Component 3 (different color)
         grid[10:13, 2:5] = 2
         return grid
-    
+
     @staticmethod
     def with_holes(size=(12, 12)):
         """Rectangle with holes inside."""
@@ -267,7 +267,7 @@ class TestGridLibrary:
         grid[4:6, 7:9] = 0
         grid[7:9, 4:6] = 0
         return grid
-    
+
     @staticmethod
     def border_pattern(size=(10, 10), border_width=1, border_color=1, fill_color=2):
         """Grid with border"""
@@ -279,7 +279,7 @@ class TestGridLibrary:
         if fill_color > 0:
             grid[border_width:-border_width, border_width:-border_width] = fill_color
         return grid
-    
+
     @staticmethod
     def diagonal_split(size=(10, 10), color1=1, color2=2):
         """Grid split diagonally."""
@@ -291,7 +291,7 @@ class TestGridLibrary:
                 else:
                     grid[i, j] = color2
         return grid
-    
+
     @staticmethod
     def sparse_pattern(size=(15, 15)):
         """Sparse pattern with isolated objects."""
@@ -302,7 +302,7 @@ class TestGridLibrary:
         grid[12, 12] = 1
         grid[7, 7] = 2
         return grid
-    
+
     @staticmethod
     def dense_pattern(size=(10, 10)):
         """Dense pattern with many small objects"""
@@ -311,7 +311,7 @@ class TestGridLibrary:
             for j in range(1, size[1]-1, 2):
                 grid[i:i+2, j:j+2] = (i + j) % 3 + 1
         return grid
-    
+
     @staticmethod
     def repeating_motif(size=(12, 12)):
         """Repeating 2x2 motif."""
@@ -321,7 +321,7 @@ class TestGridLibrary:
             for j in range(0, size[1]-1, 2):
                 grid[i:i+2, j:j+2] = motif
         return grid
-    
+
     @staticmethod
     def gradient_pattern(size=(10, 10)):
         """Gradient of colors."""
@@ -329,15 +329,15 @@ class TestGridLibrary:
         for i in range(size[0]):
             grid[i, :] = i % 5 + 1
         return grid
-    
+
     @staticmethod
     def noisy_grid(size=(10, 10), noise_level=0.3):
         """Grid with random noise."""
         np.random.seed(42)
-        grid = np.random.choice([0, 1, 2, 3], size=size, 
+        grid = np.random.choice([0, 1, 2, 3], size=size,
                                p=[1-noise_level, noise_level/3, noise_level/3, noise_level/3])
         return grid.astype(int)
-    
+
     @staticmethod
     def get_all_test_grids():
         """Get dictionary of all test grids."""
@@ -366,30 +366,30 @@ class TestGridLibrary:
             'repeating_motif': TestGridLibrary.repeating_motif(),
             'gradient_pattern': TestGridLibrary.gradient_pattern(),
             'noisy_grid': TestGridLibrary.noisy_grid(),
-        }   
-        
+        }
+
     def visualize_test_grids(self):
         """Visualize all test grids for debugging."""
-        
+
         grids = self.get_all_test_grids()
-        
+
         n_grids = len(grids)
         cols = 5
         rows = (n_grids + cols - 1) // cols
-        
+
         fig, axes = plt.subplots(rows, cols, figsize=(15, 3*rows))
         axes = axes.flatten()
-        
+
         for idx, (name, grid) in enumerate(grids.items()):
             ax = axes[idx]
             ax.imshow(grid, cmap='tab20', interpolation='nearest')
             ax.set_title(name, fontsize=8)
             ax.axis('off')
-        
+
         # Hide empty subplots
         for idx in range(len(grids), len(axes)):
             axes[idx].axis('off')
-        
+
         plt.tight_layout()
         plt.savefig('test_grids_visualization.png', dpi=150, bbox_inches='tight')
         print("\nTest grids visualization saved to 'test_grids_visualization.png'")
@@ -402,7 +402,7 @@ class TestGridLibrary:
 
 class TestUtilities:
     """Utility functions for testing."""
-    
+
     @staticmethod
     def compare_grids(grid1: np.ndarray, grid2: np.ndarray, tolerance: float = 0) -> bool:
         """Compare two grids with optional tolerance."""
@@ -411,7 +411,7 @@ class TestUtilities:
         if tolerance > 0:
             return np.allclose(grid1, grid2, atol=tolerance)
         return np.array_equal(grid1, grid2)
-    
+
     @staticmethod
     def get_grid_statistics(grid: np.ndarray) -> Dict[str, Any]:
         """Get comprehensive statistics about a grid."""
@@ -425,20 +425,20 @@ class TestUtilities:
             'max_value': np.max(grid),
             'mean_value': np.mean(grid),
         }
-    
+
     @staticmethod
-    def create_random_grid(size: Tuple[int, int], num_colors: int = 3, 
+    def create_random_grid(size: Tuple[int, int], num_colors: int = 3,
                           density: float = 0.3, seed: int = 42) -> np.ndarray:
         """Create random grid with specified properties."""
         np.random.seed(seed)
-        grid = np.zeros(size, dtype=int) 
+        grid = np.zeros(size, dtype=int)
         num_filled = int(size[0] * size[1] * density)
         filled_coords = np.random.choice(size[0] * size[1], num_filled, replace=False)
         for coord in filled_coords:
             i, j = coord // size[1], coord % size[1]
             grid[i, j] = np.random.randint(1, num_colors + 1)
         return grid
-    
+
     @staticmethod
     def find_differences(grid1: np.ndarray, grid2: np.ndarray) -> List[Tuple[int, int]]:
         """Find coordinates where two grids differ."""
@@ -446,12 +446,12 @@ class TestUtilities:
             return []
         diff_mask = grid1 != grid2
         return list(zip(*np.where(diff_mask)))
-    
+
     @staticmethod
     def visualize_grid(grid: np.ndarray):
         """Visualize a grid."""
         plot_grid(grid)
-    
+
     @staticmethod
     def save_test_results(runner, filename: str = "test_results.json"):
         """Save test results to JSON file."""
@@ -484,17 +484,17 @@ class TestUtilities:
 
 class TestGridObject:
     """Test GridObject on various grids."""
-    
+
     @staticmethod
     def test_object_creation(grid: np.ndarray):
         """Test GridObject creation from grid."""
-        
+
         # Find a component to create object from
         unique_colors = [c for c in np.unique(grid) if c != 0]
         if not unique_colors:
-            return  # Skip empty grids   
+            return  # Skip empty grids
         color = unique_colors[0]
-        components = find_connected_components_with_color(grid, color)    
+        components = find_connected_components_with_color(grid, color)
         if components:
             coords = components[0]
             obj = GridObject(
@@ -505,11 +505,11 @@ class TestGridObject:
                 grid_shape=grid.shape,
                 font_color=0,
                 grid=grid
-            )       
+            )
             assert obj.size == len(coords), "Size should match coords"
             assert obj.shape == 'test_shape', "Shape should match"
             assert color in obj.color_numbers, "Color should be present"
-    
+
     @staticmethod
     def test_object_properties(grid: np.ndarray):
         """Test GridObject computed properties."""
@@ -532,13 +532,13 @@ class TestGridObject:
         assert obj.vert_size > 0, "Should have positive vertical size"
         assert isinstance(obj.center, tuple), "Center should be tuple"
         assert len(obj.center) == 2, "Center should be 2D"
-        
+
         # Test bounds
         assert 0 <= obj.min_i < grid.shape[0], "Min i should be in bounds"
         assert 0 <= obj.max_i < grid.shape[0], "Max i should be in bounds"
         assert 0 <= obj.min_j < grid.shape[1], "Min j should be in bounds"
         assert 0 <= obj.max_j < grid.shape[1], "Max j should be in bounds"
-    
+
     @staticmethod
     def test_object_symmetry(grid: np.ndarray):
         """Test symmetry detection."""
@@ -550,7 +550,7 @@ class TestGridObject:
         assert obj.symmetry in ['horizontal_symmetry', 'vertical_symmetry',
                                'horizontal_and_vertical_symmetry', 'assymetry'], \
             "Symmetry should be valid value"
-    
+
     @staticmethod
     def test_object_immutability(grid: np.ndarray):
         """Test that GridObject maintains immutability."""
@@ -566,7 +566,7 @@ class TestGridObject:
 
 class TestGridSummary:
     """Test GridSummary on various grids."""
-    
+
     @staticmethod
     def test_summary_creation(grid: np.ndarray):
         """Test GridSummary creation."""
@@ -575,7 +575,7 @@ class TestGridSummary:
         assert hasattr(summary, 'shape'), "Should have shape"
         assert hasattr(summary, 'repr_levels'), "Should have repr_levels"
         assert 1 in summary.repr_levels, "Should have level 1"
-    
+
     @staticmethod
     def test_multiple_levels(grid: np.ndarray):
         """Test GridSummary with multiple levels."""
@@ -586,7 +586,7 @@ class TestGridSummary:
         assert len(summary.repr_levels) == 2, "Should have 2 levels"
         assert all(level in summary.repr_levels for level in [1, 2]), \
             "Should have all requested levels"
-    
+
     @staticmethod
     def test_relation_analysis(grid: np.ndarray):
         """Test relation analysis."""
@@ -597,7 +597,7 @@ class TestGridSummary:
         level_1 = summary.repr_levels[1]
         assert hasattr(level_1, 'triples'), "Should have triples"
         assert hasattr(level_1, 'relation_statistics'), "Should have relation_statistics"
-    
+
     @staticmethod
     def test_embeddings(grid: np.ndarray):
         """Test relation embeddings."""
@@ -614,7 +614,7 @@ class TestGridSummary:
 
 class TestMatchScore:
     """Test match score calculations on grids."""
-    
+
     @staticmethod
     def test_rotation_generation(grid: np.ndarray):
         """Test rotation generation."""
@@ -626,7 +626,7 @@ class TestMatchScore:
         assert len(rotations) == 4, "Should generate 4 rotations"
         assert all(len(rot) == len(coords) for rot in rotations), \
             "All rotations should have same number of coords"
-    
+
     @staticmethod
     def test_intersection_checking(grid: np.ndarray):
         """Test intersection checking."""
@@ -641,7 +641,7 @@ class TestMatchScore:
         self_intersects = bool(set(coords1).intersection(set(coords1)))
         # Self intersection should always be true
         assert self_intersects, "Should self-intersect"
-    
+
     @staticmethod
     def test_match_score_calculation(grid: np.ndarray):
         """Test match score calculation."""
@@ -652,7 +652,7 @@ class TestMatchScore:
 
 class TestRelationAnalyzer:
     """Test relation analyzer on grids."""
-    
+
     @staticmethod
     def test_relation_detection(grid: np.ndarray):
         """Test relation detection between objects."""
@@ -665,7 +665,7 @@ class TestRelationAnalyzer:
         assert hasattr(analyzer, 'triples'), "Should have triples"
         assert hasattr(analyzer, 'relation_counter'), "Should have relation_counter"
         assert isinstance(analyzer.relation_counter, Counter), "Should be Counter"
-    
+
     @staticmethod
     def test_alignment_detection(grid: np.ndarray):
         """Test alignment detection."""
@@ -686,7 +686,7 @@ class TestRelationAnalyzer:
 
 class TestIntegration:
     """Integration tests across modules."""
- 
+
     @staticmethod
     def test_pattern_to_object_pipeline(grid: np.ndarray):
         """Test pattern generation to object creation."""
@@ -698,7 +698,7 @@ class TestIntegration:
                 obj = GridObject('rectangle', coords, [1], 'test', grid.shape, 0, grid)
                 assert obj.size == len(coords), "Size should match"
                 assert obj.shape == 'rectangle', "Shape should match"
-    
+
     @staticmethod
     def test_immutability_preservation(grid: np.ndarray):
         """Test that immutability is preserved through pipeline."""
@@ -720,7 +720,7 @@ class TestIntegration:
 
 class TestCorrectnessValidation:
     """Tests to validate correctness of implementations"""
-    
+
     @staticmethod
     def test_coordinate_bounds(grid: np.ndarray):
         """Validate all coordinates are within grid bounds."""
@@ -738,7 +738,7 @@ class TestCorrectnessValidation:
             assert 0 <= obj.max_i < grid.shape[0], "Object max_i out of bounds"
             assert 0 <= obj.min_j < grid.shape[1], "Object min_j out of bounds"
             assert 0 <= obj.max_j < grid.shape[1], "Object max_j out of bounds"
-    
+
     @staticmethod
     def test_color_consistency(grid: np.ndarray):
         """Validate color values are consistent."""
@@ -755,7 +755,7 @@ class TestCorrectnessValidation:
                     obj = GridObject('test', comp, [color], 'test', grid.shape, 0, grid)
                     assert color in obj.color_numbers, \
                         f"Color {color} not in object color_numbers"
-    
+
     @staticmethod
     def test_connectivity(grid: np.ndarray):
         """Validate connected components are actually connected using 8-connectivity."""
@@ -783,7 +783,7 @@ class TestCorrectnessValidation:
                                 queue.append((ni, nj))
                 assert len(visited) == len(comp), \
                     f"Component not fully connected with 8-connectivity: {len(visited)} visited vs {len(comp)} total"
-    
+
     @staticmethod
     def test_no_duplicate_coordinates(grid: np.ndarray):
         """Validate no duplicate coordinates in components."""
@@ -796,10 +796,10 @@ class TestCorrectnessValidation:
             obj = GridObject('test', components[0], [1], 'test', grid.shape, 0, grid)
             assert len(obj.coords) == len(set(obj.coords)), \
                 "GridObject contains duplicate coordinates"
-    
+
     @staticmethod
     def test_size_calculations(grid: np.ndarray):
-        """Validate size calculations are correct."""     
+        """Validate size calculations are correct."""
         components = find_connected_components_excluding_colors(grid, font_color=0)
         for comp in components:
             if not comp:
@@ -816,10 +816,10 @@ class TestCorrectnessValidation:
             expected_vert = max(c[1] for c in comp) - min(c[1] for c in comp) + 1
             assert obj.vert_size == expected_vert, \
                 f"Vertical size {obj.vert_size} incorrect, expected {expected_vert}"
-    
+
     @staticmethod
     def test_center_calculation(grid: np.ndarray):
-        """Validate center calculations are reasonable.""" 
+        """Validate center calculations are reasonable."""
         components = find_connected_components_excluding_colors(grid, font_color=0)
         for comp in components:
             if not comp:
@@ -830,7 +830,7 @@ class TestCorrectnessValidation:
                 "Center row not within object bounds"
             assert obj.min_j <= obj.center[1] <= obj.max_j, \
                 "Center col not within object bounds"
-    
+
     @staticmethod
     def test_compactness_range(grid: np.ndarray):
         """Validate compactness is in valid range [0, 1]."""
@@ -841,7 +841,7 @@ class TestCorrectnessValidation:
             obj = GridObject('test', comp, [1], 'test', grid.shape, 0, grid)
             assert 0.0 <= obj.compactness <= 1.0, \
                 f"Compactness {obj.compactness} out of valid range [0, 1]"
-    
+
     @staticmethod
     def test_rotation_preservation(grid: np.ndarray):
         """Validate rotations preserve coordinate count."""
@@ -855,7 +855,7 @@ class TestCorrectnessValidation:
         for rot in rotations:
             assert len(rot) == original_len, \
                 f"Rotation has {len(rot)} coords, expected {original_len}"
-    
+
     @staticmethod
     def test_embedding_dimensions(grid: np.ndarray):
         """Validate embedding dimensions are consistent."""
@@ -887,7 +887,7 @@ class TestRegression:
         grid = np.zeros((10, 10), dtype=int)
         components = find_connected_components_with_color(grid, 1)
         assert components == [], "Empty grid should return empty list"
-    
+
     @staticmethod
     def test_single_cell_object():
         """Regression: Single cell objects should work correctly."""
@@ -898,7 +898,7 @@ class TestRegression:
         assert obj.hor_size == 1, "Single cell horizontal size should be 1"
         assert obj.vert_size == 1, "Single cell vertical size should be 1"
         assert obj.compactness == 1.0, "Single cell should be fully compact"
-    
+
     @staticmethod
     def test_rectangle_cache_consistency():
         """Regression: Rectangle cache should return consistent results."""
@@ -909,7 +909,7 @@ class TestRegression:
         result3 = rectangles_coords(size)
         assert result1 == result2, "Cached results should match"
         assert result2 == result3, "Cached results should match"
-    
+
     @staticmethod
     def test_grid_modification_safety():
         """Regression: Operations should not modify input grid."""
@@ -918,7 +918,7 @@ class TestRegression:
         summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         assert np.array_equal(grid, original_grid), \
             "Input grid should not be modified"
-    
+
     @staticmethod
     def test_color_zero_handling():
         """Regression: Color 0 (background) should be handled correctly."""
@@ -926,7 +926,7 @@ class TestRegression:
         # Should find background components
         bg_components = find_connected_components_with_color(grid, 0)
         assert isinstance(bg_components, list), "Should handle color 0"
-    
+
     @staticmethod
     def test_boundary_objects():
         """Regression: Objects at grid boundaries should work."""
@@ -938,7 +938,7 @@ class TestRegression:
         assert obj.min_j == 0, "Should handle boundary"
         assert 'at_top_edge' in obj.positioning, "Should detect top edge"
         assert 'at_left_edge' in obj.positioning, "Should detect left edge"
-    
+
     @staticmethod
     def test_large_object_performance():
         """Regression: Large objects should not cause performance issues."""
@@ -949,7 +949,7 @@ class TestRegression:
         duration = time.perf_counter() - start
         assert duration < 1.0, f"Large object creation too slow: {duration}s"
         assert obj.size == 900, "Should handle large objects"
-    
+
     @staticmethod
     def test_multicolor_object():
         """Regression: Objects with multiple colors should work."""
@@ -966,7 +966,7 @@ class TestRegression:
 # ============================================================================
 class TestProperties:
     """Property-based tests (invariants that should always hold)."""
-    
+
     @staticmethod
     def test_object_count_invariant(grid: np.ndarray):
         """Property: Sum of object sizes should equal non-zero cells."""
@@ -979,7 +979,7 @@ class TestProperties:
         # Allow some tolerance for overlapping or filtering
         assert total_cells <= non_zero * 1.5, \
             f"Total object cells {total_cells} far exceeds non-zero cells {non_zero}"
-    
+
     @staticmethod
     def test_symmetry_invariant(grid: np.ndarray):
         """Property: If object is symmetric, rotated version should match."""
@@ -997,7 +997,7 @@ class TestProperties:
                 overlap = len(coords_set.intersection(rotated_coords))
                 assert overlap > len(coords_set) * 0.8, \
                     "Symmetric object should mostly overlap with rotation"
-    
+
     @staticmethod
     def test_containment_transitivity(grid: np.ndarray):
         """Property: If A contains B and B contains C, then A contains C."""
@@ -1019,7 +1019,7 @@ class TestProperties:
                 # Just verify it returns valid value
                 assert result in ['object_1', 'object_2', None], \
                     "in_contour should return valid value"
-    
+
     @staticmethod
     def test_distance_symmetry(grid: np.ndarray):
         """Property: Distance from A to B equals distance from B to A."""
@@ -1029,13 +1029,13 @@ class TestProperties:
         obj1 = GridObject('obj1', components[0], [1], 'obj1', grid.shape, 0, grid)
         obj2 = GridObject('obj2', components[1], [2], 'obj2', grid.shape, 0, grid)
         # Calculate Euclidean distance between centers
-        dist_1_to_2 = np.sqrt((obj1.center[0] - obj2.center[0])**2 + 
+        dist_1_to_2 = np.sqrt((obj1.center[0] - obj2.center[0])**2 +
                               (obj1.center[1] - obj2.center[1])**2)
-        dist_2_to_1 = np.sqrt((obj2.center[0] - obj1.center[0])**2 + 
+        dist_2_to_1 = np.sqrt((obj2.center[0] - obj1.center[0])**2 +
                               (obj2.center[1] - obj1.center[1])**2)
         assert abs(dist_1_to_2 - dist_2_to_1) < 1e-6, \
             "Distance should be symmetric"
-    
+
     @staticmethod
     def test_alignment_consistency(grid: np.ndarray):
         """Property: Alignment should be consistent with coordinate values."""
@@ -1046,12 +1046,12 @@ class TestProperties:
         obj2 = GridObject('obj2', components[1], [2], 'obj2', grid.shape, 0, grid)
         x_aligned = RelationAnalyzer.x_alignment(obj1, obj2)
         y_aligned = RelationAnalyzer.y_alignment(obj1, obj2)
-        
+
         # If x_aligned, should have overlapping rows
         if x_aligned:
             row_overlap = not (obj1.max_i < obj2.min_i or obj2.max_i < obj1.min_i)
             assert row_overlap, "X-aligned objects should have overlapping rows"
-        
+
         # If y_aligned, should have overlapping columns
         if y_aligned:
             col_overlap = not (obj1.max_j < obj2.min_j or obj2.max_j < obj1.min_j)
@@ -1063,7 +1063,7 @@ class TestProperties:
 
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
-    
+
     @staticmethod
     def test_empty_grid():
         """Test handling of empty grid."""
@@ -1072,21 +1072,21 @@ class TestEdgeCases:
         assert summary is not None, "Should handle empty grid"
         level_1 = summary.repr_levels[1]
         assert len(level_1.objects) == 0, "Empty grid should have no objects"
-    
+
     @staticmethod
     def test_single_pixel_grid():
         """Test handling of single pixel."""
         grid = TestGridLibrary.single_pixel()
         summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         assert summary is not None, "Should handle single pixel"
-    
+
     @staticmethod
     def test_minimum_size_grid():
         """Test minimum size grids."""
         # 2x2 grid
         result = rectangles_coords((2, 2))
         assert isinstance(result, list), "Should handle 2x2 grid"
-    
+
     @staticmethod
     def test_large_grid():
         """Test large grid handling."""
@@ -1098,7 +1098,7 @@ class TestEdgeCases:
         summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         assert duration < 5.0, f"Large grid processing too slow: {duration}s"
-    
+
     @staticmethod
     def test_many_colors():
         """Test grid with many different colors."""
@@ -1107,7 +1107,7 @@ class TestEdgeCases:
             grid[i, i] = i
         summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         assert summary is not None, "Should handle many colors"
-    
+
     @staticmethod
     def test_all_same_color():
         """Test grid with all same non-zero color."""
@@ -1116,7 +1116,7 @@ class TestEdgeCases:
         assert summary is not None, "Should handle uniform color"
         level_1 = summary.repr_levels[1]
         assert len(level_1.objects) >= 1, "Should detect at least one object"
-    
+
     @staticmethod
     def test_rectangular_grids():
         """Test non-square grids."""
@@ -1130,7 +1130,7 @@ class TestEdgeCases:
         grid_tall[5:15, 2] = 1
         summary = GridSummary(grid=grid_tall, shape=grid_tall.shape, font_color=0, levels=[1])
         assert summary is not None, "Should handle tall grid"
-    
+
     @staticmethod
     def test_disconnected_pixels():
         """Test grid with completely disconnected pixels."""
@@ -1150,7 +1150,7 @@ class TestEdgeCases:
 
 class TestCompatibility:
     """Tests for data type and format compatibility."""
-    
+
     @staticmethod
     def test_different_dtypes():
         """Test with different numpy dtypes."""
@@ -1160,7 +1160,7 @@ class TestCompatibility:
             grid = base_grid.astype(dtype)
             summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
             assert summary is not None, f"Failed for dtype {dtype}"
-    
+
     @staticmethod
     def test_tuple_vs_list_coords():
         """Test coordinate format compatibility."""
@@ -1181,7 +1181,7 @@ class TestCompatibility:
 
 class TestDocumentation:
     """Tests based on documented examples and use cases."""
-    
+
     @staticmethod
     def test_basic_usage_example():
         """Test basic usage example from documentation."""
@@ -1198,7 +1198,7 @@ class TestDocumentation:
         assert summary is not None
         assert 1 in summary.repr_levels
         assert len(summary.repr_levels[1].objects) > 0
-    
+
     @staticmethod
     def test_pattern_generation_example():
         """Test pattern generation example."""
@@ -1208,12 +1208,12 @@ class TestDocumentation:
         rectangles = rectangles_coords(grid_size)
         assert len(lines) > 0 or grid_size[0] <= 1 or grid_size[1] <= 1
         assert len(rectangles) > 0
-    
+
     @staticmethod
     def test_object_creation_example():
         """Test GridObject creation example."""
         grid = np.zeros((10, 10))
-        coords = [(2, 2), (2, 3), (3, 2), (3, 3)] 
+        coords = [(2, 2), (2, 3), (3, 2), (3, 3)]
         obj = GridObject(
             shape='rectangle',
             coords=coords,
@@ -1225,7 +1225,7 @@ class TestDocumentation:
         )
         assert obj.size == 4
         assert obj.shape == 'rectangle'
-    
+
     @staticmethod
     def test_relation_analysis_example():
         """Test relation analysis example."""
@@ -1244,7 +1244,7 @@ class TestDocumentation:
 
 class TestStress:
     """Stress tests with extreme conditions."""
-    
+
     @staticmethod
     def test_very_large_grid():
         """Test with very large grid."""
@@ -1256,7 +1256,7 @@ class TestStress:
         print(f"    Completed in {duration:.2f}s")
         assert duration < 30.0, f"Very large grid too slow: {duration}s"
         assert summary is not None
-    
+
     @staticmethod
     def test_many_small_objects():
         """Test with many small isolated objects."""
@@ -1274,7 +1274,7 @@ class TestStress:
         print(f"    Found {num_objects} objects in {duration:.2f}s")
         assert duration < 10.0, f"Many objects too slow: {duration}s"
         assert num_objects > 50, "Should detect many objects"
-    
+
     @staticmethod
     def test_dense_multicolor():
         """Test with dense multicolor grid."""
@@ -1285,7 +1285,7 @@ class TestStress:
         duration = time.perf_counter() - start
         print(f"    Completed in {duration:.2f}s")
         assert duration < 15.0, f"Dense multicolor too slow: {duration}s"
-    
+
     @staticmethod
     def test_extreme_aspect_ratio():
         """Test with extreme aspect ratios."""
@@ -1301,7 +1301,7 @@ class TestStress:
         summary = GridSummary(grid=grid_tall, shape=grid_tall.shape, font_color=0, levels=[1])
         assert summary is not None
         print("    Both extreme ratios handled successfully")
-    
+
     @staticmethod
     def test_maximum_colors():
         """Test with maximum number of colors."""
@@ -1315,7 +1315,7 @@ class TestStress:
         duration = time.perf_counter() - start
         print(f"    Completed in {duration:.2f}s")
         assert duration < 10.0, f"Many colors too slow: {duration}s"
-    
+
     @staticmethod
     def test_repeated_operations():
         """Test repeated operations for memory leaks."""
@@ -1328,7 +1328,7 @@ class TestStress:
         avg_time = duration / 100
         print(f"    Average time per operation: {avg_time*1000:.2f}ms")
         assert avg_time < 0.5, f"Repeated operations degrading: {avg_time}s per op"
-    
+
     @staticmethod
     def test_complex_nesting():
         """Test with deeply nested structures."""
@@ -1344,7 +1344,7 @@ class TestStress:
         start = time.perf_counter()
         summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
-        
+
         print(f"    Completed in {duration:.2f}s")
         assert duration < 10.0, f"Nested structures too slow: {duration}s"
 
@@ -1366,7 +1366,7 @@ class TestPerformance:
             duration = time.perf_counter() - start
             results[size] = duration * 1000
         return results
-    
+
     @staticmethod
     def benchmark_grid_summary():
         """Benchmark GridSummary creation."""
@@ -1382,7 +1382,7 @@ class TestPerformance:
             duration = time.perf_counter() - start
             results[name] = duration * 1000
         return results
-    
+
     @staticmethod
     def benchmark_object_operations():
         """Benchmark GridObject operations."""
@@ -1393,7 +1393,7 @@ class TestPerformance:
         for _ in range(100):
             obj = GridObject('rect', coords, [1], 'test', grid.shape, 0, grid)
         create_time = (time.perf_counter() - start) * 1000
-        
+
         # Embedding benchmark
         obj = GridObject('rect', coords, [1], 'test', grid.shape, 0, grid)
         start = time.perf_counter()
@@ -1401,7 +1401,7 @@ class TestPerformance:
             obj.create_embedding()
         embed_time = (time.perf_counter() - start) * 1000
         return {'creation': create_time, 'embedding': embed_time}
-    
+
     @staticmethod
     def stress_test_many_objects():
         """Stress test with many objects."""
@@ -1443,7 +1443,7 @@ class TestResult:
         self.errors = []
         self.warnings = []
         self.metadata = {}
-    
+
     def __repr__(self):
         status = "✓" if self.passed else "✗"
         grid_info = f" [{self.grid_name}]" if self.grid_name else ""
@@ -1452,15 +1452,15 @@ class TestResult:
 
 class UnifiedTestRunner:
     """Unified test runner with grid-based testing."""
-    
+
     def __init__(self, test_grids: List[tuple] = None, config: TestConfig = None):
         self.config = config or TestConfig()
         self.results = []
         self.test_grids = test_grids if test_grids else TestGridLibrary.get_all_test_grids()
         self.errors = []
         self.slow_tests = []
-    
-    def run_test_on_grid(self, test_func: Callable, grid_name: str, 
+
+    def run_test_on_grid(self, test_func: Callable, grid_name: str,
                         grid: np.ndarray, *args, **kwargs) -> TestResult:
         """Execute a test function on a specific grid"""
         result = TestResult(test_func.__name__, grid_name)
@@ -1481,24 +1481,24 @@ class UnifiedTestRunner:
             self.slow_tests.append((test_func.__name__, f"Slow test: {result.duration_ms:.2f}ms"))
         self.results.append(result)
         return result
-    
-    def run_test_on_all_grids(self, test_func: Callable, 
+
+    def run_test_on_all_grids(self, test_func: Callable,
                              grid_filter: Callable = None) -> List[TestResult]:
         """Execute a test function on all applicable grids."""
         grid_filter = grid_filter or (lambda name, grid: True)
         results = []
-        
+
         for grid_name, grid in self.test_grids.items():
             if grid_filter(grid_name, grid):
                 result = self.run_test_on_grid(test_func, grid_name, grid)
                 results.append(result)
-        
+
         return results
-    
+
     def run_single_test(self, test_func: Callable, *args, **kwargs) -> TestResult:
         """Execute a single test without grid dependency."""
         result = TestResult(test_func.__name__)
-        
+
         start_time = time.perf_counter()
         try:
             test_func(*args, **kwargs)
@@ -1511,14 +1511,14 @@ class UnifiedTestRunner:
             self.errors.append((test_func.__name__, f"{type(e).__name__}: {str(e)}"))
         finally:
             result.duration_ms = (time.perf_counter() - start_time) * 1000
-        
+
         if result.duration_ms > self.config.PERFORMANCE_THRESHOLD_MS:
             result.warnings.append(f"Slow test: {result.duration_ms:.2f}ms")
             self.slow_tests.append((test_func.__name__, f"Slow test: {result.duration_ms:.2f}ms"))
-        
+
         self.results.append(result)
         return result
-    
+
     def generate_report(self) -> str:
         """Generate comprehensive test report."""
         if not self.results:
@@ -1547,7 +1547,7 @@ class UnifiedTestRunner:
             func_total = len(func_results)
             status = "✓" if func_passed == func_total else "✗"
             report.append(f"{status} {func_name}: {func_passed}/{func_total} passed")
-            
+
             # Show failures
             failures = [r for r in func_results if not r.passed]
             if failures:
@@ -1565,7 +1565,7 @@ class UnifiedTestRunner:
             if result.warnings:
                 for warning in result.warnings:
                     report.append(f"  Warning: {warning}")
-        
+
         report.append("="*80 + "\n")
         return "\n".join(report)
 
@@ -1575,60 +1575,60 @@ class UnifiedTestRunner:
 
 def quick_test(module_name: str = 'all'):
     """Quick test runner for specific modules
-    
+
     Args:
         module_name: 'pattern', 'object', 'summary', 'filter', 'relation', 'match', or 'all'
     """
     runner = UnifiedTestRunner()
-    
+
     print(f"\n{'='*80}")
     print(f"QUICK TEST: {module_name.upper()}")
     print(f"{'='*80}\n")
-    
+
     if module_name in ['object', 'all']:
         print("Testing GridObject...")
         runner.run_test_on_all_grids(TestGridObject.test_object_creation)
         runner.run_test_on_all_grids(TestGridObject.test_object_properties)
-    
+
     if module_name in ['summary', 'all']:
         print("Testing GridSummary...")
         runner.run_test_on_all_grids(TestGridSummary.test_summary_creation)
-    
+
     if module_name in ['relation', 'all']:
         print("Testing RelationAnalyzer...")
         runner.run_test_on_all_grids(TestRelationAnalyzer.test_relation_detection)
-    
+
     if module_name in ['match', 'all']:
         print("Testing Match Score...")
         runner.run_test_on_all_grids(TestMatchScore.test_rotation_generation)
-    
+
     print(runner.generate_report())
     return runner
 
 
 def test_specific_grids(*grid_names):
     """Test specific grid scenarios
-    
+
     Example:
         test_specific_grids('filled_rectangle', 'nested_rectangles', 'multicolor_regions')
     """
     runner = UnifiedTestRunner()
-    
+
     # Filter to requested grids
     runner.test_grids = {k: v for k, v in runner.test_grids.items() if k in grid_names}
-    
+
     if not runner.test_grids:
         print(f"No grids found matching: {grid_names}")
         return None
-    
+
     print(f"\n{'='*80}")
     print(f"TESTING SPECIFIC GRIDS: {', '.join(grid_names)}")
     print(f"{'='*80}\n")
-    
+
     # Run core tests
     runner.run_test_on_all_grids(TestGridObject.test_object_creation)
     runner.run_test_on_all_grids(TestGridSummary.test_summary_creation)
-    
+
     print(runner.generate_report())
     return runner
 
@@ -1636,26 +1636,26 @@ def test_specific_grids(*grid_names):
 def validate_implementation():
     """Run validation tests only (fast, checks correctness)"""
     runner = UnifiedTestRunner()
-    
+
     print(f"\n{'='*80}")
     print("VALIDATION TEST SUITE")
     print(f"{'='*80}\n")
-    
+
     print("Running correctness validation...")
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_coordinate_bounds)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_color_consistency)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_connectivity)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_size_calculations)
-    
+
     print("Running regression tests...")
     runner.run_single_test(TestRegression.test_empty_component_handling)
     runner.run_single_test(TestRegression.test_single_cell_object)
     runner.run_single_test(TestRegression.test_grid_modification_safety)
-    
+
     print("Running property tests...")
     runner.run_test_on_all_grids(TestProperties.test_object_count_invariant)
     runner.run_test_on_all_grids(TestProperties.test_distance_symmetry)
-    
+
     print(runner.generate_report())
     return runner
 
@@ -1665,46 +1665,46 @@ def performance_test():
     print(f"\n{'='*80}")
     print("PERFORMANCE TEST SUITE")
     print(f"{'='*80}\n")
-    
+
     print("Pattern Generation Benchmark:")
     results = TestPerformance.benchmark_pattern_generation()
     for size, duration in results.items():
         status = "✓" if duration < 50 else "⚠" if duration < 100 else "✗"
         print(f"  {status} {size}: {duration:.2f}ms")
-    
+
     print("\nGrid Summary Benchmark:")
     results = TestPerformance.benchmark_grid_summary()
     for name, duration in results.items():
         status = "✓" if duration < 50 else "⚠" if duration < 100 else "✗"
         print(f"  {status} {name}: {duration:.2f}ms")
-    
+
     print("\nObject Operations Benchmark:")
     results = TestPerformance.benchmark_object_operations()
     for op, duration in results.items():
         status = "✓" if duration < 50 else "⚠" if duration < 100 else "✗"
         print(f"  {status} {op}: {duration:.2f}ms")
-    
+
     print("\nStress Test:")
     duration = TestPerformance.stress_test_many_objects()
     status = "✓" if duration < 500 else "⚠" if duration < 1000 else "✗"
     print(f"  {status} Many objects: {duration:.2f}ms")
-    
+
     print(f"\n{'='*80}")
 
 def list_test_grids():
     """List all available test grid scenarios"""
     grids = TestGridLibrary.get_all_test_grids()
-    
+
     print(f"\n{'='*80}")
     print(f"AVAILABLE TEST GRID SCENARIOS ({len(grids)} total)")
     print(f"{'='*80}\n")
-    
+
     for name, grid in grids.items():
         stats = TestUtilities.get_grid_statistics(grid)
         print(f"  • {name:25} | Shape: {stats['shape']} | "
               f"Colors: {stats['unique_colors']} | "
               f"Density: {stats['density']:.2%}")
-    
+
     print(f"\n{'='*80}")
     print("Use test_specific_grids('grid_name1', 'grid_name2') to test specific grids")
     print(f"{'='*80}\n")
@@ -1717,44 +1717,44 @@ def list_test_grids():
 def run_all_tests():
     """Execute comprehensive test suite"""
     runner = UnifiedTestRunner()
-    
+
     print("\n" + "="*80)
     print("UNIFIED GRID-BASED TEST SUITE")
     print("="*80)
     print(f"Testing with {len(runner.test_grids)} predefined grid scenarios")
     print("="*80)
-    
-    
+
+
     # GridObject Tests
     print("[1/5] Running GridObject Tests...")
     runner.run_test_on_all_grids(TestGridObject.test_object_creation)
     runner.run_test_on_all_grids(TestGridObject.test_object_properties)
     runner.run_test_on_all_grids(TestGridObject.test_object_symmetry)
     runner.run_test_on_all_grids(TestGridObject.test_object_immutability)
-    
+
     # GridSummary Tests
     print("[2/5] Running GridSummary Tests...")
     runner.run_test_on_all_grids(TestGridSummary.test_summary_creation)
     runner.run_test_on_all_grids(TestGridSummary.test_multiple_levels)
     runner.run_test_on_all_grids(TestGridSummary.test_relation_analysis)
     runner.run_test_on_all_grids(TestGridSummary.test_embeddings)
-    
+
     # Match Score Tests
     print("[3/5] Running Match Score Tests...")
     runner.run_test_on_all_grids(TestMatchScore.test_rotation_generation)
     runner.run_test_on_all_grids(TestMatchScore.test_intersection_checking)
     runner.run_test_on_all_grids(TestMatchScore.test_match_score_calculation)
-    
+
     # RelationAnalyzer Tests
     print("[4/5] Running RelationAnalyzer Tests...")
     runner.run_test_on_all_grids(TestRelationAnalyzer.test_relation_detection)
     runner.run_test_on_all_grids(TestRelationAnalyzer.test_alignment_detection)
-    
+
     # Integration Tests
     print("[5/5] Running Integration Tests...")
     runner.run_test_on_all_grids(TestIntegration.test_pattern_to_object_pipeline)
     runner.run_test_on_all_grids(TestIntegration.test_immutability_preservation)
-    
+
     # Edge Case Tests
     print("\nRunning Edge Case Tests...")
     runner.run_single_test(TestEdgeCases.test_empty_grid)
@@ -1765,7 +1765,7 @@ def run_all_tests():
     runner.run_single_test(TestEdgeCases.test_all_same_color)
     runner.run_single_test(TestEdgeCases.test_rectangular_grids)
     runner.run_single_test(TestEdgeCases.test_disconnected_pixels)
-    
+
     # Performance Benchmarks
     if TestConfig.RUN_PERFORMANCE_TESTS:
         print("\nRunning Performance Benchmarks...")
@@ -1773,26 +1773,26 @@ def run_all_tests():
         results = TestPerformance.benchmark_pattern_generation()
         for size, duration in results.items():
             print(f"    {size}: {duration:.2f}ms")
-        
+
         print("  Grid Summary:")
         results = TestPerformance.benchmark_grid_summary()
         for name, duration in results.items():
             print(f"    {name}: {duration:.2f}ms")
-        
+
         print("  Object Operations:")
         results = TestPerformance.benchmark_object_operations()
         for op, duration in results.items():
             print(f"    {op}: {duration:.2f}ms")
-        
+
         print("  Stress Test (many objects):")
         duration = TestPerformance.stress_test_many_objects()
         print(f"    {duration:.2f}ms")
-    
+
     # Generate report
     report = runner.generate_report()
     print(report)
     return runner
-    
+
 
 # ============================================================================
 # EXTENDED TEST EXECUTION
@@ -1801,46 +1801,46 @@ def run_all_tests():
 def run_comprehensive_tests():
     """Run all test suites including validation, regression, and property tests"""
     runner = UnifiedTestRunner()
-    
+
     print("\n" + "="*80)
     print("COMPREHENSIVE GRID-BASED TEST SUITE")
     print("="*80)
     print(f"Testing with {len(runner.test_grids)} predefined grid scenarios")
     print("="*80)
-    
+
     # Core Functional Tests (from previous sections)
     print("\n[PHASE 1/4] Core Functional Tests")
     print("-"*80)
-    
+
     print("  GridObject...")
     runner.run_test_on_all_grids(TestGridObject.test_object_creation)
     runner.run_test_on_all_grids(TestGridObject.test_object_properties)
     runner.run_test_on_all_grids(TestGridObject.test_object_symmetry)
     runner.run_test_on_all_grids(TestGridObject.test_object_immutability)
-    
+
     print("  GridSummary...")
     runner.run_test_on_all_grids(TestGridSummary.test_summary_creation)
     runner.run_test_on_all_grids(TestGridSummary.test_multiple_levels)
     runner.run_test_on_all_grids(TestGridSummary.test_relation_analysis)
     runner.run_test_on_all_grids(TestGridSummary.test_embeddings)
-    
+
     print("  Match Score...")
     runner.run_test_on_all_grids(TestMatchScore.test_rotation_generation)
     runner.run_test_on_all_grids(TestMatchScore.test_intersection_checking)
     runner.run_test_on_all_grids(TestMatchScore.test_match_score_calculation)
-    
+
     print("  RelationAnalyzer...")
     runner.run_test_on_all_grids(TestRelationAnalyzer.test_relation_detection)
     runner.run_test_on_all_grids(TestRelationAnalyzer.test_alignment_detection)
-    
+
     print("  Integration...")
     runner.run_test_on_all_grids(TestIntegration.test_pattern_to_object_pipeline)
     runner.run_test_on_all_grids(TestIntegration.test_immutability_preservation)
-    
+
     # Validation Tests
     print("\n[PHASE 2/4] Correctness Validation Tests")
     print("-"*80)
-    
+
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_coordinate_bounds)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_color_consistency)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_connectivity)
@@ -1850,11 +1850,11 @@ def run_comprehensive_tests():
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_compactness_range)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_rotation_preservation)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_embedding_dimensions)
-    
+
     # Regression Tests
     print("\n[PHASE 3/4] Regression Tests")
     print("-"*80)
-    
+
     runner.run_single_test(TestRegression.test_empty_component_handling)
     runner.run_single_test(TestRegression.test_single_cell_object)
     runner.run_single_test(TestRegression.test_rectangle_cache_consistency)
@@ -1863,21 +1863,21 @@ def run_comprehensive_tests():
     runner.run_single_test(TestRegression.test_boundary_objects)
     runner.run_single_test(TestRegression.test_large_object_performance)
     runner.run_single_test(TestRegression.test_multicolor_object)
-    
+
     # Property-Based Tests
     print("\n[PHASE 4/4] Property-Based Tests")
     print("-"*80)
-    
+
     runner.run_test_on_all_grids(TestProperties.test_object_count_invariant)
     runner.run_test_on_all_grids(TestProperties.test_symmetry_invariant)
     runner.run_test_on_all_grids(TestProperties.test_containment_transitivity)
     runner.run_test_on_all_grids(TestProperties.test_distance_symmetry)
     runner.run_test_on_all_grids(TestProperties.test_alignment_consistency)
-    
+
     # Edge Cases
     print("\n[EDGE CASES]")
     print("-"*80)
-    
+
     runner.run_single_test(TestEdgeCases.test_empty_grid)
     runner.run_single_test(TestEdgeCases.test_single_pixel_grid)
     runner.run_single_test(TestEdgeCases.test_minimum_size_grid)
@@ -1886,49 +1886,49 @@ def run_comprehensive_tests():
     runner.run_single_test(TestEdgeCases.test_all_same_color)
     runner.run_single_test(TestEdgeCases.test_rectangular_grids)
     runner.run_single_test(TestEdgeCases.test_disconnected_pixels)
-    
+
     # Performance Benchmarks
     if TestConfig.RUN_PERFORMANCE_TESTS:
         print("\n[PERFORMANCE BENCHMARKS]")
         print("-"*80)
-        
+
         print("  Pattern Generation:")
         results = TestPerformance.benchmark_pattern_generation()
         for size, duration in results.items():
             print(f"    {size}: {duration:.2f}ms")
-        
+
         print("  Grid Summary:")
         results = TestPerformance.benchmark_grid_summary()
         for name, duration in results.items():
             print(f"    {name}: {duration:.2f}ms")
-        
+
         print("  Object Operations:")
         results = TestPerformance.benchmark_object_operations()
         for op, duration in results.items():
             print(f"    {op}: {duration:.2f}ms")
-        
+
         print("  Stress Test:")
         duration = TestPerformance.stress_test_many_objects()
         print(f"    Many objects: {duration:.2f}ms")
-    
+
     # Generate report
     report = runner.generate_report()
     print(report)
-    
+
     # Additional statistics
     print("\n" + "="*80)
     print("TEST COVERAGE STATISTICS")
     print("="*80)
-    
+
     grid_coverage = defaultdict(int)
     for result in runner.results:
         if result.grid_name:
             grid_coverage[result.grid_name] += 1
-    
+
     print(f"\nTests per grid scenario:")
     for grid_name, count in sorted(grid_coverage.items(), key=lambda x: x[1], reverse=True):
         print(f"  {grid_name}: {count} tests")
-    
+
     return runner
 
 
@@ -1939,56 +1939,56 @@ def run_comprehensive_tests():
 def run_all_comprehensive_tests():
     """Master function to run all test categories"""
     runner = UnifiedTestRunner()
-    
+
     print("\n" + "="*80)
     print("MASTER COMPREHENSIVE TEST SUITE")
     print("="*80)
     print(f"Grid Scenarios: {len(runner.test_grids)}")
     print(f"Test Categories: 9 (Functional, Validation, Regression, Property, etc.)")
     print("="*80)
-    
+
     # Track timing for each phase
     phase_times = {}
-    
+
     # Phase 1: Core Functional Tests
     print("\n" + "="*80)
     print("[PHASE 1/10] CORE FUNCTIONAL TESTS")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     print("  GridObject...")
     runner.run_test_on_all_grids(TestGridObject.test_object_creation)
     runner.run_test_on_all_grids(TestGridObject.test_object_properties)
     runner.run_test_on_all_grids(TestGridObject.test_object_symmetry)
     runner.run_test_on_all_grids(TestGridObject.test_object_immutability)
-    
+
     print("  GridSummary...")
     runner.run_test_on_all_grids(TestGridSummary.test_summary_creation)
     runner.run_test_on_all_grids(TestGridSummary.test_multiple_levels)
     runner.run_test_on_all_grids(TestGridSummary.test_relation_analysis)
     runner.run_test_on_all_grids(TestGridSummary.test_embeddings)
-    
+
     print("  Match Score...")
     runner.run_test_on_all_grids(TestMatchScore.test_rotation_generation)
     runner.run_test_on_all_grids(TestMatchScore.test_intersection_checking)
     runner.run_test_on_all_grids(TestMatchScore.test_match_score_calculation)
-    
+
     print("  RelationAnalyzer...")
     runner.run_test_on_all_grids(TestRelationAnalyzer.test_relation_detection)
     runner.run_test_on_all_grids(TestRelationAnalyzer.test_alignment_detection)
-    
+
     print("  Integration...")
     runner.run_test_on_all_grids(TestIntegration.test_pattern_to_object_pipeline)
     runner.run_test_on_all_grids(TestIntegration.test_immutability_preservation)
-    
+
     phase_times['Core Functional'] = time.perf_counter() - phase_start
-    
+
     # Phase 2: Correctness Validation
     print("\n" + "="*80)
     print("[PHASE 2/10] CORRECTNESS VALIDATION")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_coordinate_bounds)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_color_consistency)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_connectivity)
@@ -1998,15 +1998,15 @@ def run_all_comprehensive_tests():
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_compactness_range)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_rotation_preservation)
     runner.run_test_on_all_grids(TestCorrectnessValidation.test_embedding_dimensions)
-    
+
     phase_times['Correctness Validation'] = time.perf_counter() - phase_start
-    
+
     # Phase 3: Regression Tests
     print("\n" + "="*80)
     print("[PHASE 3/10] REGRESSION TESTS")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     runner.run_single_test(TestRegression.test_empty_component_handling)
     runner.run_single_test(TestRegression.test_single_cell_object)
     runner.run_single_test(TestRegression.test_rectangle_cache_consistency)
@@ -2015,29 +2015,29 @@ def run_all_comprehensive_tests():
     runner.run_single_test(TestRegression.test_boundary_objects)
     runner.run_single_test(TestRegression.test_large_object_performance)
     runner.run_single_test(TestRegression.test_multicolor_object)
-    
+
     phase_times['Regression'] = time.perf_counter() - phase_start
-    
+
     # Phase 4: Property-Based Tests
     print("\n" + "="*80)
     print("[PHASE 4/10] PROPERTY-BASED TESTS")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     runner.run_test_on_all_grids(TestProperties.test_object_count_invariant)
     runner.run_test_on_all_grids(TestProperties.test_symmetry_invariant)
     runner.run_test_on_all_grids(TestProperties.test_containment_transitivity)
     runner.run_test_on_all_grids(TestProperties.test_distance_symmetry)
     runner.run_test_on_all_grids(TestProperties.test_alignment_consistency)
-    
+
     phase_times['Property-Based'] = time.perf_counter() - phase_start
-    
+
     # Phase 5: Edge Cases
     print("\n" + "="*80)
     print("[PHASE 5/10] EDGE CASES")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     runner.run_single_test(TestEdgeCases.test_empty_grid)
     runner.run_single_test(TestEdgeCases.test_single_pixel_grid)
     runner.run_single_test(TestEdgeCases.test_minimum_size_grid)
@@ -2046,86 +2046,86 @@ def run_all_comprehensive_tests():
     runner.run_single_test(TestEdgeCases.test_all_same_color)
     runner.run_single_test(TestEdgeCases.test_rectangular_grids)
     runner.run_single_test(TestEdgeCases.test_disconnected_pixels)
-    
+
     phase_times['Edge Cases'] = time.perf_counter() - phase_start
-    
+
     # Phase 6: Stress Tests
     if TestConfig.RUN_STRESS_TESTS:
         print("\n" + "="*80)
         print("[PHASE 6/10] STRESS TESTS")
         print("="*80)
         phase_start = time.perf_counter()
-        
+
         runner.run_single_test(TestStress.test_many_small_objects)
         runner.run_single_test(TestStress.test_dense_multicolor)
         runner.run_single_test(TestStress.test_extreme_aspect_ratio)
         runner.run_single_test(TestStress.test_maximum_colors)
         runner.run_single_test(TestStress.test_repeated_operations)
         runner.run_single_test(TestStress.test_complex_nesting)
-        
+
         phase_times['Stress'] = time.perf_counter() - phase_start
-    
+
     # Phase 7: Compatibility Tests
     print("\n" + "="*80)
     print("[PHASE 7/10] COMPATIBILITY TESTS")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     runner.run_single_test(TestCompatibility.test_different_dtypes)
     runner.run_single_test(TestCompatibility.test_tuple_vs_list_coords)
-    
+
     phase_times['Compatibility'] = time.perf_counter() - phase_start
-    
+
     # Phase 8: Documentation Tests
     print("\n" + "="*80)
     print("[PHASE 8/10] DOCUMENTATION TESTS")
     print("="*80)
     phase_start = time.perf_counter()
-    
+
     runner.run_single_test(TestDocumentation.test_basic_usage_example)
     runner.run_single_test(TestDocumentation.test_pattern_generation_example)
     runner.run_single_test(TestDocumentation.test_object_creation_example)
     runner.run_single_test(TestDocumentation.test_relation_analysis_example)
-    
+
     phase_times['Documentation'] = time.perf_counter() - phase_start
-    
+
     # Phase 9: Performance Benchmarks
     if TestConfig.RUN_PERFORMANCE_TESTS:
         print("\n" + "="*80)
         print("[PHASE 9/10] PERFORMANCE BENCHMARKS")
         print("="*80)
         phase_start = time.perf_counter()
-        
+
         print("  Pattern Generation:")
         results = TestPerformance.benchmark_pattern_generation()
         for size, duration in results.items():
             print(f"    {size}: {duration:.2f}ms")
-        
+
         print("  Grid Summary:")
         results = TestPerformance.benchmark_grid_summary()
         for name, duration in results.items():
             print(f"    {name}: {duration:.2f}ms")
-        
+
         print("  Object Operations:")
         results = TestPerformance.benchmark_object_operations()
         for op, duration in results.items():
             print(f"    {op}: {duration:.2f}ms")
-        
+
         print("  Stress Test:")
         duration = TestPerformance.stress_test_many_objects()
         print(f"    Many objects: {duration:.2f}ms")
-        
+
         phase_times['Performance'] = time.perf_counter() - phase_start
-    
+
     # Phase 10: Generate Reports
     print("\n" + "="*80)
     print("[PHASE 10/10] GENERATING REPORTS")
     print("="*80)
-    
+
     # Main report
     report = runner.generate_report()
     print(report)
-    
+
     # Phase timing summary
     print("\n" + "="*80)
     print("PHASE TIMING SUMMARY")
@@ -2133,43 +2133,43 @@ def run_all_comprehensive_tests():
     for phase, duration in phase_times.items():
         print(f"  {phase}: {duration:.2f}s")
     print(f"  Total: {sum(phase_times.values()):.2f}s")
-    
+
     # Test coverage statistics
     print("\n" + "="*80)
     print("TEST COVERAGE STATISTICS")
     print("="*80)
-    
+
     grid_coverage = defaultdict(int)
     grid_failures = defaultdict(int)
-    
+
     for result in runner.results:
         if result.grid_name:
             grid_coverage[result.grid_name] += 1
             if not result.passed:
                 grid_failures[result.grid_name] += 1
-    
+
     print(f"\nTests per grid scenario:")
     for grid_name in sorted(grid_coverage.keys()):
         count = grid_coverage[grid_name]
         failures = grid_failures[grid_name]
         status = "✓" if failures == 0 else f"✗ ({failures} failed)"
         print(f"  {status} {grid_name}: {count} tests")
-    
+
     # Final statistics
     print("\n" + "="*80)
     print("FINAL STATISTICS")
     print("="*80)
-    
+
     passed = sum(1 for r in runner.results if r.passed)
     total = len(runner.results)
     success_rate = 100 * passed / total if total > 0 else 0
-    
+
     print(f"Total Tests: {total}")
     print(f"Passed: {passed}")
     print(f"Failed: {total - passed}")
     print(f"Success Rate: {success_rate:.2f}%")
     print(f"Total Execution Time: {sum(phase_times.values()):.2f}s")
-    
+
     # Success/failure message
     print("\n" + "="*80)
     if success_rate >= 95:
@@ -2181,8 +2181,8 @@ def run_all_comprehensive_tests():
         print("✗ ✗ ✗ FAILURE: Test suite failed with {:.1f}% success rate".format(success_rate))
         print("Critical issues detected - immediate review required!")
     print("="*80)
-    
+
     # Save results
     TestUtilities.save_test_results(runner)
-    
+
     return runner

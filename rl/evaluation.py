@@ -8,22 +8,24 @@ def evaluate_ARC_policy(
     vec_env: VecEnv,
     n_eval_episodes: int = 10,
     deterministic: bool = True,
-    callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None, 
+    callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
 ) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
-    """
-    Runs policy for ``n_eval_episodes`` episodes and returns average reward.
-    This is made to work only with one env.
+    """Runs the policy for `n_eval_episodes` episodes on both the training
+    and test environments.
 
-    :param model: The RL agent to evaluate
-    :param env: The gym VecEnv.
-    :param n_eval_episodes: Number of episode to evaluate the agent
-    :param deterministic: Whether to use deterministic or stochastic actions
-    :param callback: callback function to do additional checks,
-        called after each step. Gets locals() and globals() passed as parameters.
-    :return: Mean reward per episode, std of reward per episode.
-        Returns ([float], [int]) when ``return_episode_rewards`` is True, first
-        list containing per-episode rewards and second containing per-episode lengths
-        (in number of steps).
+    Args:
+        model: The RL agent to evaluate.
+        vec_env: The vectorized environment, exposing a `test_env` attribute
+            for the held-out test environment.
+        n_eval_episodes: Number of episodes to evaluate the agent for.
+        deterministic: Whether to use deterministic or stochastic actions.
+        callback: Callback for additional checks, called after each step.
+            Reads its state from the local variables in this function's
+            scope (`reward`, `done`, `info`), not from arguments.
+
+    Returns:
+        Per-episode accuracies, per-episode lengths, and the predicted grid
+        for each environment.
     """
     n_envs = vec_env.num_envs + 1 if hasattr(vec_env, 'envs') else 1 # 1 for train + 1 for test
     test_env = vec_env.test_env
@@ -51,7 +53,7 @@ def evaluate_ARC_policy(
             test_observation,  # type: ignore[arg-type]
             state=test_states,
             deterministic=deterministic,
-        )       
+        )
         new_observations, rewards, dones, infos = vec_env.step(actions)
         new_test_observation, test_reward, test_done, test_info = test_env.step(test_action)
         current_rewards[:-1] += rewards
@@ -74,6 +76,6 @@ def evaluate_ARC_policy(
                     episode_accs[i].append(acc)
                     episode_counts[i] += 1
                     current_rewards[i] = 0
-                    current_lengths[i] = 0 
+                    current_lengths[i] = 0
         observations = new_observations
     return episode_accs, episode_lengths, predicted_grids

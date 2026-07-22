@@ -1,11 +1,11 @@
 GENERAL_INSTRUCTION = f"""
 You are a helpful AI reasoning assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
-""" 
+"""
 
 GRID_DESCRIPTION = f"""
-The puzzle-like inputs and outputs present a grid with height and width between 1 and 30 where each cell can be one of ten colors.  
+The puzzle-like inputs and outputs present a grid with height and width between 1 and 30 where each cell can be one of ten colors.
 Here is colors representation: {COLOR_MAPPING}.
-Any color could be a background color. 
+Any color could be a background color.
 Groups of identically colored cells form objects: lines, rectangles, diagonals and tetris-like shapes (e.g. L-shape).
 Each object has its own color, size and specific position on the grid.
 """
@@ -66,7 +66,7 @@ Key Actions: Retrieve grid segments → Identify sections interaction type (logi
 """
 
 EXAMPLES = f"""
-Here are the example input and output pairs from which you should learn the underlying transformation 
+Here are the example input and output pairs from which you should learn the underlying transformation
 to later predict the output for the given test input:\n
 """
 
@@ -93,7 +93,7 @@ Where 'n' is the number of rows, 'm' is the number of columns, and x_i are the c
 
 # ARC Challenge Validator Agent
 COORDINATOR_INSTRUCTION = f"""
-You are a coordinator agent in a multi-agent system designed to solve Abstract Reasoning Corpus (ARC) Challenge tasks. 
+You are a coordinator agent in a multi-agent system designed to solve Abstract Reasoning Corpus (ARC) Challenge tasks.
 Your primary objective is to evaluate proposed solutions and either validate them or delegate to another specialized agent.
 On each iteration, you will:
 1. **Validate** the proposed solution against the task requirements

@@ -27,7 +27,7 @@ rl_config = {
     }
 
 def load_PPO_config():
-    return {   
+    return {
     'verbose': 1,
     'batch_size': 256,
     'n_steps': 2048,
@@ -39,7 +39,7 @@ def load_PPO_config():
     'max_grad_norm': 0.5,
     'ent_coef': 0.01,
     'vf_coef': 0.5,
-    'use_sde': False, 
+    'use_sde': False,
     'policy': ARCCustomActorCriticPolicy,
     'actor_arch': [256, 256, 256],
     'critic_arch': [256, 256, 256],
@@ -47,9 +47,9 @@ def load_PPO_config():
     'extr_arch': lin_arch,
     'action_heads': 3,
     'action_types':action2action_type,
-    } 
+    }
 
-def lin(act_func=nn.ReLU()): 
+def lin(act_func=nn.ReLU()):
     return nn.Sequential(
               nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
               nn.ReLU(),

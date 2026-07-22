@@ -11,9 +11,9 @@ from symbolic.summaries import GridSummary
 class ARCGridWorld(gymnasium.Env):
     def __init__(
                 self, max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
-                seed=None, font_color=0, padding=False, input_pattern=False, 
+                seed=None, font_color=0, padding=False, input_pattern=False,
                 milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
-                observation_space_elements = ["objects_emb", "relations_emb"], 
+                observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:'submit'},
                 ):
         self.step_no = 0
@@ -29,7 +29,7 @@ class ARCGridWorld(gymnasium.Env):
         self.padding = padding
         self.pad_val = pad_val
         self.low_val = self.pad_val if self.pad_val < 0 else 0
-        self.max_val = self.pad_val if self.pad_val > 0 else 9        
+        self.max_val = self.pad_val if self.pad_val > 0 else 9
         self.input_pattern = input_pattern
         self.milestones_rewards = milestones_rewards
         self.reward_approach = reward_approach
@@ -40,7 +40,7 @@ class ARCGridWorld(gymnasium.Env):
         self.action_name_to_idx = {name: idx for idx, name in self.actions_dict.items()}
         self.objects = []
         self.action_space = spaces.MultiDiscrete([
-            1, # Action types 
+            1, # Action types
             30,    # Object 1 index
             30,    # Object 2 index
         ])
@@ -49,7 +49,7 @@ class ARCGridWorld(gymnasium.Env):
             'grid': spaces.Box(low=self.low_val, high=self.max_val, shape=(30, 30), dtype=self.grid_dtype),
         }
         self.observation_space = spaces.Dict(self.observation_space)
-    
+
     def step_intersection(self, grid:np.array):
         """
         Calculates the difference between the maximal intersection at previous step and the current one.
@@ -57,19 +57,19 @@ class ARCGridWorld(gymnasium.Env):
         ----------
         grid : np.array
             Current grid state.
-        """   
+        """
         max_int = self.maximal_intersection(grid)
         done = (max_int==self.target_int)
         right_placement = (max_int-self.max_int)
         self.max_int = max_int
         self.right_placement = right_placement
         return right_placement, done
-    
+
     def maximal_intersection(self, grid:np.array):
         """Calculate the number of common blocks for current grid and target grid."""
         intersection = ((np.array(grid)==np.array(self.train_out)) * (grid!=self.pad_val) * (self.train_out!=self.pad_val)).sum() - ((np.array(grid)!=np.array(self.train_out)) * (grid!=self.pad_val) * (self.train_out!=self.pad_val)).sum()
         return intersection
-    
+
     def set_subtask(self, subtask):
         """
         Assigns provided task into the environment. On each .reset, the env
@@ -84,15 +84,15 @@ class ARCGridWorld(gymnasium.Env):
             grid_without_padding[grid_without_padding==self.pad_val] = self.font_color
             self.initial_grid_summary = GridSummary(grid=grid_without_padding, shape=self.subtask.train_inp_shape, levels=[self.repr_level])
         else:
-            self.initial_grid_summary = GridSummary(grid=self.subtask.train_inp, shape=self.subtask.train_inp_shape, levels=[self.repr_level]) 
+            self.initial_grid_summary = GridSummary(grid=self.subtask.train_inp, shape=self.subtask.train_inp_shape, levels=[self.repr_level])
         self.initial_objects = self.initial_grid_summary.repr_levels[self.repr_level].objects
         self.train_inp = self.subtask.train_inp
         self.train_out = self.subtask.train_out
         self.subtask_label = self.subtask.label
         self.action_space = spaces.MultiDiscrete([ # adapt action space to specific task
-            len(self.actions_dict.keys()), 
+            len(self.actions_dict.keys()),
             len(self.initial_objects),
-            len(self.initial_objects),  
+            len(self.initial_objects),
         ])
         if "objects_emb" in self.observation_space_elements:
             self.initial_objects_emb = np.array([obj.create_embedding() for obj in self.initial_objects])
@@ -100,11 +100,11 @@ class ARCGridWorld(gymnasium.Env):
             self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
             self.initial_relation_emb = self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
         self.reset(seed=self.seed)
-        
+
     def initialize_observation_space(self, subtask):
-        shape_x = self.subtask.train_out_shape[0]      
+        shape_x = self.subtask.train_out_shape[0]
         shape_y = self.subtask.train_out_shape[1]
-        shape_x_inp = self.subtask.train_inp_shape[0]      
+        shape_x_inp = self.subtask.train_inp_shape[0]
         shape_y_inp = self.subtask.train_inp_shape[1]
         if self.input_pattern == 'start':
             starting_grid = copy(self.subtask.train_inp)
@@ -130,7 +130,7 @@ class ARCGridWorld(gymnasium.Env):
         if "objects_emb" in self.observation_space_elements:
             self.observation_space['objects_emb'] = spaces.Box(low=0, high=1, shape=(len(self.initial_objects), 32), dtype=self.grid_dtype)
         if "relations_emb" in self.observation_space_elements:
-            self.observation_space['relations_emb'] = spaces.Box(low=0, high=1, shape=(len(self.initial_objects), len(self.initial_objects)*8), dtype=self.grid_dtype)            
+            self.observation_space['relations_emb'] = spaces.Box(low=0, high=1, shape=(len(self.initial_objects), len(self.initial_objects)*8), dtype=self.grid_dtype)
         self.observation_space = spaces.Dict(self.observation_space)
 
     def initialize_targets(self):
@@ -144,25 +144,25 @@ class ARCGridWorld(gymnasium.Env):
             self.milestones = {int(self.max_int + milestone_step * (step+1)):self.max_reward * self.milestones_rewards[step] for step in range(len(self.milestones_rewards)-1)}
             self.milestones[self.target_int] = self.max_reward * self.milestones_rewards[-1]
         self.base_int = copy(self.max_int)
-        if self.reward_approach == 2:     
+        if self.reward_approach == 2:
             self.max_reward += sum(self.milestones.values())
         elif self.reward_approach == 4:
             self.max_reward *= 2
         elif self.reward_approach in [1,3]:
-            self.max_reward += self.milestones[self.target_int]        
-            
+            self.max_reward += self.milestones[self.target_int]
+
     def submit_grid(self):
-        obs = {} 
+        obs = {}
         obs['grid'] = self.grid.copy().astype(self.grid_dtype)
         obs['action_space'] = np.array(self.action_space.nvec)
         if self.input_pattern == 'separate':
-            obs['input_pattern'] = self.train_inp.copy() 
+            obs['input_pattern'] = self.train_inp.copy()
         if "target" in self.observation_space_elements:
             obs['target'] = np.array(self.train_out).copy().astype(self.grid_dtype)
         if "objects_emb" in self.observation_space_elements:
             obs['objects_emb'] = self.objects_emb.copy().astype(self.grid_dtype)
         if "relations_emb" in self.observation_space_elements:
-            obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)   
+            obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)
         truncated = False
         info = {}
         reward = 0
@@ -175,17 +175,17 @@ class ARCGridWorld(gymnasium.Env):
                 reward = self.milestones_rewards[-1]
             else:
                 if self.reward_approach == 1:
-                   reward = -1 * list(reversed(self.milestones_rewards))[i] # reward only for the whole result 
+                   reward = -1 * list(reversed(self.milestones_rewards))[i] # reward only for the whole result
                 elif self.reward_approach == 3: # no negative rewards for partial result
                     reward = 0
-            
+
         elif self.reward_approach == 2: # partial reward for some achieved milestones
             for idx, milestone_int in enumerate(self.milestones.keys()):
                 if self.max_int >= milestone_int:
                     reward += self.milestones_rewards[idx]
                 else:
                     reward = -1 * self.milestones_rewards[-1]
-                    break  
+                    break
         elif self.reward_approach == 4: # monotonic scaling reward based on percentage of the task complition
             completion_share = (self.max_int-self.base_int) / (self.target_int-self.base_int)
             reward = self.max_reward_base
@@ -201,12 +201,12 @@ class ARCGridWorld(gymnasium.Env):
         self.initialize_targets()
         self.step_no = 0
         self.prev_action = None
-        
+
         obs = {
             'grid': np.array(self.grid).astype(self.grid_dtype),
             'action_space': np.array(self.action_space.nvec)
-        }  
-        
+        }
+
         if self.input_pattern == 'separate':
             obs['input_pattern'] = np.array(self.train_inp).copy().astype(self.grid_dtype)
         if "target" in self.observation_space_elements:
@@ -216,8 +216,8 @@ class ARCGridWorld(gymnasium.Env):
             obs['objects_emb'] = self.objects_emb.copy().astype(self.grid_dtype)
         if "relations_emb" in self.observation_space_elements:
             self.relations_emb = self.initial_relation_emb.copy()
-            obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)                  
-            
+            obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)
+
         info = {}
         return (obs, info)
 
@@ -230,7 +230,7 @@ class ARCGridWorld(gymnasium.Env):
         self.step_no += 1
         # Submit grid (final action)
         if self.actions_dict[action[0]] == 'submit':
-           return self.submit_grid()  
+           return self.submit_grid()
         # Parse action with MultiDiscrete functionality
         add, transform = self.world.parse_action(action)
         object_1 = self.objects[action[1]]
@@ -242,20 +242,20 @@ class ARCGridWorld(gymnasium.Env):
             if opp_time > 0.01 :
                 print(f'Transform "{transform}" performed with {opp_time} operation time')
                 pr.print_stats()
-        
-        eq_check = np.array_equal(new_grid, self.grid)        
+
+        eq_check = np.array_equal(new_grid, self.grid)
         # Update grid if it was transformed
-        if new_grid is not None and eq_check: 
+        if new_grid is not None and eq_check:
             reward += -1 * self.action_penalty # penalty for ineffective actions
 
-        obs = {}  
+        obs = {}
         obs['grid'] = copy(new_grid)
         obs['action_space'] = np.array(self.action_space.nvec)
         self.grid = copy(new_grid)
-        
-        
+
+
         if self.input_pattern == 'separate':
-            obs['input_pattern'] = self.train_inp.copy().astype(self.grid_dtype)  
+            obs['input_pattern'] = self.train_inp.copy().astype(self.grid_dtype)
         if "target" in self.observation_space_elements:
             obs['target'] = self.train_out.copy().astype(self.grid_dtype)
         if "objects_emb" in self.observation_space_elements:
@@ -264,23 +264,23 @@ class ARCGridWorld(gymnasium.Env):
             for obj_idx in list(set([action[1], action[2]])): # update involved objects relation embeddings
                 self.grid_summary.update_representation_level(self.repr_level, self.objects[obj_idx])
             obs['relations_emb'] = self.grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
-            
+
         right_placement, done = self.step_intersection(self.grid)
         done = (self.step_no==self.max_episode_len)
         reward += right_placement * self.right_placement_reward  # Bonus for effective transformations
-            
+
         # Discourage action repetition
         if self.prev_action is not None and np.array_equal(self.prev_action, action):
             reward += -1 * self.repetitive_actions_penalty
-        
+
         self.prev_action = action.copy()
 
         # Reward normalization
         reward = round(reward / self.max_reward, 2)
-        
+
         truncated = False
         info = {
-            'right_placement': right_placement, 
+            'right_placement': right_placement,
             'change_of_grid': not eq_check,
             'action_space_shape': self.action_space.nvec,
         }
@@ -298,17 +298,14 @@ class ARCGridWorld(gymnasium.Env):
             'right_placement': self.right_placement,
             'wrong_placement': self.wrong_placement,
         }
-        
+
         return state
-    
+
     def set_state(self, state):
-        """
-        Restore the environment to a previously captured state.
-        
-        Parameters:
-        -----------
-        state : dict
-            State dictionary returned by get_state()
+        """Restore the environment to a previously captured state.
+
+        Args:
+            state: State dictionary returned by get_state().
         """
         self.grid = state['grid'].copy()
         self.step_no = state['step_no']
@@ -318,7 +315,7 @@ class ARCGridWorld(gymnasium.Env):
 
 def create_env(
                 max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
-                seed=None, font_color=0, padding=False, input_pattern=False, milestones_rewards=(1, 2, 3, 4), 
+                seed=None, font_color=0, padding=False, input_pattern=False, milestones_rewards=(1, 2, 3, 4),
                 pad_val=10, reward_approach=1, repr_level=1, observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:"submit"}
                ):
@@ -326,7 +323,7 @@ def create_env(
         max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
         action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
         seed=seed, font_color=font_color, padding=padding, input_pattern=input_pattern, repr_level=repr_level,
-        reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val, 
+        reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
         feasible_actions=feasible_actions,observation_space_elements=observation_space_elements,
         )
     return env

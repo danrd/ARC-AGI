@@ -36,8 +36,8 @@ def lev_sim(s1: str, s2: str) -> float:
 def prompts_length_dist(dataset, tokenizer, plot=False, percentiles=False):
     lens = []
     for prompt in dataset['text']:
-        l = len(tokenizer(prompt)['input_ids'])
-        lens.append(l)
+        token_len = len(tokenizer(prompt)['input_ids'])
+        lens.append(token_len)
     counter = sorted(Counter(lens), reverse=True)
     if plot:
         plt.hist(sorted(counter, reverse=True))
@@ -50,24 +50,24 @@ def prompts_length_dist(dataset, tokenizer, plot=False, percentiles=False):
         return counter, percs
     else:
         return counter
-    
+
 def parse_concise_grid(grid_str: str) -> np.array:
     """
     Parse a grid from concise LLM output representation into a NumPy array.
     """
     lines = grid_str.strip().split('\n')
-    
+
     # Extract shape from the first line
     shape_line = lines[0]
     shape = tuple(map(int, shape_line.split('(')[1].split(')').split(',')))
-    
+
     # Parse grid values
     grid = []
     for line in lines[1:]:
         # Ignore the row index at the start of each line
         row_values = list(map(int, line.split()[1]))
         grid.append(row_values)
-    
+
     return np.array(grid).reshape(shape)
 
 def parse_ascii_grid(grid_str: str) -> np.array:
@@ -75,17 +75,17 @@ def parse_ascii_grid(grid_str: str) -> np.array:
     Parse a grid from ASCII LLM output representation into a NumPy array.
     """
     lines = grid_str.strip().split('\n')
-    
+
     # Extract shape from the first line
     shape_line = lines[0]
     shape = tuple(map(int, shape_line.split('(')[1].split(')').split(',')))
-    
+
     # Parse grid values
     grid = []
     for line in lines[1:]:
         row_values = list(map(int, line.split('|')))
         grid.append(row_values)
-    
+
     return np.array(grid).reshape(shape)
 
 def check_module_devices(model):
@@ -99,25 +99,25 @@ def parse_llm_output(text, colors_str=False, max_grid_dim=30):
     1 x_1 ... x_m
     ...
     n x_1 ... x_m
-    
+
     Where n is the number of rows, m is the number of columns and x_i are the cell values.
-    
+
     Args:
         text (str): The text to parse
-        
+
     Returns:
         numpy.ndarray: A NumPy array of shape (n, m)
     """
     inverse_colors_mapping_short = {
-    'b':0, 'B':1, 'R':2, 'G':3, 'Y':4, 
-    'g':5, 'M':6, 'O':7, 'S':8, 'W':9 
+    'b':0, 'B':1, 'R':2, 'G':3, 'Y':4,
+    'g':5, 'M':6, 'O':7, 'S':8, 'W':9
 }
     # Split the text into lines
     lines = text.strip().split('\n')
-    
+
     # Parse the header to get dimensions
     dimensions = lines[0].strip().rstrip(':').split(',')
-    try: 
+    try:
         if len(dimensions) == 2 and int(dimensions[0]) in range(1, max_grid_dim + 1) and int(dimensions[1]) in range(1, max_grid_dim + 1):
             n_rows = int(dimensions[0])
             n_cols = int(dimensions[1])
@@ -125,10 +125,10 @@ def parse_llm_output(text, colors_str=False, max_grid_dim=30):
             return ""
     except ValueError:
         return ""
-    
+
     # Initialize the result array
     result = np.zeros((n_rows, n_cols), dtype=int)
-    
+
     # Parse each row
     for i in range(1, n_rows + 1):
         if i < len(lines):
@@ -154,7 +154,7 @@ def parse_llm_output(text, colors_str=False, max_grid_dim=30):
             else:
                 # Multiple separate values (like "0 0 0 0 2 0 0 0 0")
                 for j in range(min(n_cols, len(row_data) - 1)):
-                    try: 
+                    try:
                         result[row_num-1, j] = int(row_data[j]) if not colors_str else inverse_colors_mapping_short[row_data[j]]
                     except (ValueError, KeyError):
                         return ""

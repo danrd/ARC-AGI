@@ -268,8 +268,8 @@ def _terminate_process(process: subprocess.Popen, timeout: float = 10.0) -> None
 
 
 def _start_llama_cpp_server(config) -> subprocess.Popen:
-    # NOTE: same as the original — installing at runtime is convenient but
-    # slow and non-reproducible; move to requirements.txt when this settles.
+    # TODO: installing at runtime is convenient but slow and non-reproducible;
+    # move to requirements.txt when this settles.
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "llama-cpp-python[server]"])
 
     port = getattr(config.base, "port", 8001)

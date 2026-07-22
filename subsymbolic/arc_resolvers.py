@@ -22,11 +22,11 @@ def build_examples_resolver(task, budget: int, context: dict, builder) -> Option
     environment, stopping once the token budget is exhausted (but requiring
     at least builder.config.min_examples to fit, or the whole block fails).
 
-    This used to be a PromptBuilder method (_build_examples) — moved out
-    here because task.subtasks / .train_inp / .train_out is ARC-specific
-    knowledge the framework itself shouldn't carry. It only needed `env`,
-    `config`, and the tokenizer, all of which `builder` (passed in by
-    PromptBuilder.build()) already exposes.
+    Lives here rather than on PromptBuilder itself because
+    task.subtasks / .train_inp / .train_out is ARC-specific knowledge the
+    framework shouldn't carry — it only needs `env`, `config`, and the
+    tokenizer, all of which `builder` (passed in by PromptBuilder.build())
+    already exposes.
     """
     template = builder.env.get_template("examples/v1.j2")
     accumulated = ""

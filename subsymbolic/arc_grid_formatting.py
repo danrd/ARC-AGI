@@ -1,8 +1,7 @@
 """ARC-specific grid textual representations, used by PromptBuilder's `grid`
-filter. Consolidates what used to be four near-duplicate functions
-(prepare_grid_for_prompt + concise/ascii/color_text/array_to_ascii) into one
-dispatcher, so adding a representation means adding one branch here instead
-of a new top-level function plus a new if/elif in the caller.
+filter. A single dispatcher over representation-specific helpers, so adding a
+representation means adding one branch here instead of a new top-level
+function plus a new if/elif in the caller.
 """
 import numpy as np
 

@@ -1,6 +1,6 @@
 """
 Unified registry for methods related to subsymbolic functionality.
-It's purpose is to aggregate and isolate task-specific functions from task-agnostic features. 
+It's purpose is to aggregate and isolate task-specific functions from task-agnostic features.
 """
 
 from subsymbolic.arc_resolvers import build_examples_resolver, transformation_summary_resolver

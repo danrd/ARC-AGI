@@ -4,7 +4,7 @@ from typing import List,Tuple, Union
 from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import sync_envs_normalization
 from stable_baselines3.common.logger import Logger, KVWriter, make_output_format
-from rl.evaluation import evaluate_ARC_policy 
+from rl.evaluation import evaluate_ARC_policy
 from utils.plotting import plot_grid
 class MonitorCallback(EvalCallback):
     def __init__(
@@ -14,8 +14,8 @@ class MonitorCallback(EvalCallback):
             eval_start: int = 1,
             n_eval_episodes: int = 1,
             max_episode_length: int = None,
-            verbose = True,    
-            n_envs: int = 1, 
+            verbose = True,
+            n_envs: int = 1,
             max_rewards: dict = {},
             log_path:str = None,
             debug:bool = False,
@@ -26,9 +26,9 @@ class MonitorCallback(EvalCallback):
         self.eval_freq = eval_freq
         self.eval_start = eval_start
         self.n_eval_episodes = n_eval_episodes
-        self.last_eval: int = -1 
+        self.last_eval: int = -1
         self.n_eval = 0
-        self.verbose = verbose      
+        self.verbose = verbose
         self.n_envs = eval_env.num_envs if hasattr(eval_env, 'envs') else 1
         self.log_path = log_path
         self.debug = debug
@@ -50,18 +50,18 @@ class MonitorCallback(EvalCallback):
         """Update values for metric for each environment."""
         for i in range(self.n_envs):
             metric[i].append(new_values[i])
-        return metric 
-    
+        return metric
+
     def _on_step(self) -> bool:
         if self.debug:
             self.train_rewards = self.update_metric(self.train_rewards, self.locals['rewards'])
             self.grids = self.update_metric(self.grids, self.locals['obs_tensor']['grid'])
-            self.next_grids = self.update_metric(self.next_grids, self.locals['new_obs']['grid']) 
+            self.next_grids = self.update_metric(self.next_grids, self.locals['new_obs']['grid'])
             self.actions = self.update_metric(self.actions, self.locals['actions'])
             self.values = self.update_metric(self.values, self.locals['values'])
-            self.dones = self.update_metric(self.dones, self.locals['dones'])    
-            self.infos = self.update_metric(self.infos, self.locals['infos']) 
-            self.positions = self.update_metric(self.positions, self.locals['obs_tensor']['agent_position']) 
+            self.dones = self.update_metric(self.dones, self.locals['dones'])
+            self.infos = self.update_metric(self.infos, self.locals['infos'])
+            self.positions = self.update_metric(self.positions, self.locals['obs_tensor']['agent_position'])
         if self.n_calls > self.eval_start and self._do_evaluation():
             self._evaluate()
         return True
@@ -108,7 +108,7 @@ class MonitorCallback(EvalCallback):
         This event is triggered before updating the policy.
         """
         pass
-    
+
     def _evaluate(self):
         if self.model.get_vec_normalize_env() is not None:
             try:
@@ -130,7 +130,7 @@ class MonitorCallback(EvalCallback):
         self.episode_accs.append(acc)
         self.episode_mean_lens.append(mean_len)
         self.episode_grid_preds.append(grid_pred)
-        
+
         if self.verbose:
             print(f'After {(self.num_timesteps/self.model._total_timesteps)*100:.2f}% of training: Accuracy: {acc:.2f}, Mean episode length: {mean_len:.2f}')
             plot_grid(grid_pred)
@@ -139,19 +139,19 @@ class MonitorCallback(EvalCallback):
             self.env.stop_evaluation()
         except AttributeError:
             pass
-    
+
         self.last_eval = self.num_timesteps
         self.n_eval += 1
 
     def _do_evaluation(self,) -> bool:
         return self.eval_freq > 0 and self.n_calls % self.eval_freq == 0 and self.model._total_timesteps >= self.num_timesteps
-    
+
     def _reset(self):
         self.last_eval = 0
         self.n_eval = 0
         self.n_calls = 0
         pass
-        
+
     def _on_training_end(self) -> None:
         """ This event is triggered before exiting the `learn()` method."""
         metrics = self.logger.name_to_value_track

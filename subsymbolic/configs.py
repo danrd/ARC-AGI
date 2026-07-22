@@ -6,47 +6,47 @@ from typing import Any, Dict, List, Optional, Literal
 class BaseConfig(BaseModel):
     """Setup config specifing all meta parameters for system functionality."""
     model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
-    seed: int = 42 
+    seed: int = 42
     checkpoint_interval: int = 1 # number of examples to process before printing relevant info
-    device: str = 'cpu' 
+    device: str = 'cpu'
     framework: str = 'llama_cpp' # llama_cpp | vllm | hf
     model: str = 'unsloth/Qwen3.6-27B-GGUF'
     quant_file: str = 'Qwen3.6-27B-Q4_K_M.gguf'
     max_context: int = 9000 # llm token limit for computational resources to control
-    openrouter_models: List[str] = ["google/gemma-4-26b-a4b-it", 
+    openrouter_models: List[str] = ["google/gemma-4-26b-a4b-it",
                                     "nvidia/nemotron-3-ultra-550b-a55b",]
 
 class GenerationConfig(BaseModel):
     """Base framework-agnostic config specifying key llm generation parameters."""
     model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
 
-    temperature: float = Field(default=0.0, ge=0.0, le=2.0, 
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0,
                                description="Scales logit distribution before softmax. 0.0 = greedy (argmax). < 1.0 = sharper, > 1.0 = flatter.")
-    
+
     max_tokens:  int   = Field(default=256,  ge=1,
                                description="Maximum number of tokens to generate.")
-    
+
     top_p:       float = Field(default=1.0,  ge=0.0, le=1.0,
                                description="Nucleus sampling: keep smallest token set whose cumulative probability ≥ top_p. 1.0 = disabled.")
-    
+
     top_k:       int   = Field(default=-1,   ge=-1,
                                description="Sample from top-k most probable tokens. -1 = disabled.")
-    
+
     stop:        List[str] = Field(default_factory=list,
                                    description="Stop generation immediately when any of these strings is produced.")
-    
+
     repetition_penalty: float = Field(default=1.0, ge=0.0,
                                       description="Multiplicative penalty on previously generated tokens. 1.0 = no penalty, > 1.0 = penalise repetition.")
-    
+
     frequency_penalty: float = Field(default=0.0, ge=-2.0, le=2.0,
                                      description="Additive logit penalty scaled by token frequency in context. Positive = reduce repetition.")
-                                     
+
     use_beam_search: bool = Field(default=False,
                                    description="Use beam search instead of sampling. Requires temperature=0.0.")
-    
+
     best_of: int = Field(default=1, ge=1,
                            description="Generate best_of candidates, return the best n. Must be ≥ n. Required for beam search.")
-            
+
     def to_dict(self, exclude_none: bool = True,exclude_unset: bool = False,) -> Dict[str, Any]:
         """Plain dict for **kwargs unpacking."""
         return self.model_dump(exclude_none=exclude_none, exclude_unset=exclude_unset)
@@ -54,7 +54,7 @@ class GenerationConfig(BaseModel):
     def merge(self, overrides: Dict[str, Any]) -> BaseConfig:
         """Return a new config with override values applied (non-mutating)."""
         return self.model_copy(update=overrides)
-                            
+
     def to_llama_cpp(self, seed: int) -> dict:
         """Prepare generation config for llama_cpp framework using a set of defaults parameters."""
         return {
@@ -66,7 +66,7 @@ class GenerationConfig(BaseModel):
             "stop":               self.stop,
             "repeat_penalty":     self.repetition_penalty,
         }
-    
+
     def to_vllm(self, seed: int):
         """Prepare generation config for vllm framework using a set of defaults parameters."""
         from vllm import SamplingParams
@@ -174,7 +174,7 @@ class PromptingConfig(BaseModel):
     blocks_dir: str = "data/prompts"
     blocks: List[BlockSpec|str] = ["general_instruction", "examples", "output_format"] # list of element types to compose prompt
     block_overrides: Optional[Dict[str, str]] = Field(default_factory=dict) # specific blocks subsitution while experimenting
-    token_limit: int = 9000 # resources management 
+    token_limit: int = 9000 # resources management
     min_examples: int = 2   # examples block must fit at least this many
     filters: Optional[List[str]] = Field(default_factory=list) # project-specific data processing functions
     resolvers: Optional[List[str]] = Field(default_factory=list) # project-specific complex prompting methods
@@ -192,20 +192,20 @@ class ExperimentConfig(BaseModel):
 
     def to_llama_cpp(self) -> dict:
         return self.generation.to_llama_cpp(seed=self.base.seed)
-    
+
     def to_vllm(self) -> dict:
         return self.generation.to_vllm(seed=self.base.seed)
 
     def to_hf(self) -> dict:
-        return self.generation.to_hf(seed=self.base.seed)    
+        return self.generation.to_hf(seed=self.base.seed)
 
     def to_open_router(self) -> dict:
-        return self.generation.to_open_router(seed=self.base.seed)  
+        return self.generation.to_open_router(seed=self.base.seed)
 
     def dump(self):
         with open("exp.yaml", "w") as f:
             yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)
-    
+
     @classmethod
     def from_dict(cls, exp_params: dict) -> "ExperimentConfig":
         base = BaseConfig(**exp_params.get("base", {}))

@@ -44,12 +44,12 @@ def dict_merge(dict_1:dict, dict_2:dict)->dict:
 def dict_to_list(dict):
     res_list = []
     keys = dict.keys()
-    for key in keys: 
+    for key in keys:
         res_list.extend(dict[key])
     return res_list
 
 def coords_transform(shape:List[tuple]):
-    """Transform list of tuples into two lists for i and j coordinates.""" 
+    """Transform list of tuples into two lists for i and j coordinates."""
     return [tup[0] for tup in shape], [tup[1] for tup in shape]
 
 def define_grid_cells(max_grid_size:int=30)->dict:
@@ -79,12 +79,12 @@ def define_grid_cells(max_grid_size:int=30)->dict:
                 cells.append(cell)
             for i in range(i_left+1, i_right+1):
                 cell = (i, j_left)
-                cells.append(cell) 
+                cells.append(cell)
         cells_copy = copy.copy(cells)
-        grid_cells[(grid_size, grid_size)] = cells_copy    
-    return grid_cells        
+        grid_cells[(grid_size, grid_size)] = cells_copy
+    return grid_cells
 
-grid_cells = define_grid_cells()   
+grid_cells = define_grid_cells()
 
 def grid_mapping(coords:List[tuple], grid_cells:dict)->tuple:
     """Maps a list of coordinates to minimal grid shape for which the list is admissible."""
@@ -154,7 +154,7 @@ def multiplicate_shapes(shapes, grid_size:tuple)->dict:
                 new_shape = shape_shift(shape, i, j)
                 if is_admissible(new_shape, grid_size):
                       multiplied_shapes.append([new_shape])
-    return multiplied_shapes 
+    return multiplied_shapes
 
 def is_admissible2(grid_admissible:List[tuple], shape:List[tuple])->bool:
     """Defines possibility of placing shape inside grid."""
@@ -176,14 +176,14 @@ def multiplicate_shapes2(shapes, grid_size:tuple)->dict:
                 new_shape = shape_shift(shape, i, j)
                 if is_admissible(grid_admissible, new_shape):
                       multiplied_shapes.append([new_shape])
-    return multiplied_shapes 
+    return multiplied_shapes
 
 def check_subset_condition(larger_obj:set, smaller_obj:list)->bool:
     """Check if all coordinates of smaller object are occupied be larger object."""
     for coord in smaller_obj:
         if coord in larger_obj:
             continue
-        else: 
+        else:
             return False
     return True
 
@@ -193,22 +193,22 @@ def grid_formatting(grid:Union[np.array, List[list], List[tuple]])->np.array:
         grid = np.array(grid)
     max_el = grid.max()
     if max_el >= 1 and type(max_el) in [np.int64, np.int32, np.int16, np.int8]:
-       return grid.astype(int) 
+       return grid.astype(int)
     else:
-      return (grid*10).astype(int)      
+      return (grid*10).astype(int)
 
 def crop_pad(grid: np.ndarray, pad_val=10) -> np.ndarray:
     """Return grid without padding."""
     # Find non-padding elements
     i, j = np.where(grid != pad_val)
-    
+
     if len(i) == 0:  # Handle empty grids
         return grid
-    
+
     # Find the boundaries
     min_i, max_i = min(i), max(i)
     min_j, max_j = min(j), max(j)
-    
+
     # Extract the cropped region directly
     cropped_grid = grid[min_i:max_i+1, min_j:max_j+1]
     return cropped_grid
@@ -228,7 +228,7 @@ def adjust_grid_shape(grid:np.array, target_shape:tuple=(30,30), pad_value:int=1
         reshaped_grid = np.pad(grid, pad_width=[(left_pad,right_pad), (upper_pad, down_pad)], constant_values=pad_value)
     if normalize:
         reshaped_grid = reshaped_grid/10
-    return reshaped_grid 
+    return reshaped_grid
 
 def augment_grid(grid:np.array)->List[np.array]:
     new_grids = []
@@ -259,4 +259,4 @@ def pad_grid(grid:np.array, target_shape, pad_val):
     down_pad = target_shape[1] - shape_y - upper_pad
     padded_grid = np.pad(grid, pad_width=[(left_pad,right_pad), (upper_pad, down_pad)], constant_values=pad_val)
     return padded_grid
-    
+

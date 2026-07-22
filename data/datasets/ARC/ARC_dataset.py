@@ -10,7 +10,7 @@ from typing import Union, List
 from rl.ARC_task import ARCTask, ARCSubtask
 
 class ARCDataset:
-    def __init__(self, additional_datasets:bool=False, augmentation:bool=False, 
+    def __init__(self, additional_datasets:bool=False, augmentation:bool=False,
                  ttt_augmentation:bool=False, filter_tasks:bool=False,
                  ver2:bool=False):
         self.subsets = {}
@@ -35,13 +35,13 @@ class ARCDataset:
             test_inp.append(np.array(d['input']))
             test_out.append(np.array(self.training_solutions[task_key][idx]))
         return train_inp, train_out, test_inp, test_out
-    
+
     def load_dataset(self, additional_datasets, filter_tasks):
         """
         Load dataset files and set splitting for training.
         Args:
             additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
-        """    
+        """
         self.datasets = {}
         self.training_challenges = load_json('data/datasets/ARC/training_challenges.json')
         self.training_solutions = load_json('data/datasets/ARC/training_solutions.json')
@@ -78,7 +78,7 @@ class ARCDataset:
         Load dataset files and set splitting for training.
         Args:
             additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
-        """    
+        """
         training_challenges = load_json('data/dataset/ARC2/arc-agi_training_challenges.json')
         training_solutions = load_json('data/dataset/ARC2/arc-agi_training_solutions.json')
         evaluation_challenges = load_json('data/dataset/ARC2/arc-agi_evaluation_challenges.json')
@@ -111,9 +111,9 @@ class ARCDataset:
             if idx == 1119:
                 self.subsets['arc2_eval_add'] = len(additional_tasks)
                 self.additional_tasks.extend(additional_tasks)
-                additional_tasks = []  
+                additional_tasks = []
         self.tasks.extend(tasks)
-    
+
     @staticmethod
     def filter_tasks(challenges, solutions, rejected_tasks):
         exclude_list = []
@@ -123,7 +123,7 @@ class ARCDataset:
         for key in exclude_list:
             del challenges[key]
             del solutions[key]
-        return challenges, solutions 
+        return challenges, solutions
 
     def create_tasks(self, augmentation):
         """Create a list of tasks for current splitting setting."""
@@ -154,12 +154,12 @@ class ARCDataset:
             if idx == 799:
                 self.subsets['arc1_eval_add'] = len(additional_tasks)
                 self.additional_tasks.extend(additional_tasks)
-                additional_tasks = []  
+                additional_tasks = []
         if augmentation:
-            tasks += self.aug_tasks[0:5600] + self.aug_tasks[11200:] # excluding aug tasks for test set 
+            tasks += self.aug_tasks[0:5600] + self.aug_tasks[11200:] # excluding aug tasks for test set
         return tasks
 
-    def augment_task(self, subtasks:List[ARCSubtask], test_inp:np.array, 
+    def augment_task(self, subtasks:List[ARCSubtask], test_inp:np.array,
                      test_out:np.array, key:str)->List[List[ARCSubtask]]:
         """Create a list of additional tasks based on subtasks of a given initial task using grid augmentation."""
         aug_subtasks = [[] for _ in range(14)] # as with augmentation we have 14 new grids
@@ -203,7 +203,7 @@ class ARCDataset:
             n = len(train_inp)
             test_idx = np.random.randint(0, n) # identify index of test subtask
             # exclude test subtask from train subtasks
-            test_inp = train_inp.pop(test_idx) 
+            test_inp = train_inp.pop(test_idx)
             test_out = train_out.pop(test_idx)
             subtasks = []
             for i in range(n-1):
@@ -213,21 +213,21 @@ class ARCDataset:
             difficulty = self.task2difficulty[key]
             self.task2difficulty[ttt_key] = difficulty
             task = ARCTask(ttt_key, subtasks, test_inp, test_out)
-            ttt_tasks.append(task) 
+            ttt_tasks.append(task)
             if augmentation:
                 aug_task = self.augment_task(subtasks, test_inp/10, test_out/10, ttt_key)
                 aug_ttt_tasks.extend(aug_task)
         if augmentation:
             ttt_tasks += aug_ttt_tasks
         return ttt_tasks
-    
+
     def prepare_eval_dataset(self, max_shape:tuple=(15,15)):
         eval_dataset = []
         for task in self.tasks[400:800]:
             shape = task.test_subtask.train_out_shape
             if shape[0] <= max_shape[0] and shape[1] <= max_shape[1]:
                 eval_dataset.append(task)
-        return eval_dataset    
+        return eval_dataset
 
 class CustomCollateFn:
     def __init__(self, tokenizer, eval:bool=True):
@@ -238,7 +238,7 @@ class CustomCollateFn:
     def __call__(self, batch):
         texts = [item['text'] for item in batch]
         labels = [item['labels'] for item in batch]
-        
+
         model_inputs = self.tokenizer(texts, return_tensors='pt', truncation=False, padding=True)
         max_len = model_inputs['input_ids'][0].shape[-1]
         labels = self.tokenizer(labels, return_tensors='pt', truncation=False, padding='max_length', max_length=max_len).input_ids

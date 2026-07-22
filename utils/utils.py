@@ -1,7 +1,7 @@
 import json
 import os
 import random
-import numpy as np 
+import numpy as np
 import torch
 import pickle
 
@@ -22,7 +22,7 @@ def load_pickle(file_path):
     return data
 
 def seed_everything(seed=42):
-    os.environ['PYTHONHASHSEED'] = str(seed)   
+    os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -43,7 +43,7 @@ def create_saving_path(model:str)->str:
             if prev_version > max_version:
                 max_version = prev_version
     path = dest_dir + model_name + f'_arc_v{max_version+1}'
-    return path    
+    return path
 
 class TaskIterator:
     def __init__(self, start=0, end=0, tasks_keys=False):

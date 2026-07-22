@@ -9,7 +9,7 @@ class ARCSubtask:
         self.train_inp_shape = train_inp.shape
         self.train_out_shape = train_out.shape
         self.prev_grid_size = 0
-        self.max_int = 0    
+        self.max_int = 0
 
 class ARCTask:
     """Class for storing information for a task."""

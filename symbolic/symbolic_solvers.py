@@ -2,9 +2,8 @@
 Symbolic solvers for ARC tasks, wrapped as classes with one uniform
 contract: every `.solve(task)` call returns a `SolveResult` — either a
 solved grid, or a debug string explaining why not. No solver raises for a
-"no answer" case (the original NoAnswer/WrongCheck control-flow exceptions
-are gone) and none silently produces a blank/wrong grid when its internal
-checks failed — the reason is captured as an actual message instead.
+"no answer" case, and none silently produces a blank/wrong grid when its
+internal checks fail — the reason is captured as an actual message instead.
 
 Four independent solvers, aggregated (not orchestrated — no dispatch logic,
 just attribute access) under SymbolicModule:
@@ -182,7 +181,7 @@ class UpscaleSolver:
             max_len = max(key_lens)
             smaller = [m for m, kl in zip(mappings, key_lens) if kl < max_len]
             larger = [m for m, kl in zip(mappings, key_lens) if kl == max_len]
-            if all(set(s.keys()) <= set(l.keys()) for s in smaller for l in larger):
+            if all(set(s.keys()) <= set(larger_map.keys()) for s in smaller for larger_map in larger):
                 return False
 
         elif len(set(key_lens)) == 1:
@@ -288,11 +287,9 @@ class UpscaleSolver:
         return output
 
     def _non_int_scaling(self, inp, subtasks) -> np.ndarray:
-        """Non-integer / uneven scaling (remainder distributed from the
-        center outward). This used to be a separate, broken implementation
-        (a `middle` variable that always evaluated to 1) — rewritten to
-        actually use `_non_eq_scales`, which already computed the right
-        per-example step distribution but was never wired in."""
+        """Non-integer / uneven scaling, with the remainder distributed from
+        the center outward, using the per-example step distribution computed
+        by `_non_eq_scales`."""
         row_steps = self._non_eq_scales(subtasks, dim=0)
         col_steps = self._non_eq_scales(subtasks, dim=1)
         if row_steps is None or col_steps is None:
@@ -400,10 +397,9 @@ class PatternPlantingSolver:
                     possible_per_position.append(matches or ['unknown'])
             all_possible_strategies.append(possible_per_position)
 
-        # Fixed: previously used len(all_possible_strategies[0]) as the loop
-        # bound regardless of whether every example actually produced that
-        # many tile positions (different scaling per example silently got
-        # truncated/ignored instead of being treated as a real inconsistency).
+        # All training examples must agree on the number of output tiles —
+        # a mismatch is a real inconsistency, not something to truncate to
+        # the first example's count.
         position_counts = {len(s) for s in all_possible_strategies}
         if len(position_counts) > 1:
             return None, None, (
@@ -427,8 +423,8 @@ class PatternPlantingSolver:
             if 'original' in consistent_mods:
                 consistent_strategy.append('original')
             elif consistent_mods == {'unknown'}:
-                # Fixed: previously fell through to a silent 'original' guess
-                # at apply-time; a truly unrecognized tile is a real failure.
+                # An unrecognized tile is a genuine failure, not something to
+                # silently guess 'original' for.
                 return None, None, (
                     f"output tile #{pos_idx} doesn't match any known rotation/flip/inversion "
                     f"of the input pattern"
@@ -650,12 +646,10 @@ class MixerSolver:
         return segments
 
     def _segments_from_partition_lines(self, grid, partition_lines) -> List[np.ndarray]:
-        # Fixed: the original tracked a single `dim` variable across the
-        # whole loop, so a markup mixing horizontal and vertical dividers
-        # (e.g. both grid dimensions being non-evenly divisible) silently
-        # sorted i- and j-coordinates together and split along whichever
-        # dim happened to be last. Now each divider keeps its own axis, and
-        # a genuinely mixed markup is reported rather than mis-split.
+        # Each divider keeps its own axis (row vs. column), so a markup that
+        # genuinely mixes horizontal and vertical dividers is reported as
+        # such rather than being split along whichever axis happens to sort
+        # last.
         row_coords, col_coords = [], []
         for markup in partition_lines:
             if markup[0][0] == markup[1][0]:
@@ -686,15 +680,9 @@ class MixerSolver:
     def _segments_from_heuristic(self, grid: np.ndarray, shape: Tuple[int, int]) -> List[np.ndarray]:
         """No markup detected: try splitting into an NxN grid of equally
         homogeneous-colored square tiles (for square grids), else into equal
-        strips along whichever dimension is larger.
-
-        Fixed: the original never `break`d out of the outer n_segments loop
-        on a successful tiling, so a later failing n_segments attempt could
-        silently overwrite (and discard) an earlier successful one. It also
-        used a fixed step size regardless of n_segments, and a completeness
-        check (`i == n_segments - 1`) that passed even when the loop had
-        exited early on the very last row.
-        """
+        strips along whichever dimension is larger. Stops at the first
+        successful tiling for the square case; for strips, keeps the finest
+        (largest n_segments) successful split found."""
         if shape[0] == shape[1] and shape[0] >= 4:
             for n_segments in range(2, shape[0] // 2 + 1):
                 if shape[0] % n_segments != 0:
@@ -826,11 +814,6 @@ class MixerSolver:
                 return (aug_name, segments_colors)
             raise _WrongCheck(f"previously found ({aug_name}, {segments_colors}) no longer matches")
 
-        # Fixed: segments_colors/correct_aug used to only be assigned inside
-        # a conditional that could fail to trigger for every segment, and if
-        # the "ID" branch below broke out of its loop early (because two
-        # segments disagreed on a color), a stale/undefined segments_colors
-        # from a previous outer-loop pass (or none at all) could leak out.
         aug_name = "ID"
         if AUGS[aug_name](segments[0]).shape != target.shape:
             return False
@@ -911,8 +894,7 @@ class MixerSolver:
 class _WrongCheck(Exception):
     """Internal-only: a previously found solution no longer matches the
     current example. Caught in MixerSolver.solve() and turned into a
-    SolveResult.fail(...) with the original message preserved — it used to
-    be swallowed into a generic 'NoAnswer' with no explanation."""
+    SolveResult.fail(...) with the message preserved."""
     def __init__(self, message="Contradiction in answer searching"):
         self.message = message
         super().__init__(message)
@@ -1049,9 +1031,9 @@ class ColorRestoreSolver:
             mid_i, mid_j, max_i, max_j = shape[0] // 2, shape[1] // 2, shape[0], shape[1]
             halves = {0: (0, max_i, 0, mid_j), 1: (0, mid_i, 0, max_j),
                       2: (0, max_i, mid_j, max_j), 3: (mid_i, max_i, 0, max_j)}
-            # Fixed: quarter 2 (bottom-right) used mid_i as its column start
-            # instead of mid_j — invisible on square grids (mid_i == mid_j)
-            # but wrong on rectangular ones.
+            # Quarter 2 (bottom-right) starts its column range at mid_j, not
+            # mid_i — the two coincide on square grids but not on
+            # rectangular ones.
             quarters = {0: (0, mid_i, 0, mid_j), 1: (0, mid_i, mid_j, max_j),
                         2: (mid_i, max_i, mid_j, max_j), 3: (mid_i, max_i, 0, mid_j)}
 
@@ -1075,15 +1057,10 @@ class ColorRestoreSolver:
     def _fill_from_symmetry(self, grid, symmetry_type, halves, h_idxs, quarters, q_idxs) -> np.ndarray:
         """Fill whichever sections are derivable from a known quarter/half
         under the detected symmetry, using the actual mirror relationship
-        (fliplr / flipud / both) between sections — not rotation.
-
-        Fixed: the original filled quarters/halves via `np.rot90(..., k=i)`
-        stepping through 0..3 as if there were 4-fold rotational symmetry.
-        That's a different (stronger) property than lr/ud mirror symmetry,
-        coincidentally shape-compatible only for square quarters — on a
-        rectangular grid a 90-degree rotation swaps the two axis lengths
-        and the fill doesn't even fit its target slot.
-        """
+        (fliplr / flipud / both) between sections — not rotation, which is a
+        different (stronger) property than lr/ud mirror symmetry and, on a
+        rectangular grid, swaps the two axis lengths so the fill wouldn't
+        even fit its target slot."""
         grid = copy(grid)
         if q_idxs:
             self._fill_from_quarter(grid, quarters, q_idxs[0], symmetry_type)
@@ -1171,10 +1148,6 @@ class ColorRestoreSolver:
                         restored_grid[:, mid_i + i:] = np.rot90(bottom, k=1, axes=(0, 1))
                         restored_grid[:, :mid_i - i] = np.rot90(bottom, k=1, axes=(1, 0))
                     elif symmetry_type == "ud":
-                        # Fixed: was `restored_grid[:, :mid_j-j]` referencing
-                        # a stale loop variable `j` and the wrong axis/slice
-                        # (column instead of row) — should mirror the top_ok
-                        # branch above but with rows swapped.
                         restored_grid[:mid_i - i, :] = np.flipud(bottom)
 
         return restored_grid

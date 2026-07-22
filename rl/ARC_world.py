@@ -1,124 +1,264 @@
+import time
+import cProfile
 import numpy as np
-
-BLACK = 0
-BLUE = 0.1
-RED = 0.2
-GREEN = 0.3
-YELLOW = 0.4
-GRAY = 0.5
-MAGENTA = 0.6
-ORANGE = 0.7
-SKY = 0.8
-BROWN = 0.9
-WHITE = 1
+import gymnasium
+from gymnasium import spaces
+from copy import copy, deepcopy
+from typing import List, Tuple, Dict, Set
+from collections import defaultdict
+from rl.ARC_task import ARCSubtask
+from rl.utils import repad
+from symbolic.utils import crop_pad, pad_grid
+from symbolic.summaries import GridSummary
+from symbolic.objects_analysis import GridObject
+from utils.plotting import plot_task, plot_grid, plot_intersection
 
 class World:
-    def __init__(self, build_zone, font_color=0.0):
-        self.world = {}
-        self.placed = set()
-        self.build_zone = build_zone
+    def __init__(self, objects, actions_dict, font_color=0, ):
+        self.objects = []
         self.font_color = font_color
-        self.initialized = False
-
-    def deinit(self):
-        for block in list(self.placed):
-            self.remove_block(block)
-        self.initialized = False
-        for block in list(self.world.keys()):
-            self.remove_block(block)
-        self.world = {}
-        self.placed = set()
-        
-    def initialize(self):
-        """ Initialize the world by placing all the blocks."""
-        for x in range(self.build_zone[0]):
-            for y in range(self.build_zone[1]):
-                self.add_block((x, y), self.font_color)
-        self.initialized = True
-
-    def add_block(self, position:tuple, color:float):
-        """ Add a block with the given `texture` and `position` to the world.
-        Parameters
-        ----------
-        position : tuple of len 2
-            The (x, y) position of the block to add.
-        texture : int
-            The color of the block.
-        """
-        self.world[position] = color
-        if self.initialized:
-            self.placed.add(position)
-
-    def remove_block(self, position):
-        """ Remove the block at the given `position`.
-        Parameters
-        ----------
-        position : tuple of len 2
-            The (x, y) position of the block to remove.
-        """
-        del self.world[position]
-        if self.initialized:
-            self.placed.remove(position)
-
-    def movement(self, agent, strafe: list):
-        x = agent.position[0] + strafe[0]
-        y = agent.position[1] + strafe[1]
-        if (x, y) not in self.forbidden_cells and x in range(0, self.build_zone[0]) and y in range(0, self.build_zone[1]):
-            agent.position = (x, y)
-            agent.encoded_position = agent.encode_position()
-        else:
-            return
-
+        self.actions_dict = actions_dict
+        self.colors_mapping = {0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow', 
+                               5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
+}
+        self.inverse_colors_mapping =  {v:k for k, v in self.colors_mapping.items()}
+        self.paded_cells = set()
+            
     def parse_action(self, action):
-        # 0 left; 1 right; 2 up; 3 down; 4 place black block 5 place blue block
-        # 6 place red block 7 place green block 8 place yellow block 9 place gray block
-        # 10 place magenta block 11 place orange block 12 place sky block 13 place brown block
-        strafe = [0, 0]
+        """
+        Parse actions from MultiDiscrete action space:
+        action[0]: Action type
+        action[1]: index of the first object in self.objects
+        action[2]: index of the second object in self.objects
+        if action[1] == action[2] - transform the object
+        """
+        action_type = action[0]
         add = -1
-        if action == 0:
-            strafe[0] += -1
-        elif action == 1:
-            strafe[0] += 1
-        elif action == 2:
-            strafe[1] += 1
-        elif action == 3:
-            strafe[1] += -1
-        elif action == 4:
-            add = BLACK
-        elif action == 5:
-            add = BLUE
-        elif action == 6:
-            add = RED
-        elif action == 7:
-            add = GREEN
-        elif action == 8:
-            add = YELLOW
-        elif action == 9:
-            add = GRAY
-        elif action == 10:
-            add = MAGENTA
-        elif action == 11:
-            add = ORANGE
-        elif action == 12:
-            add = SKY
-        elif action == 13:
-            add = BROWN
-        return strafe, add
+        if self.actions_dict[action_type].split("_")[0] in self.inverse_colors_mapping.keys():
+            color = self.actions_dict[action_type].split("_")[0]
+            transform = self.actions_dict[action_type][len(color)+1:]
+            add = self.inverse_colors_mapping[color]
+        else:
+           transform = self.actions_dict[action_type]    
+        return add, transform
+    
+    def apply_transform(self, add, transform, obj1, obj2, grid, objects, cell2obj):
+        """Apply the specified transformation to the grid."""
+        if transform is None:
+            return grid, False  # No change   
+        new_grid = grid.copy()
 
-    def place_block(self, agent, color:int):
-        if color != -1:
-            self.add_block(agent.position, color)
-    
-    def step(self, agent, strafe, add):
-        self.movement(agent, strafe=strafe)
-        self.place_block(agent, color=add)
+        # 1 OBJECT
+        if obj1.label == obj2.label:
+            if transform == "rotate90":
+                new_grid = symmetry_transformation(new_grid, obj1, self.font_color, "rot90")
+           
+            elif transform == "fliplr":
+                """Flip left-right the object."""
+                new_grid = symmetry_transformation(new_grid, obj1, self.font_color, "fliplr")
+                    
+            elif transform == "flipud":
+                """Flip up-down the object."""
+                new_grid = symmetry_transformation(new_grid, obj1, self.font_color, "flipud")
+                
+            elif transform == "recolor":
+                """Recolor object with the specified color."""
+                coords = obj1.coords
+                for x, y in coords:
+                    new_grid[x, y] = add
+                obj1.color_numbers = [add]
+                obj1.colors = [colors_mapping[color] for color in obj1.color_numbers]
         
-class Agent:
-    def __init__(self, position:tuple=(14, 14), world_size:tuple=(30, 30)) -> None:
-        self.position = position
-        self.world_size = world_size
-        self.encoded_position = self.encode_position()
+            elif transform == "upscale4":
+                """Upscale object by 4x: each cell becomes a 2x2 square."""
+                new_grid = upscale(new_grid, obj1, self.font_color)
+            
+            elif transform == "outer_contour":
+                """Create a colored contour over the object."""
+                contour = get_outer_contour(new_grid, obj1.coords, self.font_color)
+                for x, y  in contour:
+                    new_grid[x, y] = add
+                new_coords = list(obj1.coords) + contour
+                obj1.reinit_obj(new_coords, new_grid)
     
-    def encode_position(self):
-        norm_pos = (self.position[0]/self.world_size[0], self.position[1]/self.world_size[1])
-        return norm_pos
+            elif transform == "color_inversion":
+                """Inverse colors of an object."""
+                new_grid = inverse_obj_color(new_grid, obj1, self.font_color)
+    
+            elif transform == "edge_gravity":
+                """Object 1 is moved towards the closest edge or optionally towards bottom edge."""
+                new_grid = edge_gravity(new_grid, obj1, self.font_color, bottom_only=False)
+    
+            elif transform == "edge_gravity_bottom":
+                """Object 1 is moved towards bottom edge"""
+                new_grid = edge_gravity(new_grid, obj1, self.font_color, bottom_only=True)       
+    
+            elif "emission" in transform and "emission_with" not in transform:
+                """Emit lines with specified color for 8 directions from Object 1."""
+                direction = transform.split("emission_")[1]
+                new_grid = emission(new_grid, obj1, add, direction)
+    
+            elif "emission_with_turn_left_collision" in transform:
+                """Emit lines with specified color for 8 directions from Object 1 with collision handling."""
+                direction = transform.split("emission_with_turn_left_collision_")[1]
+                new_grid = emission_with_collision(new_grid, obj1, add, self.font_color, direction, "turn_left")
+    
+            elif "emission_with_turn_right_collision" in transform:
+                """Emit lines with specified color for 8 directions from Object 1 with turn collision handling."""
+                direction = transform.split("emission_with_turn_right_collision_")[1]
+                new_grid = emission_with_collision(new_grid, obj1, add, self.font_color, direction, "turn_right")
+    
+            elif "object_recolor" in transform:
+                """Emit lines with specified color for 8 directions from Object 1 with object recolor collision handling."""
+                direction = transform.split("object_recolor_")[1]
+                collision_color_name = transform[transform.find("with_") + 5 : transform.find("_object_recolor")]
+                collision_color = self.inverse_colors_mapping[collision_color_name]
+                new_grid = emission_with_collision(new_grid, obj1, add, self.font_color, direction, 
+                            "object_recolor", collision_color, cell2obj, objects)
+                
+            elif "recolor_collision" in transform:
+                """Emit lines with specified color for 8 directions from Object 1 with recolor collision handling."""
+                direction = transform.split("recolor_collision_")[1]
+                collision_color_name = transform[transform.find("with_") + 5: transform.find("_recolor_collision")]
+                collision_color = self.inverse_colors_mapping[collision_color_name]
+                new_grid = emission_with_collision(new_grid, obj1, add, self.font_color, direction, 
+                            "recolor", collision_color)
+    
+            elif "contour_collision" in transform:
+                """Emit lines with specified color for 8 directions from Object 1 with contour collision handling."""
+                direction = transform.split("contour_collision_")[1]
+                collision_color_name = transform[transform.find("with_") + 5: transform.find("_contour_collision")]
+                collision_color = self.inverse_colors_mapping[collision_color_name]
+                new_grid = emission_with_collision(new_grid, obj1, add, self.font_color, direction, 
+                            "contour", collision_color)
+
+            elif "emission_with_collision_stop" in transform:
+                """Emit lines with specified color for given direction from Object 1 with stop collision handling."""
+                direction = transform.split("emission_with_collision_stop_")[1]
+                new_grid = emission_with_collision(new_grid, obj1, add, self.font_color, direction, "stop")
+            
+            elif transform == "color_inner_holes":
+                """Change color of inner holes of Object 1."""
+                new_grid = color_inner_holes(new_grid, obj1, add)
+        
+            elif transform == "color_outer_holes":
+                """Change color of outer holes of Object 1."""
+                new_grid = color_outer_holes(new_grid, obj1, add)
+
+            elif transform == "shift":
+                direction = transform.split("shift_")[1]
+                new_grid = shift_object(new_grid, obj1, direction, self.font_color)
+
+            elif transform == "color_inner_part":
+                new_grid = color_inner_part(new_grid, obj1, add)           
+
+            # FOR FURTHER IMPLEMENTATION
+            elif transform == "copy":
+                """Copy the selected object to clipboard."""
+                return new_grid
+                
+            elif transform == "copy_input":
+                """Copy from input grid if input pattern is available."""
+                return new_grid
+                                   
+            elif transform == "paste":
+                """Paste the clipboard contents at object_1's position."""
+                return new_grid 
+                
+            elif transform == "cut":
+                """Copy then clear the original object."""
+                coords = obj1.coords
+                return new_grid
+
+        elif obj1.label != obj2.label:
+            # 2 OBJECTS
+            if transform == "gravity":
+                """Object 2 is moved to connect with Object 1 based on the shortest distance."""
+                new_grid = gravity(new_grid, obj1, obj2, self.font_color)
+            
+            elif transform == "x_alignment":
+                """Align Object 2 with Object 1 along x axis."""
+                new_grid = x_alignment(new_grid, obj1, obj2, self.font_color) 
+    
+            elif transform == "y_alignment":
+                """Align Object 2 with Object 1 along y axis."""
+                new_grid = y_alignment(new_grid, obj1, obj2, self.font_color)
+    
+            elif "contour_connection" in transform and obj1.shape == 'cell' and obj2.shape == 'cell':
+                """If Object 1 and Object 2 are 'cell' type, connect them with contour 
+                and color it with specified color to create rectangle."""
+                rectangle_color_name = transform.split("contour_connection_")[1]
+                rectangle_color = self.inverse_colors_mapping[rectangle_color_name]
+                new_grid = contour_connection(new_grid, obj1, obj2, add, rectangle_color) 
+    
+            elif transform == "shortest_path" and "background" not in transform:
+                # Connect two objects on grid by drawing the shortest path with the specified color
+                closest_pairs = find_shortest_distance(obj1.coords, obj2.coords)
+                if closest_pairs != []:
+                    paths = []
+                    for closest_pair in closest_pairs:
+                        start, end = closest_pair
+                        path = find_shortest_path(new_grid, start, end)
+                        if path != []:
+                            paths.append(path)
+                    filtered_paths =  filter_paths(paths, obj1, obj2, preference='left')
+                    for path in filtered_paths:
+                        for x, y in path[1:-1]:
+                            new_grid[x, y] = add                         
+        
+            elif "shortest_path_left" in transform:
+                """Connect two objects via background cells with the shortest path with specified color."""
+                closest_pairs = find_shortest_distance(obj1.coords, obj2.coords)
+                if closest_pairs != []:
+                    paths = []
+                    for closest_pair in closest_pairs:
+                        start, end = closest_pair
+                        path = find_path_through_background(new_grid, start, end, self.font_color)
+                        if path != []:
+                            paths.append(path)
+                    filtered_paths =  filter_paths(paths, obj1, obj2, preference='left')
+                    for path in filtered_paths:
+                        for x, y in path[1:-1]:
+                            new_grid[x, y] = add 
+                                
+            elif "shortest_path_right" in transform:
+                """Connect two objects via background cells with the shortest path with specified color."""
+                closest_pairs = find_shortest_distance(obj1.coords, obj2.coords)
+                if closest_pairs != []:
+                    paths = []
+                    for closest_pair in closest_pairs:
+                        start, end = closest_pair
+                        path = find_path_through_background(new_grid, start, end, self.font_color)
+                        if path != []:
+                            paths.append(path)
+                    filtered_paths =  filter_paths(paths, obj1, obj2, preference='right')
+                    for path in filtered_paths:
+                        for x, y in path[1:-1]:
+                            new_grid[x, y] = add 
+                                
+            elif transform == "merge":
+                """Merge object_2 into object_1's position by calculating relative shift."""
+                new_grid = perform_merge(new_grid, obj1, obj2, objects, self.font_color)
+        
+            elif transform == "swap":
+                """Exchange of objects positions: object 1 will be placed on object 2 position and visa versa."""
+                new_grid = objects_swap(new_grid, obj1, obj2, self.font_color)
+
+            elif transform == "center_merge":
+                """Exchange of objects positions: object 1 will be placed on object 2 position and visa versa."""
+                new_grid = center_merge(new_grid, obj1, obj2, self.font_color)      
+
+            elif transform == "color_merge":
+                """If Object 1 has cells with the same color as in Object 2 - Object 2 to be placed in such cell closest to center."""
+                new_grid = color_merge(new_grid, obj1, obj2, self.font_color)          
+  
+        return new_grid
+    
+    def step(self, add:int, transform:str, obj1:GridObject, obj2:GridObject, 
+             grid:np.array, objects:List[GridObject], cell2obj:Dict[Tuple[int, int], int]):
+        """Execute one step of the world dynamics"""
+        # Apply grid transformations
+        if grid is not None and transform is not None:
+            new_grid = self.apply_transform(add, transform, obj1, obj2, grid, objects, cell2obj)
+            return new_grid
+        return grid

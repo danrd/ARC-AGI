@@ -170,12 +170,14 @@ class BlockSpec(BaseModel):
 
 class PromptingConfig(BaseModel):
     """Config to guide prompt construction."""
-    model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    blocks_dir: str = "data/prompts"
     blocks: List[BlockSpec|str] = ["general_instruction", "examples", "output_format"] # list of element types to compose prompt
     block_overrides: Optional[Dict[str, str]] = Field(default_factory=dict) # specific blocks subsitution while experimenting
     token_limit: int = 9000 # resources management 
-    filters: Optional[List[str]] = None # project-specific data processing functions
-    resolvers: Optional[List[str]] = None # project-specific complex prompting methods
+    min_examples: int = 2   # examples block must fit at least this many
+    filters: Optional[List[str]] = Field(default_factory=list) # project-specific data processing functions
+    resolvers: Optional[List[str]] = Field(default_factory=list) # project-specific complex prompting methods
     join_format: Literal["xml", "md", "plain"] = "xml" # approach for blocks composing
     chat_template: Optional[str] = None # optionaly use specific chat template
     assistant_prefix: Optional[str] = None # string to add before assistant response

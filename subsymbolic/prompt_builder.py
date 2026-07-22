@@ -43,7 +43,7 @@ class PromptBuilder:
         self.env = self._make_env()
         self.resolvers: Dict[str, Callable] = {func_name: RESOLVER_REGISTRY[func_name] for func_name in self.config.resolvers}
 
-    def _make_env(self, config) -> Environment:
+    def _make_env(self) -> Environment:
         env = Environment(
             loader=FileSystemLoader(self.config.blocks_dir),
             undefined=StrictUndefined,   # KeyError on unknown variables

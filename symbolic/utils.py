@@ -2,7 +2,6 @@ import typing
 import copy
 from typing import List, Union
 import sys
-import torch
 import numpy as np
 from collections import defaultdict
 
@@ -188,7 +187,7 @@ def check_subset_condition(larger_obj:set, smaller_obj:list)->bool:
             return False
     return True
 
-def   grid_formatting(grid:Union[np.array, torch.Tensor, List[list], List[tuple]])->np.array:
+def grid_formatting(grid:Union[np.array, List[list], List[tuple]])->np.array:
     """Unify grid format for processing as there is initial dataset format with ints and normalized from ARCDataset with floats."""
     if not isinstance(grid, np.array):
         grid = np.array(grid)

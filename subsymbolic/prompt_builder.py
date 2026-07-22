@@ -28,7 +28,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict
 
-from arc_grid_formatting import format_grid
+from subsymbolic.arc_grid_formatting import format_grid
 
 # A resolver renders a block by computing its own text (instead of a .j2
 # template): (task, budget_tokens_remaining, context, builder) -> rendered

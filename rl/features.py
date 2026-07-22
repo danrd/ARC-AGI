@@ -1,14 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, GATConv, global_mean_pool, global_max_pool
+from torch_geometric.nn import GATConv, global_mean_pool, global_max_pool
 from torch_geometric.data import Data, Batch
-import numpy as np
-from typing import List, Tuple, Dict, Optional
 from gymnasium import spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.distributions import MultiCategoricalDistribution
 
 # =============================================================================
 # APPROACH 1: GRAPH NEURAL NETWORK (GNN) APPROACH

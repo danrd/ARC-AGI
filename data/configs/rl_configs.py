@@ -1,48 +1,30 @@
-import torch
 import torch.nn as nn
 from rl.utils import linear_schedule
 from rl.policy import ARCCustomActorCriticPolicy
+from data.configs.env_configs import action2action_type
 
 rl_config = {
     'model_type': 'PPO',
-    'total_steps': 2500000,
-    'n_eval_episodes': 16,
-    'n_envs': 16,
+    'total_steps': 1000000,
+    'n_eval_episodes': 1,
+    'n_envs': 1,
     'seed' : 42,
-    'eval_freq': 1000,
+    'eval_freq': 5,
     'log_path': ".data/logs/rl/",
-    'max_episode_len': 250,
-    'right_placement_scale': 5.0,
-    'wrong_placement_scale': 0.1,
+    'max_episode_len': 25,
+    'right_placement_reward': 5.0,
+    'action_penalty': 1.0,
+    'repetitive_actions_penalty': 1.0,
     'font_color': 0.0,
-    'padding': (15, 15),
-    'random_start': True,
-    'input_pattern': True,
+    'padding': False,
+    'input_pattern': 'start',
     'milestones_rewards': [1,2,3,4],
-    'pad_val': -0.1,
-    'int_colors': False
+    'reward_approach': 3,
+    'pad_val': 10,
+    'feasible_actions': {0:'submit'},
+    'repr_level': 1,
+    'observation_space_elements': ["objects_emb"] # ["objects_emb", "relations_emb"]
     }
-
-A2C_config = { 
-    'gamma': 0.99,
-    'gae_lambda': 0.95,
-    'learning_rate': 0.007,
-    'max_grad_norm': 0.5,
-    'actor_arch': [128, 128, 128],
-    'critic_arch': [128, 128, 128],
-    'activation_fn': torch.nn.Sigmoid
-    }
-
-DQN_config = {
-    'gamma': 0.99,
-    'buffer_size': 1000000,
-    'learning_rate': 0.0001,
-    'max_grad_norm': 0.5,
-    'batch_size' : 32,
-    'exploration_fraction': 0.1,
-    'net_arch': [128, 128, 128],
-    'activation_fn': torch.nn.Sigmoid 
-}
 
 def load_PPO_config():
     return {   
@@ -52,23 +34,28 @@ def load_PPO_config():
     'n_epochs' : 3,
     'gamma': 0.9,
     'gae_lambda': 0.9,
-    'learning_rate': linear_schedule(0.002),
+    'learning_rate': linear_schedule(0.0002),
     'clip_range': 0.2,
     'max_grad_norm': 0.5,
-    'ent_coef': 0.0,
+    'ent_coef': 0.01,
     'vf_coef': 0.5,
     'use_sde': False, 
     'policy': ARCCustomActorCriticPolicy,
     'actor_arch': [256, 256, 256],
     'critic_arch': [256, 256, 256],
-    'activation_fn': torch.nn.ReLU,
-    'pos_enc_dim': 32,
-    'cnn_arch': cnn
-    }
+    'activation_fn': nn.ReLU,
+    'extr_arch': lin_arch,
+    'action_heads': 3,
+    'action_types':action2action_type,
+    } 
 
-cnn =  nn.Sequential(
-                nn.Conv2d(1, 16, kernel_size=2, stride=1, padding=0),
-                nn.ReLU(),
-                nn.Conv2d(16, 32, kernel_size=2, stride=1, padding=0),
-                nn.ReLU(),
-                nn.Flatten(),)
+def lin(act_func=nn.ReLU()): 
+    return nn.Sequential(
+              nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
+              nn.ReLU(),
+              nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
+              nn.ReLU(),
+              nn.AdaptiveAvgPool2d((1, 1)),  # Output shape: [batch, 16, 1, 1]
+              nn.Flatten()                   # Output shape: [batch, 16]
+            )
+lin_arch = lin()

@@ -1,8 +1,6 @@
 import random
 import numpy as np
-from symbolic.utils import crop_pad, adjust_grid_shape, grid_formatting
-import matplotlib.pyplot as plt
-from matplotlib import colors
+from symbolic.utils import crop_pad, adjust_grid_shape
 from rl.ARC_task import ARCTask
 
 def linear_schedule(initial_value: float, final_value: float = 0.0):
@@ -129,63 +127,124 @@ def define_padding(task:ARCTask):
             max_j = out_shape[1]
     return (max_i, max_j)
 
-def plot_grids_comparison(grid_1, grid_2, target_grid=None):
-    # Ensure the arrays are 2D
-    if grid_1.ndim != 2 or grid_2.ndim != 2:
-        raise ValueError("Both arrays must be 2D.")
+def calculate_eval_freq(n_envs, total_steps, n_evaluations):
+    """Calculate evaluation frequency value based on number of environments, training steps and desired number of evaluations during training."""
+    return (total_steps//n_evaluations//n_envs)
 
-    grid_1 = crop_pad(grid_formatting(grid_1))
-    grid_2 = crop_pad(grid_formatting(grid_2))    
-    
-    # Create a figure and a set of subplots
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA', 
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
-    norm = colors.Normalize(vmin=0, vmax=10)
-    
-    # Plot the first grid
-    axes[0, 0].imshow(grid_1, cmap=cmap, norm=norm)
-    axes[0, 0].set_title('Grid 1')
-    axes[0, 0].set_xticks(np.arange(-0.5, grid_1.shape[1], 1), minor=True)
-    axes[0, 0].set_yticks(np.arange(-0.5, grid_1.shape[0], 1), minor=True)
-    axes[0, 0].grid(which='minor', color='w', linestyle='-', linewidth=1)
-    
-    # Plot the second grid
-    axes[1, 0].imshow(grid_2, cmap=cmap, norm=norm)
-    axes[1, 0].set_title('Grid 2')
-    axes[1, 0].set_xticks(np.arange(-0.5, grid_2.shape[1], 1), minor=True)
-    axes[1, 0].set_yticks(np.arange(-0.5, grid_2.shape[0], 1), minor=True)
-    axes[1, 0].grid(which='minor', color='w', linestyle='-', linewidth=1)
-    
-    # Find the cells in the second grid that are not in the first grid
-    unique_cells = np.setdiff1d(grid_2, grid_1)
-    
-    # Create a mask for the unique cells
-    mask = np.isin(grid_2, unique_cells)
-    
-    # Create a new grid with the same shape as array2, filled with zeros
-    unique_grid = np.zeros_like(grid_2, dtype=np.int32)
-    
-    # Set the unique cells to 1 (or any other value to highlight them)
-    unique_grid[mask] = grid_2[mask]
-    
-    # Plot the unique cells grid
-    axes[0, 1].imshow(unique_grid, cmap=cmap, norm=norm)
-    axes[0, 1].set_title('New Cells in Grid 2')
-    axes[0, 1].set_xticks(np.arange(-0.5, unique_grid.shape[1], 1), minor=True)
-    axes[0, 1].set_yticks(np.arange(-0.5, unique_grid.shape[0], 1), minor=True)
-    axes[0, 1].grid(which='minor', color='w', linestyle='-', linewidth=1)
+def solution_description(actions, env):
+    direction2name = {'N': 'north',
+                      'NE': 'north-east',
+                      'E': 'east',
+                      'SE': 'south-east',
+                      'S': 'south',
+                      'SW': 'south-west',
+                      'W': 'west',
+                      'NW': 'north-west'
+                     }
+    env = vec_env.envs[0]
+    sorted_actions = []
+    actions_dict = env.action_name_to_idx
+    idx2name = {v:k for k,v in actions_dict.items()}
+    all_actions =  [action[0] for action in actions]
+    action_names = list(set([idx2name[action] for action in all_actions]))
+    description = ""
+    for idx, action in enumerate(actions):
+        if action[1] == action[2]:      
+            description += f'{idx2name[action[0]].replace("_", " ")} for object_{action[1]}'
+        else:
+            description += f'{idx2name[action[0]].replace("_", " ")} for object_{action[1]} and object_{action[2]}'
+        if idx != len(actions) - 1:
+            description += " -> "
+    for k, v in direction2name.items():
+        description = description.replace(k, direction2name[k])
+    return description 
 
-    if target_grid is not None:
-        target_grid = crop_pad(grid_formatting(target_grid)) 
-        axes[1, 1].imshow(target_grid, cmap=cmap, norm=norm)
-        axes[1, 1].set_title('Target grid')
-        axes[1, 1].set_xticks(np.arange(-0.5, target_grid.shape[1], 1), minor=True)
-        axes[1, 1].set_yticks(np.arange(-0.5, target_grid.shape[0], 1), minor=True)
-        axes[1, 1].grid(which='minor', color='w', linestyle='-', linewidth=1)
+def define_feasible_actions(action_types, colors, directions, color_dependent_actions, double_color_dependent_actions, direction_dependent_actions):
+    """Creates the dict of all possible actions {idx:action}."""
+    final_action_list = []
+    for action in action_types:
+        if action in color_dependent_actions:
+            # Create variants for each feasible color
+            colored_actions = [f"{color}_{action}" for color in colors]
+            if action in direction_dependent_actions:
+                colored_actions = [f"{action}_{direction}" for action in colored_actions for direction in directions]
+            if action in double_color_dependent_actions:
+                if action in ["emission_with_recolor_collision", "emission_with_contour_collision", "emission_with_object_recolor"]:
+                   colored_actions =  [f'{action.split("_with_")[0]}_with_{color}_{action.split("_with_")[1]}' 
+                                       for action in colored_actions for color in colors]
+                else:
+                    colored_actions = [f"{action}_{color}" for action in colored_actions for color in colors] 
+            final_action_list.extend(colored_actions)
+        elif action in direction_dependent_actions and action not in color_dependent_actions:
+            # Create variants for each feasible color
+            directed_actions = [f"{action}_{direction}" for direction in directions]
+            final_action_list.extend(directed_actions)
+        elif action != "submit": # Exclude submit if handled separately
+             final_action_list.append(action)
+    # Add the submit action if it's intended to be part of the main action space
+    final_action_list.append("submit")
 
-    fig.patch.set_edgecolor('black')  # substitute 'k' for black
-    fig.patch.set_facecolor('#dddddd')
+    # Create mapping from index to action name string
+    actions_dict = {idx: name for idx, name in enumerate(final_action_list)}       
+    return actions_dict
+
+def get_action_description(action, action_mapping):
+    """
+    Generate a textual description of an action.
     
-    plt.tight_layout()
-    plt.show()
+    Args:
+        action (array-like): 5-dimensional action array [action_type, row, col, offset_row, offset_col].
+        action_mapping (dict): dictionary mapping action numbers to action names, e.g., {'copy': 0}.
+        
+    Returns:
+        str: Textual description of the action
+    """
+    if action is None:
+        return "Unknown action"
+    
+    action_type, object_1_idx, object_2_idx = action
+    action_type = action_mapping[action_type]
+    if object_1_idx == object_2_idx:
+        # Generate description
+        description = f"{action_type} for {object_1_idx}"
+
+    else:
+        # Generate description
+        description = f"{action_type} between {object_1_idx} and {object_2_idx}"    
+    return description
+
+def get_step_description(step_idx, observation, action, reward, action_mapping, info=None):
+    """
+    Generate a textual description for a step in the rollout.
+    
+    Args:
+        step_idx (int): the index of the step in the rollout.
+        observation (dict): the observation at this step, including grid state.
+        action (array-like): the 5-dimensional action taken
+        reward (float): the reward received.
+        action_mapping (dict): dictionary mapping action numbers to action names.
+        info (dict), optional: additional information about the step.
+        
+    Returns:
+        str: textual description of the step.
+    """
+    action_desc = get_action_description(action, action_mapping)
+    
+    description = f"Step {step_idx}: {action_desc}"
+    
+    # Add any additional info if available
+    if info and isinstance(info, dict):
+        for key, value in info.items():
+            if key != 'action_mapping' and not isinstance(value, (dict, list, np.ndarray)) and value is not None:
+                description += f"\n{key}: {value}"
+    
+    return description
+
+def task_colors(task, colors_mapping):
+    uniq_colors = []
+    for subtask in task.subtasks:
+        subtask_vals = np.unique(np.vstack([crop_pad(subtask.train_inp, pad_val=10), crop_pad(subtask.train_out, pad_val=10)]))
+        uniq_colors.extend([colors_mapping[val] for val in subtask_vals if val!=0])
+    test_vals = np.unique(crop_pad(subtask.train_inp, pad_val=10))
+    uniq_colors.extend([colors_mapping[val] for val in test_vals if val!=0])   
+    return uniq_colors

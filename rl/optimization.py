@@ -16,12 +16,12 @@ def optimize_ppo(trial):
         'learning_rate': trial.suggest_float("learning_rate", 1e-4, 1e-1, log=True),
         'batch_size': trial.suggest_categorical('batch_size', [32, 64, 128, 256]),
         'n_steps' : trial.suggest_categorical("n_steps", [128, 256, 512, 1024, 2048]),
-        # 'clip_range': trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3]),
-        # 'n_epochs' : trial.suggest_categorical("n_epochs", [3, 4]),
+        'clip_range': trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3]),
+        'n_epochs' : trial.suggest_categorical("n_epochs", [3, 4]),
         'max_grad_norm': trial.suggest_categorical("max_grad_norm", [0.6, 0.7, 0.8, 0.9]),
-        # 'actor_arch': trial.suggest_categorical('actor_arch', [[128,128,128], [256, 256, 256], [128,128,128,128], [256, 256, 256, 256]]),
-        # 'critic_arch': trial.suggest_categorical('actor_arch', [[128,128,128], [256, 256, 256], [128,128,128,128], [256, 256, 256, 256]]),       
-        # 'activation_fn': trial.suggest_categorical('activation_fn', [torch.nn.ReLU, torch.nn.Sigmoid])
+        'actor_arch': trial.suggest_categorical('actor_arch', [[128,128,128], [256, 256, 256], [128,128,128,128], [256, 256, 256, 256]]),
+        'critic_arch': trial.suggest_categorical('actor_arch', [[128,128,128], [256, 256, 256], [128,128,128,128], [256, 256, 256, 256]]),       
+        'activation_fn': trial.suggest_categorical('activation_fn', [torch.nn.ReLU, torch.nn.Sigmoid])
     }  
 
 def rl_objective(trial, target:ARCSubtask, rl_config:dict):

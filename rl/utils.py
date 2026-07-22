@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from symbolic.utils import crop_pad, adjust_grid_shape
+from symbolic.utils import crop_pad, adjust_grid_shape, grid_formatting  # noqa: F401 - re-exported for rl.plotting
 from rl.ARC_task import ARCTask
 
 def linear_schedule(initial_value: float, final_value: float = 0.0):

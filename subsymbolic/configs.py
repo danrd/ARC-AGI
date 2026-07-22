@@ -9,6 +9,7 @@ class BaseConfig(BaseModel):
     seed: int = 42 
     checkpoint_interval: int = 1 # number of examples to process before printing relevant info
     device: str = 'cpu' 
+    framework: str = 'llama_cpp' # llama_cpp | vllm | hf
     model: str = 'unsloth/Qwen3.6-27B-GGUF'
     quant_file: str = 'Qwen3.6-27B-Q4_K_M.gguf'
     max_context: int = 9000 # llm token limit for computational resources to control
@@ -64,10 +65,6 @@ class GenerationConfig(BaseModel):
             "seed":               seed,
             "stop":               self.stop,
             "repeat_penalty":     self.repetition_penalty,
-            # defaults
-            "repeat_last_n":      64,
-            "penalize_nl":        True,
-            "echo":               False,
         }
     
     def to_vllm(self, seed: int):
@@ -81,9 +78,8 @@ class GenerationConfig(BaseModel):
             seed=seed,
             stop=self.stop,
             repetition_penalty=self.repetition_penalty,
-            # defaults
         )
-    
+
     def to_hf(self, seed: int) -> dict:
         """Prepare generation config for HuggingFace Transformers."""
         from transformers import set_seed
@@ -182,11 +178,14 @@ class PromptingConfig(BaseModel):
     join_format: Literal["xml", "md", "plain"] = "xml" # approach for blocks composing
     chat_template: Optional[str] = None # optionaly use specific chat template
     assistant_prefix: Optional[str] = None # string to add before assistant response
+    project: Dict[str, Any] = {} # project specific prompting settings
 
 class ExperimentConfig(BaseModel):
+    """Main config for guiding system setup and processing"""
     base: BaseConfig = Field(default_factory=BaseConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     prompt: PromptingConfig = Field(default_factory=PromptingConfig)
+    project: Dict[str, Any] = Field(default_factory=dict)
 
     def to_llama_cpp(self) -> dict:
         return self.generation.to_llama_cpp(seed=self.base.seed)

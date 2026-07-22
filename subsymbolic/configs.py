@@ -174,11 +174,12 @@ class PromptingConfig(BaseModel):
     blocks: List[BlockSpec|str] = ["general_instruction", "examples", "output_format"] # list of element types to compose prompt
     block_overrides: Optional[Dict[str, str]] = Field(default_factory=dict) # specific blocks subsitution while experimenting
     token_limit: int = 9000 # resources management 
-    filters: Optional[List[str]] = None # filters to set up custom functionality for each project
+    filters: Optional[List[str]] = None # project-specific data processing functions
+    resolvers: Optional[List[str]] = None # project-specific complex prompting methods
     join_format: Literal["xml", "md", "plain"] = "xml" # approach for blocks composing
     chat_template: Optional[str] = None # optionaly use specific chat template
     assistant_prefix: Optional[str] = None # string to add before assistant response
-    project: Dict[str, Any] = {} # project specific prompting settings
+    project: Dict[str, Any] = {} # other project specific prompting settings
 
 class ExperimentConfig(BaseModel):
     """Main config for guiding system setup and processing"""

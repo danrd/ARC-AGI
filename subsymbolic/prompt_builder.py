@@ -29,74 +29,21 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict
 
 from subsymbolic.arc_grid_formatting import format_grid
+from subsymbolic.configs import BlockSpec, PromptingConfig
 
-# A resolver renders a block by computing its own text (instead of a .j2
-# template): (task, budget_tokens_remaining, context, builder) -> rendered
-# text, or None if it can't produce anything that fits the budget. `builder`
-# is the PromptBuilder instance itself — gives an external function access
-# to builder.env / builder.config / builder.count_tokens without needing to
-# be a method on the class.
-BlockResolver = Callable[[Any, int, dict, "PromptBuilder"], Optional[str]]
-
-
-class BlockSpec(BaseModel):
-    """Prompt block specification."""
-    name: str
-    version: str = "v1"
-    role: Literal["system", "user"] = "user"   # role for chat template
-    tag: Optional[str] = None                   # tag for non-chat wrapping
-
-    @classmethod
-    def parse(cls, spec: Union[str, tuple, "BlockSpec"]) -> "BlockSpec":
-        if isinstance(spec, BlockSpec):
-            return spec
-        if isinstance(spec, str):
-            return cls(name=spec)
-        if isinstance(spec, tuple):
-            return cls(name=spec[0], version=spec[1])
-        raise TypeError(f"Unsupported block spec: {spec!r}")
-
-
-class PromptingConfig(BaseModel):
-    """Configuration for a single prompt (which blocks, in which order)."""
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    blocks_dir: str = "data/prompts"
-    blocks: List[Union[str, tuple, BlockSpec]]
-    token_limit: int = 4096
-    join_format: Literal["xml", "md", "plain"] = "xml"
-    chat_template: Optional[Any] = None          # non-None => use tokenizer.apply_chat_template
-    assistant_prefix: Optional[str] = None
-    min_examples: int = 2                        # examples block must fit at least this many
+from subsymbolic.registry import RESOLVER_REGISTRY, FILTER_REGISTRY
 
 
 class PromptBuilder:
     """Composes a prompt string (or chat message list) from configured blocks."""
 
-    def __init__(self, config: PromptingConfig, tokenizer,
-                 resolvers: Optional[Dict[str, "BlockResolver"]] = None):
-        """
-        `resolvers` maps a block name to a function `(task, budget, context)
-        -> Optional[str]`, called INSTEAD of rendering a `.j2` template for
-        that name. This is the same mechanism the built-in "examples" block
-        already needs (it isn't a single static template — it's a per-example
-        loop with its own token budget), just generalized so a project can
-        register its own resolvers (e.g. a whole-task "transformation_summary"
-        block) without PromptBuilder knowing anything about what they compute.
-
-        Pass e.g. `resolvers={"examples": build_examples_resolver}` (see
-        arc_resolvers.py) to get the per-example loop, or
-        `resolvers={"transformation_summary": my_fn}` to add a new resolver-
-        backed block under that name. There is no built-in default resolver
-        — PromptBuilder itself makes no assumptions about what "examples"
-        even means; that's entirely project-supplied.
-        """
+    def __init__(self, config: PromptingConfig, tokenizer):
         self.config = config
         self.tokenizer = tokenizer
         self.env = self._make_env()
-        self.resolvers: Dict[str, BlockResolver] = dict(resolvers or {})
+        self.resolvers: Dict[str, Callable] = {func_name: RESOLVER_REGISTRY[func_name] for func_name in self.config.resolvers}
 
-    def _make_env(self) -> Environment:
+    def _make_env(self, config) -> Environment:
         env = Environment(
             loader=FileSystemLoader(self.config.blocks_dir),
             undefined=StrictUndefined,   # KeyError on unknown variables
@@ -104,7 +51,8 @@ class PromptBuilder:
             lstrip_blocks=True,          # strip leading whitespace before {% %}
             auto_reload=True,            # re-read .j2 files whose mtime changed
         )
-        env.filters["grid"] = self._format_grid
+        for filter_name in self.config.filters:
+            env.filters[filter_name] = FILTER_REGISTRY[filter_name]
         return env
 
     def reload_env(self) -> None:

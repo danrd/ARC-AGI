@@ -5,7 +5,7 @@ from torch_geometric.nn import GCNConv, GATConv, global_mean_pool, global_max_po
 from torch_geometric.data import Data, Batch
 import numpy as np
 from typing import List, Tuple, Dict, Optional
-import gym.spaces as spaces
+from gymnasium import spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.distributions import MultiCategoricalDistribution
@@ -141,7 +141,7 @@ class GraphDataConstructor:
 class ARCGNNExtractor(BaseFeaturesExtractor):
     """Feature extractor using Graph Neural Networks for object-relation processing."""
     
-    def __init__(self, observation_space: gym.spaces.Dict, gnn_output_dim=256, grid_cnn_features=128):
+    def __init__(self, observation_space: spaces.Dict, gnn_output_dim=256, grid_cnn_features=128):
         super().__init__(observation_space, features_dim=1)
         
         self.gnn_output_dim = gnn_output_dim
@@ -418,7 +418,7 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
     Enhanced separate processing approach with improved object and relation handling
     """
     
-    def __init__(self, observation_space: gym.spaces.Dict, 
+    def __init__(self, observation_space: spaces.Dict, 
                  object_output_dim=64, relation_output_dim=64, grid_cnn_features=128):
         super().__init__(observation_space, features_dim=1)
         
@@ -525,7 +525,7 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
 # APPROACH 3: Combined approach
 # =============================================================================
 class ARCCombinedExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Dict, extr_arch=None):
+    def __init__(self, observation_space: spaces.Dict, extr_arch=None):
         super().__init__(observation_space, features_dim=1)
         extractors = {}
         total_concat_size = 0      

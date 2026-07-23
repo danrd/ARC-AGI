@@ -119,11 +119,60 @@ class AgentState(TypedDict, total=False):
     history: Annotated[List[InteractionRecord], operator.add]
 
 
+def _dispatch_symbolic(task: Any, symbolic_module: Optional[Any] = None) -> Dict[str, Any]:
+    """Tries each of SymbolicModule's solvers in turn, returns the first
+    success. Solvers need no model/config, so a default instance is built
+    here if the caller didn't supply one."""
+    from symbolic.symbolic_module import SymbolicModule
+
+    module = symbolic_module or SymbolicModule()
+    errors = []
+    for solver in (module.mixer, module.pattern_planting, module.upscale, module.color_restore):
+        result = solver.solve(task)
+        if result.success:
+            return {"solution": result.grid, "module_results": {"debug": result.debug}}
+        errors.append(result.debug)
+    return {"solution": "", "module_results": {"error": "; ".join(errors)}}
+
+
 def default_module_dispatch(state: AgentState) -> Dict[str, Any]:
-    """Runs `current_module`. Placeholder — this is where the real
-    symbolic / subsymbolic (LLM) execution goes (the old compose_prompt /
-    process_prompt call sites)."""
-    return {"solution": "", "module_results": {"error": "module dispatch not wired up yet"}}
+    """Runs `current_module`. Symbolic solvers need no model/config, so
+    they get a real default here. Subsymbolic (LLM) needs a tokenizer and
+    inference backend configured at the system level — pass
+    module_dispatch_fn=make_module_dispatch_fn(subsymbolic_module=...) to
+    solve_task() instead of relying on this default for that case."""
+    module_name = state["current_module"].module_name.lower()
+    if module_name == "symbolic":
+        return _dispatch_symbolic(state["task"])
+    return {"solution": "", "module_results": {
+        "error": f"no default dispatch for module {module_name!r} — "
+                 "configure it via make_module_dispatch_fn()",
+    }}
+
+
+def make_module_dispatch_fn(
+    symbolic_module: Optional[Any] = None,
+    subsymbolic_module: Optional[Any] = None,
+) -> Callable[[AgentState], Dict[str, Any]]:
+    """Builds a module_dispatch_fn for solve_task(), routing to real module
+    instances assembled once at the system level — pass a
+    symbolic.symbolic_module.SymbolicModule and/or a
+    subsymbolic.subsymbolic_module.SubsymbolicModule (the latter needs a
+    tokenizer + inference backend, too expensive/config-dependent to build
+    a working default for here)."""
+    def dispatch(state: AgentState) -> Dict[str, Any]:
+        module_name = state["current_module"].module_name.lower()
+        task = state["task"]
+
+        if module_name == "symbolic":
+            return _dispatch_symbolic(task, symbolic_module)
+        if module_name == "subsymbolic":
+            if subsymbolic_module is None:
+                return {"solution": "", "module_results": {"error": "no SubsymbolicModule configured"}}
+            return subsymbolic_module.solve(task, context=state.get("auxiliary_info", {}))
+        return {"solution": "", "module_results": {"error": f"unknown module: {module_name!r}"}}
+
+    return dispatch
 
 
 def default_decision_fn(state: AgentState) -> Dict[str, Any]:

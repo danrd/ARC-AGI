@@ -85,15 +85,21 @@ class RLJobHandle:
                 self.process.join()
 
 
-def _not_implemented_rl_worker(_task: Any) -> Dict[str, Any]:
-    """Placeholder worker for default_rl_start_fn — must be a module-level
-    function (not nested) since the spawn context pickles the target."""
-    return {"solution": None, "debug": "RL training not wired up yet"}
+def _rl_training_worker(task: Any) -> Dict[str, Any]:
+    """Runs in the child process. Must be a module-level function (not
+    nested) since the spawn context pickles the target. Imports
+    rl.rl_module lazily, here rather than at module level, so that
+    importing rl_job.py itself (e.g. from orchestration) never requires
+    torch/stable-baselines3 just to manage a subprocess handle."""
+    from data.configs.rl_configs import rl_config, load_PPO_config
+    from rl.rl_module import RLModule
+
+    return RLModule(rl_config, load_PPO_config()).solve(task)
 
 
 def default_rl_start_fn(task: Any) -> RLJobHandle:
-    """Placeholder — this is where the real ARCGridWorld/PPO training call
-    goes (train_on_subtask or similar). Starts a real subprocess (so
-    cancel()/poll() behave exactly like the real thing) whose worker just
-    reports "not wired up yet", rather than silently pretending to work."""
-    return RLJobHandle(task, _not_implemented_rl_worker)
+    """Starts RL training (rl.rl_module.RLModule, i.e. rl.training.train_on_task)
+    for `task` as a background subprocess, using the default rl_config /
+    PPO config. Pass a different rl_start_fn to solve_task() to use a
+    non-default config or a previously-trained policy instead."""
+    return RLJobHandle(task, _rl_training_worker)

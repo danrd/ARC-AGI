@@ -5,12 +5,15 @@ solved grid, or a debug string explaining why not. No solver raises for a
 "no answer" case, and none silently produces a blank/wrong grid when its
 internal checks fail — the reason is captured as an actual message instead.
 
-Four independent solvers, aggregated (not orchestrated — no dispatch logic,
-just attribute access) under SymbolicModule:
+Three solvers, aggregated (not orchestrated — no dispatch logic, just
+attribute access) under SymbolicModule:
     SymbolicModule().mixer.solve(task)
-    SymbolicModule().pattern_planting.solve(task)
-    SymbolicModule().upscale.solve(task)
+    SymbolicModule().upscale_or_covering.solve(task)
     SymbolicModule().color_restore.solve(task)
+upscale_or_covering merges UpscaleSolver and PatternPlantingSolver (aka
+"Covering") into a single dispatch step — different underlying logic each,
+but per-agent module wiring only needs one cheap "did symbolic solve it"
+call rather than a choice between the two.
 """
 from __future__ import annotations
 
@@ -493,6 +496,31 @@ class PatternPlantingSolver:
                 idx += 1
 
         return output
+
+
+# ============================================================================
+# UPSCALE + COVERING, MERGED — one dispatch step for two different solvers
+# ============================================================================
+
+class UpscaleOrCoveringSolver:
+    """Tries UpscaleSolver, then PatternPlantingSolver ("Covering"), in that
+    order — different underlying logic each, merged into a single call so
+    SymbolicModule exposes 3 dispatch steps instead of 4. Order is a rough
+    "probably cheaper first" guess, not a benchmarked choice; swap it if it
+    turns out to matter."""
+
+    def __init__(self, font_color: int = 0):
+        self.upscale = UpscaleSolver(font_color=font_color)
+        self.covering = PatternPlantingSolver(font_color=font_color)
+
+    def solve(self, task) -> SolveResult:
+        upscale_result = self.upscale.solve(task)
+        if upscale_result.success:
+            return upscale_result
+        covering_result = self.covering.solve(task)
+        if covering_result.success:
+            return covering_result
+        return SolveResult.fail(f"upscale: {upscale_result.debug}; covering: {covering_result.debug}")
 
 
 # ============================================================================
@@ -1194,16 +1222,14 @@ class ColorRestoreSolver:
 # ============================================================================
 
 class SymbolicModule:
-    """Groups the four solvers for convenience only:
+    """Groups the three solvers for convenience only:
         SymbolicModule().mixer.solve(task)
-        SymbolicModule().pattern_planting.solve(task)
-        SymbolicModule().upscale.solve(task)
+        SymbolicModule().upscale_or_covering.solve(task)
         SymbolicModule().color_restore.solve(task)
     No shared state, no orchestration/dispatch logic between them.
     """
 
     def __init__(self, font_val: int = 0, pad_val: int = 10):
         self.mixer = MixerSolver(font_val=font_val, pad_val=pad_val)
-        self.pattern_planting = PatternPlantingSolver(font_color=font_val)
-        self.upscale = UpscaleSolver(font_color=font_val)
+        self.upscale_or_covering = UpscaleOrCoveringSolver(font_color=font_val)
         self.color_restore = ColorRestoreSolver(font_val=font_val, pad_val=pad_val)

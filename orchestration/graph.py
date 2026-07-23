@@ -112,7 +112,7 @@ def _dispatch_symbolic(task: Any, symbolic_module: Optional[Any] = None) -> Dict
 
     module = symbolic_module or SymbolicModule()
     errors = []
-    for solver in (module.mixer, module.pattern_planting, module.upscale, module.color_restore):
+    for solver in (module.mixer, module.upscale_or_covering, module.color_restore):
         result = solver.solve(task)
         if result.success:
             return {"solution": result.grid, "module_results": {"debug": result.debug}}

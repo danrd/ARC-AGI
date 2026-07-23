@@ -49,6 +49,7 @@ test = [
 [dependency-groups]
 dev = [
     "ipykernel",
+    "ruff==0.15.22",
 ]
 
 [tool.pytest.ini_options]
@@ -56,3 +57,15 @@ testpaths = ["tests"]
 markers = [
     "gpu: requires a GPU; opt-in only, set ARC_TEST_GPU=1 to run (skipped by default)",
 ]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Pyflakes (undefined names, unused imports/variables/functions) plus a few
+# pycodestyle checks for actual mistakes rather than style opinions - close
+# to ruff's own recommended defaults. Deliberately no E1/E2/E501: the bulk
+# of the repo predates any whitespace/line-length convention, and enabling
+# those now (particularly E226/E231 in preview mode) drowns real findings
+# in ~1650 pre-existing style-only hits.
+select = ["E4", "E7", "E9", "F", "W"]

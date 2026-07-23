@@ -1,5 +1,9 @@
-"""ARC project prompt data that isn't itself a template: per-role instruction
-snippets, fed into `role_instruction/v1.j2` via context["role_text"].
+"""
+Agents aggregated configurations containing:
+- ARC project prompt data that isn't itself a template: per-role instruction
+snippets, fed into `role_instruction/v1.j2` via context["role_text"];
+- Modules general specification;
+- Agents specification setting available modules depending on agent's type.
 """
 
 ROLE_INSTRUCTIONS = {
@@ -62,3 +66,87 @@ ROLE_INSTRUCTIONS = {
         "examples"
     ),
 }
+
+MODULES = {
+    'Symbolic': {
+        'index': 1,
+        'name': 'Symbolic',
+        'purpose': 'Algorithmic pattern expansion.',
+    },
+    'Subsymbolic': {
+        'index': 2,
+        'name': 'Subsymbolic',
+        'purpose': 'LLM-based pattern extrapolation.',
+    },
+    'Interactive': {
+        'index': 3,
+        'name': 'Interactive',
+        'purpose': 'Interactive grid manipulation.',
+    }
+}
+
+AGENTS_REGISTRY = [
+    {
+        'index': 1,
+        'name': 'Generalizer',
+        'purpose': 'Abstract grid patterns through symbolic compression.',
+        'modules': ['Subsymbolic'],
+        'available_modules': [MODULES['Subsymbolic']]
+    },
+    {
+        'index': 2,
+        'name': 'Extrapolator',
+        'purpose': 'Expand grid size by continuing patterns or upscaling.',
+        'modules': ['Symbolic', 'Subsymbolic'],
+        'available_modules': [MODULES['Symbolic'], MODULES['Subsymbolic']]
+    },
+    {
+        'index': 3,
+        'name': 'Mapper',
+        'purpose': 'Establish correspondences between objects across examples.',
+        'modules': ['Subsymbolic'],
+        'available_modules': [MODULES['Subsymbolic']]
+    },
+    {
+        'index': 4,
+        'name': 'Constructor',
+        'purpose': 'Create new objects by coloring background cells or multiplying patterns.',
+        'modules': ['Symbolic', 'Subsymbolic', 'Interactive'],
+        'available_modules': [MODULES['Symbolic'], MODULES['Subsymbolic'], MODULES['Interactive']]
+    },
+    {
+        'index': 5,
+        'name': 'Shifter',
+        'purpose': 'Relocate or merge objects based on spatial rules, gravity, or positional relationships.',
+        'modules': ['Subsymbolic', 'Interactive'],   
+        'available_modules': [MODULES['Subsymbolic'], MODULES['Interactive']]
+    },
+    {
+        'index': 6,
+        'name': 'Highlighter',
+        'purpose': 'Extract key elements from the grid.',
+        'modules': ['Subsymbolic', 'Interactive'],
+        'available_modules': [MODULES['Subsymbolic'], MODULES['Interactive']]
+    },
+    {
+        'index': 7,
+        'name': 'Connector',
+        'purpose': 'Create links, paths, or emanations between objects and grid boundaries.',
+        'modules': ['Interactive'],
+        'available_modules': [MODULES['Interactive']]
+    },
+    {
+        'index': 8,
+        'name': 'Modifier',
+        'purpose': 'Transform object coloration through pattern recognition.',
+        'modules': ['Subsymbolic', 'Interactive'],
+        'available_modules': [MODULES['Subsymbolic'], MODULES['Interactive']]
+    },
+    {
+        'index': 9,
+        'name': 'Mixer',
+        'purpose': 'Transform object coloration through pattern recognition.',
+        'modules': ['Symbolic'],
+        'available_modules': [MODULES['Symbolic']]
+    }
+]

@@ -4,6 +4,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from stable_baselines3 import PPO
 from rl.evaluation import evaluate_ARC_policy
 from rl.callbacks import MonitorCallback, ARCLogger
+from rl.mcts import rollout_preparation, extract_promising_actions
 from utils.utils import seed_everything
 from utils.plotting import plot_grid
 from data.configs.rl_configs import load_PPO_config
@@ -112,3 +113,18 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     train_metrics['expl_vars'] = list(expl_vars.values())
     print(f'Accuracies for task: {list(accs_for_subtasks.values())}, Mean episode lengths for task: {list(lens_for_subtasks.values())}')
     return accs_for_subtasks, lens_for_subtasks, agent, train_metrics
+
+def actions_exploration(subtask, rl_config: dict):
+    """Train a PPO agent on `subtask`, then use it to guide MCTS rollout
+    collection and extract the resulting promising actions."""
+    test_vec_env = create_vec_env(subtask, n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'],
+                             right_placement_reward=rl_config['right_placement_reward'],  action_penalty=rl_config['action_penalty'],
+                             repetitive_actions_penalty=rl_config['repetitive_actions_penalty'], seed=42, font_color=rl_config['font_color'],
+                             padding=rl_config['padding'], input_pattern=rl_config['input_pattern'], milestones_rewards=rl_config['milestones_rewards'],
+                             pad_val=rl_config['pad_val'], reward_approach=rl_config['reward_approach'],
+                             feasible_actions=rl_config['feasible_actions'], repr_level=rl_config['repr_level'],
+                             observation_space_elements=rl_config['observation_space_elements'])
+    agent = create_agent(rl_config=rl_config, vec_env=test_vec_env, model_config=load_PPO_config())
+    best_rollouts = rollout_preparation(agent, method="mcts", n_initial_rollouts=500, top_k=5, mcts_iterations=10)
+    promising_actions = extract_promising_actions(best_rollouts, rl_config['feasible_actions'])
+    return promising_actions

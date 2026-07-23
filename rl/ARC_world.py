@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List, Tuple, Dict
 from symbolic.objects_analysis import GridObject
-from data.configs.env_configs import colors_mapping
+from data.configs.env_configs import COLORS_MAPPING
 from rl.ARC_transformators import (
 symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gravity, emission, emission_with_collision, color_inner_holes, color_outer_holes,
 shift_object, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
@@ -12,10 +12,10 @@ class World:
         self.objects = []
         self.font_color = font_color
         self.actions_dict = actions_dict
-        self.colors_mapping = {0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
+        self.COLORS_MAPPING = {0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
                                5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
 }
-        self.inverse_colors_mapping =  {v:k for k, v in self.colors_mapping.items()}
+        self.inverse_colors_mapping =  {v:k for k, v in self.COLORS_MAPPING.items()}
         self.paded_cells = set()
 
     def parse_action(self, action):
@@ -61,7 +61,7 @@ class World:
                 for x, y in coords:
                     new_grid[x, y] = add
                 obj1.color_numbers = [add]
-                obj1.colors = [colors_mapping[color] for color in obj1.color_numbers]
+                obj1.colors = [COLORS_MAPPING[color] for color in obj1.color_numbers]
 
             elif transform == "upscale4":
                 """Upscale object by 4x: each cell becomes a 2x2 square."""

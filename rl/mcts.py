@@ -6,8 +6,6 @@ import math
 from typing import Dict, Any, List
 from copy import copy
 from tqdm import tqdm
-from rl.training import create_agent, create_vec_env
-from data.configs.rl_configs import rl_config, load_PPO_config
 
 
 def process_observations(observations, device, pad_inp=True, multi_env=False):
@@ -68,8 +66,8 @@ def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str,
     """
     action_results = {}
 
-    all_actions = itertools.product(*[range(x) for x in env.action_space.nvec]) # for each dim in action_space generate all possible values, then - cartesian product
-    all_actions = [list(action) for action in list(all_actions)] # iterator to list than each element - list instead of tuple
+    all_actions = itertools.product(*[range(x) for x in env.action_space.nvec])  # for each dim in action_space generate all possible values, then - cartesian product
+    all_actions = [list(action) for action in list(all_actions)]  # iterator to list than each element - list instead of tuple
 
     if max_actions:
         all_actions = all_actions[:max_actions]
@@ -246,7 +244,7 @@ class MCTSNode:
         total_reward = 0
         depth = 0
         done = False
-        original_state =  env_simulator.env.get_state()
+        original_state = env_simulator.env.get_state()
         while not done and depth < max_depth:
             action = env_simulator.sample_action()
             _next_obs, reward, done, truncated, _ = env_simulator.env.step(action)
@@ -280,7 +278,7 @@ class EnvironmentSimulator:
         """
         original_state = self.env.get_state()
         next_obs, reward, done, truncated, info = self.env.step(action)
-        self.env.set_state(original_state) # Restore original state
+        self.env.set_state(original_state)  # Restore original state
         return next_obs, reward, done, truncated, info
 
     def _observation_to_key(self, observation):
@@ -492,13 +490,13 @@ def select_best_rollouts(rollouts: List[Dict[str, Any]], top_k: int = 10, min_le
 
     print(f"Selected {len(selected_rollouts)} best rollouts from {len(rollouts)} total")
     for i, rollout in enumerate(selected_rollouts[:min(10, len(selected_rollouts))]):
-        print(f"Rollout {i+1}: Reward = {rollout['total_reward']:.2f}, Steps = {rollout['length']}")
+        print(f"Rollout {i + 1}: Reward = {rollout['total_reward']:.2f}, Steps = {rollout['length']}")
 
     return selected_rollouts
 
 def reconstruct_rollout(grids, actions, rewards, infos):
     rollout = {}
-    rollout['observations'] = [{"grid":grid} for grid in grids]
+    rollout['observations'] = [{"grid": grid} for grid in grids]
     rollout['actions'] = actions
     rollout['rewards'] = rewards
     rollout['infos'] = infos
@@ -507,7 +505,7 @@ def reconstruct_rollout(grids, actions, rewards, infos):
 def extract_promising_actions(rollouts, feasible_actions, k=10):
     sorted_actions = []
     actions_dict = rollouts[0]['infos'][0]['action_mapping']
-    idx2name = {v:k for k,v in actions_dict.items()}
+    idx2name = {v: k for k, v in actions_dict.items()}
     all_actions = [action.tolist()[0]
                    for rollout in rollouts[:k]
                    for action in rollout['actions']
@@ -519,16 +517,3 @@ def extract_promising_actions(rollouts, feasible_actions, k=10):
                 sorted_actions.append(action)
                 break
     return sorted_actions
-
-def action_exploration(subtask, config):
-    test_vec_env = create_vec_env(subtask, n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'],
-                             right_placement_reward=rl_config['right_placement_reward'],  action_penalty=rl_config['action_penalty'],
-                             repetitive_actions_penalty=rl_config['repetitive_actions_penalty'], seed=42, font_color=rl_config['font_color'],
-                             padding=rl_config['padding'], input_pattern=rl_config['input_pattern'], milestones_rewards=rl_config['milestones_rewards'],
-                             pad_val=rl_config['pad_val'], reward_approach=rl_config['reward_approach'],
-                             feasible_actions=rl_config['feasible_actions'], repr_level=rl_config['repr_level'],
-                             observation_space_elements=rl_config['observation_space_elements'])
-    agent = create_agent(rl_config=rl_config, vec_env=test_vec_env, model_config=load_PPO_config())
-    best_rollouts = rollout_preparation(agent, method="mcts",  n_initial_rollouts=500, top_k=5, mcts_iterations=10)
-    promising_actions = extract_promising_actions(best_rollouts, rl_config['feasible_actions'])
-    return promising_actions

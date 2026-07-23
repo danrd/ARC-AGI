@@ -3,7 +3,7 @@ from copy import copy
 from typing import Dict, List, Tuple
 from collections import deque
 from symbolic.objects_analysis import GridObject
-from data.configs.env_configs import colors_mapping
+from data.configs.env_configs import COLORS_MAPPING
 
 
 def get_rotations(coords: List[tuple]) -> List[List[tuple]]:
@@ -363,9 +363,9 @@ def add_color_to_object(obj, color):
 
         # Update colors, filtering out None values
         if isinstance(obj.color_numbers, list):
-            obj.colors = tuple([colors_mapping[c] for c in obj.color_numbers if c is not None])
+            obj.colors = tuple([COLORS_MAPPING[c] for c in obj.color_numbers if c is not None])
         else:
-            obj.colors = tuple([colors_mapping[c] for c in obj.color_numbers if c is not None])
+            obj.colors = tuple([COLORS_MAPPING[c] for c in obj.color_numbers if c is not None])
 
 def find_shortest_path(grid, start, end):
     """Find shortest path between two points using BFS."""
@@ -980,7 +980,7 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
                         collision_obj.color_numbers = [collision_color]
                     else:
                         collision_obj.color_numbers = tuple([collision_color])
-                    collision_obj.colors = tuple([colors_mapping[collision_color]])
+                    collision_obj.colors = tuple([COLORS_MAPPING[collision_color]])
                     for cx, cy in collision_obj.coords:
                         new_grid[cx, cy] = collision_color
 
@@ -1139,7 +1139,7 @@ def color_inner_holes(grid:np.array, obj1:GridObject, color:float):
     for inner_hole in obj1.inner_holes:
         inner_holes_coords.extend(inner_hole.coords)
         inner_hole.color_numbers = tuple(color)
-        inner_hole.colors = tuple([colors_mapping[color]])
+        inner_hole.colors = tuple([COLORS_MAPPING[color]])
     # Create a new grid to modify
     new_grid = grid.copy()
     for x, y in inner_holes_coords:
@@ -1152,7 +1152,7 @@ def color_outer_holes(grid:np.array, obj1:GridObject, color:float):
     for outer_hole in obj1.outer_holes:
         outer_holes_coords.extend(outer_hole.coords)
         outer_hole.color_numbers = tuple([color])
-        outer_hole.colors = tuple([colors_mapping[color]])
+        outer_hole.colors = tuple([COLORS_MAPPING[color]])
     # Create a new grid to modify
     new_grid = grid.copy()
     for x, y in outer_holes_coords:

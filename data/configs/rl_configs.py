@@ -1,7 +1,6 @@
 import torch.nn as nn
 from rl.utils import linear_schedule
 from rl.policy import ARCCustomActorCriticPolicy
-from data.configs.env_configs import action2action_type
 
 rl_config = {
     'model_type': 'PPO',
@@ -46,7 +45,6 @@ def load_PPO_config():
     'activation_fn': nn.ReLU,
     'extr_arch': lin_arch,
     'action_heads': 3,
-    'action_types':action2action_type,
     }
 
 def lin(act_func=nn.ReLU()):

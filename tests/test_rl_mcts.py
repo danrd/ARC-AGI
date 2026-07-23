@@ -4,30 +4,14 @@ environment. Crash-or-not smoke tests, in the same spirit as
 test_rl_env.py - these functions explore/search over the environment
 rather than compute a single well-defined answer, so there's no simple
 "known right result" to assert against.
-
-rl.mcts currently fails to import (see collect_random_rollouts_does_not_crash's
-skip reason below): its module-level `from rl.training import ...` pulls in
-rl.policy -> data.configs.rl_configs, which imports a name
-(action2action_type) that data/configs/env_configs.py doesn't define. None
-of the tests here actually need rl.training - they only exercise
-mcts.py's environment-facing rollout collection - but the broken import
-blocks the whole module regardless. Once that's fixed, these tests should
-just start running.
 """
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
+import rl.mcts as mcts
 from rl.ARC_env import ARCGridWorld
-
-mcts = pytest.importorskip(
-    "rl.mcts",
-    reason="rl.mcts fails to import: data.configs.rl_configs imports "
-           "action2action_type from data.configs.env_configs, which doesn't "
-           "define it",
-    exc_type=ImportError,  # default only catches ModuleNotFoundError
-)
 
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}
 

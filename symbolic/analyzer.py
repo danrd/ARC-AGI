@@ -1072,3 +1072,33 @@ class TaskAnalysis:
                     insights.append(f"Scale all objects by factor: {factor:.2f}")
 
         return insights
+
+
+# ============================================================================
+# AGGREGATOR — auxiliary task information, shared across modules
+# ============================================================================
+
+class SymbolicAnalyzer:
+    """Aggregates symbolic task-analysis functionality: produces auxiliary
+    information about a task (per-example diffs, transformation patterns,
+    consistency across training examples) that any module — solver, RL
+    environment, prompt builder — can draw on.
+
+    This is the analysis counterpart to symbolic_module.SymbolicModule's
+    solvers: solvers are called directly by agents to attempt a solution,
+    while SymbolicAnalyzer instead builds the shared context those calls
+    can use. No dispatch logic yet, just construction, same as
+    SymbolicModule:
+        SymbolicAnalyzer().analyze_task(task)
+        SymbolicAnalyzer().analyze_subtask(subtask)
+    """
+
+    def __init__(self, font_color: int = 0, levels: List[int] = [2]):
+        self.font_color = font_color
+        self.levels = levels
+
+    def analyze_task(self, task) -> TaskAnalysis:
+        return TaskAnalysis(task, font_color=self.font_color, levels=self.levels)
+
+    def analyze_subtask(self, subtask) -> SubtaskAnalysis:
+        return SubtaskAnalysis(subtask, font_color=self.font_color, levels=self.levels)

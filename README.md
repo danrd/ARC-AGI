@@ -45,3 +45,9 @@ Supporting code lives alongside these: `data/` holds datasets, prompt templates,
 Currently, the `main` branch contains the implementation of the **core components and foundational architecture** of our approach.
 
 ⚠️ **Experimental Hold:** The full experimental pipeline, specific solver configurations, and benchmark evaluations remain private at this time. To maintain integrity during the ongoing stage of the challenge, the experimental branch will remain hidden. The complete codebase and results will be fully open-sourced upon the conclusion of the current challenge phase and the subsequent publication of our accompanying research paper.
+
+---
+
+## License
+
+This repository is licensed under the [MIT License](LICENSE).

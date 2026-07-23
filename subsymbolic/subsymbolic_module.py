@@ -16,16 +16,21 @@ later.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from subsymbolic.configs import ExperimentConfig, PromptingConfig
 from subsymbolic.llm_runtime import build_runner
-from subsymbolic.prompt_builder import PromptBuilder
+from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
+
+if TYPE_CHECKING:
+    # Only for the type hint below — importing it for real would make
+    # subsymbolic depend on orchestration, inverting the intended layering
+    # (orchestration assembles modules, not the other way round).
+    from orchestration.configs import ExperimentConfig
 
 
 class SubsymbolicModule:
     def __init__(self, prompting_config: PromptingConfig, tokenizer,
-                 experiment_config: ExperimentConfig):
+                 experiment_config: "ExperimentConfig"):
         self.builder = PromptBuilder(prompting_config, tokenizer)
         self.experiment_config = experiment_config
         self._runner = None

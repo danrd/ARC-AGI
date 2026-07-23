@@ -92,9 +92,9 @@ def _rl_training_worker(task: Any) -> Dict[str, Any]:
     importing rl_job.py itself (e.g. from orchestration) never requires
     torch/stable-baselines3 just to manage a subprocess handle."""
     from data.configs.rl_configs import rl_config, load_PPO_config
-    from rl.rl_module import RLModule
+    from rl.rl_module import RLModule, RlConfig
 
-    return RLModule(rl_config, load_PPO_config()).solve(task)
+    return RLModule(RlConfig(**rl_config), load_PPO_config()).solve(task)
 
 
 def default_rl_start_fn(task: Any) -> RLJobHandle:

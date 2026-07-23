@@ -31,11 +31,12 @@ from typing import Annotated, Any, Callable, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from orchestration.configs import AgentRunConfig, SystemRunConfig
 from rl.rl_job import RLJobHandle, default_rl_start_fn
 
 
 # ============================================================================
-# CONFIG / IDENTITY DATACLASSES
+# IDENTITY DATACLASSES
 # ============================================================================
 
 @dataclass
@@ -53,22 +54,6 @@ class AgentInvConfig:
     agent_name: str
     initial_module: ModuleInvConfig
     available_modules: List[Dict]
-
-
-@dataclass
-class AgentRunConfig:
-    """Execution settings for the agent-level (module) loop."""
-    max_agent_iterations: int = 3
-    rl_wait_timeout: float = 30.0
-    verbose: bool = False
-
-
-@dataclass
-class SystemRunConfig:
-    """Execution settings for the system-level (agent) loop."""
-    max_system_iterations: int = 5
-    agent_run_config: AgentRunConfig = field(default_factory=AgentRunConfig)
-    verbose: bool = True
 
 
 @dataclass

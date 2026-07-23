@@ -23,14 +23,45 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from pydantic import BaseModel, ConfigDict, Field
 
 from subsymbolic.arc_grid_formatting import format_grid
-from subsymbolic.configs import BlockSpec, PromptingConfig
-
 from subsymbolic.registry import RESOLVER_REGISTRY, FILTER_REGISTRY
+
+
+class BlockSpec(BaseModel):
+    """Prompt block specification."""
+    name: str
+    version: str = "v1"
+    role: Literal["system", "user"] = "user"  # role for chat template
+    tag: Optional[str] = None  # specify tags for wrapping cusomization
+
+    @classmethod
+    def parse(cls, spec: "str | tuple | BlockSpec"):
+        if isinstance(spec, str):
+            return cls(name=spec)
+        if isinstance(spec, tuple):
+            return cls(name=spec[0], version=spec[1])
+        return spec
+
+
+class PromptingConfig(BaseModel):
+    """Config to guide prompt construction."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    blocks_dir: str = "data/prompts"
+    blocks: List[BlockSpec | str] = ["general_instruction", "examples", "output_format"]  # list of element types to compose prompt
+    block_overrides: Optional[Dict[str, str]] = Field(default_factory=dict)  # specific blocks subsitution while experimenting
+    token_limit: int = 9000  # resources management
+    min_examples: int = 2    # examples block must fit at least this many
+    filters: Optional[List[str]] = Field(default_factory=list)  # project-specific data processing functions
+    resolvers: Optional[List[str]] = Field(default_factory=list)  # project-specific complex prompting methods
+    join_format: Literal["xml", "md", "plain"] = "xml"  # approach for blocks composing
+    chat_template: Optional[str] = None  # optionaly use specific chat template
+    assistant_prefix: Optional[str] = None  # string to add before assistant response
+    project: Dict[str, Any] = {}  # other project specific prompting settings
 
 
 class PromptBuilder:

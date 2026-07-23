@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import pytest
 
-from subsymbolic.configs import BaseConfig, ExperimentConfig, GenerationConfig
-from subsymbolic.llm_runtime import build_runner
+from orchestration.configs import ExperimentConfig
+from subsymbolic.llm_runtime import GenerationConfig, build_runner
+from subsymbolic.llm_setup import LlmConfig
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
 from subsymbolic.utils import parse_llm_output
 
@@ -88,7 +89,7 @@ def test_prompt_builds_without_a_model(case_id, blocks, join_format, arc_task, t
 
 @pytest.fixture(scope="session")
 def cpu_runner(supra_router_gguf_path):
-    base = BaseConfig(device="cpu", framework="llama_cpp", model=supra_router_gguf_path)
+    base = LlmConfig(device="cpu", framework="llama_cpp", model=supra_router_gguf_path)
     generation = GenerationConfig(max_tokens=64, temperature=0.0)
     config = ExperimentConfig(base=base, generation=generation)
     with build_runner(config) as runner:
@@ -121,7 +122,7 @@ def gpu_runner():
     errors = []
     for model_id in GPU_MODEL_CANDIDATES:
         try:
-            base = BaseConfig(device="gpu", framework="hf", model=model_id)
+            base = LlmConfig(device="gpu", framework="hf", model=model_id)
             generation = GenerationConfig(max_tokens=64, temperature=0.0)
             config = ExperimentConfig(base=base, generation=generation)
             runner = build_runner(config)

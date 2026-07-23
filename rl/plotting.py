@@ -1,11 +1,9 @@
-
-import os
 import numpy as np
-import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from rl.utils import crop_pad, get_step_description, grid_formatting
+from utils.plotting import plot_grids_comparison, plot_rewards  # noqa: F401 - re-exported, RL-specific callers import them from here
 
 
 def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None,
@@ -120,77 +118,3 @@ def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None
     plt.subplots_adjust(top=0.92)
 
     return fig
-
-def plot_grids_comparison(grid_1, grid_2, target_grid=None):
-    # Ensure the arrays are 2D
-    if grid_1.ndim != 2 or grid_2.ndim != 2:
-        raise ValueError("Both arrays must be 2D.")
-
-    grid_1 = crop_pad(grid_formatting(grid_1))
-    grid_2 = crop_pad(grid_formatting(grid_2))
-
-    # Create a figure and a set of subplots
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    cmap = matplotlib.colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA',
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
-    norm = matplotlib.colors.Normalize(vmin=0, vmax=10)
-
-    # Plot the first grid
-    axes[0, 0].imshow(grid_1, cmap=cmap, norm=norm)
-    axes[0, 0].set_title('Grid 1')
-    axes[0, 0].set_xticks(np.arange(-0.5, grid_1.shape[1], 1), minor=True)
-    axes[0, 0].set_yticks(np.arange(-0.5, grid_1.shape[0], 1), minor=True)
-    axes[0, 0].grid(which='minor', color='w', linestyle='-', linewidth=1)
-
-    # Plot the second grid
-    axes[1, 0].imshow(grid_2, cmap=cmap, norm=norm)
-    axes[1, 0].set_title('Grid 2')
-    axes[1, 0].set_xticks(np.arange(-0.5, grid_2.shape[1], 1), minor=True)
-    axes[1, 0].set_yticks(np.arange(-0.5, grid_2.shape[0], 1), minor=True)
-    axes[1, 0].grid(which='minor', color='w', linestyle='-', linewidth=1)
-
-    # Find the cells in the second grid that are not in the first grid
-    unique_cells = np.setdiff1d(grid_2, grid_1)
-
-    # Create a mask for the unique cells
-    mask = np.isin(grid_2, unique_cells)
-
-    # Create a new grid with the same shape as array2, filled with zeros
-    unique_grid = np.zeros_like(grid_2, dtype=np.int32)
-
-    # Set the unique cells to 1 (or any other value to highlight them)
-    unique_grid[mask] = grid_2[mask]
-
-    # Plot the unique cells grid
-    axes[0, 1].imshow(unique_grid, cmap=cmap, norm=norm)
-    axes[0, 1].set_title('New Cells in Grid 2')
-    axes[0, 1].set_xticks(np.arange(-0.5, unique_grid.shape[1], 1), minor=True)
-    axes[0, 1].set_yticks(np.arange(-0.5, unique_grid.shape[0], 1), minor=True)
-    axes[0, 1].grid(which='minor', color='w', linestyle='-', linewidth=1)
-
-    if target_grid is not None:
-        target_grid = crop_pad(grid_formatting(target_grid))
-        axes[1, 1].imshow(target_grid, cmap=cmap, norm=norm)
-        axes[1, 1].set_title('Target grid')
-        axes[1, 1].set_xticks(np.arange(-0.5, target_grid.shape[1], 1), minor=True)
-        axes[1, 1].set_yticks(np.arange(-0.5, target_grid.shape[0], 1), minor=True)
-        axes[1, 1].grid(which='minor', color='w', linestyle='-', linewidth=1)
-
-    fig.patch.set_edgecolor('black')  # substitute 'k' for black
-    fig.patch.set_facecolor('#dddddd')
-
-    plt.tight_layout()
-    plt.show()
-
-def plot_rewards(path_to_logs:str):
-    file = pd.read_csv(path_to_logs)
-    plt.plot(file['time/total_timesteps'], file['rollout/ep_rew_mean'], label='Training mean reward')
-    plt.xlabel("timesteps")
-    plt.ylabel("reward")
-    plt.legend()
-    if os.path.exists(path_to_logs):
-          os.remove(path_to_logs)
-    plt.savefig(os.getcwd()+'/plot.png')
-    plt.show()
-    plt.close('all')
-    return

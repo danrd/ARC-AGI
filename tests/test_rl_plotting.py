@@ -1,5 +1,5 @@
 """Smoke tests for rl/plotting.py: build a small rollout on the real
-environment (rl/ARC_env.py) and confirm the plotting functions run without
+environment (rl/arc_env.py) and confirm the plotting functions run without
 raising. Not checking pixel output - just that these functions still work
 against the current env/rollout data shapes.
 """
@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from rl.ARC_env import ARCGridWorld
+from rl.arc_env import ARCGridWorld
 from rl.plotting import plot_grids_comparison, plot_rollout_grid_trace
 
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}

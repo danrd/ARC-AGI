@@ -6,7 +6,7 @@ from copy import deepcopy
 import os
 import pandas as pd
 from typing import List, Union
-from data.datasets.ARC.ARC_dataset import ARCDataset
+from data.datasets.ARC.arc_dataset import ARCDataset
 from symbolic.utils import coords_transform, grid_formatting, crop_pad
 
 def plot_task(task_id:str, dataset:ARCDataset):

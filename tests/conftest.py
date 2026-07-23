@@ -19,7 +19,7 @@ import pytest
 # entry points instead.
 collect_ignore = ["test_symbolic.py"]
 
-from rl.ARC_task import ARCSubtask, ARCTask
+from rl.arc_task import ARCSubtask, ARCTask
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODEL_CACHE_DIR = REPO_ROOT / "data" / "pretrained_models"

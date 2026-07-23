@@ -5,7 +5,7 @@ import gymnasium
 from gymnasium import spaces
 from copy import copy, deepcopy
 from rl.utils import repad
-from rl.ARC_world import World
+from rl.arc_world import World
 from symbolic.utils import pad_grid
 from symbolic.summaries import GridSummary
 class ARCGridWorld(gymnasium.Env):
@@ -330,6 +330,6 @@ def create_env(
 
 gymnasium.envs.register(
      id='ARC-Gridworld-v1',
-     entry_point='ARC_env:create_env',
+     entry_point='rl.arc_env:create_env',
      kwargs={}
 )

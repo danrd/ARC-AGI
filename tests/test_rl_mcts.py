@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 import rl.mcts as mcts
-from rl.ARC_env import ARCGridWorld
+from rl.arc_env import ARCGridWorld
 
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}
 

@@ -2,7 +2,7 @@ import numpy as np
 from typing import List, Tuple, Dict
 from symbolic.objects_analysis import GridObject
 from data.configs.env_configs import COLORS_MAPPING
-from rl.ARC_transformators import (
+from rl.arc_transformators import (
 symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gravity, emission, emission_with_collision, color_inner_holes, color_outer_holes,
 shift_object, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
 find_path_through_background, perform_merge, objects_swap, center_merge, color_merge

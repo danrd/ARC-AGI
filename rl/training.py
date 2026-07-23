@@ -38,7 +38,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
     """Auxiliary function for creating environments to create vectorized environment."""
     gym.envs.register(
      id='ARC-Gridworld-v0',
-     entry_point='rl.ARC_env:create_env',
+     entry_point='rl.arc_env:create_env',
      kwargs={})
     env = gym.make('ARC-Gridworld-v0', max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                    action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,

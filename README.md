@@ -25,7 +25,18 @@ This repository introduces a novel framework tailored for the ARC-AGI challenge,
    * **Sub-symbolic:** Neural-based pattern recognition, latent embeddings, and heuristic approximations.
    * **Interactive:** Environment-driven exploration, trial-and-error state manipulation, and iterative feedback loops.
 
-> 📁 **Implementation Note:** The specific implementations for these three conceptual approaches to feature processing can be found in their corresponding directories within the repository.
+---
+
+## Implementation
+
+The repository structure mirrors the tri-modal design directly:
+
+* `symbolic/` — the **Symbolic** path: rule-based solvers and structural task analysis.
+* `subsymbolic/` — the **Sub-symbolic** path: LLM prompt construction and inference backends.
+* `rl/` — the **Interactive** path: the ARC grid-world environment and RL-based training.
+* `orchestration/` — implements the integration of these three concepts into the actual multi-agent system: a coordinator/agent graph (built on LangGraph) that embodies the approach's core idea in line with current multi-agent system design practice, rather than hardcoding a single solving strategy.
+
+Supporting code lives alongside these: `data/` holds datasets, prompt templates, and per-module configs; `utils/` holds repository-wide helpers not tied to one conceptual approach.
 
 ---
 

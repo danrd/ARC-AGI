@@ -1,4 +1,4 @@
-"""Tests for the ARCGridWorld environment (rl/ARC_env.py) - environment
+"""Tests for the ARCGridWorld environment (rl/arc_env.py) - environment
 init, basic lifecycle methods, and dispatching transformations through
 World. Part 1 of the RL test plan (environment); MCTS rollout collection
 and plotting are covered in their own test modules.
@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from rl.ARC_env import ARCGridWorld
+from rl.arc_env import ARCGridWorld
 
 SUBMIT_ONLY = {0: "submit"}
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}
@@ -121,7 +121,7 @@ def test_episode_terminates_at_max_episode_len(subtask):
 
 def test_step_dispatches_a_real_transformation(subtask):
     """A non-submit action should route through World.step ->
-    ARC_transformators and come back with a well-formed observation, not
+    arc_transformators and come back with a well-formed observation, not
     just the submit shortcut."""
     env = make_env(feasible_actions=SUBMIT_AND_ROTATE)
     env.set_subtask(subtask)

@@ -7,7 +7,7 @@ from utils.utils import load_json
 from symbolic.utils import augment_grid
 from datasets import Dataset, DatasetDict
 from typing import Union, List
-from rl.ARC_task import ARCTask, ARCSubtask
+from rl.arc_task import ARCTask, ARCSubtask
 
 class ARCDataset:
     def __init__(self, additional_datasets:bool=False, augmentation:bool=False,

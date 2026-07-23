@@ -1,10 +1,6 @@
-"""Shared fixtures for the LLM smoke-test suite (tests/test_llm_smoke.py).
-
-Goal of this suite: exercise the real prompt-building -> inference pipeline
-end to end on one fixed ARC task, using models small enough (single-digit to
-double-digit MB) to run on a CPU in seconds. This is NOT an accuracy
-benchmark - these models are far too small to solve ARC tasks. Success means
-the pipeline ran without raising, not that the answer is right.
+"""Shared fixtures for the test suite (tests/test_llm_smoke.py,
+tests/test_rl_*.py) - includes the fixed ARC task loader most of these
+suites build on, plus the LLM smoke test's model/tokenizer fixtures.
 """
 from __future__ import annotations
 
@@ -14,6 +10,14 @@ from pathlib import Path
 from typing import List
 
 import pytest
+
+# test_symbolic.py is its own pre-existing, non-pytest test framework
+# (UnifiedTestRunner.run_test_on_all_grids(...) calls test methods directly,
+# passing a `grid` positional argument) - pytest's collector mistakes that
+# `grid` parameter for a fixture request and errors on most of them. Excluded
+# from auto-collection here; run it via its own run_all_tests()/quick_test()
+# entry points instead.
+collect_ignore = ["test_symbolic.py"]
 
 from rl.ARC_task import ARCSubtask, ARCTask
 

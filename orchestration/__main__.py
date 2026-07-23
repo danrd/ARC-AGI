@@ -31,7 +31,7 @@ from typing import Annotated, Any, Callable, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from subsymbolic.rl_job import RLJobHandle, default_rl_start_fn
+from rl.rl_job import RLJobHandle, default_rl_start_fn
 
 
 # ============================================================================

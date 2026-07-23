@@ -8,7 +8,7 @@ token-budgeted and joined according to `config.join_format`, or via
 `tokenizer.apply_chat_template` when `config.chat_template` is set.
 
 This module is domain-agnostic. ARC-specific grid formatting, role texts,
-and instruction bodies live in `arc_grid_formatting.py` / `arc_blocks_data.py`
+and instruction bodies live in `arc_grid_formatting.py` / `data/configs/agents_config.py`
 / the `.j2` files themselves — this file only knows how to assemble blocks.
 
 Editing while experimenting (e.g. from a notebook):

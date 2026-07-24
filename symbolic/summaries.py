@@ -866,7 +866,7 @@ class GridSummary():
         idx += 1
 
         # Shape similarity
-        embedding[idx] = self._calculate_shape_similarity(obj1, obj2)
+        embedding[idx] = calculate_shape_similarity(obj1, obj2)
         idx += 1
 
         # Match score
@@ -1005,48 +1005,6 @@ class GridSummary():
                 col_idx += sample_length
 
         return result
-
-    def _calculate_shape_similarity(self, obj1, obj2):
-        """Shape similarity calculation based on binary masks overlap ratio."""
-        # Quick size filter
-        size_ratio = min(obj1.size, obj2.size) / max(obj1.size, obj2.size)
-        if size_ratio < 0.5:
-            return 0.0
-
-        mask1 = obj1.obj_mask
-        mask2 = obj2.obj_mask
-
-        h1, w1 = mask1.shape
-        h2, w2 = mask2.shape
-
-        # Use smaller dimensions
-        h = min(h1, h2)
-        w = min(w1, w2)
-
-        def compute_iou_for_crop(start1, start2):
-            """Helper function to compute IoU for specific crop positions."""
-            # Crop both masks
-            m1_crop = mask1[start1[0]:start1[0]+h, start1[1]:start1[1]+w]
-            m2_crop = mask2[start2[0]:start2[0]+h, start2[1]:start2[1]+w]
-
-            # Compute intersection and union
-            intersection = np.count_nonzero(m1_crop & m2_crop)
-            union = np.count_nonzero(m1_crop | m2_crop)
-
-            # IoU (Jaccard similarity)
-            return intersection / union if union > 0 else 0.0
-
-        # Upper-left corner cropping
-        ul_similarity = compute_iou_for_crop((0, 0), (0, 0))
-
-        # Center cropping
-        center_similarity = compute_iou_for_crop(
-            ((h1-h)//2, (w1-w)//2),
-            ((h2-h)//2, (w2-w)//2)
-        )
-
-        # Return maximum similarity from both cropping methods
-        return max(ul_similarity, center_similarity)
 
 class ObjectsFilter():
     """Class for filtering out potentialy unimportant objects."""

@@ -5,7 +5,8 @@ from data.configs.env_configs import COLORS_MAPPING
 from rl.arc_transformators import (
 symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gravity, emission, emission_with_collision, color_inner_holes, color_outer_holes,
 shift_object, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
-find_path_through_background, perform_merge, objects_swap, center_merge, color_merge
+find_path_through_background, perform_merge, objects_swap, center_merge, color_merge,
+symmetry_reflection, symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy, dense_outer_contour
 )
 class World:
     def __init__(self, objects, actions_dict, font_color=0, ):
@@ -146,6 +147,18 @@ class World:
             elif transform == "color_inner_part":
                 new_grid = color_inner_part(new_grid, obj1, add)
 
+            elif transform == "symmetry_reflection":
+                """Mirror-copy Object 1 in whichever of the 4 directions is valid and most compact."""
+                new_grid = symmetry_reflection(new_grid, obj1, self.font_color)
+
+            elif transform == "symmetric_restoration":
+                """Mirror Object 1 horizontally then vertically to complete a symmetric shape."""
+                new_grid = symmetric_restoration(new_grid, obj1, self.font_color)
+
+            elif transform == "dense_outer_contour":
+                """Color Object 1's own bounding-rectangle edge cells."""
+                new_grid = dense_outer_contour(new_grid, obj1, add, self.font_color)
+
             # FOR FURTHER IMPLEMENTATION
             elif transform == "copy":
                 """Copy the selected object to clipboard."""
@@ -245,6 +258,22 @@ class World:
             elif transform == "color_merge":
                 """If Object 1 has cells with the same color as in Object 2 - Object 2 to be placed in such cell closest to center."""
                 new_grid = color_merge(new_grid, obj1, obj2, self.font_color)
+
+            elif transform == "color_swap":
+                """Object 1 and Object 2 swap colors with each other."""
+                new_grid = color_swap(new_grid, obj1, obj2, self.font_color)
+
+            elif transform == "shape_swap":
+                """Object 1 and Object 2 swap shapes, each keeping its own position and color."""
+                new_grid = shape_swap(new_grid, obj1, obj2, self.font_color)
+
+            elif transform == "color_copy":
+                """Object 1 copies Object 2's color."""
+                new_grid = color_copy(new_grid, obj1, obj2, self.font_color)
+
+            elif transform == "shape_copy":
+                """Object 1 copies Object 2's shape, keeping its own position and color."""
+                new_grid = shape_copy(new_grid, obj1, obj2, self.font_color)
 
         return new_grid
 

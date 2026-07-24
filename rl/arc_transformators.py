@@ -1435,3 +1435,239 @@ def color_merge(grid: np.array, obj1: GridObject, obj2: GridObject, font_color:i
     obj2.reinit_obj(new_coords, grid)
 
     return grid
+
+
+# ============================================================================
+# SYMMETRY
+# ============================================================================
+
+def symmetry_reflection(grid: np.array, obj1: GridObject, font_color: float):
+    """Symmetrically copy selected shape in the direction (of 4 candidates)
+    whose reflected part doesn't intersect a non-font object and whose
+    resulting shape is the most compact (max ratio of colored cells to
+    bounding rectangle area)."""
+    reflections = {
+        'horizontal': (1, 0),       # reflect down
+        'vertical': (0, 1),         # reflect right
+        'horizontal_up': (-1, 0),   # reflect up
+        'vertical_left': (0, -1),   # reflect left
+    }
+
+    obj_coords = list(obj1.coords)
+    obj_colors = {(x, y): grid[x, y] for x, y in obj_coords}
+    # Cache the object's original bounding box: every direction is reflected
+    # off this fixed geometry, and obj1 itself is only updated once, after
+    # the best direction is chosen - not per-direction, which would shift
+    # the reference frame for whichever directions are tried afterwards.
+    orig_min_i, orig_max_i = obj1.min_i, obj1.max_i
+    orig_min_j, orig_max_j = obj1.min_j, obj1.max_j
+
+    best_grid = grid.copy()
+    best_compactness = 0.0
+    best_coords = obj_coords
+
+    for direction, (dx, dy) in reflections.items():
+        new_grid = grid.copy()
+
+        if dx != 0:  # horizontal reflection
+            center_line = (orig_min_i + orig_max_i) / 2
+            reflected_coords = [(int(2 * center_line - x), y) for x, y in obj_coords]
+        else:  # vertical reflection
+            center_line = (orig_min_j + orig_max_j) / 2
+            reflected_coords = [(x, int(2 * center_line - y)) for x, y in obj_coords]
+
+        # Valid only if every in-bounds reflected cell is either font color
+        # or already part of the object itself.
+        valid_reflection = all(
+            not (0 <= x < grid.shape[0] and 0 <= y < grid.shape[1])
+            or grid[x, y] == font_color or (x, y) in obj_coords
+            for x, y in reflected_coords
+        )
+        if not valid_reflection:
+            continue
+
+        valid_reflected = []
+        for (rx, ry), (ox, oy) in zip(reflected_coords, obj_coords):
+            if 0 <= rx < grid.shape[0] and 0 <= ry < grid.shape[1]:
+                new_grid[rx, ry] = obj_colors[(ox, oy)]
+                valid_reflected.append((rx, ry))
+
+        all_coords = set(obj_coords) | set(valid_reflected)
+        min_i = min(c[0] for c in all_coords)
+        max_i = max(c[0] for c in all_coords)
+        min_j = min(c[1] for c in all_coords)
+        max_j = max(c[1] for c in all_coords)
+        rect_area = (max_i - min_i + 1) * (max_j - min_j + 1)
+        compactness = len(all_coords) / rect_area
+
+        if compactness > best_compactness:
+            best_compactness = compactness
+            best_grid = new_grid
+            best_coords = list(all_coords)
+
+    obj1.reinit_obj(best_coords, best_grid)
+    return best_grid
+
+
+def symmetric_restoration(grid: np.array, obj1: GridObject, font_color: float):
+    """Make the shape symmetric by mirroring it horizontally, then
+    vertically (covering the horizontally-added cells too, so a quarter
+    shape ends up mirrored into all four quadrants)."""
+    obj_coords = list(obj1.coords)
+    obj_colors = {(x, y): grid[x, y] for x, y in obj_coords}
+    new_grid = grid.copy()
+
+    center_i = (obj1.min_i + obj1.max_i) / 2
+    center_j = (obj1.min_j + obj1.max_j) / 2
+
+    all_new_coords = set(obj_coords)
+
+    # Horizontal symmetry
+    for x, y in obj_coords:
+        reflected_x = int(2 * center_i - x)
+        if (0 <= reflected_x < grid.shape[0] and 0 <= y < grid.shape[1]
+                and (reflected_x, y) not in all_new_coords):
+            all_new_coords.add((reflected_x, y))
+            new_grid[reflected_x, y] = obj_colors[(x, y)]
+
+    # Vertical symmetry - also reflects the cells the horizontal pass just
+    # added, using whatever color new_grid already holds for them.
+    for x, y in list(all_new_coords):
+        reflected_y = int(2 * center_j - y)
+        if (0 <= x < grid.shape[0] and 0 <= reflected_y < grid.shape[1]
+                and (x, reflected_y) not in all_new_coords):
+            all_new_coords.add((x, reflected_y))
+            new_grid[x, reflected_y] = obj_colors.get((x, y), new_grid[x, y])
+
+    obj1.reinit_obj(list(all_new_coords), new_grid)
+    return new_grid
+
+
+# ============================================================================
+# OBJECT EXCHANGE (color/shape swaps and copies between two objects)
+# ============================================================================
+
+def color_swap(grid: np.array, obj1: GridObject, obj2: GridObject, font_color: float):
+    """Object changes color to the other object's color and vice versa
+    (uses each object's first color if it has more than one)."""
+    obj1_new_color = obj2.color_numbers[0] if obj2.color_numbers else font_color
+    obj2_new_color = obj1.color_numbers[0] if obj1.color_numbers else font_color
+
+    for x, y in obj1.coords:
+        grid[x, y] = obj1_new_color
+    for x, y in obj2.coords:
+        grid[x, y] = obj2_new_color
+
+    obj1.color_numbers, obj2.color_numbers = obj2.color_numbers, obj1.color_numbers
+    obj1.colors, obj2.colors = obj2.colors, obj1.colors
+
+    return grid
+
+
+def shape_swap(grid: np.array, obj1: GridObject, obj2: GridObject, font_color: float):
+    """Exchange the shapes of two objects while each keeps its own position
+    and color."""
+    obj1_center = obj1.center
+    obj2_center = obj2.center
+    obj1_color = obj1.color_numbers[0] if obj1.color_numbers else font_color
+    obj2_color = obj2.color_numbers[0] if obj2.color_numbers else font_color
+
+    for x, y in obj1.coords:
+        grid[x, y] = font_color
+    for x, y in obj2.coords:
+        grid[x, y] = font_color
+
+    obj1_relatives = [(x - obj1_center[0], y - obj1_center[1]) for x, y in obj1.coords]
+    obj2_relatives = [(x - obj2_center[0], y - obj2_center[1]) for x, y in obj2.coords]
+
+    new_obj2_coords = []
+    for dx, dy in obj1_relatives:
+        new_x, new_y = obj2_center[0] + dx, obj2_center[1] + dy
+        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
+            new_obj2_coords.append((new_x, new_y))
+            grid[new_x, new_y] = obj2_color
+
+    new_obj1_coords = []
+    for dx, dy in obj2_relatives:
+        new_x, new_y = obj1_center[0] + dx, obj1_center[1] + dy
+        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
+            new_obj1_coords.append((new_x, new_y))
+            grid[new_x, new_y] = obj1_color
+
+    obj1.reinit_obj(new_obj1_coords, grid)
+    obj2.reinit_obj(new_obj2_coords, grid)
+
+    return grid
+
+
+def color_copy(grid: np.array, obj1: GridObject, obj2: GridObject, font_color: float):
+    """Object copies the other object's color."""
+    target_color = obj2.color_numbers[0] if obj2.color_numbers else font_color
+
+    for x, y in obj1.coords:
+        grid[x, y] = target_color
+
+    obj1.color_numbers = (target_color,)
+    obj1.colors = (COLORS_MAPPING[target_color],)
+
+    return grid
+
+
+def shape_copy(grid: np.array, obj1: GridObject, obj2: GridObject, font_color: float):
+    """Object copies the other object's shape while keeping its own
+    position and color."""
+    obj1_center = obj1.center
+    obj1_color = obj1.color_numbers[0] if obj1.color_numbers else font_color
+
+    for x, y in obj1.coords:
+        grid[x, y] = font_color
+
+    obj2_center = obj2.center
+    obj2_relatives = [(x - obj2_center[0], y - obj2_center[1]) for x, y in obj2.coords]
+
+    new_obj1_coords = []
+    for dx, dy in obj2_relatives:
+        new_x, new_y = obj1_center[0] + dx, obj1_center[1] + dy
+        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
+            new_obj1_coords.append((new_x, new_y))
+            grid[new_x, new_y] = obj1_color
+
+    obj1.reinit_obj(new_obj1_coords, grid)
+
+    return grid
+
+
+# ============================================================================
+# DENSE OUTER CONTOUR (fills the object's own bounding-box edge, unlike
+# get_outer_contour which traces one cell OUTSIDE the bounding box)
+# ============================================================================
+
+def dense_outer_contour(grid: np.array, obj1: GridObject, color: float, font_color: float):
+    """Color the object's own bounding-rectangle edge cells that aren't
+    already part of the object."""
+    min_i, max_i = obj1.min_i, obj1.max_i
+    min_j, max_j = obj1.min_j, obj1.max_j
+
+    new_grid = grid.copy()
+    contour_coords = set()
+
+    for j in range(min_j, max_j + 1):
+        if (min_i, j) not in obj1.coords:
+            contour_coords.add((min_i, j))
+        if (max_i, j) not in obj1.coords:
+            contour_coords.add((max_i, j))
+
+    for i in range(min_i, max_i + 1):
+        if (i, min_j) not in obj1.coords:
+            contour_coords.add((i, min_j))
+        if (i, max_j) not in obj1.coords:
+            contour_coords.add((i, max_j))
+
+    for x, y in contour_coords:
+        new_grid[x, y] = color
+
+    new_coords = list(obj1.coords) + list(contour_coords)
+    obj1.reinit_obj(new_coords, new_grid)
+    add_color_to_object(obj1, color)
+
+    return new_grid

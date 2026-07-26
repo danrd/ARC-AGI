@@ -99,21 +99,26 @@ def test_submit_action_terminates_immediately(subtask):
 
 
 def test_episode_terminates_at_max_episode_len(subtask):
-    """Without ever submitting, the episode still ends once
-    max_episode_len steps have been taken."""
+    """Without ever submitting (and without solving the task by accident),
+    the episode still ends once max_episode_len steps have been taken - via
+    `truncated`, not `done` (done means the task was actually solved;
+    truncated means the step limit was hit - they used to be conflated,
+    with done always just recomputed as the step-limit check)."""
     env = make_env(max_episode_len=3, feasible_actions=SUBMIT_AND_ROTATE)
     env.set_subtask(subtask)
     env.reset()
 
     done = False
+    truncated = False
     steps = 0
     for _ in range(10):  # safety bound well above max_episode_len
-        _, _, done, _, _ = env.step(np.array([1, 0, 0]))  # rotate90, never submits
+        _, _, done, truncated, _ = env.step(np.array([1, 0, 0]))  # rotate90, never submits
         steps += 1
-        if done:
+        if done or truncated:
             break
 
-    assert done is True
+    assert not done  # rotating never solves this task on its own
+    assert truncated
     assert steps == 3
 
 

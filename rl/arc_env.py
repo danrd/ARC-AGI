@@ -1,5 +1,3 @@
-import time
-import cProfile
 import numpy as np
 import gymnasium
 from gymnasium import spaces
@@ -151,6 +149,35 @@ class ARCGridWorld(gymnasium.Env):
         elif self.reward_approach in [1,3]:
             self.max_reward += self.milestones[self.target_int]
 
+    def _submit_reward(self, max_int):
+        """Milestone-based reward for a submit action, parameterized on
+        max_int (rather than reading self.max_int) so it can be reused by
+        simulate_action() for MCTS tree search without touching self.*."""
+        reward = 0
+        i = 0
+        if self.reward_approach in [1, 3]:
+            for idx, milestone_int in enumerate(self.milestones.keys()):
+                if max_int >= milestone_int:
+                    i = idx+1
+            if i==len(self.milestones.keys()):
+                reward = self.milestones_rewards[-1]
+            else:
+                if self.reward_approach == 1:
+                   reward = -1 * list(reversed(self.milestones_rewards))[i] # reward only for the whole result
+                elif self.reward_approach == 3: # no negative rewards for partial result
+                    reward = 0
+
+        elif self.reward_approach == 2: # partial reward for some achieved milestones
+            for idx, milestone_int in enumerate(self.milestones.keys()):
+                if max_int >= milestone_int:
+                    reward += self.milestones_rewards[idx]
+                else:
+                    reward = -1 * self.milestones_rewards[-1]
+                    break
+        elif self.reward_approach == 4: # monotonic scaling reward based on percentage of the task complition
+            reward = self.max_reward_base
+        return reward
+
     def submit_grid(self):
         obs = {}
         obs['grid'] = self.grid.copy().astype(self.grid_dtype)
@@ -165,30 +192,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)
         truncated = False
         info = {}
-        reward = 0
-        i = 0
-        if self.reward_approach in [1, 3]:
-            for idx, milestone_int in enumerate(self.milestones.keys()):
-                if self.max_int >= milestone_int:
-                    i = idx+1
-            if i==len(self.milestones.keys()):
-                reward = self.milestones_rewards[-1]
-            else:
-                if self.reward_approach == 1:
-                   reward = -1 * list(reversed(self.milestones_rewards))[i] # reward only for the whole result
-                elif self.reward_approach == 3: # no negative rewards for partial result
-                    reward = 0
-
-        elif self.reward_approach == 2: # partial reward for some achieved milestones
-            for idx, milestone_int in enumerate(self.milestones.keys()):
-                if self.max_int >= milestone_int:
-                    reward += self.milestones_rewards[idx]
-                else:
-                    reward = -1 * self.milestones_rewards[-1]
-                    break
-        elif self.reward_approach == 4: # monotonic scaling reward based on percentage of the task complition
-            completion_share = (self.max_int-self.base_int) / (self.target_int-self.base_int)
-            reward = self.max_reward_base
+        reward = self._submit_reward(self.max_int)
         done = True
         return obs, reward, done, truncated, info
 
@@ -222,7 +226,6 @@ class ARCGridWorld(gymnasium.Env):
         return (obs, info)
 
     def step(self, action):
-        start = time.time()
         reward = 0
         if self.subtask is None:
             raise ValueError('Subtask is not initialized!')
@@ -236,12 +239,7 @@ class ARCGridWorld(gymnasium.Env):
         object_1 = self.objects[action[1]]
         object_2 = self.objects[action[2]]
         # Apply action and get modified grid if needed
-        with cProfile.Profile() as pr:
-            new_grid = self.world.step(add, transform, object_1, object_2, self.grid, self.objects, self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
-            opp_time = (time.time()-start) / 60
-            if opp_time > 0.01 :
-                print(f'Transform "{transform}" performed with {opp_time} operation time')
-                pr.print_stats()
+        new_grid = self.world.step(add, transform, object_1, object_2, self.grid, self.objects, self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
 
         eq_check = np.array_equal(new_grid, self.grid)
         # Update grid if it was transformed
@@ -266,7 +264,6 @@ class ARCGridWorld(gymnasium.Env):
             obs['relations_emb'] = self.grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
 
         right_placement, done = self.step_intersection(self.grid)
-        done = (self.step_no==self.max_episode_len)
         reward += right_placement * self.right_placement_reward  # Bonus for effective transformations
 
         # Discourage action repetition
@@ -278,13 +275,55 @@ class ARCGridWorld(gymnasium.Env):
         # Reward normalization
         reward = round(reward / self.max_reward, 2)
 
-        truncated = False
+        truncated = (self.step_no >= self.max_episode_len)
         info = {
             'right_placement': right_placement,
             'change_of_grid': not eq_check,
             'action_space_shape': self.action_space.nvec,
         }
         return obs, reward, done, truncated, info
+
+    def simulate_action(self, action, objects, grid, max_int, prev_action):
+        """Side-effect-free version of one step's physics + reward: runs
+        against caller-supplied objects/grid/max_int/prev_action instead of
+        self.objects/self.grid/self.max_int/self.prev_action, and never
+        touches them or self.step_no/self.right_placement - only the two
+        objects the action targets get mutated (World.apply_transform's
+        usual contract), and only if the caller passed in copies of those.
+
+        Built for MCTS tree search (rl.mcts.EnvironmentSimulator), which
+        needs to explore many candidate actions per real step without
+        paying for a full env.reset()/deepcopy of every object on every
+        simulated node. Does not build a full observation (no objects_emb/
+        relations_emb refresh) - simulated nodes only need the reward/done
+        signal, not something to hand to a policy.
+
+        Returns (new_grid, objects, new_max_int, reward, done). `objects`
+        is returned as received (its 1-2 mutated entries are exactly the
+        ones the caller should hold onto for the next simulated step).
+        """
+        if self.actions_dict[action[0]] == 'submit':
+            return grid, objects, max_int, self._submit_reward(max_int), True
+
+        add, transform = self.world.parse_action(action)
+        object_1 = objects[action[1]]
+        object_2 = objects[action[2]]
+        cell2obj = self.initial_grid_summary.repr_levels[self.repr_level].cell2obj
+        new_grid = self.world.step(add, transform, object_1, object_2, grid, objects, cell2obj)
+
+        eq_check = np.array_equal(new_grid, grid)
+        reward = -1 * self.action_penalty if (new_grid is not None and eq_check) else 0.0
+
+        new_max_int = self.maximal_intersection(new_grid)
+        done = (new_max_int == self.target_int)
+        right_placement = new_max_int - max_int
+        reward += right_placement * self.right_placement_reward
+
+        if prev_action is not None and np.array_equal(prev_action, action):
+            reward += -1 * self.repetitive_actions_penalty
+
+        reward = round(reward / self.max_reward, 2)
+        return new_grid, objects, new_max_int, reward, done
 
     def get_state(self):
         """

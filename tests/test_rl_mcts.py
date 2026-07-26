@@ -1,11 +1,19 @@
 """Tests for the experience-collection utilities in rl/mcts.py
 (collect_random_rollouts, MCTSNode, EnvironmentSimulator) against the real
-environment. Crash-or-not smoke tests, in the same spirit as
+environment. Mostly crash-or-not smoke tests, in the same spirit as
 test_rl_env.py - these functions explore/search over the environment
 rather than compute a single well-defined answer, so there's no simple
-"known right result" to assert against.
+"known right result" to assert against for most of them.
+
+One exception: test_environment_simulator_does_not_mutate_real_env is an
+exact regression test for the bug this round's rework fixed - MCTS search
+used to run real env.step() calls and try to undo them via get_state()/
+set_state(), which never captured env.objects, so every simulated node
+permanently corrupted the objects the real rollout depends on.
 """
 from __future__ import annotations
+
+from copy import deepcopy
 
 import numpy as np
 import pytest
@@ -41,13 +49,42 @@ def test_environment_simulator_sample_and_step(env):
 
     assert env.action_space.contains(np.array(action))
 
-    obs, reward, done, truncated, info = simulator.simulate_step(env.reset()[0], action)
-    assert isinstance(obs, dict)
+    state = mcts.env_state_snapshot(env)
+    next_state, reward, done, truncated, info = simulator.simulate_step(state, action)
+    assert isinstance(next_state, dict)
+    assert set(next_state.keys()) == {"grid", "objects", "max_int", "prev_action"}
+
+
+def test_environment_simulator_does_not_mutate_real_env(env):
+    """Regression test: simulate_step used to run a real env.step() and try
+    to undo it via get_state()/set_state(), which never captured
+    env.objects - so every simulated node permanently mutated the real
+    objects. simulate_step must now leave env.objects/env.grid/env.max_int
+    untouched no matter how many simulated steps it runs."""
+    simulator = mcts.EnvironmentSimulator(env)
+    action = np.array([1, 0, 0])  # rotate90 on object 0
+    assert env.action_space.contains(action)
+
+    objects_before = [deepcopy(obj) for obj in env.objects]
+    grid_before = env.grid.copy()
+    max_int_before = env.max_int
+
+    state = mcts.env_state_snapshot(env)
+    for _ in range(5):  # several simulated steps in a row, as expand()/simulate() would do
+        state, reward, done, truncated, info = simulator.simulate_step(state, action)
+        if done or truncated:
+            break
+
+    assert len(env.objects) == len(objects_before)
+    for obj, obj_before in zip(env.objects, objects_before):
+        assert tuple(obj.coords) == tuple(obj_before.coords)
+    assert np.array_equal(env.grid, grid_before)
+    assert env.max_int == max_int_before
 
 
 def test_mcts_node_expand_and_simulate_does_not_crash(env):
     simulator = mcts.EnvironmentSimulator(env)
-    root = mcts.MCTSNode(observation=env.reset()[0])
+    root = mcts.MCTSNode(state=mcts.env_state_snapshot(env))
 
     child = root.expand(simulator)
     assert child is not None
@@ -60,11 +97,30 @@ def test_mcts_node_expand_and_simulate_does_not_crash(env):
     assert child.visits >= 1
 
 
+def test_mcts_node_expand_children_have_independent_untried_actions(env):
+    """Regression test: expand() used to hand each child the SAME
+    untried_actions list the parent held, so popping an action for one
+    child's own later expansion silently removed it from the parent's
+    (and every sibling's) list too."""
+    simulator = mcts.EnvironmentSimulator(env)
+    root = mcts.MCTSNode(state=mcts.env_state_snapshot(env))
+    root.is_fully_expanded(env.action_space)  # lazily initializes root.untried_actions as a side effect
+
+    remaining_before = len(root.untried_actions)
+    child = root.expand(simulator)
+    assert child is not None
+    assert child.untried_actions is not root.untried_actions
+    assert len(root.untried_actions) == remaining_before - 1
+
+    child.expand(simulator)  # pop from the child's own list
+    assert len(root.untried_actions) == remaining_before - 1  # unaffected by the child's pop
+
+
 def test_mcts_search_does_not_crash(env):
     search = mcts.MCTS(env, max_iterations=5, max_depth=3)
-    root_obs = env.reset()[0]
+    root_state = mcts.env_state_snapshot(env)
 
-    root = search.search(root_obs)
+    root = search.search(root_state)
 
     best_action = search.get_best_action(root)
     assert env.action_space.contains(np.array(best_action))

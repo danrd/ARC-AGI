@@ -4,7 +4,7 @@ import itertools
 import random
 import math
 from typing import Dict, Any, List
-from copy import copy
+from copy import copy, deepcopy
 from tqdm import tqdm
 
 
@@ -191,8 +191,8 @@ def collect_random_rollouts(env,
 
 # Monte Carlo Tree Search Implementation
 class MCTSNode:
-    def __init__(self, observation, action=None, parent=None, reward=0.0, untried_actions=None):
-        self.observation = observation
+    def __init__(self, state, action=None, parent=None, reward=0.0, untried_actions=None):
+        self.state = state  # {"grid", "objects", "max_int", "prev_action"} snapshot - see EnvironmentSimulator
         self.action = action  # Action that led to this node
         self.parent = parent
         self.children = {}
@@ -228,30 +228,31 @@ class MCTSNode:
             return None
         action = np.array(self.untried_actions.pop(0))
 
-        # Use simulator to get next state without affecting main environment
-        next_observation, reward, done, truncated, info = env_simulator.simulate_step(
-            self.observation, action
-        )
+        # Purely functional - never touches env_simulator.env.
+        next_state, reward, done, truncated, info = env_simulator.simulate_step(self.state, action)
 
-        child = MCTSNode(next_observation, action, self, reward, untried_actions=self.untried_actions)
+        # Each child gets its own copy of the remaining actions: sharing
+        # self.untried_actions between parent and child meant popping from
+        # one silently drained the other's list too.
+        child = MCTSNode(next_state, action, self, reward, untried_actions=list(self.untried_actions))
         child.is_terminal = done or truncated
         self.children[tuple(action)] = child
 
         return child
 
     def simulate(self, env_simulator, max_depth=10):
-        """Simulate a random rollout from this node using simulator"""
+        """Random rollout from this node's own state snapshot - stays on
+        copies throughout, never touches the live environment."""
+        state = self.state
         total_reward = 0
         depth = 0
         done = False
-        original_state = env_simulator.env.get_state()
         while not done and depth < max_depth:
             action = env_simulator.sample_action()
-            _next_obs, reward, done, truncated, _ = env_simulator.env.step(action)
+            state, reward, done, truncated, _info = env_simulator.simulate_step(state, action)
             total_reward += reward
             depth += 1
             done = done or truncated
-        env_simulator.env.set_state(original_state)
         return total_reward
 
     def backpropagate(self, reward):
@@ -263,32 +264,49 @@ class MCTSNode:
             self.parent.backpropagate(reward)
 
 class EnvironmentSimulator:
-    """
-    Wrapper that provides state simulation capabilities.
-    This class should be adapted based on your specific environment.
+    """Runs functional (non-mutating) simulated steps against an
+    ARCGridWorld for MCTS tree search.
+
+    Every simulate_step() call runs env.simulate_action() on a state
+    snapshot ({"grid", "objects", "max_int", "prev_action"}) and returns a
+    new snapshot - env.grid/env.objects/env.max_int are never read from or
+    written to here. The real environment is mutated exactly once per real
+    step, by a normal env.step() call on whichever action the search
+    settles on (see collect_mcts_rollouts) - never by this class, which is
+    why simulating deep/wide trees doesn't need get_state()/set_state() at
+    all: nothing real ever changes during the search.
     """
     def __init__(self, env):
         self.env = env
         self.action_space = env.action_space
 
-    def simulate_step(self, observation, action):
-        """
-        Simulate taking an action from a given observation.
-        This is the key method that needs environment-specific implementation.
-        """
-        original_state = self.env.get_state()
-        next_obs, reward, done, truncated, info = self.env.step(action)
-        self.env.set_state(original_state)  # Restore original state
-        return next_obs, reward, done, truncated, info
+    def simulate_step(self, state, action):
+        """state: {"grid", "objects", "max_int", "prev_action"} snapshot.
+        Returns (next_state, reward, done, truncated, info)."""
+        objects = self._copy_touched_objects(state['objects'], action)
+        new_grid, new_objects, new_max_int, reward, done = self.env.simulate_action(
+            action, objects, state['grid'], state['max_int'], state['prev_action'],
+        )
+        next_state = {
+            'grid': new_grid, 'objects': new_objects, 'max_int': new_max_int,
+            'prev_action': np.asarray(action),
+        }
+        return next_state, reward, done, False, {}
 
-    def _observation_to_key(self, observation):
-        """Convert observation to hashable key"""
-        if isinstance(observation, np.ndarray):
-            return tuple(observation.flatten())
-        elif isinstance(observation, dict):
-            return tuple(sorted(observation.items()))
-        else:
-            return observation
+    def _copy_touched_objects(self, objects, action):
+        """Copy only the objects this action can mutate, not the whole
+        list - World.apply_transform only ever mutates the two objects
+        it's given, with one exception: the "object_recolor"
+        emission-collision variant can also recolor a third object it
+        looks up independently via cell2obj - copy every object in that
+        one case, to stay safe."""
+        transform_name = self.env.actions_dict.get(int(action[0]), '')
+        if 'object_recolor' in transform_name:
+            return [deepcopy(obj) for obj in objects]
+        objects = list(objects)
+        for idx in {int(action[1]), int(action[2])}:
+            objects[idx] = deepcopy(objects[idx])
+        return objects
 
     def sample_action(self):
         """Sample random action"""
@@ -302,9 +320,11 @@ class MCTS:
         self.c = c
         self.all_actions = list(itertools.product(*[range(x) for x in env.action_space.nvec]))
 
-    def search(self, initial_observation):
-        """Perform MCTS search from initial observation"""
-        root = MCTSNode(initial_observation, untried_actions=copy(self.all_actions))
+    def search(self, initial_state):
+        """Perform MCTS search from an initial state snapshot (see
+        EnvironmentSimulator/ARCGridWorld.simulate_action) - never mutates
+        the real environment."""
+        root = MCTSNode(initial_state, untried_actions=copy(self.all_actions))
 
         for iteration in range(self.max_iterations):
             # Selection - traverse tree using UCB1
@@ -362,13 +382,29 @@ class MCTS:
 
         return sequence
 
+def env_state_snapshot(env) -> Dict[str, Any]:
+    """Build a {"grid", "objects", "max_int", "prev_action"} snapshot of an
+    ARCGridWorld's current real state, for MCTS.search()/EnvironmentSimulator
+    to explore from without ever touching the real env. Deep-copies every
+    object once here (cheap - happens once per real step, not per simulated
+    tree node); simulated steps then only copy whichever 1-2 objects they
+    actually touch, relative to whatever their parent node already holds."""
+    return {
+        'grid': env.grid.copy(),
+        'objects': [deepcopy(obj) for obj in env.objects],
+        'max_int': env.max_int,
+        'prev_action': env.prev_action.copy() if env.prev_action is not None else None,
+    }
+
 def collect_mcts_rollouts(env,
                           n_rollouts: int = 50,
                           mcts_iterations: int = 500,
                           max_episode_len: int = 50) -> List[Dict[str, Any]]:
     """
-    Collect rollouts using MCTS for action selection.
-    Now properly manages environment state.
+    Collect rollouts using MCTS for action selection. MCTS search itself
+    runs entirely on a snapshot of the env's state (see
+    EnvironmentSimulator) - only the action it settles on for each real
+    step is ever applied to `env` for real, via a normal env.step().
     """
     rollouts = []
     mcts = MCTS(env, max_iterations=mcts_iterations)
@@ -392,11 +428,11 @@ def collect_mcts_rollouts(env,
         step_count = 0
 
         while not (done or truncated) and step_count < max_episode_len:
-            # Use MCTS to select action (this doesn't modify env state)
-            root = mcts.search(observation)
+            # MCTS explores on a snapshot of the current real state.
+            root = mcts.search(env_state_snapshot(env))
             action = mcts.get_best_action(root)
 
-            # Now take the actual step in the real environment
+            # Only the chosen action is ever applied to the real environment.
             next_observation, reward, done, truncated, info = env.step(action)
             rollout['observations'].append(observation)
             rollout['actions'].append(action)

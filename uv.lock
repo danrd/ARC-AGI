@@ -261,6 +261,9 @@ hf = [
 llama-cpp = [
     { name = "llama-cpp-python" },
 ]
+logging = [
+    { name = "wandb" },
+]
 openrouter = [
     { name = "openai" },
 ]
@@ -270,7 +273,6 @@ rl = [
     { name = "stable-baselines3" },
     { name = "torch" },
     { name = "torch-geometric" },
-    { name = "wandb" },
 ]
 test = [
     { name = "huggingface-hub" },
@@ -313,9 +315,9 @@ requires-dist = [
     { name = "tqdm", specifier = "==4.69.0" },
     { name = "transformers", marker = "extra == 'hf'", specifier = "==5.14.1" },
     { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.6" },
-    { name = "wandb", marker = "extra == 'rl'", specifier = "==0.28.1" },
+    { name = "wandb", marker = "extra == 'logging'", specifier = "==0.28.1" },
 ]
-provides-extras = ["rl", "hf", "vllm", "llama-cpp", "openrouter", "test"]
+provides-extras = ["rl", "logging", "hf", "vllm", "llama-cpp", "openrouter", "test"]
 
 [package.metadata.requires-dev]
 dev = [

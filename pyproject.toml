@@ -24,8 +24,10 @@ rl = [
     "stable-baselines3==2.9.0",
     "torch",
     "optuna==4.9.0",
-    "wandb==0.28.1",
     "torch_geometric",
+]
+logging = [
+    "wandb==0.28.1",
 ]
 hf = [
     "transformers==5.14.1",

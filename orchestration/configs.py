@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from typing import Any, Dict
 
 from rl.rl_module import RlConfig
+from subsymbolic.llm_run import WandbLogConfig
 from subsymbolic.llm_setup import LlmConfig
 from subsymbolic.llm_runtime import GenerationConfig
 from subsymbolic.prompt_builder import PromptingConfig
@@ -45,6 +46,7 @@ class ExperimentConfig(BaseModel):
     prompt: PromptingConfig = Field(default_factory=PromptingConfig)
     rl: RlConfig = Field(default_factory=RlConfig)
     system: SystemRunConfig = Field(default_factory=SystemRunConfig)
+    logging: WandbLogConfig = Field(default_factory=WandbLogConfig)
     project: Dict[str, Any] = Field(default_factory=dict)
 
     def to_llama_cpp(self) -> dict:

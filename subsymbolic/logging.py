@@ -1,5 +1,4 @@
 import json
-import wandb
 
 
 def prepare_prompt_artifact(prompts_artifact, task_idx:int, prompt_data, report_types=('json', 'txt')):
@@ -38,6 +37,8 @@ def load_checkpoint_from_wandb(run):
 
 def save_checkpoint_to_wandb(run, tasks_summary, prompts_data, processed_tasks, solved_tasks):
     """Save checkpoint to wandb artifacts."""
+    import wandb
+
     checkpoint_data = {
         'processed_tasks': list(processed_tasks),
         'tasks_summary': tasks_summary.get_dataframe().to_dict(),

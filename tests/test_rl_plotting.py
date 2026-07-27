@@ -77,3 +77,32 @@ def test_plot_grids_comparison_with_target_grid(arc_task):
 
     assert plt.gcf().get_axes()
     plt.close("all")
+
+
+def test_plot_rollout_grid_trace_missing_infos_does_not_crash():
+    """Regression test: `infos` used to default to {} when the key was
+    absent from the rollout dict, then get indexed with an int (infos[step_idx])
+    - always a KeyError the moment include_descriptions=True (the default)."""
+    rollout = {
+        "observations": [{"grid": np.zeros((3, 3), dtype=int)}, {"grid": np.zeros((3, 3), dtype=int)}],
+        "actions": [np.array([1, 0, 0]), np.array([1, 0, 0])],
+        "rewards": [0.1, 0.2],
+        # no "infos" key
+    }
+
+    fig = plot_rollout_grid_trace(rollout, action_mapping={0: "submit", 1: "rotate90"})
+
+    assert isinstance(fig, plt.Figure)
+    plt.close(fig)
+
+
+def test_plot_rollout_grid_trace_empty_rollout_does_not_crash():
+    """Regression test: an empty rollout used to raise ZeroDivisionError
+    (n_cols computed as 0) and then a matplotlib GridSpec ValueError even
+    after that - both fixed by an explicit early return."""
+    rollout = {"observations": [], "actions": [], "rewards": [], "infos": []}
+
+    fig = plot_rollout_grid_trace(rollout)
+
+    assert isinstance(fig, plt.Figure)
+    plt.close(fig)

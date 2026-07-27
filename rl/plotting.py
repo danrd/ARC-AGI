@@ -27,7 +27,7 @@ def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None
     grids = [state['grid'] for state in states if 'grid' in state]
     actions = rollout['actions'] if 'actions' in rollout else []
     rewards = rollout['rewards'] if 'rewards' in rollout else []
-    infos = rollout['infos'] if 'infos' in rollout else {}
+    infos = rollout['infos'] if 'infos' in rollout else []
 
     # Determine number of steps to plot
     total_steps = len(grids)
@@ -35,6 +35,11 @@ def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None
         num_steps_to_plot = total_steps
     else:
         num_steps_to_plot = min(num_steps_to_plot, total_steps)
+
+    if num_steps_to_plot == 0:
+        fig = plt.figure(figsize=figsize)
+        fig.text(0.5, 0.5, "Rollout has no steps to plot", ha='center', va='center')
+        return fig
 
     # Create evenly spaced indices if we're not plotting all steps
     if num_steps_to_plot < total_steps:
@@ -92,7 +97,8 @@ def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None
             reward = rewards_to_plot[i] if i < len(rewards_to_plot) else None
 
             # Get info for this step
-            step_info = {k:v for k, v in infos[step_idx].items() if k!='TimeLimit.truncated'}
+            raw_info = infos[step_idx] if step_idx < len(infos) else {}
+            step_info = {k:v for k, v in raw_info.items() if k!='TimeLimit.truncated'}
             if not include_info:
                 step_info = None
             # Create description text

@@ -23,9 +23,12 @@ def plot_task(task_id:str, dataset:ARCDataset):
     num_train = len(task['train'])
     num_test  = len(task['test'])
     w = num_train + num_test
-    fig, axs  = plt.subplots(2, w, figsize=(3*w ,3*2))
+    # squeeze=False: plt.subplots(2, w) collapses to a 1D array when w == 1,
+    # breaking every axs[row, col] index below.
+    fig, axs  = plt.subplots(2, w, figsize=(3*w ,3*2), squeeze=False)
     plt.suptitle(f'Task #{task_id}', fontsize=20, fontweight='bold', y=1)
 
+    j = -1  # so j+1+inc below still starts test columns at 0 when num_train == 0
     for j in range(num_train):
         plot_one(axs[0, j], j, task, 'train', 'input')
         plot_one(axs[1, j], j, task, 'train', 'output')
@@ -63,7 +66,8 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     ax.imshow(input_matrix, cmap=cmap, norm=norm)
     ax.grid(True, which = 'both',color = 'lightgrey', linewidth = 0.5)
 
-    plt.setp(plt.gcf().get_axes(), xticklabels=[], yticklabels=[])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
     ax.set_xticks([x-0.5 for x in range(1 + len(input_matrix[0]))])
     ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])
     title_prefix = f'Example {i+1}' if train_or_test == "train" else f'Test {i+1}'
@@ -79,7 +83,7 @@ def plot_multiple_tasks(task_ids: List[str], dataset: ARCDataset):
     """
     for task_id in task_ids:
         print(task_id)
-        plot_task(dataset.tasks[task_id].label, dataset)
+        plot_task(task_id, dataset)
 
 def plot_grid(grid):
     grid = crop_pad(grid_formatting(grid))
@@ -158,12 +162,12 @@ def evaluate_grid(correct_grid, predicted_grids):
 def plot_shape(shape:List[tuple]):
     """Plot a figure which is a list of tuples with coordinates."""
     i, j = coords_transform(shape)
-    min_coord = min(min(i), min(j))
-    i_shape = max(i) - min(i) + 1
-    j_shape = max(j) - min(j) + 1
+    min_i, min_j = min(i), min(j)
+    i_shape = max(i) - min_i + 1
+    j_shape = max(j) - min_j + 1
     grid = np.zeros((i_shape, j_shape))
-    i_shifted = [i_coord-min_coord for i_coord in i]
-    j_shifted = [j_coord-min_coord for j_coord in j]
+    i_shifted = [i_coord-min_i for i_coord in i]
+    j_shifted = [j_coord-min_j for j_coord in j]
     shifted_shape = list(zip(i_shifted, j_shifted))
     for coord in shifted_shape:
         grid[coord] = 11
@@ -172,11 +176,15 @@ def plot_shape(shape:List[tuple]):
 def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]):
     """Plot intersection with defined shape."""
     grid = deepcopy(grid)
-    if isinstance(shape, list):
+    # A single shape (List[tuple]) and a list of shapes (List[List[tuple]])
+    # are both `list` at the top level - isinstance(shape, list) alone
+    # can't tell them apart. shape[0] can: a tuple means a single shape,
+    # a list means shape is already a list of shapes to flatten.
+    if shape and isinstance(shape[0], list):
         shape_union = []
         for sh in shape:
             shape_union.extend(sh)
-            shape = shape_union
+        shape = shape_union
     i, j = coords_transform(shape)
     grid[i, j] = 11
     grid = crop_pad(grid_formatting(grid))

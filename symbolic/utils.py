@@ -6,9 +6,15 @@ import numpy as np
 from collections import defaultdict
 
 def find_upper_left_corner(grid_size:tuple)->tuple:
-    """Finds left upper corner of the grid to take into account padding."""
-    i = min(14-(grid_size[0]%2)*((grid_size[0]//2)), 14-((grid_size[0]-1)%2)*(((grid_size[0]-1)//2)))
-    j = min(14-(grid_size[1]%2)*((grid_size[1]//2)), 14-((grid_size[1]-1)%2)*(((grid_size[1]-1)//2)))
+    """Finds left upper corner of the grid to take into account padding.
+
+    Grids are currently anchored at the top-left, so this is always (0, 0)
+    regardless of grid_size. Kept as the single place ~30 call sites ask
+    "where does this grid start", so re-introducing centered padding means
+    changing this one function rather than all of them. (It used to compute
+    a centered offset against a fixed 30x30 canvas; that computation was
+    dead - the return ignored it - and has been removed.)
+    """
     return (0, 0)
 
 def calculate_size(shapes):

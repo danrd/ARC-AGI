@@ -1,11 +1,6 @@
-import os
-import json
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
 from utils.utils import load_json
 from symbolic.utils import augment_grid
-from datasets import Dataset, DatasetDict
 from typing import Union, List
 from rl.arc_task import ARCTask, ARCSubtask
 

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import numpy as np
 from copy import copy, deepcopy
-from collections import defaultdict
 from dataclasses import dataclass
 from itertools import permutations, product
 from typing import Any, Dict, List, Optional, Tuple
@@ -1132,7 +1131,7 @@ class ColorRestoreSolver:
 
     def _restore_with_slices(self, grid: np.ndarray, symmetry_type: str) -> np.ndarray:
         shape = grid.shape
-        mid_i, mid_j, max_i, max_j = shape[0] // 2, shape[1] // 2, shape[0], shape[1]
+        mid_i, mid_j = shape[0] // 2, shape[1] // 2
         restored_grid = copy(grid)
 
         for _ in range(5):

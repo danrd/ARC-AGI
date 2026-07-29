@@ -1587,10 +1587,9 @@ def estimate_hole_reduction(obj1, obj2):
     """
     Estimate how many holes would be reduced by merging.
     """
-    total_holes_before = len(get_all_holes(obj1)) + len(get_all_holes(obj2))
-
     # Simple estimation: if objects are complementary shapes, might reduce holes
-    # This is a heuristic - in practice, you'd need to simulate the merge
+    # This is a heuristic - in practice, you'd need to simulate the merge, so
+    # the actual hole counts aren't consulted here, only the size ratio.
     size_ratio = min(obj1.size, obj2.size) / max(obj1.size, obj2.size)
 
     if size_ratio > 0.7:  # Similar sizes

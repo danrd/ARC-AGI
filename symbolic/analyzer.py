@@ -617,7 +617,6 @@ class SubtaskAnalysis:
         # Pattern 2: Object addition/deletion with deep analysis
         added = [c for c in changes if c.change_type == 'added']
         deleted = [c for c in changes if c.change_type == 'deleted']
-        unchanged = [c for c in changes if c.change_type == 'unchanged']
         modified = [c for c in changes if c.change_type == 'modified']
 
         # Analyze additions in context

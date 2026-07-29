@@ -915,7 +915,7 @@ class TestRegression:
         """Regression: Operations should not modify input grid."""
         grid = TestGridLibrary.filled_rectangle()
         original_grid = grid.copy()
-        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         assert np.array_equal(grid, original_grid), \
             "Input grid should not be modified"
 
@@ -1095,7 +1095,7 @@ class TestEdgeCases:
         grid[10:20, 10:20] = 1
         grid[30:40, 30:40] = 2
         start = time.perf_counter()
-        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         assert duration < 5.0, f"Large grid processing too slow: {duration}s"
 
@@ -1281,7 +1281,7 @@ class TestStress:
         print("\n  Testing dense 10-color grid...")
         grid = np.random.randint(1, 11, (30, 30))
         start = time.perf_counter()
-        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         print(f"    Completed in {duration:.2f}s")
         assert duration < 15.0, f"Dense multicolor too slow: {duration}s"
@@ -1311,7 +1311,7 @@ class TestStress:
         for i in range(10):
             grid[i, :] = i + 1
         start = time.perf_counter()
-        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         print(f"    Completed in {duration:.2f}s")
         assert duration < 10.0, f"Many colors too slow: {duration}s"
@@ -1323,7 +1323,7 @@ class TestStress:
         grid = TestGridLibrary.multicolor_regions()
         start = time.perf_counter()
         for i in range(100):
-            summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+            GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         avg_time = duration / 100
         print(f"    Average time per operation: {avg_time*1000:.2f}ms")
@@ -1342,7 +1342,7 @@ class TestStress:
             if size > 0:
                 grid[offset:offset+size, offset:offset+size] = color
         start = time.perf_counter()
-        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
 
         print(f"    Completed in {duration:.2f}s")
@@ -1362,7 +1362,7 @@ class TestPerformance:
         shape_types = ['line', 'rectangle', 'diagonal']
         for size in grid_sizes:
             start = time.perf_counter()
-            patterns = generate_patterns(size, shape_types, multithreading=True)
+            generate_patterns(size, shape_types, multithreading=True)
             duration = time.perf_counter() - start
             results[size] = duration * 1000
         return results
@@ -1378,7 +1378,7 @@ class TestPerformance:
         }
         for name, grid in test_grids.items():
             start = time.perf_counter()
-            summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+            GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
             duration = time.perf_counter() - start
             results[name] = duration * 1000
         return results
@@ -1413,7 +1413,7 @@ class TestPerformance:
                 grid[i:i+2, j:j+2] = obj_id % 5 + 1
                 obj_id += 1
         start = time.perf_counter()
-        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         return duration * 1000
 
@@ -1925,7 +1925,7 @@ def run_comprehensive_tests():
         if result.grid_name:
             grid_coverage[result.grid_name] += 1
 
-    print(f"\nTests per grid scenario:")
+    print("\nTests per grid scenario:")
     for grid_name, count in sorted(grid_coverage.items(), key=lambda x: x[1], reverse=True):
         print(f"  {grid_name}: {count} tests")
 
@@ -1944,7 +1944,7 @@ def run_all_comprehensive_tests():
     print("MASTER COMPREHENSIVE TEST SUITE")
     print("="*80)
     print(f"Grid Scenarios: {len(runner.test_grids)}")
-    print(f"Test Categories: 9 (Functional, Validation, Regression, Property, etc.)")
+    print("Test Categories: 9 (Functional, Validation, Regression, Property, etc.)")
     print("="*80)
 
     # Track timing for each phase
@@ -2148,7 +2148,7 @@ def run_all_comprehensive_tests():
             if not result.passed:
                 grid_failures[result.grid_name] += 1
 
-    print(f"\nTests per grid scenario:")
+    print("\nTests per grid scenario:")
     for grid_name in sorted(grid_coverage.keys()):
         count = grid_coverage[grid_name]
         failures = grid_failures[grid_name]

@@ -118,7 +118,7 @@ AGENTS_REGISTRY = [
         'index': 5,
         'name': 'Shifter',
         'purpose': 'Relocate or merge objects based on spatial rules, gravity, or positional relationships.',
-        'modules': ['Subsymbolic', 'Interactive'],   
+        'modules': ['Subsymbolic', 'Interactive'],
         'available_modules': [MODULES['Subsymbolic'], MODULES['Interactive']]
     },
     {

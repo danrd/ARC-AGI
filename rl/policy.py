@@ -190,13 +190,15 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
 class ARCGNNPolicy(ARCCustomActorCriticPolicy):
     """Policy using GNN approach"""
     def __init__(self, observation_space, action_space, lr_schedule, **kwargs):
+        # pop (not get): the key has to leave kwargs, or it'd also be passed
+        # through **kwargs below and collide with the explicit argument.
         features_extractor_kwargs = kwargs.pop('features_extractor_kwargs', {})
         super().__init__(
             observation_space=observation_space,
             action_space=action_space,
             lr_schedule=lr_schedule,
             features_extractor_class=ARCGNNExtractor,
-            features_extractor_kwargs=kwargs.get('features_extractor_kwargs', {}),
+            features_extractor_kwargs=features_extractor_kwargs,
             **kwargs
         )
 
@@ -209,6 +211,6 @@ class ARCSeparatePolicy(ARCCustomActorCriticPolicy):
             action_space=action_space,
             lr_schedule=lr_schedule,
             features_extractor_class=ARCSeparateExtractor,
-            features_extractor_kwargs=kwargs.get('features_extractor_kwargs', {}),
+            features_extractor_kwargs=features_extractor_kwargs,
             **kwargs
         )

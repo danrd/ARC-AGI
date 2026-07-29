@@ -89,7 +89,6 @@ def vote_grid(arrays, tie_break='random'):
 def get_vec_info(vec_env):
     right_placements = []
     max_ints = []
-    agent_pos = []
     envs = vec_env.envs
     for env in envs:
         right_placements.append(env.subtask.right_placement)

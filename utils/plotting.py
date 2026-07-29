@@ -297,18 +297,12 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_d
                     break
             return colors_list[:n_colors]
         else:
-            # For very large numbers, use multiple strategies
+            # For very large numbers, generate colors with varied hue,
+            # saturation and brightness rather than sampling colormaps -
+            # spreading hue by the golden ratio keeps adjacent objects
+            # visually distinct even in the hundreds.
             colors_list = []
 
-            # Strategy 1: Use multiple colormaps with different ranges
-            colormaps = [
-                ('gist_ncar', 0.0, 0.8),    # Avoid very end of colormap
-                ('hsv', 0.0, 0.8),
-                ('viridis', 0.2, 0.8),
-                ('plasma', 0.2, 0.8)
-            ]
-
-            # Strategy 2: Generate colors with varied hue, saturation, brightness
             import colorsys
             for i in range(n_colors):
                 # Vary hue systematically, but also vary saturation and value
@@ -358,7 +352,7 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_d
     X, Y = np.meshgrid(x_edges, y_edges)
 
     # Plot with pcolormesh - this ensures square cells
-    mesh = plt.pcolormesh(X, Y, grid, cmap=cmap, norm=norm, edgecolor='lightgrey', linewidth=0.5)
+    plt.pcolormesh(X, Y, grid, cmap=cmap, norm=norm, edgecolor='lightgrey', linewidth=0.5)
 
     # Set equal aspect ratio to ensure square cells
     plt.gca().set_aspect('equal')

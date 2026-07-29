@@ -117,7 +117,6 @@ class GridObject():
             return tuple([0.0] * 7)
 
         # Convert coordinates to relative positions (centered)
-        coords_array = np.array(self.coords)
         center_i, center_j = self.center
 
         # Calculate central moments up to order 3

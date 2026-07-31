@@ -494,8 +494,7 @@ def find_connected_components_with_color(grid, target_color, folds=8):
     return components
 
 def find_connected_components_excluding_colors(grid, font_color=0, pad_val=10, folds=8):
-    """
-    Find all connected components in a grid where cells have any color except the specified font color.
+    """Find all connected components in a grid where cells have any color except the specified font color.
     """
     if isinstance(grid, np.ndarray):
         if grid.size == 0:

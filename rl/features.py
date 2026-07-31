@@ -11,8 +11,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 # =============================================================================
 
 class ObjectRelationGNN(nn.Module):
-    """
-    Graph Neural Network for processing objects and their relations.
+    """Graph Neural Network for processing objects and their relations.
     Objects are nodes, relations are edges.
     """
 
@@ -68,8 +67,7 @@ class ObjectRelationGNN(nn.Module):
         self.layer_norms = nn.ModuleList([nn.LayerNorm(hidden_dim) for _ in range(num_layers)])
 
     def forward(self, batch_graphs):
-        """
-        batch_graphs: PyTorch Geometric Batch object containing multiple graphs
+        """batch_graphs: PyTorch Geometric Batch object containing multiple graphs
         """
         x, edge_index, edge_attr, batch = batch_graphs.x, batch_graphs.edge_index, batch_graphs.edge_attr, batch_graphs.batch
 
@@ -103,8 +101,7 @@ class GraphDataConstructor:
         pass
 
     def create_graph_from_embeddings(self, object_embeddings, relation_embeddings, object_pairs):
-        """
-        Create a graph from object and relation embeddings
+        """Create a graph from object and relation embeddings
 
         Args:
             object_embeddings: tensor of shape (num_objects, object_dim)
@@ -261,8 +258,7 @@ class ARCGNNExtractor(BaseFeaturesExtractor):
 # =============================================================================
 
 class ObjectProcessor(nn.Module):
-    """
-    Enhanced object processor with better feature grouping and attention
+    """Enhanced object processor with better feature grouping and attention
     """
 
     def __init__(self, object_dim=25, hidden_dim=128, output_dim=64):
@@ -311,8 +307,7 @@ class ObjectProcessor(nn.Module):
         self.layer_norm = nn.LayerNorm(output_dim)
 
     def forward(self, x):
-        """
-        x: tensor of shape (batch_size, max_objects, 32)
+        """x: tensor of shape (batch_size, max_objects, 32)
         """
         batch_size, max_objects, _ = x.shape
 
@@ -340,8 +335,7 @@ class ObjectProcessor(nn.Module):
         return output
 
 class RelationProcessor(nn.Module):
-    """
-    Enhanced relation processor with semantic grouping
+    """Enhanced relation processor with semantic grouping
     """
 
     def __init__(self, relation_dim=17, hidden_dim=64, output_dim=32):
@@ -383,8 +377,7 @@ class RelationProcessor(nn.Module):
         self.layer_norm = nn.LayerNorm(output_dim)
 
     def forward(self, x):
-        """
-        x: tensor of shape (batch_size, max_relations, 17)
+        """x: tensor of shape (batch_size, max_relations, 17)
         """
         batch_size, max_relations, _ = x.shape
 
@@ -408,8 +401,7 @@ class RelationProcessor(nn.Module):
         return output
 
 class ARCSeparateExtractor(BaseFeaturesExtractor):
-    """
-    Enhanced separate processing approach with improved object and relation handling
+    """Enhanced separate processing approach with improved object and relation handling
     """
 
     def __init__(self, observation_space: spaces.Dict,
@@ -573,8 +565,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         return torch.cat(encoded_tensor_list, dim=1)
 
 class ObjectSetProcessor(nn.Module):
-    """
-    Processes variable number of objects using attention mechanism for
+    """Processes variable number of objects using attention mechanism for
     permutation invariance and better object interaction modeling.
     """
 
@@ -606,8 +597,7 @@ class ObjectSetProcessor(nn.Module):
         self.layer_norm2 = nn.LayerNorm(embedding_dim)
 
     def forward(self, x, mask=None):
-        """
-        x: tensor of shape (batch_size, max_objects, 32)
+        """x: tensor of shape (batch_size, max_objects, 32)
         mask: optional mask for variable number of objects
         """
         batch_size, max_objects, _ = x.shape
@@ -668,8 +658,7 @@ class OptimalObjectExtractor(nn.Module):
         )
 
     def forward(self, x):
-        """
-        x: flattened object embeddings of shape (batch_size, max_objects * 32)
+        """x: flattened object embeddings of shape (batch_size, max_objects * 32)
         """
         batch_size = x.shape[0]
 
@@ -683,8 +672,7 @@ class OptimalObjectExtractor(nn.Module):
 
 # Integration with your existing code
 def create_object_extractor(subspace_shape):
-    """
-    Replace your current objects_emb extractor with this
+    """Replace your current objects_emb extractor with this
     """
     max_objects, feature_dim = subspace_shape
     output_dim = max(64, max_objects * 8)

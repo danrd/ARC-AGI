@@ -1,5 +1,4 @@
-"""
-Unified Grid-Based Test Suite for ARC Pattern Analysis
+"""Unified Grid-Based Test Suite for ARC Pattern Analysis
 
 This module provides comprehensive testing based on predefined grid scenarios
 that cover various edge cases and real-world patterns found in ARC tasks.

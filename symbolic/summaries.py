@@ -1016,8 +1016,7 @@ class ObjectsFilter():
     def merge_shapes(objects: typing.Dict[str, GridObject],
                     container_shapes: typing.List[str],
                     contained_shapes: typing.List[str]) -> typing.Dict[str, GridObject]:
-        """
-        Filter out objects each of which is subset of some container shape.
+        """Filter out objects each of which is subset of some container shape.
 
         Args:
             objects: Dictionary of shape objects
@@ -1451,8 +1450,7 @@ def get_all_holes(obj):
     return holes
 
 def calculate_size_compatibility(hole, filler):
-    """
-    Calculate how compatible the sizes are for hole filling.
+    """Calculate how compatible the sizes are for hole filling.
     """
     # Filler should be slightly smaller than hole for perfect fit
     size_ratio = filler.size / hole.size if hole.size > 0 else 0
@@ -1469,8 +1467,7 @@ def calculate_size_compatibility(hole, filler):
         return 0.1
 
 def calculate_shape_compatibility(hole, filler):
-    """
-    Calculate shape compatibility for hole filling, considering both original
+    """Calculate shape compatibility for hole filling, considering both original
     and 90° rotated orientations of the filler.
     """
     # Calculate hole aspect ratio
@@ -1499,8 +1496,7 @@ def calculate_shape_compatibility(hole, filler):
     return max(score_original, score_rotated)
 
 def find_promising_hole_matches(obj1, obj2):
-    """
-    Find if objects can be matched based on hole filling.
+    """Find if objects can be matched based on hole filling.
     Returns list of promising configurations.
     """
     promising_configs = []
@@ -1547,8 +1543,7 @@ def find_promising_hole_matches(obj1, obj2):
     return promising_configs
 
 def find_best_hole_for_filler(hole_owner, filler):
-    """
-    Find the best hole in hole_owner for the filler to fill.
+    """Find the best hole in hole_owner for the filler to fill.
     """
     holes = get_all_holes(hole_owner)
     if not holes:
@@ -1570,8 +1565,7 @@ def find_best_hole_for_filler(hole_owner, filler):
     return (best_hole, best_score) if best_score > 0.3 else (None, 0)
 
 def calculate_optimal_placement(hole, filler):
-    """
-    Calculate the best position to place filler in the hole.
+    """Calculate the best position to place filler in the hole.
     """
     # Simple strategy: align centers
     hole_center = hole.center
@@ -1584,8 +1578,7 @@ def calculate_optimal_placement(hole, filler):
     return (filler.coords[0][0] + offset_x, filler.coords[0][1] + offset_y)
 
 def estimate_hole_reduction(obj1, obj2):
-    """
-    Estimate how many holes would be reduced by merging.
+    """Estimate how many holes would be reduced by merging.
     """
     # Simple estimation: if objects are complementary shapes, might reduce holes
     # This is a heuristic - in practice, you'd need to simulate the merge, so
@@ -1598,8 +1591,7 @@ def estimate_hole_reduction(obj1, obj2):
         return 0  # Unlikely to reduce holes
 
 def calculate_match_score_hole_based(grid, obj1, obj2, all_objects, font_color):
-    """
-    New match score based on hole filling potential.
+    """New match score based on hole filling potential.
     """
     # Quick compatibility check
     if not has_holes(obj1) and not has_holes(obj2):

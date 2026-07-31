@@ -20,8 +20,7 @@ class World:
         self.paded_cells = set()
 
     def parse_action(self, action):
-        """
-        Parse actions from MultiDiscrete action space:
+        """Parse actions from MultiDiscrete action space:
         action[0]: Action type
         action[1]: index of the first object in self.objects
         action[2]: index of the second object in self.objects

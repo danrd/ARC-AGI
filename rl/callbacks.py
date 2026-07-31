@@ -104,8 +104,7 @@ class MonitorCallback(EvalCallback):
 
 
     def _on_rollout_end(self) -> None:
-        """
-        This event is triggered before updating the policy.
+        """This event is triggered before updating the policy.
         """
         pass
 
@@ -171,8 +170,7 @@ class ARCLogger(Logger):
         self.output_formats = [make_output_format(f, folder, "") for f in output_formats]
 
     def dump(self, step: int = 0) -> None:
-        """
-        Write all of the diagnostics from the current iteration
+        """Write all of the diagnostics from the current iteration
         """
         if self.level == 50:
             return

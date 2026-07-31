@@ -74,8 +74,7 @@ def plot_one(ax, i, task, train_or_test, input_or_output):
     ax.set_title(title_prefix + ' ' + input_or_output, fontweight='bold')
 
 def plot_multiple_tasks(task_ids: List[str], dataset: ARCDataset):
-    """
-    Plots the training and test pairs for multiple tasks, each in its own figure,
+    """Plots the training and test pairs for multiple tasks, each in its own figure,
     using the same color scheme as the ARC app.
     Args:
         task_ids (list[str]): List of task IDs to plot.
@@ -97,8 +96,7 @@ def plot_grid(grid):
     plt.xlim(-0.5, grid.shape[1]-0.5)
 
 def plot_multiple_grids(grids: List[np.array]):
-    """
-    Plots each grid from given list.
+    """Plots each grid from given list.
     Args:
         grids (List[np.array]): List of grids.
     """
@@ -106,8 +104,7 @@ def plot_multiple_grids(grids: List[np.array]):
         plot_grid(grid)
 
 def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
-    """
-    Plots tiplet input_grid-predicton-output_grid in a single row.
+    """Plots tiplet input_grid-predicton-output_grid in a single row.
 
     Args:
         predictions (List[List[np.array, float]]): List of prediction grids with similarity score.
@@ -266,8 +263,7 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
     plt.show()
 
 def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_distinct_colors=50):
-    """
-    Enhanced version with better color distinction for many objects.
+    """Enhanced version with better color distinction for many objects.
     Fixed grid display to prevent cutting off and ensure even cell sizes.
     """
     grid = deepcopy(grid)

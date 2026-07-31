@@ -3,8 +3,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 
 def levenshtein_distance(s1: str, s2: str) -> int:
-    """
-    Compute the Levenshtein distance between two strings.
+    """Compute the Levenshtein distance between two strings.
     """
     if len(s1) < len(s2):
         return levenshtein_distance(s2, s1)
@@ -24,8 +23,7 @@ def levenshtein_distance(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 def lev_sim(s1: str, s2: str) -> float:
-    """
-    Calculate a normalized similarity score (0 to 1) between two strings using Levenshtein distance.
+    """Calculate a normalized similarity score (0 to 1) between two strings using Levenshtein distance.
     - 1.0 = identical
     - 0.0 = completely different
     """
@@ -52,8 +50,7 @@ def prompts_length_dist(dataset, tokenizer, plot=False, percentiles=False):
         return counter
 
 def parse_concise_grid(grid_str: str) -> np.array:
-    """
-    Parse a grid from concise LLM output representation into a NumPy array.
+    """Parse a grid from concise LLM output representation into a NumPy array.
     """
     lines = grid_str.strip().split('\n')
 
@@ -71,8 +68,7 @@ def parse_concise_grid(grid_str: str) -> np.array:
     return np.array(grid).reshape(shape)
 
 def parse_ascii_grid(grid_str: str) -> np.array:
-    """
-    Parse a grid from ASCII LLM output representation into a NumPy array.
+    """Parse a grid from ASCII LLM output representation into a NumPy array.
     """
     lines = grid_str.strip().split('\n')
 
@@ -93,8 +89,7 @@ def check_module_devices(model):
         print(f"Parameter: {name}, Device: {param.device}")
 
 def parse_llm_output(text, colors_str=False, max_grid_dim=30):
-    """
-    Parse a string in the format:
+    """Parse a string in the format:
     n,m:
     1 x_1 ... x_m
     ...

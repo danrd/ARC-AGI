@@ -8,8 +8,7 @@ from utils.plotting import plot_grids_comparison, plot_rewards  # noqa: F401 - r
 
 def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None,
                             figsize=(15, 10), include_descriptions=True, include_info=True):
-    """
-    Plots the grid states from a rollout to monitor a trace with textual descriptions.
+    """Plots the grid states from a rollout to monitor a trace with textual descriptions.
 
     Args:
         rollout (dict): a dictionary with keys ['observations', 'actions', 'rewards', 'dones', 'infos', 'total_reward', 'length'].

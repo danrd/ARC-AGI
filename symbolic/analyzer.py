@@ -56,8 +56,7 @@ class SubtaskAnalysis:
     """Analyzes a single input-output example pair."""
 
     def __init__(self, subtask, font_color: int = 0, levels: List[int] = [2]):
-        """
-        Initialize analysis for a single ARCSubtask.
+        """Initialize analysis for a single ARCSubtask.
 
         Args:
             subtask: ARCSubtask instance with train_inp and train_out
@@ -797,8 +796,7 @@ class TaskAnalysis:
     """Analyzes a complete ARC task with multiple training examples and test cases."""
 
     def __init__(self, task, font_color: int = 0, levels: List[int] = [2]):
-        """
-        Initialize task analysis.
+        """Initialize task analysis.
 
         Args:
             task: ARCTask instance with subtasks

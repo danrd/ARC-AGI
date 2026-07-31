@@ -1,5 +1,4 @@
-"""
-Unified registry for methods related to subsymbolic functionality.
+"""Unified registry for methods related to subsymbolic functionality.
 It's purpose is to aggregate and isolate task-specific functions from task-agnostic features.
 """
 

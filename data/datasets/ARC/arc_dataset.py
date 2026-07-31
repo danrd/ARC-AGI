@@ -32,8 +32,7 @@ class ARCDataset:
         return train_inp, train_out, test_inp, test_out
 
     def load_dataset(self, additional_datasets, filter_tasks):
-        """
-        Load dataset files and set splitting for training.
+        """Load dataset files and set splitting for training.
         Args:
             additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
         """
@@ -69,8 +68,7 @@ class ARCDataset:
         self.aug_start_idx = self.cur_idx + 400 * 14
 
     def load_ARC2(self):
-        """
-        Load dataset files and set splitting for training.
+        """Load dataset files and set splitting for training.
         Args:
             additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
         """

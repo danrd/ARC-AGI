@@ -83,8 +83,7 @@ class ARCCustomNetwork(nn.Module):
             raise ValueError(f"Unsupported number of action heads: {action_heads}")
 
     def forward(self, features: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
-        """
-        Returns:
+        """Returns:
             List of latent_policy outputs (one for each action head), and
             latent_value.
         """
@@ -143,8 +142,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         return distribution
 
     def extract_features(self, obs) -> torch.Tensor:
-        """
-        Preprocess the observation if needed and extract features.
+        """Preprocess the observation if needed and extract features.
         """
         # preprocessed_obs = preprocess_obs(obs, self.observation_space, normalize_images=self.normalize_images)
         return self.features_extractor(obs)

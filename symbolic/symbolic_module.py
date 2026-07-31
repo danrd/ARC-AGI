@@ -1,5 +1,4 @@
-"""
-Symbolic solvers for ARC tasks, wrapped as classes with one uniform
+"""Symbolic solvers for ARC tasks, wrapped as classes with one uniform
 contract: every `.solve(task)` call returns a `SolveResult` — either a
 solved grid, or a debug string explaining why not. No solver raises for a
 "no answer" case, and none silently produces a blank/wrong grid when its

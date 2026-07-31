@@ -1,5 +1,4 @@
-"""
-Agents aggregated configurations containing:
+"""Agents aggregated configurations containing:
 - ARC project prompt data that isn't itself a template: per-role instruction
 snippets, fed into `role_instruction/v1.j2` via context["role_text"];
 - Modules general specification;

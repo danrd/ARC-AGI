@@ -1,5 +1,4 @@
-"""
-Universal LLM inference runner.
+"""Universal LLM inference runner.
 
 One interface regardless of backend: `Runner.generate(prompt: str) -> str`.
 `prompt` is always a plain string (whatever PromptBuilder already produces,

@@ -191,8 +191,7 @@ class GridObject():
         return total_inner_hole_size / total_object_area if total_object_area > 0 else 0.0
 
     def define_positioning(self):
-        """
-        Identify if an object is located at specific positions on the grid.
+        """Identify if an object is located at specific positions on the grid.
         Supports grids from 1x1 to 30x30 and identifies various positioning attributes.
         """
         positioning = []
@@ -462,8 +461,7 @@ class GridObject():
         self.objects_summary = objects_summary
 
     def create_embedding(self):
-        """
-        Creates a vector embedding representation of the GridObject with the following features:
+        """Creates a vector embedding representation of the GridObject with the following features:
         - color_shares: Color distribution based on actual color shares (up to 10 colors)
         - hor_size: Fraction of grid width [0-1]
         - vert_size: Fraction of grid height [0-1]

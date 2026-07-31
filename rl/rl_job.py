@@ -1,5 +1,4 @@
-"""
-Background RL-training job, run as a separate OS process (spawned via
+"""Background RL-training job, run as a separate OS process (spawned via
 multiprocessing, not forked — safe even once the worker touches torch/CUDA
 elsewhere in the process tree), with non-blocking polling and clean
 cancellation (terminate -> kill).

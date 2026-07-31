@@ -1,5 +1,4 @@
-"""
-LangGraph-based multi-agent orchestration skeleton for ARC-AGI solving.
+"""LangGraph-based multi-agent orchestration skeleton for ARC-AGI solving.
 
 Two-level graph:
   - System graph (Coordinator): picks an Agent, gets its solution, validates

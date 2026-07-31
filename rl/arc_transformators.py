@@ -7,8 +7,7 @@ from data.configs.env_configs import COLORS_MAPPING
 
 
 def get_rotations(coords: List[tuple]) -> List[List[tuple]]:
-    """
-    Generate all possible 90-degree rotations of a set of coordinates.
+    """Generate all possible 90-degree rotations of a set of coordinates.
 
     Args:
         coords: List of (x, y) coordinate tuples
@@ -51,8 +50,7 @@ def get_rotations(coords: List[tuple]) -> List[List[tuple]]:
     return rotations
 
 def calculate_adjacency_positions(obj: 'GridObject') -> List[tuple]:
-    """
-    Calculate all possible positions adjacent to an object where another object could be placed.
+    """Calculate all possible positions adjacent to an object where another object could be placed.
 
     Args:
         obj: GridObject to find adjacency positions for
@@ -84,8 +82,7 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
                                  position: tuple, rotation_idx: int,
                                  all_grid_objects: List['GridObject'],
                                  grid_shape:tuple) -> Dict:
-    """
-    Evaluate a potential match configuration between two objects.
+    """Evaluate a potential match configuration between two objects.
     Args:
         obj1: First GridObject
         obj2: Second GridObject
@@ -149,8 +146,7 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
 
 def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
                            all_grid_objects: List['GridObject'], grid_shape:tuple) -> Dict:
-    """
-    Find the best match configuration between two grid objects.
+    """Find the best match configuration between two grid objects.
 
     Args:
         obj1: First GridObject
@@ -188,8 +184,7 @@ def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
     return best_match
 
 def merge_objects(grid:np.ndarray, obj1:GridObject, obj2:GridObject, match_config:Dict, font_color:int):
-    """
-    Merge two objects based on a match configuration.
+    """Merge two objects based on a match configuration.
 
     Args:
         obj1: First GridObject
@@ -222,8 +217,7 @@ def merge_objects(grid:np.ndarray, obj1:GridObject, obj2:GridObject, match_confi
 
 def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridObject',
                            all_grid_objects: List['GridObject']):
-    """
-    Find the most probable merge configuration between two specific objects.
+    """Find the most probable merge configuration between two specific objects.
 
     Args:
         obj1: First GridObject
@@ -260,8 +254,7 @@ def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridOb
 
 def perform_merge(grid:np.ndarray, obj1:GridObject, obj2:GridObject,
                   all_grid_objects:List[GridObject], font_color:int):
-    """
-    Find and perform the best merge between two specific objects.
+    """Find and perform the best merge between two specific objects.
 
     Args:
         obj1: First GridObject
@@ -307,8 +300,7 @@ def inverse_obj_color(grid:np.array, obj:GridObject, font_color:int):
     return grid
 
 def find_shortest_distance(obj1, obj2, allow_diagonals=False):
-    """
-    Find the shortest distance between two objects and return the pair(s) of cells with minimal distance.
+    """Find the shortest distance between two objects and return the pair(s) of cells with minimal distance.
 
     Args:
     -----------
@@ -401,8 +393,7 @@ def find_shortest_path(grid, start, end):
     return []  # No path found
 
 def find_path_through_background(grid, start, end, font_color):
-    """
-    Find path between two points.
+    """Find path between two points.
     First checks for 1 or 2 straight line solutions, then uses A* algorithm.
     """
     import heapq
@@ -589,8 +580,7 @@ def find_path_through_background(grid, start, end, font_color):
     return []  # No path found
 
 def filter_paths(paths, obj1, obj2, preference='right'):
-    """
-    Filter paths based on specified criteria.
+    """Filter paths based on specified criteria.
 
     Args:
         paths: List of paths, where each path is a list of coordinate tuples [(x1, y1), (x2, y2), ...].
@@ -689,8 +679,7 @@ def gravity(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int):
     return new_grid
 
 def edge_gravity(grid:np.array, obj1:GridObject, font_color:int, bottom_only=False):
-    """
-    Object 1 is moved towards the closest edge or optionally towards bottom edge.
+    """Object 1 is moved towards the closest edge or optionally towards bottom edge.
     If bottom_only is True, only move towards the bottom edge.
     """
     new_coords = []
@@ -808,8 +797,7 @@ def y_alignment(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int)
     return new_grid
 
 def contour_connection(grid:np.array, obj1:GridObject, obj2:GridObject, contour_color:float, rectangle_color:float):
-    """
-    If Object 1 and Object 2 are 'cell' type, connect them with contour and
+    """If Object 1 and Object 2 are 'cell' type, connect them with contour and
     color it with specified color to create rectangle.
     """
     # Get bounding box coordinates
@@ -1077,8 +1065,7 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
     return new_grid
 
 def get_outer_contour(grid:np.array, obj_coords:List[tuple], font_color:int, recolor=False) -> List[Tuple[int, int]]:
-    """
-    Returns the minimal bounding rectangle around the shape.
+    """Returns the minimal bounding rectangle around the shape.
     """
     i_coords = [cell[0] for cell in obj_coords]
     j_coords = [cell[1] for cell in obj_coords]

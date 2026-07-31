@@ -1,5 +1,4 @@
-"""
-Universal Jinja2-based prompt builder.
+"""Universal Jinja2-based prompt builder.
 
 A prompt is composed of ordered "blocks" (BlockSpec). Each block resolves to
 a `<name>/<version>.j2` template file under `config.blocks_dir` (default:

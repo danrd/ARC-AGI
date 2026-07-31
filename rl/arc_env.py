@@ -49,8 +49,7 @@ class ARCGridWorld(gymnasium.Env):
         self.observation_space = spaces.Dict(self.observation_space)
 
     def step_intersection(self, grid:np.array):
-        """
-        Calculates the difference between the maximal intersection at previous step and the current one.
+        """Calculates the difference between the maximal intersection at previous step and the current one.
         Parameters
         ----------
         grid : np.array
@@ -69,8 +68,7 @@ class ARCGridWorld(gymnasium.Env):
         return intersection
 
     def set_subtask(self, subtask):
-        """
-        Assigns provided task into the environment. On each .reset, the env
+        """Assigns provided task into the environment. On each .reset, the env
         Queries the .reset method for the task object. This method should drop
         the task state to the initial one.
         Note that the env can only work with non-None task or task generator.
@@ -326,8 +324,7 @@ class ARCGridWorld(gymnasium.Env):
         return new_grid, objects, new_max_int, reward, done
 
     def get_state(self):
-        """
-        Capture the complete state of the environment for later restoration.
+        """Capture the complete state of the environment for later restoration.
         Returns a dictionary containing all necessary state information.
         """
         state = {

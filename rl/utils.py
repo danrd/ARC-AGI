@@ -183,8 +183,7 @@ def define_feasible_actions(action_types, colors, directions, color_dependent_ac
     return actions_dict
 
 def get_action_description(action, action_mapping):
-    """
-    Generate a textual description of an action.
+    """Generate a textual description of an action.
 
     Args:
         action (array-like): 5-dimensional action array [action_type, row, col, offset_row, offset_col].
@@ -208,8 +207,7 @@ def get_action_description(action, action_mapping):
     return description
 
 def get_step_description(step_idx, observation, action, reward, action_mapping, info=None):
-    """
-    Generate a textual description for a step in the rollout.
+    """Generate a textual description for a step in the rollout.
 
     Args:
         step_idx (int): the index of the step in the rollout.

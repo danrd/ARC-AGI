@@ -9,8 +9,7 @@ from tqdm import tqdm
 
 
 def process_observations(observations, device, pad_inp=True, multi_env=False):
-    """
-    Process different types of observations to make them compatible with the policy.
+    """Process different types of observations to make them compatible with the policy.
 
     Args:
         observations: Batch of observations (could be dicts, arrays, etc.)
@@ -54,8 +53,7 @@ def process_observations(observations, device, pad_inp=True, multi_env=False):
         return observations
 
 def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str, Any]]:
-    """
-    Test each action individually (episode length 1) to identify promising actions.
+    """Test each action individually (episode length 1) to identify promising actions.
 
     Args:
         env: Environment to test actions in
@@ -94,8 +92,7 @@ def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str,
 
 def identify_promising_actions(action_results: Dict[int, Dict[str, Any]],
                               reward_threshold: float = 0.0) -> List[int]:
-    """
-    Identify actions that resulted in positive rewards.
+    """Identify actions that resulted in positive rewards.
 
     Args:
         action_results: Results from test_individual_actions
@@ -124,8 +121,7 @@ def collect_random_rollouts(env,
                            promising_actions: List[List[int]],
                            n_rollouts: int = 100,
                            max_episode_len: int = 50) -> List[Dict[str, Any]]:
-    """
-    Collect rollouts focusing on promising actions but with some exploration.
+    """Collect rollouts focusing on promising actions but with some exploration.
 
     Args:
         env: Environment
@@ -400,8 +396,7 @@ def collect_mcts_rollouts(env,
                           n_rollouts: int = 50,
                           mcts_iterations: int = 500,
                           max_episode_len: int = 50) -> List[Dict[str, Any]]:
-    """
-    Collect rollouts using MCTS for action selection. MCTS search itself
+    """Collect rollouts using MCTS for action selection. MCTS search itself
     runs entirely on a snapshot of the env's state (see
     EnvironmentSimulator) - only the action it settles on for each real
     step is ever applied to `env` for real, via a normal env.step().
@@ -461,8 +456,7 @@ def rollout_preparation(env,
                         reward_threshold: float = 0.0,
                         mcts_iterations: int = 500
                        ) -> List[Dict[str, Any]]:
-    """
-    Enhanced rollout preparation with individual action testing and sophisticated exploration.
+    """Enhanced rollout preparation with individual action testing and sophisticated exploration.
 
     Args:
         model: Model with environment
@@ -504,8 +498,7 @@ def rollout_preparation(env,
     return best_rollouts
 
 def select_best_rollouts(rollouts: List[Dict[str, Any]], top_k: int = 10, min_len: int = 5) -> List[Dict[str, Any]]:
-    """
-    Select the top k rollouts based on total reward and episode length.
+    """Select the top k rollouts based on total reward and episode length.
 
     Args:
         rollouts: List of rollout dictionaries

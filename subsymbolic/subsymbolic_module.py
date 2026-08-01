@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from subsymbolic.llm_runtime import build_runner
+from subsymbolic.llm_setup import build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
 
 if TYPE_CHECKING:

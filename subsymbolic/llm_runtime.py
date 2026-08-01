@@ -1,4 +1,4 @@
-"""Universal LLM inference runner.
+"""Universal LLM inference runner: the "how to generate" layer only.
 
 One interface regardless of backend: `Runner.generate(prompt: str) -> str`.
 `prompt` is always a plain string (whatever PromptBuilder already produces,
@@ -7,22 +7,20 @@ happens only at the one boundary that actually needs it (ServerRunner /
 OpenRouterRunner talking to an OpenAI-compatible endpoint), not in every
 caller.
 
-`build_runner(config)` picks a backend for LOCAL inference per
-config.base.device, with a fallback chain — since a server (vLLM, or even
-llama.cpp) may fail to start:
-    CPU:  llama.cpp server -> llama.cpp in-process
-    GPU:  vLLM server -> vLLM in-process -> HF in-process (4-bit)
-Every tier's error is collected; if all tiers fail, RuntimeError chains them.
-
 Hosted/proprietary models (OpenRouter, and in principle OpenAI/Anthropic/
 Gemini) are a deliberately SEPARATE, explicit path (`OpenRouterRunner`) —
-not merged into build_runner. Whether to use local inference or a hosted
-model is the caller's decision, not something to infer from config.
+not merged into subsymbolic.llm_setup.build_runner. Whether to use local
+inference or a hosted model is the caller's decision, not something to
+infer from config.
 
-Heavy dependencies (torch, transformers, llama_cpp, vllm, openai) are
-imported lazily inside whichever class/function actually needs them, so
-importing this module — or building a runner for one backend — never
-requires every other backend's library to be installed.
+Everything about GETTING a Runner into existence (starting a local server,
+constructing an in-process model, the local-inference fallback chain via
+`build_runner`) lives in subsymbolic.llm_setup instead — that's "what to
+load", this module is "how to sample from it once loaded".
+
+Heavy dependencies (torch, transformers, openai) are imported lazily
+inside whichever class/function actually needs them, so importing this
+module never requires every backend's library to be installed.
 """
 from __future__ import annotations
 
@@ -30,10 +28,7 @@ import gc
 import os
 import random
 import subprocess
-import sys
 import time
-import urllib.error
-import urllib.request
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -371,27 +366,10 @@ class OpenRouterRunner(BaseRunner):
 
 
 # ---------------------------------------------------------------------------
-# Server startup + health check + cleanup
+# Process cleanup — used by ServerRunner.close() above, and reused by
+# subsymbolic.llm_setup's fallback chain when a server fails its health
+# check right after being spawned.
 # ---------------------------------------------------------------------------
-
-def _wait_for_server_ready(process: subprocess.Popen, port: int,
-                            timeout: float = 60.0, interval: float = 1.0) -> bool:
-    """Poll the OpenAI-compatible /v1/models endpoint until it answers, the
-    server process dies, or timeout is hit."""
-    deadline = time.time() + timeout
-    url = f"http://127.0.0.1:{port}/v1/models"
-    while time.time() < deadline:
-        if process.poll() is not None:
-            return False  # process already exited — no point polling further
-        try:
-            with urllib.request.urlopen(url, timeout=2) as resp:
-                if resp.status == 200:
-                    return True
-        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
-            pass
-        time.sleep(interval)
-    return False
-
 
 def _terminate_process(process: subprocess.Popen, timeout: float = 10.0) -> None:
     if process.poll() is None:
@@ -404,191 +382,3 @@ def _terminate_process(process: subprocess.Popen, timeout: float = 10.0) -> None
     log_file = getattr(process, "log_file", None)
     if log_file is not None:
         log_file.close()
-
-
-def _start_llama_cpp_server(config) -> subprocess.Popen:
-    # TODO: installing at runtime is convenient but slow and non-reproducible;
-    # move to requirements.txt when this settles.
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "llama-cpp-python[server]"])
-
-    port = getattr(config.base, "port", 8001)
-    n_ctx = str(getattr(config.base, "n_ctx", getattr(config.generation, "max_tokens", 2048)))
-    log_file = open("llama_cpp.log", "w", encoding="utf-8")
-
-    process = subprocess.Popen(
-        [sys.executable, "-m", "llama_cpp.server", "--model", config.base.model,
-         "--port", str(port), "--use_mlock", "True", "--n_ctx", n_ctx],
-        stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy(),
-    )
-    process.log_file = log_file
-    return process
-
-
-def _start_vllm_server(config) -> subprocess.Popen:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "vllm"])
-
-    port = getattr(config.base, "port", 8001)
-    env = os.environ.copy()
-    env["VLLM_USE_FLASHINFER_SAMPLER"] = "0"
-    log_file = open("vllm_server.log", "w", encoding="utf-8")
-
-    process = subprocess.Popen(
-        ["vllm", "serve", config.base.model, "--port", str(port)],
-        stdout=log_file, stderr=subprocess.STDOUT, env=env,
-    )
-    process.log_file = log_file
-    return process
-
-
-# ---------------------------------------------------------------------------
-# In-process backend construction
-# ---------------------------------------------------------------------------
-
-def setup_hf_model(model_id: str):
-    """Initialize an HF causal LM in 4-bit (bitsandbytes) + its tokenizer."""
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, padding_side="right")
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    compute_dtype = torch.float16
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True, bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=compute_dtype,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id, quantization_config=bnb_config, torch_dtype=compute_dtype,
-        use_cache=True, device_map="auto", trust_remote_code=True,
-    )
-    if torch.cuda.is_available():
-        torch.backends.cuda.enable_mem_efficient_sdp(False)
-        torch.backends.cuda.enable_flash_sdp(False)
-    return model, tokenizer
-
-
-def setup_llama_cpp_model(model_path: str, config=None, tokenizer_id: Optional[str] = None):
-    """In-process llama.cpp, using the same GGUF file the server tier would
-    have used — the CPU fallback tier when the server fails to come up."""
-    try:
-        from llama_cpp import Llama
-    except ImportError as e:
-        raise ImportError("llama-cpp-python not installed. Install with: pip install llama-cpp-python") from e
-
-    tokenizer = None
-    if tokenizer_id is not None:
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True, padding_side="right")
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-    base_cfg = getattr(config, "base", config) if config is not None else object()
-    gen_cfg = getattr(config, "generation", config) if config is not None else object()
-
-    model = Llama(
-        model_path=model_path,
-        n_ctx=getattr(base_cfg, "n_ctx", getattr(gen_cfg, "max_tokens", 2048)),
-        n_batch=getattr(base_cfg, "n_tokens_batch", 512),
-        use_mlock=getattr(base_cfg, "use_mlock", True),
-        n_gpu_layers=getattr(base_cfg, "n_gpu_layers", 0),
-        verbose=getattr(base_cfg, "verbose", False),
-    )
-    return model, tokenizer
-
-
-def _hf_generation_config(config):
-    from transformers import GenerationConfig
-    gen = config.generation
-    temperature = getattr(gen, "temperature", 0.7)
-    return GenerationConfig(
-        max_new_tokens=getattr(gen, "max_tokens", 512),
-        temperature=temperature,
-        do_sample=temperature > 0,
-    )
-
-
-def _llama_cpp_generation_kwargs(config) -> Dict[str, Any]:
-    gen = config.generation
-    return {"max_tokens": getattr(gen, "max_tokens", 512), "temperature": getattr(gen, "temperature", 0.7)}
-
-
-def _vllm_sampling_params(config):
-    from vllm import SamplingParams
-    gen = config.generation
-    return SamplingParams(max_tokens=getattr(gen, "max_tokens", 512), temperature=getattr(gen, "temperature", 0.7))
-
-
-def _server_generation_kwargs(config) -> Dict[str, Any]:
-    gen = config.generation
-    return {"max_tokens": getattr(gen, "max_tokens", 512), "temperature": getattr(gen, "temperature", 0.7)}
-
-
-# ---------------------------------------------------------------------------
-# Factory: local inference, with fallback chain
-# ---------------------------------------------------------------------------
-
-def build_runner(config) -> BaseRunner:
-    """Build a local inference runner per config.base.device, falling back
-    through progressively simpler backends if a tier fails to start:
-        CPU:  llama.cpp server -> llama.cpp in-process
-        GPU:  vLLM server -> vLLM in-process -> HF in-process (4-bit)
-    Raises RuntimeError (chaining every tier's error) if all tiers fail.
-    """
-    device = config.base.device.lower()
-    if device == "cpu":
-        return _build_cpu_runner(config)
-    if device == "gpu":
-        return _build_gpu_runner(config)
-    raise ValueError(f"Unsupported device: {config.base.device}")
-
-
-def _build_cpu_runner(config) -> BaseRunner:
-    errors = []
-    port = getattr(config.base, "port", 8001)
-
-    try:
-        process = _start_llama_cpp_server(config)
-        if _wait_for_server_ready(process, port):
-            return ServerRunner(process, port, config.base.model, _server_generation_kwargs(config))
-        _terminate_process(process)
-        errors.append("llama.cpp server: failed health check")
-    except Exception as e:
-        errors.append(f"llama.cpp server: {type(e).__name__}: {e}")
-
-    try:
-        model, _ = setup_llama_cpp_model(config.base.model, config=config)
-        return LlamaCppRunner(model, _llama_cpp_generation_kwargs(config))
-    except Exception as e:
-        errors.append(f"llama.cpp in-process: {type(e).__name__}: {e}")
-
-    raise RuntimeError("All CPU backends failed:\n" + "\n".join(errors))
-
-
-def _build_gpu_runner(config) -> BaseRunner:
-    errors = []
-    port = getattr(config.base, "port", 8001)
-
-    try:
-        process = _start_vllm_server(config)
-        if _wait_for_server_ready(process, port):
-            return ServerRunner(process, port, config.base.model, _server_generation_kwargs(config))
-        _terminate_process(process)
-        errors.append("vLLM server: failed health check")
-    except Exception as e:
-        errors.append(f"vLLM server: {type(e).__name__}: {e}")
-
-    try:
-        from vllm import LLM
-        llm = LLM(model=config.base.model)
-        return VLLMRunner(llm, _vllm_sampling_params(config))
-    except Exception as e:
-        errors.append(f"vLLM in-process: {type(e).__name__}: {e}")
-
-    try:
-        model, tokenizer = setup_hf_model(config.base.model)
-        return HFRunner(model, tokenizer, _hf_generation_config(config))
-    except Exception as e:
-        errors.append(f"HF in-process: {type(e).__name__}: {e}")
-
-    raise RuntimeError("All GPU backends failed:\n" + "\n".join(errors))

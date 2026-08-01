@@ -1,7 +1,7 @@
 """End-to-end smoke test: build a prompt for one ARC task in a handful of
 representative PromptingConfig variants, and run it through the real
 prompt-building -> inference pipeline (subsymbolic.prompt_builder ->
-subsymbolic.llm_runtime.build_runner).
+subsymbolic.llm_setup.build_runner).
 
 Scope, deliberately: not every block/config combination - just the ones most
 likely to exercise code paths that could actually break (each join_format,
@@ -17,8 +17,8 @@ from __future__ import annotations
 import pytest
 
 from orchestration.configs import ExperimentConfig
-from subsymbolic.llm_runtime import GenerationConfig, build_runner
-from subsymbolic.llm_setup import LlmConfig
+from subsymbolic.llm_runtime import GenerationConfig
+from subsymbolic.llm_setup import LlmConfig, build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
 from subsymbolic.utils import parse_llm_output
 

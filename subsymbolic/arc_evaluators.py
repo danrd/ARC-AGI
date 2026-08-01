@@ -1,6 +1,5 @@
 """ARC-specific evaluator for subsymbolic.llm_run: scores one LLM
-generation against a task's known test output. The only ARC-aware piece of
-the processing loop - everything else in llm_run.py is dataset-agnostic.
+generation against a task's known test output.
 """
 from __future__ import annotations
 

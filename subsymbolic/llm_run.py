@@ -2,19 +2,6 @@
 SubsymbolicModule's PromptBuilder, generate a completion through its
 runner, score it with a pluggable evaluator, and log + checkpoint the run
 to wandb along the way.
-
-Written to generalize a one-off ARC processing script, but deliberately
-kept dataset-agnostic: nothing here assumes a grid, a specific dataset
-object, or a particular prompt structure - "which prompt blocks to use for
-this dataset" is already PromptingConfig.blocks's job, not this module's.
-The only ARC-specific piece (exact-grid-match + Levenshtein scoring) lives
-in subsymbolic/arc_evaluators.py as a ready-made evaluator, not here.
-
-Resumability is the main thing the original script needed and this keeps:
-pass the same `run_id` to continue an interrupted run - already-processed
-tasks are skipped, and a checkpoint (processed task ids, per-task results,
-running summary table) is saved to a wandb Artifact every
-`WandbLogConfig.checkpoint_interval` tasks.
 """
 from __future__ import annotations
 

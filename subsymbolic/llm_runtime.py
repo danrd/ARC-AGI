@@ -142,15 +142,18 @@ class GenerationConfig(BaseModel):
 
         return params
 
-    def to_open_router(self, seed: int) -> dict:
-        """Prepare generation config for OpenRouter Chat Completions API."""
+    def to_chat_completions(self, seed: int) -> dict:
+        """Prepare generation config for any OpenAI-compatible Chat
+        Completions endpoint - OpenRouter (OpenRouterRunner) as well as a
+        local llama.cpp-server/vllm-serve instance (ServerRunner talks to
+        the exact same request shape)."""
         if self.use_beam_search:
             raise ValueError(
-                "OpenRouter API does not support beam search via `use_beam_search`."
+                "Chat Completions API does not support beam search via `use_beam_search`."
             )
         if self.best_of != 1:
             raise ValueError(
-                "OpenRouter API does not support `best_of` in the same way as vLLM. "
+                "Chat Completions API does not support `best_of` in the same way as vLLM. "
                 "Use best_of=1."
             )
 

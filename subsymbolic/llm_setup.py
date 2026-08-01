@@ -27,7 +27,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -169,37 +169,13 @@ def setup_llama_cpp_model(model_path: str, config=None, tokenizer_id: Optional[s
     return model, tokenizer
 
 
-def _hf_generation_config(config):
-    from transformers import GenerationConfig
-
-    gen = config.generation
-    temperature = getattr(gen, "temperature", 0.7)
-    return GenerationConfig(
-        max_new_tokens=getattr(gen, "max_tokens", 512),
-        temperature=temperature,
-        do_sample=temperature > 0,
-    )
-
-
-def _llama_cpp_generation_kwargs(config) -> Dict[str, Any]:
-    gen = config.generation
-    return {"max_tokens": getattr(gen, "max_tokens", 512), "temperature": getattr(gen, "temperature", 0.7)}
-
-
-def _vllm_sampling_params(config):
-    from vllm import SamplingParams
-
-    gen = config.generation
-    return SamplingParams(max_tokens=getattr(gen, "max_tokens", 512), temperature=getattr(gen, "temperature", 0.7))
-
-
-def _server_generation_kwargs(config) -> Dict[str, Any]:
-    gen = config.generation
-    return {"max_tokens": getattr(gen, "max_tokens", 512), "temperature": getattr(gen, "temperature", 0.7)}
-
-
 # ---------------------------------------------------------------------------
 # Factory: local inference, with fallback chain
+#
+# Each tier passes `config` straight to ExperimentConfig.to_llama_cpp() /
+# .to_vllm() / .to_hf() / .to_chat_completions() - the config already knows
+# how to translate itself into that backend's kwargs shape (seed included),
+# so there's no separate per-tier kwargs-building step to keep in sync here.
 # ---------------------------------------------------------------------------
 
 def build_runner(config) -> BaseRunner:
@@ -224,7 +200,7 @@ def _build_cpu_runner(config) -> BaseRunner:
     try:
         process = _start_llama_cpp_server(config)
         if _wait_for_server_ready(process, port):
-            return ServerRunner(process, port, config.base.model, _server_generation_kwargs(config))
+            return ServerRunner(process, port, config.base.model, config.to_chat_completions())
         _terminate_process(process)
         errors.append("llama.cpp server: failed health check")
     except Exception as e:
@@ -232,7 +208,7 @@ def _build_cpu_runner(config) -> BaseRunner:
 
     try:
         model, _ = setup_llama_cpp_model(config.base.model, config=config)
-        return LlamaCppRunner(model, _llama_cpp_generation_kwargs(config))
+        return LlamaCppRunner(model, config.to_llama_cpp())
     except Exception as e:
         errors.append(f"llama.cpp in-process: {type(e).__name__}: {e}")
 
@@ -246,7 +222,7 @@ def _build_gpu_runner(config) -> BaseRunner:
     try:
         process = _start_vllm_server(config)
         if _wait_for_server_ready(process, port):
-            return ServerRunner(process, port, config.base.model, _server_generation_kwargs(config))
+            return ServerRunner(process, port, config.base.model, config.to_chat_completions())
         _terminate_process(process)
         errors.append("vLLM server: failed health check")
     except Exception as e:
@@ -255,13 +231,13 @@ def _build_gpu_runner(config) -> BaseRunner:
     try:
         from vllm import LLM
         llm = LLM(model=config.base.model)
-        return VLLMRunner(llm, _vllm_sampling_params(config))
+        return VLLMRunner(llm, config.to_vllm())
     except Exception as e:
         errors.append(f"vLLM in-process: {type(e).__name__}: {e}")
 
     try:
         model, tokenizer = setup_hf_model(config.base.model)
-        return HFRunner(model, tokenizer, _hf_generation_config(config))
+        return HFRunner(model, tokenizer, config.to_hf())
     except Exception as e:
         errors.append(f"HF in-process: {type(e).__name__}: {e}")
 

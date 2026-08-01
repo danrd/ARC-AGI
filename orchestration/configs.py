@@ -58,8 +58,8 @@ class ExperimentConfig(BaseModel):
     def to_hf(self) -> dict:
         return self.generation.to_hf(seed=self.base.seed)
 
-    def to_open_router(self) -> dict:
-        return self.generation.to_open_router(seed=self.base.seed)
+    def to_chat_completions(self) -> dict:
+        return self.generation.to_chat_completions(seed=self.base.seed)
 
     def dump(self):
         with open("exp.yaml", "w") as f:

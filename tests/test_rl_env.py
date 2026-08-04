@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from rl.arc_env import ARCGridWorld
+from rl.training import create_vec_env
 
 SUBMIT_ONLY = {0: "submit"}
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}
@@ -200,3 +201,34 @@ def test_reward_approach_4_is_currently_broken(subtask):
 
     with pytest.raises(AttributeError):
         env.step(np.array([0, 0, 0]))
+
+
+# -- gym.make() integration path: create_ARC_env / create_vec_env -----------
+#
+# Everything above constructs ARCGridWorld directly, bypassing gym.make()'s
+# wrapper stack (OrderEnforcing, PassiveEnvChecker) entirely - which is why
+# these two bugs went unnoticed: they only trigger through rl.training's
+# create_ARC_env/create_vec_env, the actual PPO-training entry point.
+
+def test_reset_accepts_options_kwarg(subtask):
+    """Regression test: every wrapper gym.make() adds calls
+    reset(seed=..., options=...) unconditionally - ARCGridWorld.reset()
+    used to only accept `seed`, so any env built via gym.make() crashed
+    with TypeError on its very first reset()."""
+    env = make_env()
+    env.set_subtask(subtask)
+    obs, info = env.reset(seed=0, options={})
+    assert isinstance(obs, dict)
+
+
+def test_create_vec_env_accepts_a_single_subtask_wrapped_in_a_list(subtask):
+    """Regression test: create_vec_env(subtasks, ...) iterates over its
+    first argument - every caller in rl/training.py used to pass a bare
+    ARCSubtask (not iterable -> TypeError) instead of [subtask]. This also
+    exercises create_ARC_env's gym.make() path, which used to crash
+    separately: env.set_subtask(subtask) needs env.unwrapped.set_subtask(...)
+    now, since gymnasium's wrapper __getattr__ no longer forwards custom
+    methods like set_subtask to the wrapped env."""
+    vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5,
+                              feasible_actions=SUBMIT_AND_ROTATE)
+    assert vec_env.num_envs == 1

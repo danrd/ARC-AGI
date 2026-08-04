@@ -194,7 +194,10 @@ class ARCGridWorld(gymnasium.Env):
         done = True
         return obs, reward, done, truncated, info
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
+        # options: unused, but gymnasium.Env.reset()'s signature requires it -
+        # every wrapper gym.make() adds (OrderEnforcing, PassiveEnvChecker, ...)
+        # calls reset(seed=..., options=...) unconditionally.
         super().reset(seed=seed)
         self.objects = deepcopy(self.initial_objects)
         self.grid_summary = copy(self.initial_grid_summary)

@@ -46,7 +46,10 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
                    feasible_actions=feasible_actions, observation_space_elements=observation_space_elements,
                   )
-    env.set_subtask(subtask)
+    # .unwrapped: gym.make() wraps env in OrderEnforcing/PassiveEnvChecker,
+    # and current gymnasium no longer forwards custom methods through
+    # wrappers' __getattr__ - set_subtask only exists on the raw ARCGridWorld.
+    env.unwrapped.set_subtask(subtask)
     env.action_space.seed(seed)
     return env
 
@@ -68,7 +71,7 @@ def train_on_subtask(subtask, rl_config:dict, PPO_config:dict=None, agent_init=N
                      path_to_pretrained=None, verbose=False, plot_grid_pred=False, debug=False):
     seed = rl_config['seed']
     seed_everything(seed)
-    vec_env = create_vec_env(subtask, n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'], repr_level=rl_config['repr_level'],
+    vec_env = create_vec_env([subtask], n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'], repr_level=rl_config['repr_level'],
                              right_placement_reward=rl_config['right_placement_reward'],  action_penalty=rl_config['action_penalty'],
                              repetitive_actions_penalty=rl_config['repetitive_actions_penalty'], seed=seed, font_color=rl_config['font_color'],
                              padding=rl_config['padding'], input_pattern=rl_config['input_pattern'], milestones_rewards=rl_config['milestones_rewards'],
@@ -97,7 +100,7 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     lens_for_subtasks = {}
     expl_vars = {}
     subtasks = task.subtasks
-    vec_env = create_vec_env(subtasks[0],n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'], repr_level=rl_config['repr_level'],
+    vec_env = create_vec_env([subtasks[0]], n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'], repr_level=rl_config['repr_level'],
                              right_placement_reward=rl_config['right_placement_reward'],  action_penalty=rl_config['action_penalty'],
                              repetitive_actions_penalty=rl_config['repetitive_actions_penalty'], seed=seed, font_color=rl_config['font_color'],
                              padding=rl_config['padding'], input_pattern=rl_config['input_pattern'], milestones_rewards=rl_config['milestones_rewards'],
@@ -117,7 +120,7 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
 def actions_exploration(subtask, rl_config: dict):
     """Train a PPO agent on `subtask`, then use it to guide MCTS rollout
     collection and extract the resulting promising actions."""
-    test_vec_env = create_vec_env(subtask, n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'],
+    test_vec_env = create_vec_env([subtask], n_envs=rl_config['n_envs'], max_episode_len=rl_config['max_episode_len'],
                              right_placement_reward=rl_config['right_placement_reward'],  action_penalty=rl_config['action_penalty'],
                              repetitive_actions_penalty=rl_config['repetitive_actions_penalty'], seed=42, font_color=rl_config['font_color'],
                              padding=rl_config['padding'], input_pattern=rl_config['input_pattern'], milestones_rewards=rl_config['milestones_rewards'],

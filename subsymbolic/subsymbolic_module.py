@@ -13,6 +13,11 @@ PromptingConfig / tokenizer / ExperimentConfig are expected to be
 assembled once at the system level and passed in here — logging, memory,
 and anything beyond "build a prompt, run it" can layer on top of this
 later.
+
+This is also the one place this project's resolver/filter registry
+(subsymbolic.registry) gets wired into PromptBuilder - PromptBuilder
+itself takes no dependency on it, so it stays reusable outside this
+project (see prompt_builder.py's module docstring).
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from subsymbolic.llm_setup import build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
+from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
 if TYPE_CHECKING:
     # Only for the type hint below — importing it for real would make
@@ -31,7 +37,9 @@ if TYPE_CHECKING:
 class SubsymbolicModule:
     def __init__(self, prompting_config: PromptingConfig, tokenizer,
                  experiment_config: "ExperimentConfig"):
-        self.builder = PromptBuilder(prompting_config, tokenizer)
+        self.builder = PromptBuilder(prompting_config, tokenizer,
+                                      resolver_registry=RESOLVER_REGISTRY,
+                                      filter_registry=FILTER_REGISTRY)
         self.experiment_config = experiment_config
         self._runner = None
 

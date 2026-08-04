@@ -4,6 +4,13 @@ a `<name>/<version>.j2` template file under `config.blocks_dir` (default:
 `data/prompts/`), rendered with the shared `context` dict. Blocks are
 token-budgeted and joined according to `config.join_format`, or via
 `tokenizer.apply_chat_template` when `config.chat_template` is set.
+
+`resolvers`/`filters` named in PromptingConfig are looked up in whatever
+resolver_registry/filter_registry the caller passes into PromptBuilder's
+constructor - this module has no registry of its own and no project-
+specific imports, so it stays genuinely reusable outside this project.
+subsymbolic.subsymbolic_module.SubsymbolicModule is what wires in this
+project's registry (subsymbolic.registry.RESOLVER_REGISTRY/FILTER_REGISTRY).
 """
 from __future__ import annotations
 
@@ -13,9 +20,6 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict, Field
-
-from subsymbolic.arc_grid_formatting import format_grid
-from subsymbolic.registry import RESOLVER_REGISTRY, FILTER_REGISTRY
 
 
 class BlockSpec(BaseModel):
@@ -53,11 +57,15 @@ class PromptingConfig(BaseModel):
 class PromptBuilder:
     """Composes a prompt string (or chat message list) from configured blocks."""
 
-    def __init__(self, config: PromptingConfig, tokenizer):
+    def __init__(self, config: PromptingConfig, tokenizer,
+                 resolver_registry: Optional[Dict[str, Callable]] = None,
+                 filter_registry: Optional[Dict[str, Callable]] = None):
         self.config = config
         self.tokenizer = tokenizer
+        self.resolver_registry = resolver_registry or {}
+        self.filter_registry = filter_registry or {}
         self.env = self._make_env()
-        self.resolvers: Dict[str, Callable] = {func_name: RESOLVER_REGISTRY[func_name] for func_name in self.config.resolvers}
+        self.resolvers: Dict[str, Callable] = {func_name: self.resolver_registry[func_name] for func_name in self.config.resolvers}
 
     def _make_env(self) -> Environment:
         env = Environment(
@@ -68,7 +76,7 @@ class PromptBuilder:
             auto_reload=True,            # re-read .j2 files whose mtime changed
         )
         for filter_name in self.config.filters:
-            env.filters[filter_name] = FILTER_REGISTRY[filter_name]
+            env.filters[filter_name] = self.filter_registry[filter_name]
         return env
 
     def reload_env(self) -> None:
@@ -166,6 +174,3 @@ class PromptBuilder:
         if self.config.join_format == "md":
             return f"## {tag}\n\n{content}\n\n---"
         return content  # "plain"
-
-    def _format_grid(self, grid, type: str = "concise") -> str:
-        return format_grid(grid, repr_type=type)

@@ -20,6 +20,7 @@ from orchestration.configs import ExperimentConfig
 from subsymbolic.llm_runtime import GenerationConfig
 from subsymbolic.llm_setup import LlmConfig, build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
+from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 from subsymbolic.utils import parse_llm_output
 
 from .conftest import GPU_MODEL_CANDIDATES, gpu_enabled
@@ -64,7 +65,7 @@ def _make_config(blocks, join_format) -> PromptingConfig:
 
 
 def _make_builder(config: PromptingConfig, tokenizer) -> PromptBuilder:
-    return PromptBuilder(config, tokenizer)
+    return PromptBuilder(config, tokenizer, resolver_registry=RESOLVER_REGISTRY, filter_registry=FILTER_REGISTRY)
 
 
 def _context_for(task) -> dict:

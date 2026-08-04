@@ -9,6 +9,46 @@ from typing import List, Union
 from data.datasets.ARC.arc_dataset import ARCDataset
 from symbolic.utils import coords_transform, grid_formatting, crop_pad
 
+# The official ARC-AGI palette (background + 9 colors) plus a white
+# "padding" marker at index 10 - shared by every grid-plotting function
+# below instead of each keeping its own copy (they used to: 5 separate
+# inline ListedColormap literals, all meant to be the same palette).
+ARC_COLORS = ['#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00', '#AAAAAA',
+              '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff']
+ARC_CMAP = colors.ListedColormap(ARC_COLORS)
+ARC_NORM = colors.Normalize(vmin=0, vmax=len(ARC_COLORS) - 1)
+
+# Same palette plus one more marker color (index 11), used to draw an
+# arbitrary highlighted shape/intersection on top of a grid.
+ARC_COLORS_HIGHLIGHT = ARC_COLORS + ['#002f1f']
+ARC_CMAP_HIGHLIGHT = colors.ListedColormap(ARC_COLORS_HIGHLIGHT)
+ARC_NORM_HIGHLIGHT = colors.Normalize(vmin=0, vmax=len(ARC_COLORS_HIGHLIGHT) - 1)
+
+# Match/mismatch/shape-mismatch overlay for plot_grids_comparison's
+# correctness panel - not an ARC color grid, so it gets its own 3-color map.
+DIFF_COLORS = ['#FF4136', '#2ECC40', '#AAAAAA']  # wrong, correct, shape mismatch
+DIFF_CMAP = colors.ListedColormap(DIFF_COLORS)
+DIFF_NORM = colors.Normalize(vmin=0, vmax=len(DIFF_COLORS) - 1)
+
+
+def plot_grid(grid, ax=None, cmap=ARC_CMAP_HIGHLIGHT, norm=ARC_NORM_HIGHLIGHT):
+    """Draw one grid with ARC's color scheme and cell gridlines.
+
+    Draws on `ax` if given, else the current axes. Nothing is shown/saved
+    here - that's the caller's decision (plt.show()/savefig()/
+    wandb.Image(fig), ...), same as every other function in this module.
+    """
+    grid = crop_pad(grid_formatting(grid))
+    if ax is None:
+        ax = plt.gca()
+    ax.imshow(grid, cmap=cmap, norm=norm)
+    ax.grid(True, which='both', color='lightgrey', linewidth=0.5)
+    ax.set_xticks(np.arange(-0.5, grid.shape[1]), [])
+    ax.set_yticks(np.arange(-0.5, grid.shape[0]), [])
+    ax.set_xlim(-0.5, grid.shape[1] - 0.5)
+    return ax
+
+
 def plot_task(task_id:str, dataset:ARCDataset):
     """Plots the train and test pairs of a specified task, using same color scheme as the ARC app."""
     all_challenges = dataset.training_challenges
@@ -33,16 +73,10 @@ def plot_task(task_id:str, dataset:ARCDataset):
         plot_one(axs[0, j], j, task, 'train', 'input')
         plot_one(axs[1, j], j, task, 'train', 'output')
 
-    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA',
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
-    norm = colors.Normalize(vmin=0, vmax=10)
     for inc in range(num_test):
         answer = task_solutions[inc]
         plot_one(axs[0, j+1+inc], 0+inc, task, 'test', 'input')
-        axs[1, j+1+inc].imshow(answer, cmap=cmap, norm=norm)
-        axs[1, j+1+inc].grid(True, which = 'both',color = 'lightgrey', linewidth = 0.5)
-        axs[1, j+1+inc].set_yticks([x-0.5 for x in range(1 + len(answer))])
-        axs[1, j+1+inc].set_xticks([x-0.5 for x in range(1 + len(answer[0]))])
+        plot_grid(np.array(answer), ax=axs[1, j+1+inc], cmap=ARC_CMAP, norm=ARC_NORM)
         axs[1, j+1+inc].set_xticklabels([])
         axs[1, j+1+inc].set_yticklabels([])
         axs[1, j+1+inc].set_title(f'Test {inc+1} output', fontweight='bold')
@@ -52,24 +86,14 @@ def plot_task(task_id:str, dataset:ARCDataset):
     fig.patch.set_facecolor('#dddddd')
 
     plt.tight_layout()
-    plt.show()
-
-    print()
-    print()
+    return fig
 
 def plot_one(ax, i, task, train_or_test, input_or_output):
     """Auxilary function for plot_task function."""
-    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA',
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
-    norm = colors.Normalize(vmin=0, vmax=10)
     input_matrix = task[train_or_test][i][input_or_output]
-    ax.imshow(input_matrix, cmap=cmap, norm=norm)
-    ax.grid(True, which = 'both',color = 'lightgrey', linewidth = 0.5)
-
+    plot_grid(np.array(input_matrix), ax=ax, cmap=ARC_CMAP, norm=ARC_NORM)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
-    ax.set_xticks([x-0.5 for x in range(1 + len(input_matrix[0]))])
-    ax.set_yticks([x-0.5 for x in range(1 + len(input_matrix))])
     title_prefix = f'Example {i+1}' if train_or_test == "train" else f'Test {i+1}'
     ax.set_title(title_prefix + ' ' + input_or_output, fontweight='bold')
 
@@ -83,25 +107,23 @@ def plot_multiple_tasks(task_ids: List[str], dataset: ARCDataset):
     for task_id in task_ids:
         print(task_id)
         plot_task(task_id, dataset)
-
-def plot_grid(grid):
-    grid = crop_pad(grid_formatting(grid))
-    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA',
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff', '#002f1f'])
-    norm = colors.Normalize(vmin=0, vmax=11)
-    plt.imshow(grid, cmap=cmap, norm=norm)
-    plt.grid(True,which='both',color='lightgrey', linewidth=0.5)
-    plt.xticks(np.arange(-0.5, grid.shape[1]), [])
-    plt.yticks(np.arange(-0.5, grid.shape[0]), [])
-    plt.xlim(-0.5, grid.shape[1]-0.5)
+        plt.show()
 
 def plot_multiple_grids(grids: List[np.array]):
-    """Plots each grid from given list.
+    """Plots each grid from given list, one grid per figure.
+
     Args:
         grids (List[np.array]): List of grids.
+
+    Returns:
+        List[matplotlib.figure.Figure]: one figure per grid.
     """
+    figs = []
     for grid in grids:
+        fig = plt.figure()
         plot_grid(grid)
+        figs.append(fig)
+    return figs
 
 def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
     """Plots tiplet input_grid-predicton-output_grid in a single row.
@@ -113,6 +135,9 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
 
     Raises:
         ValueError: If the lengths of the input lists differ.
+
+    Returns:
+        List[matplotlib.figure.Figure]: one figure per prediction.
     """
     if len(predictions) != len(task_idxs):
         raise ValueError("Prediction and target grids lists must have the same length.")
@@ -120,29 +145,22 @@ def plot_preds(predictions: List[tuple], task_idxs: List[int], dataset):
     prediction_grids = [pred[0] for pred in predictions]
     target_grids = [dataset.tasks[idx].test_subtask.train_out for idx in task_idxs]
     n = len(prediction_grids)
+    figs = []
     for i in range(n):
-        # Create a figure with one row and two columns
         fig, axes = plt.subplots(1, 3, figsize=(10, 5))
 
-        # Plot prediction grid on the left
-        plt.sca(axes[0])  # Set current axis to the first subplot
-        plot_grid(input_grids[i])
-        plt.title(f"Task {task_idxs[i]} input")
+        plot_grid(input_grids[i], ax=axes[0])
+        axes[0].set_title(f"Task {task_idxs[i]} input")
 
-        # Plot prediction grid on the left
-        plt.sca(axes[1])  # Set current axis to the first subplot
-        plot_grid(prediction_grids[i])
-        plt.title(f"Prediction with similarity {predictions[i][1]}")
+        plot_grid(prediction_grids[i], ax=axes[1])
+        axes[1].set_title(f"Prediction with similarity {predictions[i][1]}")
 
-        # Plot target grid on the right
-        plt.sca(axes[2])  # Set current axis to the second subplot
-        plot_grid(target_grids[i])
-        plt.title(f"Task {task_idxs[i]} target")
+        plot_grid(target_grids[i], ax=axes[2])
+        axes[2].set_title(f"Task {task_idxs[i]} target")
 
         plt.tight_layout()
-        plt.show()
-        if n == 1:
-            return fig
+        figs.append(fig)
+    return figs
 
 def evaluate_grid(correct_grid, predicted_grids):
     """Calculate metrics based on predicted grid and correct grid."""
@@ -168,7 +186,7 @@ def plot_shape(shape:List[tuple]):
     shifted_shape = list(zip(i_shifted, j_shifted))
     for coord in shifted_shape:
         grid[coord] = 11
-    plot_grid(grid)
+    return plot_grid(grid)
 
 def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]):
     """Plot intersection with defined shape."""
@@ -184,8 +202,7 @@ def plot_intersection(grid:np.array, shape:Union[List[tuple], List[List[tuple]]]
         shape = shape_union
     i, j = coords_transform(shape)
     grid[i, j] = 11
-    grid = crop_pad(grid_formatting(grid))
-    plot_grid(grid)
+    return plot_grid(grid)
 
 def plot_rewards(path_to_logs:str):
     """Plot rewards for RL agent."""
@@ -201,66 +218,80 @@ def plot_rewards(path_to_logs:str):
     plt.close('all')
     return
 
+def _correctness_overlay(predicted: np.ndarray, reference: np.ndarray):
+    """Per-cell match (1, green) / mismatch (0, red) between `predicted`
+    and `reference`. A shape mismatch is reported as-is (2, grey) rather
+    than silently cropped/padded to compare - a wrong output shape is
+    itself the finding for an ARC prediction, not something to paper over.
+
+    Returns (overlay_grid, is_fully_correct).
+    """
+    if predicted.shape != reference.shape:
+        return np.full(reference.shape, 2), False
+    match = predicted == reference
+    return match.astype(int), bool(match.all())
+
 def plot_grids_comparison(grid_1, grid_2, target_grid=None):
+    """Compare two grids side by side, plus a per-cell correctness overlay
+    (green=match, red=mismatch, grey=shape mismatch): grid_2 against
+    target_grid if given, else grid_2 against grid_1 directly. Typical use:
+    grid_1=model prediction, target_grid=the actual answer.
+    """
     # Ensure the arrays are 2D
     if grid_1.ndim != 2 or grid_2.ndim != 2:
         raise ValueError("Both arrays must be 2D.")
 
     grid_1 = crop_pad(grid_formatting(grid_1))
     grid_2 = crop_pad(grid_formatting(grid_2))
+    reference = crop_pad(grid_formatting(target_grid)) if target_grid is not None else grid_1
 
-    # Create a figure and a set of subplots
     fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    cmap = colors.ListedColormap(['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA',
-                                 '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff'])
-    norm = colors.Normalize(vmin=0, vmax=10)
 
-    # Plot the first grid
-    axes[0, 0].imshow(grid_1, cmap=cmap, norm=norm)
+    plot_grid(grid_1, ax=axes[0, 0], cmap=ARC_CMAP, norm=ARC_NORM)
     axes[0, 0].set_title('Grid 1')
-    axes[0, 0].set_xticks(np.arange(-0.5, grid_1.shape[1], 1), minor=True)
-    axes[0, 0].set_yticks(np.arange(-0.5, grid_1.shape[0], 1), minor=True)
-    axes[0, 0].grid(which='minor', color='w', linestyle='-', linewidth=1)
 
-    # Plot the second grid
-    axes[1, 0].imshow(grid_2, cmap=cmap, norm=norm)
+    plot_grid(grid_2, ax=axes[1, 0], cmap=ARC_CMAP, norm=ARC_NORM)
     axes[1, 0].set_title('Grid 2')
-    axes[1, 0].set_xticks(np.arange(-0.5, grid_2.shape[1], 1), minor=True)
-    axes[1, 0].set_yticks(np.arange(-0.5, grid_2.shape[0], 1), minor=True)
-    axes[1, 0].grid(which='minor', color='w', linestyle='-', linewidth=1)
 
-    # Find the cells in the second grid that are not in the first grid
-    unique_cells = np.setdiff1d(grid_2, grid_1)
-
-    # Create a mask for the unique cells
-    mask = np.isin(grid_2, unique_cells)
-
-    # Create a new grid with the same shape as array2, filled with zeros
-    unique_grid = np.zeros_like(grid_2, dtype=np.int32)
-
-    # Set the unique cells to 1 (or any other value to highlight them)
-    unique_grid[mask] = grid_2[mask]
-
-    # Plot the unique cells grid
-    axes[0, 1].imshow(unique_grid, cmap=cmap, norm=norm)
-    axes[0, 1].set_title('New Cells in Grid 2')
-    axes[0, 1].set_xticks(np.arange(-0.5, unique_grid.shape[1], 1), minor=True)
-    axes[0, 1].set_yticks(np.arange(-0.5, unique_grid.shape[0], 1), minor=True)
-    axes[0, 1].grid(which='minor', color='w', linestyle='-', linewidth=1)
+    overlay, is_correct = _correctness_overlay(grid_2, reference)
+    axes[0, 1].imshow(overlay, cmap=DIFF_CMAP, norm=DIFF_NORM)
+    axes[0, 1].grid(True, which='both', color='white', linewidth=0.5)
+    axes[0, 1].set_xticks(np.arange(-0.5, overlay.shape[1]), [])
+    axes[0, 1].set_yticks(np.arange(-0.5, overlay.shape[0]), [])
+    against = "target" if target_grid is not None else "Grid 1"
+    axes[0, 1].set_title(f"Grid 2 vs {against}: {'MATCH' if is_correct else 'mismatch'}")
 
     if target_grid is not None:
-        target_grid = crop_pad(grid_formatting(target_grid))
-        axes[1, 1].imshow(target_grid, cmap=cmap, norm=norm)
+        plot_grid(reference, ax=axes[1, 1], cmap=ARC_CMAP, norm=ARC_NORM)
         axes[1, 1].set_title('Target grid')
-        axes[1, 1].set_xticks(np.arange(-0.5, target_grid.shape[1], 1), minor=True)
-        axes[1, 1].set_yticks(np.arange(-0.5, target_grid.shape[0], 1), minor=True)
-        axes[1, 1].grid(which='minor', color='w', linestyle='-', linewidth=1)
+    else:
+        axes[1, 1].axis('off')
 
     fig.patch.set_edgecolor('black')  # substitute 'k' for black
     fig.patch.set_facecolor('#dddddd')
 
     plt.tight_layout()
-    plt.show()
+    return fig
+
+def plot_task_with_prediction(task_id: str, dataset: ARCDataset, predicted_grid: np.ndarray, test_idx: int = 0):
+    """The two views someone reviewing "did we solve this task" needs
+    together: the whole task (plot_task) plus how the prediction for
+    test[test_idx] compares to the actual answer, cell by cell
+    (plot_grids_comparison - grid_2 is the one checked against target_grid,
+    so the prediction has to be grid_2, not grid_1).
+
+    Returns (task_figure, comparison_figure).
+    """
+    fig_task = plot_task(task_id, dataset)
+
+    all_challenges = dataset.training_challenges
+    all_solutions = dataset.training_solutions
+    main = task_id.split('_')[0] if "_" in task_id else task_id
+    test_input = np.array(all_challenges[main]['test'][test_idx]['input'])
+    target = np.array(all_solutions[main][test_idx])
+
+    fig_comparison = plot_grids_comparison(test_input, np.array(predicted_grid), target_grid=target)
+    return fig_task, fig_comparison
 
 def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_distinct_colors=50):
     """Enhanced version with better color distinction for many objects.
@@ -269,7 +300,7 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_d
     grid = deepcopy(grid)
 
     # Prepare the plot
-    plt.figure(figsize=(12, 10))
+    fig = plt.figure(figsize=(12, 10))
 
     object_values = {}
     legend_handles = []
@@ -329,10 +360,7 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_d
         legend_handles.append(mpatches.Patch(color=hex_color, label=obj.label))
 
     # Create colormap
-    original_colors = ['#000000', '#0074D9','#FF4136','#2ECC40', '#FFDC00', '#AAAAAA',
-                      '#F012BE', '#FF851B', '#7FDBFF', '#870C25', '#ffffff', '#002f1f']
-
-    all_colors = original_colors + [object_values[val][1] for val in sorted(object_values.keys())]
+    all_colors = ARC_COLORS_HIGHLIGHT + [object_values[val][1] for val in sorted(object_values.keys())]
 
     cmap = colors.ListedColormap(all_colors)
     norm = colors.Normalize(vmin=0, vmax=len(all_colors)-1)
@@ -380,8 +408,7 @@ def plot_objects(grid: np.array, objects: List, colormap_name='gist_ncar', max_d
                framealpha=0.9)
 
     plt.tight_layout()
-    plt.show()
-    return
+    return fig
 
 class TaskIterator:
     def __init__(self, start=0, end=0, tasks_keys=False):

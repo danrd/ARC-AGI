@@ -1,10 +1,14 @@
-"""Regression tests for bugs found and fixed in utils/plotting.py:
-plot_shape (independent axis mins), plot_intersection (single-shape vs
-list-of-shapes detection), plot_multiple_tasks (broken dataset indexing),
-plot_task (subplots squeeze on a 1-column grid). Crash-or-not, in the same
-spirit as tests/test_rl_plotting.py - these are visualization helpers, the
-"right answer" is that they run without raising on the inputs their own
-type hints promise to accept.
+"""Tests for utils/plotting.py: regression tests for bugs found and fixed
+(plot_shape's independent axis mins, plot_intersection's single-shape vs
+list-of-shapes detection, plot_multiple_tasks' broken dataset indexing,
+plot_task's subplots squeeze on a 1-column grid) plus functional tests for
+the composability/correctness-overlay rework (plot_grid(ax=...), the real
+per-cell diff in plot_grids_comparison, plot_multiple_grids' one-figure-
+per-grid fix, plot_task_with_prediction). Where there's a checkable
+property (a returned figure, an axis title, a distinct-figures count) the
+tests check it; everything else stays crash-or-not, in the same spirit as
+tests/test_rl_plotting.py - these are visualization helpers, not something
+worth asserting exact pixel output against.
 """
 from __future__ import annotations
 
@@ -15,7 +19,16 @@ matplotlib.use("Agg")  # headless: no display needed to run these tests
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils.plotting import plot_intersection, plot_multiple_tasks, plot_shape, plot_task
+from utils.plotting import (
+    plot_grid,
+    plot_grids_comparison,
+    plot_intersection,
+    plot_multiple_grids,
+    plot_multiple_tasks,
+    plot_shape,
+    plot_task,
+    plot_task_with_prediction,
+)
 
 
 def test_plot_shape_with_independent_axis_extents_does_not_crash():
@@ -94,3 +107,98 @@ def test_plot_multiple_tasks_with_string_ids_does_not_crash():
 
     assert plt.gcf().get_axes()
     plt.close("all")
+
+
+def _title_texts(fig):
+    return [ax.get_title() for ax in fig.axes]
+
+
+def test_plot_grid_draws_on_the_given_ax():
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    grid = np.array([[1, 2], [3, 4]])
+
+    returned = plot_grid(grid, ax=ax1)
+
+    assert returned is ax1
+    assert ax1.images  # something was actually drawn on ax1...
+    assert not ax2.images  # ...and ax2 was left untouched
+    plt.close(fig)
+
+
+def test_plot_grids_comparison_overlay_reports_a_match():
+    grid = np.array([[1, 2], [3, 4]])
+
+    fig = plot_grids_comparison(grid, grid.copy())
+
+    assert any("MATCH" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_grids_comparison_overlay_reports_a_mismatch():
+    """Regression test: the old diff panel compared np.setdiff1d(grid_2,
+    grid_1) - the SET of colors used, not per-cell positions. Two grids
+    using the same colors in a completely different arrangement (a wrong
+    prediction, essentially) used to show an empty "no new cells" diff.
+
+    grid_2 is the one checked against target_grid (see plot_grids_comparison's
+    docstring), so `predicted` has to be passed as grid_2, not grid_1."""
+    predicted = np.array([[1, 2], [3, 9]])  # one cell wrong vs target
+    target = np.array([[1, 2], [3, 4]])
+
+    fig = plot_grids_comparison(target, predicted, target_grid=target)
+
+    assert any("mismatch" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_grids_comparison_shape_mismatch_does_not_crash():
+    predicted = np.zeros((3, 3), dtype=int)
+    target = np.zeros((4, 4), dtype=int)
+
+    fig = plot_grids_comparison(target, predicted, target_grid=target)
+
+    assert any("mismatch" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_multiple_grids_returns_one_distinct_figure_per_grid():
+    """Regression test: plot_multiple_grids used to call plot_grid(grid) in
+    a loop without ever creating a new figure - every grid landed on
+    whatever the CURRENT axes happened to be, so only the last one ended
+    up actually visible."""
+    grids = [np.array([[1, 2], [3, 4]]), np.array([[5, 6], [7, 8]]), np.zeros((2, 2), dtype=int)]
+
+    figs = plot_multiple_grids(grids)
+
+    assert len(figs) == len(grids)
+    assert len({id(f) for f in figs}) == len(grids)
+    for fig in figs:
+        plt.close(fig)
+
+
+def test_plot_task_returns_the_figure():
+    task_id = "faketask"
+    dataset = _fake_dataset(task_id)
+
+    fig = plot_task(task_id, dataset)
+
+    assert isinstance(fig, plt.Figure)
+    plt.close(fig)
+
+
+def test_plot_task_with_prediction_correct_and_incorrect():
+    task_id = "faketask"
+    dataset = _fake_dataset(task_id)
+    correct_answer = np.array(dataset.training_solutions[task_id][0])
+
+    fig_task, fig_cmp_correct = plot_task_with_prediction(task_id, dataset, correct_answer)
+    assert isinstance(fig_task, plt.Figure)
+    assert any("MATCH" in t for t in _title_texts(fig_cmp_correct))
+
+    wrong_answer = 1 - correct_answer  # flips every 0/1 cell in this fixture's solution
+    _, fig_cmp_wrong = plot_task_with_prediction(task_id, dataset, wrong_answer)
+    assert any("mismatch" in t for t in _title_texts(fig_cmp_wrong))
+
+    plt.close(fig_task)
+    plt.close(fig_cmp_correct)
+    plt.close(fig_cmp_wrong)

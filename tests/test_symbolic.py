@@ -27,6 +27,8 @@ from symbolic.patterns import (
     find_connected_components_with_color,
 )
 
+from .resource_utils import resource_budget
+
 # ============================================================================
 # TEST GRID LIBRARY
 # ============================================================================
@@ -1136,10 +1138,14 @@ class TestStress:
     def test_repeated_operations():
         """Test repeated operations for memory leaks."""
         grid = GridLibrary.multicolor_regions()
-        start = time.perf_counter()
-        for _ in range(100):
-            GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
-        duration = time.perf_counter() - start
+        # The docstring above says "memory leaks" but this used to only ever
+        # check timing - resource_budget actually checks peak memory growth
+        # too now.
+        with resource_budget(max_memory_mb=20.0):
+            start = time.perf_counter()
+            for _ in range(100):
+                GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+            duration = time.perf_counter() - start
         avg_time = duration / 100
         assert avg_time < 0.5, f"Repeated operations degrading: {avg_time}s per op"
 

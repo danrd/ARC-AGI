@@ -21,6 +21,8 @@ import pytest
 import rl.mcts as mcts
 from rl.arc_env import ARCGridWorld
 
+from .resource_utils import resource_budget
+
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}
 
 
@@ -33,9 +35,14 @@ def env(arc_task):
 
 
 def test_collect_random_rollouts_does_not_crash(env):
-    rollouts = mcts.collect_random_rollouts(
-        env, promising_actions=[], n_rollouts=3, max_episode_len=4,
-    )
+    # Also a resource guard: rollout collection deep-copies objects per
+    # step (see EnvironmentSimulator's "copy only touched objects" design,
+    # motivated by real memory constraints) - a regression back to copying
+    # everything would still pass functionally but blow past this budget.
+    with resource_budget(max_seconds=5.0, max_memory_mb=50.0):
+        rollouts = mcts.collect_random_rollouts(
+            env, promising_actions=[], n_rollouts=3, max_episode_len=4,
+        )
     assert isinstance(rollouts, list)
     for rollout in rollouts:
         assert rollout["total_reward"] > 0  # collect_random_rollouts only keeps these
@@ -117,10 +124,14 @@ def test_mcts_node_expand_children_have_independent_untried_actions(env):
 
 
 def test_mcts_search_does_not_crash(env):
+    # Same rationale as test_collect_random_rollouts_does_not_crash above:
+    # tree expansion/simulation is where a "copy only touched objects"
+    # regression would actually show up as runaway memory.
     search = mcts.MCTS(env, max_iterations=5, max_depth=3)
     root_state = mcts.env_state_snapshot(env)
 
-    root = search.search(root_state)
+    with resource_budget(max_seconds=5.0, max_memory_mb=50.0):
+        root = search.search(root_state)
 
     best_action = search.get_best_action(root)
     assert env.action_space.contains(np.array(best_action))

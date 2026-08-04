@@ -38,7 +38,7 @@ vllm = [
     "vllm>=0.6",
 ]
 llama-cpp = [
-    "llama-cpp-python",
+    "llama-cpp-python[server]",
 ]
 openrouter = [
     "openai==2.46.0",

@@ -79,10 +79,10 @@ def _wait_for_server_ready(process: subprocess.Popen, port: int,
 
 
 def _start_llama_cpp_server(config) -> subprocess.Popen:
-    # TODO: installing at runtime is convenient but slow and non-reproducible;
-    # move to requirements.txt when this settles.
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "llama-cpp-python[server]"])
-
+    # llama-cpp-python[server] is a declared dependency (pyproject.toml's
+    # `llama-cpp` extra) - unlike vllm below, its wheels aren't
+    # CUDA-version-sensitive, so there's no reason to keep installing it at
+    # runtime instead of just requiring it ahead of time.
     port = getattr(config.base, "port", 8001)
     n_ctx = str(getattr(config.base, "n_ctx", getattr(config.generation, "max_tokens", 2048)))
     log_file = open("llama_cpp.log", "w", encoding="utf-8")

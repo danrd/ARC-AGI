@@ -13,14 +13,6 @@ import pytest
 
 from rl.arc_task import ARCSubtask, ARCTask
 
-# test_symbolic.py is its own pre-existing, non-pytest test framework
-# (UnifiedTestRunner.run_test_on_all_grids(...) calls test methods directly,
-# passing a `grid` positional argument) - pytest's collector mistakes that
-# `grid` parameter for a fixture request and errors on most of them. Excluded
-# from auto-collection here; run it via its own run_all_tests()/quick_test()
-# entry points instead.
-collect_ignore = ["test_symbolic.py"]
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODEL_CACHE_DIR = REPO_ROOT / "data" / "pretrained_models"
 

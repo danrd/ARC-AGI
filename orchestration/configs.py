@@ -65,6 +65,10 @@ class ExperimentConfig(BaseModel):
         with open("exp.yaml", "w") as f:
             yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)
 
+    def __str__(self) -> str:
+        """Human-readable, nested view of every attribute - unlike pydantic's default single-line repr, meant to be read at a glance via print(config)."""
+        return yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False)
+
     @classmethod
     def from_dict(cls, exp_params: dict) -> "ExperimentConfig":
         base = LlmConfig(**exp_params.get("base", {}))

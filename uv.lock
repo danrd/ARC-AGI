@@ -255,6 +255,7 @@ dependencies = [
 [package.optional-dependencies]
 hf = [
     { name = "pytorch-lightning" },
+    { name = "sentencepiece" },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -308,6 +309,7 @@ requires-dist = [
     { name = "pytorch-lightning", marker = "extra == 'hf'", specifier = "==2.6.5" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "scipy", specifier = "==1.18.0" },
+    { name = "sentencepiece", marker = "extra == 'hf'" },
     { name = "stable-baselines3", marker = "extra == 'rl'", specifier = "==2.9.0" },
     { name = "torch", marker = "extra == 'hf'" },
     { name = "torch", marker = "extra == 'rl'" },

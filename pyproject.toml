@@ -33,6 +33,9 @@ hf = [
     "transformers==5.14.1",
     "torch",
     "pytorch-lightning==2.6.5",
+    # Many HF tokenizers (Llama/Qwen family included) are SentencePiece-based;
+    # AutoTokenizer.from_pretrained() needs this installed to convert them.
+    "sentencepiece",
 ]
 vllm = [
     "vllm>=0.6",

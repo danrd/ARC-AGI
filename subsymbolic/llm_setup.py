@@ -51,7 +51,6 @@ class LlmConfig(BaseModel):
     model: str = 'unsloth/Qwen3.6-27B-GGUF'
     tokenizer_model: Optional[str] = None
     quant_file: str = 'Qwen3.6-27B-Q4_K_M.gguf'
-    # Where quant_file GGUFs live once downloaded - see resolve_local_model_path().
     pretrained_models_dir: str = '/data/pretrained_models'
     max_context: int = 9000  # llm token limit for computational resources to control
     openrouter_models: List[str] = ["google/gemma-4-26b-a4b-it",

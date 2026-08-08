@@ -21,22 +21,16 @@ project (see prompt_builder.py's module docstring).
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
 from subsymbolic.llm_setup import build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
 from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
-if TYPE_CHECKING:
-    # Only for the type hint below — importing it for real would make
-    # subsymbolic depend on orchestration, inverting the intended layering
-    # (orchestration assembles modules, not the other way round).
-    from orchestration.configs import ExperimentConfig
-
 
 class SubsymbolicModule:
     def __init__(self, prompting_config: PromptingConfig, tokenizer,
-                 experiment_config: "ExperimentConfig"):
+                 experiment_config):
         self.builder = PromptBuilder(prompting_config, tokenizer,
                                       resolver_registry=RESOLVER_REGISTRY,
                                       filter_registry=FILTER_REGISTRY)

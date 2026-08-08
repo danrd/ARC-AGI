@@ -260,6 +260,7 @@ hf = [
     { name = "transformers" },
 ]
 llama-cpp = [
+    { name = "huggingface-hub" },
     { name = "llama-cpp-python", extra = ["server"] },
 ]
 logging = [
@@ -295,7 +296,7 @@ requires-dist = [
     { name = "arc-challenge", extras = ["llama-cpp"], marker = "extra == 'test'" },
     { name = "datasets" },
     { name = "gymnasium", marker = "extra == 'rl'", specifier = "==1.3.0" },
-    { name = "huggingface-hub", marker = "extra == 'test'" },
+    { name = "huggingface-hub", marker = "extra == 'llama-cpp'" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "langgraph", specifier = "==1.2.9" },
     { name = "llama-cpp-python", extras = ["server"], marker = "extra == 'llama-cpp'" },

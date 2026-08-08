@@ -42,13 +42,15 @@ vllm = [
 ]
 llama-cpp = [
     "llama-cpp-python[server]",
+    # Resolves LlmConfig.model (a GGUF repo id) + quant_file into a real
+    # local file for llama.cpp to load - see resolve_local_model_path().
+    "huggingface_hub",
 ]
 openrouter = [
     "openai==2.46.0",
 ]
 test = [
     "pytest",
-    "huggingface_hub",
     "arc-challenge[llama-cpp]",
 ]
 

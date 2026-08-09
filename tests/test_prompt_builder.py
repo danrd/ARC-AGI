@@ -159,3 +159,43 @@ def test_build_resolver_undefinederror_is_annotated_with_the_resolver(tmp_path):
     message = str(exc_info.value)
     assert "'dynamic' resolver" in message
     assert "broken_resolver" in message
+
+
+def test_block_overrides_from_config_is_used_by_default(tmp_path):
+    _write_block(tmp_path, "greeting", "v1", "Hello, {{ name }}!")
+    config = PromptingConfig(blocks_dir=str(tmp_path), blocks=["greeting"], token_limit=100,
+                              block_overrides={"greeting": "Hi there."})
+    builder = PromptBuilder(config, _FakeTokenizer())
+
+    result = builder.build(task=None, context={})
+
+    assert result == "Hi there."
+
+
+def test_explicit_overrides_param_wins_over_config_block_overrides(tmp_path):
+    _write_block(tmp_path, "greeting", "v1", "Hello, {{ name }}!")
+    config = PromptingConfig(blocks_dir=str(tmp_path), blocks=["greeting"], token_limit=100,
+                              block_overrides={"greeting": "from config"})
+    builder = PromptBuilder(config, _FakeTokenizer())
+
+    result = builder.build(task=None, context={}, overrides={"greeting": "from call"})
+
+    assert result == "from call"
+
+
+class _FakeChatTokenizer(_FakeTokenizer):
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, **kwargs):
+        self.last_kwargs = kwargs
+        return "|".join(m["content"] for m in messages)
+
+
+def test_chat_template_kwargs_reach_apply_chat_template(tmp_path):
+    _write_block(tmp_path, "greeting", "v1", "Hello!")
+    config = PromptingConfig(blocks_dir=str(tmp_path), blocks=["greeting"], token_limit=100,
+                              chat_template="whatever", chat_template_kwargs={"enable_thinking": False})
+    tokenizer = _FakeChatTokenizer()
+    builder = PromptBuilder(config, tokenizer)
+
+    builder.build(task=None, context={})
+
+    assert tokenizer.last_kwargs == {"enable_thinking": False}

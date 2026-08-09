@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Any, Dict
 
 from rl.rl_module import RlConfig
@@ -48,6 +48,23 @@ class ExperimentConfig(BaseModel):
     system: SystemRunConfig = Field(default_factory=SystemRunConfig)
     logging: WandbLogConfig = Field(default_factory=WandbLogConfig)
     project: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _sync_chat_template_kwargs(self) -> "ExperimentConfig":
+        """chat_template_kwargs (e.g. Qwen3's enable_thinking) has to live
+        on both generation (server-backed tiers - sent as extra_body) and
+        prompt (local in-process tiers - baked into the prompt string via
+        apply_chat_template), since those are two structurally different
+        delivery points - see PromptingConfig.chat_template_kwargs /
+        GenerationConfig.chat_template_kwargs. Callers shouldn't have to
+        know that split: if only one side was set, mirror it onto the
+        other so setting it once is enough. Leaves both alone if either
+        both or neither were set explicitly."""
+        if self.generation.chat_template_kwargs and not self.prompt.chat_template_kwargs:
+            self.prompt.chat_template_kwargs = dict(self.generation.chat_template_kwargs)
+        elif self.prompt.chat_template_kwargs and not self.generation.chat_template_kwargs:
+            self.generation.chat_template_kwargs = dict(self.prompt.chat_template_kwargs)
+        return self
 
     def to_llama_cpp(self) -> dict:
         return self.generation.to_llama_cpp(seed=self.base.seed)

@@ -8,9 +8,8 @@ token-budgeted and joined according to `config.join_format`, or via
 `resolvers`/`filters` named in PromptingConfig are looked up in whatever
 resolver_registry/filter_registry the caller passes into PromptBuilder's
 constructor - this module has no registry of its own and no project-
-specific imports, so it stays genuinely reusable outside this project.
-subsymbolic.subsymbolic_module.SubsymbolicModule is what wires in this
-project's registry (subsymbolic.registry.RESOLVER_REGISTRY/FILTER_REGISTRY).
+specific imports, so it stays genuinely reusable as-is: define your own
+resolver/filter functions and pass them in as plain {name: callable} dicts.
 """
 from __future__ import annotations
 
@@ -57,8 +56,9 @@ class PromptingConfig(BaseModel):
     # consume this already-built string (LlamaCppRunner, HFRunner) -
     # server-backed tiers (ServerRunner) apply their own template from raw
     # messages and need the equivalent set on
-    # GenerationConfig.chat_template_kwargs instead. orchestration.configs.
-    # ExperimentConfig default-syncs the two so setting either is enough.
+    # GenerationConfig.chat_template_kwargs instead. Unlike arc-challenge,
+    # there's no aggregating config here to auto-sync the two - set both by
+    # hand if you don't know ahead of time which tier will end up active.
     chat_template_kwargs: Dict[str, Any] = Field(default_factory=dict)
     assistant_prefix: Optional[str] = None  # string to add before assistant response
     project: Dict[str, Any] = {}  # other project specific prompting settings

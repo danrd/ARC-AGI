@@ -69,13 +69,16 @@ class GenerationConfig(BaseModel):
                                    description="Extra kwargs forwarded to the backend's own chat-template "
                                                "application, for server-backed tiers only (e.g. "
                                                "{'enable_thinking': False} for Qwen3's reasoning toggle). "
-                                               "Sent via to_chat_completions()'s extra_body - vLLM and "
-                                               "llama.cpp-server both read chat_template_kwargs from there. "
-                                               "Ignored by to_llama_cpp/to_vllm/to_hf: those tiers consume an "
-                                               "already-built prompt string, with any chat-template kwargs "
-                                               "already baked in by PromptingConfig.chat_template_kwargs "
-                                               "instead - orchestration.configs.ExperimentConfig default-syncs "
-                                               "the two so setting either is enough.")
+                                               "Sent via to_chat_completions()'s extra_body - vLLM reads "
+                                               "chat_template_kwargs from there; llama-cpp-python's server "
+                                               "does NOT (it's a model-load-time setting there instead - see "
+                                               "llm_setup._start_llama_cpp_server's --chat_template_kwargs "
+                                               "flag). Ignored by to_llama_cpp/to_vllm/to_hf: those tiers "
+                                               "consume an already-built prompt string, with any "
+                                               "chat-template kwargs already baked in by "
+                                               "PromptingConfig.chat_template_kwargs instead - set both by "
+                                               "hand if you don't know ahead of time which tier will end up "
+                                               "active.")
 
     def to_dict(self, exclude_none: bool = True, exclude_unset: bool = False) -> Dict[str, Any]:
         """Plain dict for **kwargs unpacking."""

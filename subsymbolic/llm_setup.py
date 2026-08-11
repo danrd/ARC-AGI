@@ -2,10 +2,10 @@
 config describing WHICH backend to load (BaseConfig - technical run
 parameters that aren't specific to being an LLM: seed, device, serving
 timeouts; LlmConfig - model identity, quantization, framework; generation-
-time sampling params live in subsymbolic.llm_runtime.GenerationConfig
-instead, since that's "how to sample", not "what to load"), plus the
-actual loading/starting logic (spawning a local server and waiting for it
-to come up, constructing an in-process model + tokenizer) and
+time sampling params live in subsymbolic.llm_runtime.GenerationConfig instead,
+since that's "how to sample", not "what to load"), plus the actual
+loading/starting logic (spawning a local server and waiting for it to
+come up, constructing an in-process model + tokenizer) and
 `build_runner(config)`, the public factory that ties it together with a
 fallback chain per config.base.device:
     CPU:  llama.cpp server -> llama.cpp in-process

@@ -201,7 +201,8 @@ def test_make_module_dispatch_fn_routes_symbolic_and_subsymbolic(arc_task, tiny_
 
     pconf = PromptingConfig(blocks=["general_instruction", "examples", "output_format"],
                              token_limit=4096, min_examples=1, filters=["grid"], resolvers=["examples"])
-    subsymbolic_module = SubsymbolicModule(pconf, tiny_tokenizer, ExperimentConfig())
+    experiment_config = ExperimentConfig(prompt=pconf)
+    subsymbolic_module = SubsymbolicModule(experiment_config, tiny_tokenizer)
 
     class _FakeRunner:
         def generate(self, prompt):

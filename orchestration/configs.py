@@ -3,10 +3,10 @@
 ExperimentConfig aggregates one config per module (llm setup, generation
 params, prompting, RL) plus `system` - the orchestration-wide settings
 (iteration bounds, timeouts) previously scattered as bare dataclasses in
-orchestration.__main__. Each piece can still be built and passed around on
-its own (e.g. subsymbolic.subsymbolic_module.SubsymbolicModule only needs
-`prompt` + `llm`/`generation`) - ExperimentConfig just gives solve_task() a
-single object to build the whole system from.
+orchestration.__main__. subsymbolic.subsymbolic_module.SubsymbolicModule
+takes the whole thing (using only `prompt` + `llm`/`generation` off of
+it) - ExperimentConfig just gives solve_task() a single object to build
+the whole system from.
 """
 from __future__ import annotations
 

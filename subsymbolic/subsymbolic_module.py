@@ -9,10 +9,10 @@ orchestration can treat both the same way.
 
 The runner (a live model/server connection) is expensive to build, so
 it's constructed once, lazily, on first use rather than per solve() call.
-PromptingConfig / tokenizer / ExperimentConfig are expected to be
-assembled once at the system level and passed in here — logging, memory,
-and anything beyond "build a prompt, run it" can layer on top of this
-later.
+tokenizer / ExperimentConfig (which already carries the PromptingConfig
+PromptBuilder needs, as its `prompt` field) are expected to be assembled
+once at the system level and passed in here — logging, memory, and
+anything beyond "build a prompt, run it" can layer on top of this later.
 
 This is also the one place this project's resolver/filter registry
 (subsymbolic.registry) gets wired into PromptBuilder - PromptBuilder
@@ -24,14 +24,13 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from subsymbolic.llm_setup import build_runner
-from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
+from subsymbolic.prompt_builder import PromptBuilder
 from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
 
 class SubsymbolicModule:
-    def __init__(self, prompting_config: PromptingConfig, tokenizer,
-                 experiment_config):
-        self.builder = PromptBuilder(prompting_config, tokenizer,
+    def __init__(self, experiment_config, tokenizer):
+        self.builder = PromptBuilder(experiment_config.prompt, tokenizer,
                                       resolver_registry=RESOLVER_REGISTRY,
                                       filter_registry=FILTER_REGISTRY)
         self.experiment_config = experiment_config

@@ -18,7 +18,7 @@ from typing import Any, Dict
 
 from rl.rl_module import RlConfig
 from subsymbolic.llm_run import WandbLogConfig
-from subsymbolic.llm_setup import LlmConfig
+from subsymbolic.llm_setup import BaseConfig, LlmConfig
 from subsymbolic.llm_runtime import GenerationConfig
 from subsymbolic.prompt_builder import PromptingConfig
 
@@ -41,7 +41,8 @@ class SystemRunConfig:
 
 class ExperimentConfig(BaseModel):
     """Main config for guiding system setup and processing."""
-    base: LlmConfig = Field(default_factory=LlmConfig)
+    base: BaseConfig = Field(default_factory=BaseConfig)
+    llm: LlmConfig = Field(default_factory=LlmConfig)
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     prompt: PromptingConfig = Field(default_factory=PromptingConfig)
     rl: RlConfig = Field(default_factory=RlConfig)
@@ -88,11 +89,12 @@ class ExperimentConfig(BaseModel):
 
     @classmethod
     def from_dict(cls, exp_params: dict) -> "ExperimentConfig":
-        base = LlmConfig(**exp_params.get("base", {}))
+        base = BaseConfig(**exp_params.get("base", {}))
+        llm = LlmConfig(**exp_params.get("llm", {}))
         generation = GenerationConfig(**exp_params.get("generation", {}))
         prompt = PromptingConfig(**exp_params.get("prompt", {}))
         rl = RlConfig(**exp_params.get("rl", {}))
-        return cls(base=base, generation=generation, prompt=prompt, rl=rl)
+        return cls(base=base, llm=llm, generation=generation, prompt=prompt, rl=rl)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":

@@ -18,7 +18,7 @@ import pytest
 
 from orchestration.configs import ExperimentConfig
 from subsymbolic.llm_runtime import GenerationConfig
-from subsymbolic.llm_setup import LlmConfig, build_runner
+from subsymbolic.llm_setup import BaseConfig, LlmConfig, build_runner
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
 from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 from subsymbolic.utils import parse_llm_output
@@ -90,9 +90,10 @@ def test_prompt_builds_without_a_model(case_id, blocks, join_format, arc_task, t
 
 @pytest.fixture(scope="session")
 def cpu_runner(supra_router_gguf_path):
-    base = LlmConfig(device="cpu", framework="llama_cpp", model=supra_router_gguf_path)
+    base = BaseConfig(device="cpu")
+    llm = LlmConfig(framework="llama_cpp", model=supra_router_gguf_path)
     generation = GenerationConfig(max_tokens=64, temperature=0.0)
-    config = ExperimentConfig(base=base, generation=generation)
+    config = ExperimentConfig(base=base, llm=llm, generation=generation)
     with build_runner(config) as runner:
         yield runner
 
@@ -123,9 +124,10 @@ def gpu_runner():
     errors = []
     for model_id in GPU_MODEL_CANDIDATES:
         try:
-            base = LlmConfig(device="gpu", framework="hf", model=model_id)
+            base = BaseConfig(device="gpu")
+            llm = LlmConfig(framework="hf", model=model_id)
             generation = GenerationConfig(max_tokens=64, temperature=0.0)
-            config = ExperimentConfig(base=base, generation=generation)
+            config = ExperimentConfig(base=base, llm=llm, generation=generation)
             runner = build_runner(config)
         except Exception as e:  # try the next candidate
             errors.append(f"{model_id}: {type(e).__name__}: {e}")

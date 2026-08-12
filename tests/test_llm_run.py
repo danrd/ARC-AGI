@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from subsymbolic.arc_evaluators import arc_grid_evaluator
+from subsymbolic.arc_evaluators import arc_grid_evaluator, arc_result_plotter
 from subsymbolic.llm_run import EvalResult, WandbLogConfig, run_llm_over_tasks
 
 
@@ -245,6 +245,7 @@ def test_run_llm_over_tasks_resume_with_no_prior_checkpoint_does_not_crash(fake_
 @dataclass
 class _FakeSubtask:
     train_out: np.ndarray
+    train_inp: np.ndarray = field(default_factory=lambda: np.array([[0, 0], [0, 0]]))
 
 
 @dataclass
@@ -272,3 +273,49 @@ def test_arc_grid_evaluator_wrong_grid_scores_below_one():
     assert result.metrics["exact_match"] == 0.0
     assert 0.0 <= result.primary_score < 1.0
     assert result.solved is False
+
+
+# -- arc_result_plotter ---------------------------------------------------
+
+def test_arc_result_plotter_renders_a_comparison_for_a_well_formed_prediction():
+    task = _FakeArcTask()
+    generated = "2,2:\n1 12\n2 34"  # same format arc_grid_evaluator scores
+    eval_result = arc_grid_evaluator(task, generated)
+
+    fig = arc_result_plotter(task, generated, eval_result)
+
+    assert len(fig.axes) > 0
+    assert "score=1.00" in fig.get_suptitle()
+    assert "solved=True" in fig.get_suptitle()
+
+
+def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_parse():
+    """generated_text that doesn't parse into a grid at all can't be
+    compared cell-by-cell - the plotter still has to return something
+    loggable instead of raising, same as the evaluator still returns a
+    (zero) score instead of raising."""
+    task = _FakeArcTask()
+    generated = "not a grid at all"
+    eval_result = arc_grid_evaluator(task, generated)
+
+    fig = arc_result_plotter(task, generated, eval_result)
+
+    assert len(fig.axes) > 0
+    assert "solved=False" in fig.get_suptitle()
+
+
+def test_arc_result_plotter_parses_with_the_same_options_as_the_evaluator():
+    """colors_str has to be passed through to parse_llm_output the same
+    way arc_grid_evaluator does, or the plot shows a different parse than
+    what was actually scored: if colors_str were silently dropped here,
+    parse_llm_output would fail to read 'R' as a color at all and this
+    would fall into the "didn't parse" branch instead of matching."""
+    task = _FakeArcTask(test_subtask=_FakeSubtask(train_out=np.array([[2, 2], [2, 2]])))
+    generated = "2,2:\n1 RR\n2 RR"  # 'R' -> 2 only when colors_str=True
+    eval_result = arc_grid_evaluator(task, generated, colors_str=True)
+
+    fig = arc_result_plotter(task, generated, eval_result, colors_str=True)
+
+    assert eval_result.solved is True
+    titles = [ax.get_title() for ax in fig.axes]
+    assert any("MATCH" in t for t in titles)

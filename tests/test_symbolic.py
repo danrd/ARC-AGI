@@ -17,7 +17,9 @@ from dataclasses import FrozenInstanceError
 import numpy as np
 import pytest
 
-from symbolic.summaries import GridSummary, RelationAnalyzer, get_rotations
+from rl.arc_task import ARCSubtask
+
+from symbolic.summaries import GridSummary, RelationAnalyzer, SubtaskSummary, get_rotations
 from symbolic.objects_analysis import GridObject
 from symbolic.patterns import (
     generate_patterns,
@@ -1231,3 +1233,124 @@ class TestPerformance:
         GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
         duration = time.perf_counter() - start
         assert duration < 5.0, f"Many-objects GridSummary too slow: {duration}s"
+
+
+class TestRelationStatistics:
+    """Relation tallies feed both the summary text and the RL feature
+    vector, so a count that isn't a count of anything propagates silently."""
+
+    @staticmethod
+    def test_unrelated_objects_tally_zero():
+        """The tally used to be seeded from the tuple of relation *names*,
+        which gives every relation a starting count of one - so two objects
+        sharing nothing still reported same_color=1."""
+        grid = np.zeros((6, 6), dtype=int)
+        grid[0, 0] = 1
+        grid[5, 5] = 2
+
+        stats = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[2]).repr_levels[2].relation_statistics
+
+        assert stats.same_color == 0
+        assert stats.in_contour == 0
+
+    @staticmethod
+    def test_matching_objects_are_counted_once():
+        grid = np.zeros((6, 6), dtype=int)
+        grid[0, 0] = 3
+        grid[5, 5] = 3
+
+        stats = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[2]).repr_levels[2].relation_statistics
+
+        assert stats.same_color == 1
+        assert stats.same_size == 1
+
+
+class TestObjectDistance:
+    """Distance between objects drives the normalized_distance feature and
+    the 'nearby object' threshold, so collapsing distinct configurations
+    onto the same number removes signal from both."""
+
+    @staticmethod
+    def _objects(coords_a, coords_b, shape=(20, 20)):
+        grid = np.zeros(shape, dtype=int)
+        for c in list(coords_a) + list(coords_b):
+            grid[c] = 1
+        return (GridObject('complex', list(coords_a), [1], 'complex_0', shape, 0, grid),
+                GridObject('complex', list(coords_b), [1], 'complex_1', shape, 0, grid))
+
+    @staticmethod
+    def test_objects_sharing_a_row_are_not_all_at_distance_zero():
+        """Taking the smaller of the two axis gaps made every row- or
+        column-aligned pair adjacent, however far apart they actually were."""
+        near = GridSummary.calculate_distance(*TestObjectDistance._objects([(0, 0)], [(0, 2)]))
+        far = GridSummary.calculate_distance(*TestObjectDistance._objects([(0, 0)], [(0, 19)]))
+
+        assert far > near
+
+    @staticmethod
+    def test_overlapping_ranges_count_as_no_gap_on_that_axis():
+        """A tall object spanning rows 0-10 and a cell on row 5 overlap
+        vertically; measuring corner-to-corner instead reported a gap."""
+        tall, cell = TestObjectDistance._objects([(0, 0), (10, 0)], [(5, 7)])
+
+        assert GridSummary.calculate_distance(tall, cell) == 7
+
+    @staticmethod
+    def test_touching_objects_are_one_step_apart_and_overlapping_ones_zero():
+        touching = GridSummary.calculate_distance(*TestObjectDistance._objects([(0, 0)], [(0, 1)]))
+        interleaved = GridSummary.calculate_distance(*TestObjectDistance._objects([(0, 0), (6, 6)], [(2, 2), (3, 3)]))
+
+        assert touching == 1
+        assert interleaved == 0
+
+    @staticmethod
+    def test_diagonal_neighbours_are_one_step_apart():
+        """Chebyshev, not Manhattan: on an 8-connected grid a diagonal
+        neighbour is one move away, matching how objects reach each other."""
+        assert GridSummary.calculate_distance(*TestObjectDistance._objects([(0, 0)], [(1, 1)])) == 1
+
+    @staticmethod
+    def test_distance_is_symmetric():
+        a, b = TestObjectDistance._objects([(1, 1), (2, 2)], [(8, 9)])
+
+        assert GridSummary.calculate_distance(a, b) == GridSummary.calculate_distance(b, a)
+
+
+class TestSubtaskSummary:
+    """The task-level feature path: input/output grid summaries plus the
+    ratios between them."""
+
+    @staticmethod
+    def test_create_builds_both_grid_summaries():
+        """The two summary attributes carried no type annotation, so they
+        were never dataclass fields and create() raised TypeError on every
+        call - taking prepare_features down with it."""
+        subtask = ARCSubtask(label='s0', train_inp=np.array([[1, 0], [0, 2]]),
+                             train_out=np.array([[0, 1], [2, 0]]))
+
+        summary = SubtaskSummary.create(subtask)
+
+        assert summary.inp_grid_summary is not None
+        assert summary.out_grid_summary is not None
+        assert summary.subtask_label == 's0'
+
+    @staticmethod
+    def test_ratios_capture_a_resize():
+        subtask = ARCSubtask(label='s1', train_inp=np.array([[1, 0], [0, 2]]),
+                             train_out=np.zeros((4, 4), dtype=int))
+
+        summary = SubtaskSummary.create(subtask)
+
+        assert summary.grids_x_ratio == 0.5
+        assert summary.grids_y_ratio == 0.5
+
+    @staticmethod
+    def test_prepare_features_returns_numeric_differences():
+        subtask = ARCSubtask(label='s2', train_inp=np.array([[1, 0], [0, 2]]),
+                             train_out=np.array([[1, 1], [0, 2]]))
+
+        features = SubtaskSummary.create(subtask).prepare_features()
+
+        assert features['grids_x_ratio'] == 1.0
+        assert 'total_objects_diff' in features
+        assert all(isinstance(v, (int, float)) for v in features.values())

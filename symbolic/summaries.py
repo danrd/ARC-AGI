@@ -131,23 +131,34 @@ class SubtaskSummary:
     """Immutable dataclass for subtask summary."""
     subtask: ARCSubtask = None
     subtask_label: str = None
-    inp_grid_summary = None
-    out_grid_summary = None
+    # Annotated as Any rather than GridSummary only because that class is
+    # defined further down this module; without an annotation at all these
+    # two are plain class attributes instead of fields, and create() below
+    # then fails on its own keyword arguments.
+    inp_grid_summary: Any = None
+    out_grid_summary: Any = None
     grids_x_ratio: float = 1.0
     grids_y_ratio: float = 1.0
 
     @classmethod
-    def create(cls, subtask: ARCSubtask, train: bool = True) -> 'SubtaskSummary':
-        """Factory method to create SubtaskSummary."""
+    def create(cls, subtask: ARCSubtask, train: bool = True, levels=(2,)) -> 'SubtaskSummary':
+        """Factory method to create SubtaskSummary.
+
+        `levels` has to cover whatever level prepare_features() is asked
+        for - GridSummary only builds the representations it is told to.
+        """
+        levels = list(levels)
         inp_grid_summary = GridSummary(
             grid=subtask.train_inp,
             shape=subtask.train_inp_shape,
+            levels=levels,
         )
 
         if train:
             out_grid_summary = GridSummary(
                 grid=subtask.train_out,
                 shape=subtask.train_out_shape,
+                levels=levels,
             )
             grids_x_ratio = subtask.train_inp_shape[0] / subtask.train_out_shape[0]
             grids_y_ratio = subtask.train_inp_shape[1] / subtask.train_out_shape[1]
@@ -165,14 +176,17 @@ class SubtaskSummary:
             grids_y_ratio=grids_y_ratio
         )
 
-    def prepare_features(self) -> Dict[str, float]:
+    def prepare_features(self, level: int = 2) -> Dict[str, float]:
         """Prepare features by comparing input and output grid summaries."""
         if self.out_grid_summary is None:
             raise ValueError("Cannot prepare features without output grid summary")
+        if level not in self.inp_grid_summary.repr_levels:
+            raise ValueError(
+                f"Representation level {level} was not built - pass levels=[{level}] to create()"
+            )
 
-        # Get level 2 representation from both grids
-        inp_level_2 = self.inp_grid_summary.repr_levels[2]
-        out_level_2 = self.out_grid_summary.repr_levels[2]
+        inp_level_2 = self.inp_grid_summary.repr_levels[level]
+        out_level_2 = self.out_grid_summary.repr_levels[level]
 
         # Calculate x_change_ratio and y_change_ratio
         inp_shape = self.inp_grid_summary.shape
@@ -181,7 +195,7 @@ class SubtaskSummary:
         y_change_ratio = out_shape[0] / inp_shape[0] if inp_shape[0] > 0 else 1.0
 
         # Calculate share of non-font cells using color statistics
-        def calculate_share_non_font(grid_summary, level=2):
+        def calculate_share_non_font(grid_summary, level=level):
             total_cells = grid_summary.shape[0] * grid_summary.shape[1]
             if total_cells == 0:
                 return 0
@@ -293,8 +307,11 @@ class SubtaskSummary:
         features = {}
 
         # Basic statistics
-        features['mean_size'] = round(obj_summary.mean_size, 3)
-        features['mode_size'] = round(obj_summary.mode_size, 3)
+        # float() rather than bare round(): these come off numpy reductions,
+        # and a numpy scalar survives round() unchanged - carrying a type
+        # that will not serialise into a checkpoint or a log.
+        features['mean_size'] = round(float(obj_summary.mean_size), 3)
+        features['mode_size'] = round(float(obj_summary.mode_size), 3)
         features['mean_hor_size'] = round(float(obj_summary.mean_hor_size), 3)
         features['mean_vert_size'] = round(float(obj_summary.mean_vert_size), 3)
 
@@ -635,12 +652,21 @@ class GridSummary():
 
     @staticmethod
     def calculate_distance(obj1, obj2):
-        """Calculate distance between objects."""
-        i_dist = min(abs(obj1.max_i - obj2.max_i), abs(obj1.max_i - obj2.min_i),
-                    abs(obj1.min_i - obj2.max_i), abs(obj1.min_i - obj2.min_i))
-        j_dist = min(abs(obj1.max_j - obj2.max_j), abs(obj1.max_j - obj2.min_j),
-                    abs(obj1.min_j - obj2.max_j), abs(obj1.min_j - obj2.min_j))
-        return min(i_dist, j_dist)
+        """Chebyshev distance between the objects' bounding boxes.
+
+        Per axis the separation is zero whenever the two ranges overlap,
+        and the two axes combine by max rather than min: on an 8-connected
+        grid that is the number of moves between them, so a diagonal
+        neighbour is one step away like an orthogonal one. Overlapping or
+        interleaved boxes give 0, touching gives 1.
+
+        Taking the min instead would report zero for every pair that merely
+        shares a row or column, however far apart they sit - which is what
+        this measure exists to distinguish.
+        """
+        gap_i = max(0, max(obj1.min_i, obj2.min_i) - min(obj1.max_i, obj2.max_i))
+        gap_j = max(0, max(obj1.min_j, obj2.min_j) - min(obj1.max_j, obj2.max_j))
+        return max(gap_i, gap_j)
 
     def create_objects_summary(self, objects) -> ObjectsSummary:
         """Create a summary for grid objects to get aggregate information about their shapes, sizes, colors."""
@@ -763,7 +789,11 @@ class GridSummary():
     def set_relations(self, objects) -> Tuple[Triples, RelationStatistics, ObjectDistances]:
         """Iterate over objects to identify relations between them."""
         all_object_triples = []
-        relation_statistics = Counter(self.relations_for_stats)
+        # Seed every known relation at zero so the statistics always carry
+        # the full vocabulary. Counting the name tuple itself would instead
+        # start each relation at one, and the offset then travels into the
+        # summary text and the feature vector as if it were an observation.
+        relation_statistics = Counter({relation: 0 for relation in self.relations_for_stats})
         distances_dict = {}
         all_objects = dict_to_list(objects)
 

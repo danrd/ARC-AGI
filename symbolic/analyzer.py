@@ -113,18 +113,35 @@ class SubtaskAnalysis:
                 num_changes=len(changes),
                 change_ratio=change_ratio
             )
-        else:
-            # Different sizes - identify added/removed regions
-            # Try to find input grid within output or vice versa
-            smaller = self.input_grid if np.prod(self.input_grid.shape) < np.prod(self.output_grid.shape) else self.output_grid
-            larger = self.output_grid if np.prod(self.input_grid.shape) < np.prod(self.output_grid.shape) else self.input_grid
+        # Different sizes: the two grids only overlap on their common
+        # top-left region, so "changed" means cells that differ inside that
+        # overlap plus every cell outside it, measured against the larger
+        # grid. Sizing the ratio off the area difference alone would call a
+        # resize that rewrites every cell the same as one that keeps them.
+        rows = min(self.input_grid.shape[0], self.output_grid.shape[0])
+        cols = min(self.input_grid.shape[1], self.output_grid.shape[1])
 
-            return GridDiff(
-                same_shape=False,
-                input_shape=self.input_grid.shape,
-                output_shape=self.output_grid.shape,
-                num_changes=abs(np.prod(self.input_grid.shape) - np.prod(self.output_grid.shape))
-            )
+        changes = []
+        for i in range(rows):
+            for j in range(cols):
+                old_color = self.input_grid[i, j]
+                new_color = self.output_grid[i, j]
+                if old_color != new_color:
+                    changes.append(CellChange((i, j), old_color, new_color))
+
+        overlap_cells = rows * cols
+        larger_cells = max(np.prod(self.input_grid.shape), np.prod(self.output_grid.shape))
+        outside_overlap = int(larger_cells - overlap_cells)
+        num_changes = len(changes) + outside_overlap
+
+        return GridDiff(
+            same_shape=False,
+            input_shape=self.input_grid.shape,
+            output_shape=self.output_grid.shape,
+            changed_cells=tuple(changes),
+            num_changes=num_changes,
+            change_ratio=num_changes / larger_cells if larger_cells > 0 else 0.0,
+        )
 
     def _analyze_transformations(self):
         """Analyze transformations at each representation level."""
@@ -820,51 +837,99 @@ class TaskAnalysis:
         self.transformation_rules = self._synthesize_transformation_rules()
 
     def _infer_consistent_patterns(self) -> List[TransformationPattern]:
-        """Find patterns that appear consistently across training examples."""
+        """Find patterns that appear consistently across training examples.
+
+        Consistency is a claim about examples, not about how many times a
+        detector fired: several occurrences of one pattern inside a single
+        example say nothing about whether the next example behaves the
+        same way, so occurrences stay grouped by the example they came
+        from throughout.
+        """
         if not self.subtasks_analyses:
             return []
 
-        # Collect all patterns from all subtasks
-        pattern_groups = defaultdict(list)
-
-        for subtask_analysis in self.subtasks_analyses:
+        occurrences_by_type = defaultdict(list)  # type -> [(example_idx, [patterns])]
+        for example_idx, subtask_analysis in enumerate(self.subtasks_analyses):
+            per_type = defaultdict(list)
             for pattern in subtask_analysis.transformation_patterns:
-                pattern_groups[pattern.pattern_type].append(pattern)
+                per_type[pattern.pattern_type].append(pattern)
+            for pattern_type, patterns in per_type.items():
+                occurrences_by_type[pattern_type].append((example_idx, patterns))
 
-        # Keep patterns that appear in all or most examples
-        threshold = max(1, len(self.subtasks_analyses) * 0.5)  # At least 50% of examples
+        n_examples = len(self.subtasks_analyses)
+        threshold = max(1, n_examples * 0.5)  # At least 50% of examples
 
         consistent = []
-        for pattern_type, patterns in pattern_groups.items():
-            if len(patterns) >= threshold:
-                # Merge patterns of same type
-                avg_confidence = np.mean([p.confidence for p in patterns])
+        for pattern_type, occurrences in occurrences_by_type.items():
+            n_seen = len(occurrences)
+            if n_seen < threshold:
+                continue
 
-                # Merge parameters
-                merged_params = {}
-                for pattern in patterns:
-                    for k, v in pattern.parameters.items():
-                        if k not in merged_params:
-                            merged_params[k] = []
-                        merged_params[k].append(v)
+            all_patterns = [p for _, patterns in occurrences for p in patterns]
+            avg_confidence = np.mean([p.confidence for p in all_patterns])
 
-                # Check parameter consistency
-                param_consistency = {}
-                for k, v in merged_params.items():
-                    unique_values = len(set([str(x) for x in v]))  # Convert to string for comparison
-                    param_consistency[k] = unique_values == 1
+            observed_values = defaultdict(list)
+            for pattern in all_patterns:
+                for k, v in pattern.parameters.items():
+                    observed_values[k].append(v)
 
-                overall_consistency = all(param_consistency.values()) if param_consistency else False
-                adjusted_confidence = avg_confidence * (1.0 if overall_consistency else 0.7)
+            common_values = self._agreed_parameters(occurrences)
+            fully_agreed = bool(observed_values) and len(common_values) == len(observed_values)
+            adjusted_confidence = avg_confidence * (1.0 if fully_agreed else 0.7)
 
-                consistent.append(TransformationPattern(
-                    pattern_type=pattern_type,
-                    description=f'{pattern_type} (appears in {min(len(patterns),len(self.subtasks_analyses))}/{len(self.subtasks_analyses)} examples)',
-                    confidence=adjusted_confidence,
-                    parameters={'values': merged_params, 'consistency': param_consistency}
-                ))
+            consistent.append(TransformationPattern(
+                pattern_type=pattern_type,
+                description=f'{pattern_type} (appears in {n_seen}/{n_examples} examples)',
+                confidence=adjusted_confidence,
+                parameters={
+                    'common_values': common_values,
+                    'values': dict(observed_values),
+                    'examples_seen': n_seen,
+                }
+            ))
 
         return sorted(consistent, key=lambda x: x.confidence, reverse=True)
+
+    @staticmethod
+    def _agreed_parameters(occurrences) -> Dict[str, Any]:
+        """Parameter values every example agreed on, for rendering into the
+        hypothesis and insight text.
+
+        A parameter qualifies only when each example that exhibited the
+        pattern reported it and reported the same value. Three cases are
+        deliberately excluded: a key only some examples produced, a value
+        that moved between them, and a lone example agreeing with itself.
+        Whatever fails to qualify has no entry at all - callers must be
+        able to tell "measured" from "not established", which is exactly
+        what a defaulted value destroys.
+        """
+        if len(occurrences) < 2:
+            return {}
+
+        disagreed = object()
+        per_example_values = []
+        for _, patterns in occurrences:
+            values = {}
+            for pattern in patterns:
+                for k, v in pattern.parameters.items():
+                    if k in values and str(values[k]) != str(v):
+                        values[k] = disagreed  # same example, two different answers
+                    else:
+                        values.setdefault(k, v)
+            per_example_values.append(values)
+
+        shared_keys = set(per_example_values[0])
+        for values in per_example_values[1:]:
+            shared_keys &= set(values)
+
+        agreed = {}
+        for key in shared_keys:
+            example_values = [values[key] for values in per_example_values]
+            if any(v is disagreed for v in example_values):
+                continue
+            if len({str(v) for v in example_values}) == 1:
+                agreed[key] = example_values[0]
+        return agreed
 
     def _synthesize_transformation_rules(self) -> List[str]:
         """Synthesize high-level transformation rules from consistent patterns."""
@@ -967,34 +1032,52 @@ class TaskAnalysis:
         if high_confidence_patterns:
             hypothesis_parts.append("HIGH CONFIDENCE RULES:")
             for pattern in high_confidence_patterns:
+                # A parameter missing from common_values did not hold across
+                # the examples. Say so instead of naming a value: the reader
+                # cannot tell a filled-in default from a measurement, so a
+                # plausible number here is worse than no number.
+                common = pattern.parameters.get('common_values', {})
+
                 if pattern.pattern_type == 'causal_shift':
-                    rule = pattern.parameters.get('common_values', {}).get('rule', 'unknown')
-                    hypothesis_parts.append(f"  • Objects are shifted based on: {rule.replace('_', ' ')}")
+                    if 'rule' in common:
+                        hypothesis_parts.append(
+                            f"  • Objects are shifted based on: {str(common['rule']).replace('_', ' ')}")
+                    else:
+                        hypothesis_parts.append("  • Objects are shifted, but the rule differs between examples")
 
                 elif pattern.pattern_type == 'aligned_addition':
-                    alignment = pattern.parameters.get('common_values', {}).get('alignment_type', 'unknown')
-                    hypothesis_parts.append(f"  • New objects are added {alignment} with existing objects")
+                    if 'alignment_type' in common:
+                        hypothesis_parts.append(
+                            f"  • New objects are added {common['alignment_type']} with existing objects")
+                    else:
+                        hypothesis_parts.append("  • New objects are added in line with existing ones (alignment differs between examples)")
 
                 elif pattern.pattern_type == 'shape_duplication':
                     hypothesis_parts.append("  • Shapes are duplicated from input to create new objects")
 
                 elif pattern.pattern_type == 'color_based_deletion':
-                    color = pattern.parameters.get('common_values', {}).get('color', 'unknown')
-                    hypothesis_parts.append(f"  • Objects with color {color} are removed")
+                    if 'color' in common:
+                        hypothesis_parts.append(f"  • Objects with color {common['color']} are removed")
+                    else:
+                        hypothesis_parts.append("  • Objects are removed by color, but the color differs between examples")
 
                 elif pattern.pattern_type == 'shape_based_deletion':
-                    shape = pattern.parameters.get('common_values', {}).get('shape', 'unknown')
-                    hypothesis_parts.append(f"  • All {shape} objects are removed")
+                    if 'shape' in common:
+                        hypothesis_parts.append(f"  • All {common['shape']} objects are removed")
+                    else:
+                        hypothesis_parts.append("  • Objects are removed by shape, but the shape differs between examples")
 
                 elif pattern.pattern_type == 'uniform_translation':
-                    shift = pattern.parameters.get('common_values', {}).get('shift', (0, 0))
-                    hypothesis_parts.append(f"  • All objects are translated by {shift}")
+                    if 'shift' in common:
+                        hypothesis_parts.append(f"  • All objects are translated by {common['shift']}")
+                    else:
+                        hypothesis_parts.append("  • All objects are translated, but the offset differs between examples")
 
                 elif pattern.pattern_type == 'color_mapping':
                     hypothesis_parts.append("  • Colors are mapped according to consistent rules")
 
                 elif pattern.pattern_type == 'size_scaling':
-                    factor = pattern.parameters.get('common_values', {}).get('scale_factor', 1.0)
+                    factor = common.get('scale_factor')
                     if isinstance(factor, (int, float)):
                         hypothesis_parts.append(f"  • Objects are scaled by factor {factor:.2f}")
                     else:
@@ -1020,26 +1103,39 @@ class TaskAnalysis:
         return "\n".join(hypothesis_parts)
 
     def get_actionable_insights(self) -> List[str]:
-        """Extract actionable transformation steps that could be programmed."""
+        """Extract actionable transformation steps that could be programmed.
+
+        Stricter than the hypothesis text above: an insight is meant to be
+        executable, and a step whose parameter never held across the
+        examples cannot be executed. Those are dropped rather than
+        softened into prose - the caller gets fewer steps, all of them
+        backed by a value every example agreed on.
+        """
         insights = []
 
         for pattern in self.consistent_patterns:
             if pattern.confidence < 0.7:
                 continue
 
+            common = pattern.parameters.get('common_values', {})
+
             if pattern.pattern_type == 'causal_shift':
-                rule = pattern.parameters.get('common_values', {}).get('rule', '')
+                rule = common.get('rule')
+                if not isinstance(rule, str):
+                    continue
                 if 'inner_holes' in rule:
                     insights.append("For each object: shift_amount = count(inner_holes)")
-                elif 'size' in rule:
-                    insights.append("For each object: shift_amount = object.size")
                 elif 'hor_size' in rule:
                     insights.append("For each object: horizontal_shift = object.hor_size")
                 elif 'vert_size' in rule:
                     insights.append("For each object: vertical_shift = object.vert_size")
+                elif 'size' in rule:
+                    insights.append("For each object: shift_amount = object.size")
 
             elif pattern.pattern_type == 'aligned_addition':
-                alignment = pattern.parameters.get('common_values', {}).get('alignment_type', '')
+                alignment = common.get('alignment_type')
+                if not isinstance(alignment, str):
+                    continue
                 if 'x_aligned' in alignment:
                     insights.append("Create new objects x-aligned with existing objects")
                 elif 'y_aligned' in alignment:
@@ -1049,22 +1145,22 @@ class TaskAnalysis:
                 insights.append("Duplicate shapes from input (possibly with transformations)")
 
             elif pattern.pattern_type == 'color_based_deletion':
-                color = pattern.parameters.get('common_values', {}).get('color', '')
-                insights.append(f"Delete all objects with color: {color}")
+                if 'color' in common:
+                    insights.append(f"Delete all objects with color: {common['color']}")
 
             elif pattern.pattern_type == 'shape_based_deletion':
-                shape = pattern.parameters.get('common_values', {}).get('shape', '')
-                insights.append(f"Delete all objects with shape: {shape}")
+                if 'shape' in common:
+                    insights.append(f"Delete all objects with shape: {common['shape']}")
 
             elif pattern.pattern_type == 'uniform_translation':
-                shift = pattern.parameters.get('common_values', {}).get('shift', (0, 0))
-                insights.append(f"Translate all objects by offset: {shift}")
+                if 'shift' in common:
+                    insights.append(f"Translate all objects by offset: {common['shift']}")
 
             elif pattern.pattern_type == 'color_mapping':
                 insights.append("Apply color mapping transformation to all objects")
 
             elif pattern.pattern_type == 'size_scaling':
-                factor = pattern.parameters.get('common_values', {}).get('scale_factor', '')
+                factor = common.get('scale_factor')
                 if isinstance(factor, (int, float)):
                     insights.append(f"Scale all objects by factor: {factor:.2f}")
 

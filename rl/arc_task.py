@@ -19,3 +19,10 @@ class ARCTask:
         self.test_inp = test_inp
         self.test_out = test_out
         self.test_subtask =  ARCSubtask(f'{label}_test', self.test_inp, self.test_out)
+
+    @property
+    def id(self):
+        """subsymbolic.llm_run.run_llm_over_tasks' generic task-id
+        contract - an alias, not a second identity: `label` remains the
+        name used throughout symbolic analysis."""
+        return self.label

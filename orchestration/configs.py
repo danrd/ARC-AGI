@@ -79,6 +79,13 @@ class ExperimentConfig(BaseModel):
     def to_chat_completions(self) -> dict:
         return self.generation.to_chat_completions(seed=self.base.seed)
 
+    def to_wandb_config(self) -> Dict[str, Any]:
+        """LLM-relevant slice for subsymbolic.llm_run.run_llm_over_tasks'
+        extra_config= - model identity/serving knobs plus sampling
+        params, so a run's own wandb metadata records what was actually
+        queried instead of a free-text description."""
+        return {**self.llm.model_dump(), **self.generation.model_dump()}
+
     def dump(self):
         with open("exp.yaml", "w") as f:
             yaml.safe_dump(self.model_dump(mode="json"), f, sort_keys=False)

@@ -3,7 +3,37 @@ from __future__ import annotations
 
 from orchestration.configs import ExperimentConfig
 from subsymbolic.llm_runtime import GenerationConfig
+from subsymbolic.llm_setup import LlmConfig
 from subsymbolic.prompt_builder import PromptingConfig
+
+
+def test_to_wandb_config_flattens_llm_and_generation_only():
+    """Not base/prompt/rl/system/logging/project - those aren't "what was
+    queried", they're run mechanics or unrelated subsystems."""
+    config = ExperimentConfig(llm=LlmConfig(model="my-model"),
+                               generation=GenerationConfig(temperature=0.7))
+
+    wandb_config = config.to_wandb_config()
+
+    assert wandb_config["model"] == "my-model"
+    assert wandb_config["temperature"] == 0.7
+    assert "blocks_dir" not in wandb_config  # that's PromptingConfig, not llm/generation
+    assert "seed" not in wandb_config  # that's BaseConfig
+
+
+def test_to_wandb_config_last_field_wins_on_name_collision():
+    """llm and generation are dumped separately then merged - if a name
+    ever collides between them, generation's value should be the one
+    that survives, since it's merged in second."""
+    config = ExperimentConfig()
+    llm_dump = config.llm.model_dump()
+    generation_dump = config.generation.model_dump()
+    shared_keys = set(llm_dump) & set(generation_dump)
+
+    wandb_config = config.to_wandb_config()
+
+    for key in shared_keys:
+        assert wandb_config[key] == generation_dump[key]
 
 
 def test_chat_template_kwargs_syncs_from_generation_to_prompt():

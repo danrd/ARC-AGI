@@ -291,21 +291,23 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     n_train = len(subtasks)
     n_cols = max(n_train, 4)  # bottom row always needs 4: input/prediction/diff/target
 
-    fig = plt.figure(figsize=(2.2 * n_cols, 5.8))
-    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1], hspace=0.35, wspace=0.15)
+    TITLE_KWARGS = {"fontsize": 8, "pad": 2}
+
+    fig = plt.figure(figsize=(1.8 * n_cols, 5.0))
+    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1], hspace=0.28, wspace=0.06)
 
     for i, subtask in enumerate(subtasks):
         ax_in = fig.add_subplot(gs[0, i])
         plot_grid(np.array(subtask.train_inp), ax=ax_in, cmap=ARC_CMAP, norm=ARC_NORM)
         ax_in.set_xticklabels([])
         ax_in.set_yticklabels([])
-        ax_in.set_title(f"Train {i + 1} input", fontsize=9)
+        ax_in.set_title(f"Train {i + 1} input", **TITLE_KWARGS)
 
         ax_out = fig.add_subplot(gs[1, i])
         plot_grid(np.array(subtask.train_out), ax=ax_out, cmap=ARC_CMAP, norm=ARC_NORM)
         ax_out.set_xticklabels([])
         ax_out.set_yticklabels([])
-        ax_out.set_title(f"Train {i + 1} output", fontsize=9)
+        ax_out.set_title(f"Train {i + 1} output", **TITLE_KWARGS)
 
     test_input = np.array(task.test_subtask.train_inp)
     target_grid = np.array(task.test_subtask.train_out)
@@ -314,13 +316,13 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     plot_grid(test_input, ax=ax_test, cmap=ARC_CMAP, norm=ARC_NORM)
     ax_test.set_xticklabels([])
     ax_test.set_yticklabels([])
-    ax_test.set_title("Test input", fontsize=9)
+    ax_test.set_title("Test input", **TITLE_KWARGS)
 
     ax_target = fig.add_subplot(gs[2, 1])
     plot_grid(target_grid, ax=ax_target, cmap=ARC_CMAP, norm=ARC_NORM)
     ax_target.set_xticklabels([])
     ax_target.set_yticklabels([])
-    ax_target.set_title("Test output", fontsize=9)
+    ax_target.set_title("Test output", **TITLE_KWARGS)
 
     ax_pred = fig.add_subplot(gs[2, 2])
     ax_diff = fig.add_subplot(gs[2, 3])
@@ -328,7 +330,7 @@ def plot_task_result(task, predicted_grid, eval_result=None):
 
     if predicted is not None and predicted.ndim == 2:
         plot_grid(predicted, ax=ax_pred, cmap=ARC_CMAP, norm=ARC_NORM)
-        ax_pred.set_title("Prediction", fontsize=9)
+        ax_pred.set_title("Prediction", **TITLE_KWARGS)
         overlay, is_correct = _correctness_overlay(predicted, target_grid)
         ax_diff.imshow(overlay, cmap=DIFF_CMAP, norm=DIFF_NORM)
         ax_diff.grid(True, which="both", color="white", linewidth=0.5)
@@ -340,10 +342,10 @@ def plot_task_result(task, predicted_grid, eval_result=None):
             diff_title = f"shape mismatch ({predicted.shape[0]}x{predicted.shape[1]} vs {target_grid.shape[0]}x{target_grid.shape[1]})"
         else:
             diff_title = "mismatch"
-        ax_diff.set_title(diff_title, fontsize=9)
+        ax_diff.set_title(diff_title, **TITLE_KWARGS)
     else:
         ax_pred.axis("off")
-        ax_pred.set_title("didn't parse into a grid", fontsize=9)
+        ax_pred.set_title("didn't parse into a grid", **TITLE_KWARGS)
         ax_diff.axis("off")
     ax_pred.set_xticklabels([])
     ax_pred.set_yticklabels([])
@@ -358,9 +360,9 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     else:
         bg = "#dddddd"
         title = f"task {task_id}"
-    fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg)
+    fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg, y=0.995)
 
-    fig.subplots_adjust(top=0.88, bottom=0.05, left=0.03, right=0.98)
+    fig.subplots_adjust(top=0.90, bottom=0.02, left=0.02, right=0.99)
     return fig
 
 

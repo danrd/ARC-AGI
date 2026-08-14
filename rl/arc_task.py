@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import numpy as np
 
 class ARCSubtask:
@@ -13,12 +13,19 @@ class ARCSubtask:
 
 class ARCTask:
     """Class for storing information for a task."""
-    def __init__(self, label:str, subtasks:List[ARCSubtask], test_inp:np.array, test_out:np.array):
+    def __init__(self, label:str, subtasks:List[ARCSubtask], test_inp:np.array, test_out:np.array,
+                 index:Optional[int]=None):
         self.label = label
         self.subtasks = subtasks
         self.test_inp = test_inp
         self.test_out = test_out
         self.test_subtask =  ARCSubtask(f'{label}_test', self.test_inp, self.test_out)
+        # The 0..N-1 numbering people actually work with day to day (task
+        # #37), as opposed to `label`/`id` (the ARC task's own hex-ish
+        # string key) - unset by default since it only means something
+        # relative to a specific dataset ordering; ARCDataset stamps it on
+        # after building self.tasks (see its own __init__).
+        self.index = index
 
     @property
     def id(self):

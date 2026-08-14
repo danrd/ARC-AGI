@@ -278,9 +278,12 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     pair (so the transformation the task is asking for is actually visible,
     not just its output), then the bottom row in the same input/output
     order - test input, test output (target), the model's prediction, and
-    a per-cell correctness overlay. Score/solved goes in a colored
-    suptitle - the one thing that must not be missable when skimming many
-    of these.
+    a per-cell correctness overlay. The score goes in a colored suptitle
+    (green/red background already encodes solved/not, so the text itself
+    stays to just the number) - the one thing that must not be missable
+    when skimming many of these. If `task` carries an `index` attribute
+    (e.g. ARCDataset stamps one on - the 0..N-1 numbering task.id itself
+    doesn't carry), the title leads with that instead of the bare id.
 
     Unlike plot_task_with_prediction, this reads straight off an in-memory
     ARCTask (task.subtasks / task.test_subtask) - no ARCDataset lookup by
@@ -354,12 +357,14 @@ def plot_task_result(task, predicted_grid, eval_result=None):
         fig.add_subplot(gs[2, extra_col]).axis("off")
 
     task_id = getattr(task, "id", getattr(task, "label", "?"))
+    task_index = getattr(task, "index", None)
+    task_label = f"task {task_index} ({task_id})" if task_index is not None else f"task {task_id}"
     if eval_result is not None:
         bg = "#c8f0c8" if eval_result.solved else "#f0c8c8"
-        title = f"task {task_id}: score={eval_result.primary_score:.3f} solved={eval_result.solved}"
+        title = f"{task_label}: score={eval_result.primary_score:.3f}"
     else:
         bg = "#dddddd"
-        title = f"task {task_id}"
+        title = task_label
     fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg, y=0.995)
 
     fig.subplots_adjust(top=0.90, bottom=0.02, left=0.02, right=0.99)

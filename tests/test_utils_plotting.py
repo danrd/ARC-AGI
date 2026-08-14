@@ -227,7 +227,33 @@ def test_plot_task_result_shows_every_train_pair_and_the_task_id():
     assert sum(t.startswith("Train") and t.endswith("input") for t in titles) == 3
     assert sum(t.startswith("Train") and t.endswith("output") for t in titles) == 3
     assert "faketask" in fig.get_suptitle()
-    assert "solved=True" in fig.get_suptitle()
+    plt.close(fig)
+
+
+def test_plot_task_result_suptitle_has_only_the_score_not_solved():
+    """solved is already conveyed by the suptitle's background color -
+    spelling it out in the text too was redundant clutter."""
+    task = _fake_task()
+
+    fig = plot_task_result(task, predicted_grid=task.test_subtask.train_out,
+                            eval_result=SimpleNamespace(primary_score=0.827, solved=True))
+
+    assert "score=0.827" in fig.get_suptitle()
+    assert "solved" not in fig.get_suptitle().lower()
+    plt.close(fig)
+
+
+def test_plot_task_result_leads_with_index_when_the_task_carries_one():
+    """task.index (e.g. stamped on by ARCDataset) is the 0..N-1 numbering
+    people actually track day to day - shown ahead of the raw id when
+    present, and simply absent (not crashing) when it isn't."""
+    task = _fake_task()
+    task.index = 37
+
+    fig = plot_task_result(task, predicted_grid=task.test_subtask.train_out,
+                            eval_result=SimpleNamespace(primary_score=1.0, solved=True))
+
+    assert "task 37 (faketask)" in fig.get_suptitle()
     plt.close(fig)
 
 

@@ -45,27 +45,14 @@ def arc_result_plotter(task, generated_text: str, eval_result: EvalResult,
                         colors_str: bool = False, expected_prefix: str = ""):
     """The wandb-loggable counterpart to arc_grid_evaluator: parses
     generated_text the same way (same colors_str/expected_prefix, so the
-    picture matches what was actually scored) and renders it as a
-    side-by-side grid comparison instead of a score. Wired in as
-    run_llm_over_tasks' result_plotter - only called when
-    WandbLogConfig.log_result_plot is on.
+    picture matches what was actually scored) and renders the whole task -
+    every train pair plus test input/prediction/target - via
+    utils.plotting.plot_task_result. Wired in as run_llm_over_tasks'
+    result_plotter - only built when WandbLogConfig.log_result_plot or
+    show_progress is on.
     """
-    from utils.plotting import plot_grid, plot_grids_comparison  # lazy: matplotlib shouldn't be required just to score
+    from utils.plotting import plot_task_result  # lazy: matplotlib shouldn't be required just to score
 
-    test_input = np.array(task.test_subtask.train_inp)
-    target_grid = np.array(task.test_subtask.train_out)
     parsed = parse_llm_output(expected_prefix + generated_text, colors_str=colors_str)
-
-    if isinstance(parsed, np.ndarray) and parsed.ndim == 2:
-        fig = plot_grids_comparison(test_input, parsed, target_grid=target_grid)
-    else:
-        # generated_text didn't parse into a grid at all - nothing to
-        # compare cell-by-cell, so just show what the correct answer
-        # should have been.
-        import matplotlib.pyplot as plt
-        fig = plt.figure()
-        plot_grid(target_grid)
-        plt.title("Prediction did not parse into a grid - showing target only")
-
-    fig.suptitle(f"score={eval_result.primary_score:.2f} solved={eval_result.solved}")
-    return fig
+    predicted_grid = parsed if isinstance(parsed, np.ndarray) and parsed.ndim == 2 else None
+    return plot_task_result(task, predicted_grid, eval_result=eval_result)

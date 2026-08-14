@@ -273,6 +273,95 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
     plt.tight_layout()
     return fig
 
+def plot_task_result(task, predicted_grid, eval_result=None):
+    """Everything needed to judge one prediction at a glance: every train
+    pair (so the transformation the task is asking for is actually visible,
+    not just its output), then test input / prediction / target with a
+    per-cell correctness overlay. Score/solved goes in a colored suptitle -
+    the one thing that must not be missable when skimming many of these.
+
+    Unlike plot_task_with_prediction, this reads straight off an in-memory
+    ARCTask (task.subtasks / task.test_subtask) - no ARCDataset lookup by
+    id needed, so it works from anywhere a task object is already at hand
+    (e.g. subsymbolic.arc_evaluators.arc_result_plotter, mid-inference).
+    """
+    subtasks = task.subtasks
+    n_train = len(subtasks)
+    n_cols = max(n_train, 4)  # bottom row always needs 4: input/prediction/diff/target
+
+    fig = plt.figure(figsize=(2.6 * n_cols, 6.5))
+    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1])
+
+    for i, subtask in enumerate(subtasks):
+        ax_in = fig.add_subplot(gs[0, i])
+        plot_grid(np.array(subtask.train_inp), ax=ax_in, cmap=ARC_CMAP, norm=ARC_NORM)
+        ax_in.set_xticklabels([])
+        ax_in.set_yticklabels([])
+        ax_in.set_title(f"Train {i + 1} input", fontsize=9)
+
+        ax_out = fig.add_subplot(gs[1, i])
+        plot_grid(np.array(subtask.train_out), ax=ax_out, cmap=ARC_CMAP, norm=ARC_NORM)
+        ax_out.set_xticklabels([])
+        ax_out.set_yticklabels([])
+        ax_out.set_title(f"Train {i + 1} output", fontsize=9)
+
+    test_input = np.array(task.test_subtask.train_inp)
+    target_grid = np.array(task.test_subtask.train_out)
+
+    ax_test = fig.add_subplot(gs[2, 0])
+    plot_grid(test_input, ax=ax_test, cmap=ARC_CMAP, norm=ARC_NORM)
+    ax_test.set_xticklabels([])
+    ax_test.set_yticklabels([])
+    ax_test.set_title("Test input", fontsize=9)
+
+    ax_pred = fig.add_subplot(gs[2, 1])
+    ax_diff = fig.add_subplot(gs[2, 2])
+    predicted = np.asarray(predicted_grid) if predicted_grid is not None else None
+
+    if predicted is not None and predicted.ndim == 2:
+        plot_grid(predicted, ax=ax_pred, cmap=ARC_CMAP, norm=ARC_NORM)
+        ax_pred.set_title("Prediction", fontsize=9)
+        overlay, is_correct = _correctness_overlay(predicted, target_grid)
+        ax_diff.imshow(overlay, cmap=DIFF_CMAP, norm=DIFF_NORM)
+        ax_diff.grid(True, which="both", color="white", linewidth=0.5)
+        ax_diff.set_xticks(np.arange(-0.5, overlay.shape[1]), [])
+        ax_diff.set_yticks(np.arange(-0.5, overlay.shape[0]), [])
+        if is_correct:
+            diff_title = "MATCH"
+        elif predicted.shape != target_grid.shape:
+            diff_title = f"shape mismatch ({predicted.shape[0]}x{predicted.shape[1]} vs {target_grid.shape[0]}x{target_grid.shape[1]})"
+        else:
+            diff_title = "mismatch"
+        ax_diff.set_title(diff_title, fontsize=9)
+    else:
+        ax_pred.axis("off")
+        ax_pred.set_title("didn't parse into a grid", fontsize=9)
+        ax_diff.axis("off")
+    ax_pred.set_xticklabels([])
+    ax_pred.set_yticklabels([])
+
+    ax_target = fig.add_subplot(gs[2, 3])
+    plot_grid(target_grid, ax=ax_target, cmap=ARC_CMAP, norm=ARC_NORM)
+    ax_target.set_xticklabels([])
+    ax_target.set_yticklabels([])
+    ax_target.set_title("Target", fontsize=9)
+
+    for extra_col in range(4, n_cols):
+        fig.add_subplot(gs[2, extra_col]).axis("off")
+
+    task_id = getattr(task, "id", getattr(task, "label", "?"))
+    if eval_result is not None:
+        bg = "#c8f0c8" if eval_result.solved else "#f0c8c8"
+        title = f"task {task_id}: score={eval_result.primary_score:.3f} solved={eval_result.solved}"
+    else:
+        bg = "#dddddd"
+        title = f"task {task_id}"
+    fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg)
+
+    plt.tight_layout(rect=(0, 0, 1, 0.96))
+    return fig
+
+
 def plot_task_with_prediction(task_id: str, dataset: ARCDataset, predicted_grid: np.ndarray, test_idx: int = 0):
     """The two views someone reviewing "did we solve this task" needs
     together: the whole task (plot_task) plus how the prediction for

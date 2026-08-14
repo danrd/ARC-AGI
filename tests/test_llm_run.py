@@ -337,6 +337,7 @@ class _FakeSubtask:
 @dataclass
 class _FakeArcTask:
     test_subtask: _FakeSubtask = field(default_factory=lambda: _FakeSubtask(np.array([[1, 2], [3, 4]])))
+    subtasks: List[_FakeSubtask] = field(default_factory=list)
 
 
 def test_arc_grid_evaluator_exact_match():

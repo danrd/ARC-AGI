@@ -27,6 +27,7 @@ from utils.plotting import (
     plot_multiple_tasks,
     plot_shape,
     plot_task,
+    plot_task_result,
     plot_task_with_prediction,
 )
 
@@ -202,3 +203,64 @@ def test_plot_task_with_prediction_correct_and_incorrect():
     plt.close(fig_task)
     plt.close(fig_cmp_correct)
     plt.close(fig_cmp_wrong)
+
+
+def _fake_task(n_train: int = 2):
+    """Minimal stand-in for rl.arc_task.ARCTask - only what plot_task_result
+    actually reads (task.subtasks[i].train_inp/.train_out, task.test_subtask,
+    task.id)."""
+    subtasks = [
+        SimpleNamespace(train_inp=np.array([[1, 0], [0, 1]]), train_out=np.array([[0, 1], [1, 0]]))
+        for _ in range(n_train)
+    ]
+    test_subtask = SimpleNamespace(train_inp=np.array([[1, 1], [0, 0]]), train_out=np.array([[0, 0], [1, 1]]))
+    return SimpleNamespace(subtasks=subtasks, test_subtask=test_subtask, id="faketask")
+
+
+def test_plot_task_result_shows_every_train_pair_and_the_task_id():
+    task = _fake_task(n_train=3)
+
+    fig = plot_task_result(task, predicted_grid=task.test_subtask.train_out,
+                            eval_result=SimpleNamespace(primary_score=1.0, solved=True))
+
+    titles = _title_texts(fig)
+    assert sum(t.startswith("Train") and t.endswith("input") for t in titles) == 3
+    assert sum(t.startswith("Train") and t.endswith("output") for t in titles) == 3
+    assert "faketask" in fig.get_suptitle()
+    assert "solved=True" in fig.get_suptitle()
+    plt.close(fig)
+
+
+def test_plot_task_result_reports_match_for_a_correct_prediction():
+    task = _fake_task()
+
+    fig = plot_task_result(task, predicted_grid=task.test_subtask.train_out,
+                            eval_result=SimpleNamespace(primary_score=1.0, solved=True))
+
+    assert any("MATCH" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_task_result_reports_shape_mismatch_with_dimensions():
+    task = _fake_task()
+    wrong_shape_prediction = np.zeros((5, 5), dtype=int)
+
+    fig = plot_task_result(task, predicted_grid=wrong_shape_prediction,
+                            eval_result=SimpleNamespace(primary_score=0.0, solved=False))
+
+    assert any("shape mismatch" in t and "5x5" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_task_result_handles_a_prediction_that_never_parsed():
+    """predicted_grid=None (arc_result_plotter's signal that generated_text
+    didn't parse into a grid at all) must not crash - there's nothing to
+    compare cell-by-cell, so the prediction/diff panels are just left
+    empty instead."""
+    task = _fake_task()
+
+    fig = plot_task_result(task, predicted_grid=None,
+                            eval_result=SimpleNamespace(primary_score=0.0, solved=False))
+
+    assert any("didn't parse" in t for t in _title_texts(fig))
+    plt.close(fig)

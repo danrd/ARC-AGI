@@ -541,8 +541,14 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 extractors[key] = self.extr_arch
                 total_concat_size += self.extr_arch[2].out_channels
                 # print(f'cnn_concat_size: {total_concat_size}')
+            elif key == 'action_space':
+                # The action space's own .nvec (varies per task) - ARCGridWorld
+                # includes it in every observation so the policy can see it,
+                # but it's not a feature to embed: forward() below never
+                # reads it, same as ARCGNNExtractor/ARCSeparateExtractor.
+                continue
             else:
-                raise(f'Unknown feature: {key}')
+                raise ValueError(f'Unknown feature: {key}')
 
         self.extractors = nn.ModuleDict(extractors)
         # print(f'total_concat_size: {total_concat_size}')

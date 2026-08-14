@@ -9,11 +9,10 @@ agent.learn() exactly as rl.training's own train_on_subtask does - it
 doesn't work around any pre-existing bugs in that pipeline. As of this
 writing, a live end-to-end run still hits an unrelated observation_space
 mismatch inside vec_env.reset() (declared objects_emb shape vs. actual
-embedding shape) and a missing vec_env.shapes_match attribute in
-create_agent - both pre-existing, both out of scope here. tests/
+embedding shape) - pre-existing, out of scope here. tests/
 test_rl_arc_hp_search.py verifies this module's own wiring/logic against
 mocked training instead of a live run; re-verify against a real run once
-those are fixed.
+that's fixed.
 """
 from __future__ import annotations
 

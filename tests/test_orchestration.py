@@ -202,13 +202,12 @@ def test_make_module_dispatch_fn_routes_symbolic_and_subsymbolic(arc_task, tiny_
     pconf = PromptingConfig(blocks=["general_instruction", "examples", "output_format"],
                              token_limit=4096, min_examples=1, filters=["grid"], resolvers=["examples"])
     experiment_config = ExperimentConfig(prompt=pconf)
-    subsymbolic_module = SubsymbolicModule(experiment_config, tiny_tokenizer)
 
     class _FakeRunner:
         def generate(self, prompt):
             return "FAKE_OUTPUT"
 
-    subsymbolic_module._runner = _FakeRunner()
+    subsymbolic_module = SubsymbolicModule(experiment_config, tiny_tokenizer, runner=_FakeRunner())
 
     dispatch = make_module_dispatch_fn(symbolic_module=SymbolicModule(), subsymbolic_module=subsymbolic_module)
 

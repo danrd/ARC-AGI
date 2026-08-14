@@ -7,8 +7,13 @@ SubsymbolicModule().solve(task) directly to attempt a solution, with the
 same result shape (a dict with "solution" and "module_results") so
 orchestration can treat both the same way.
 
-The runner (a live model/server connection) is expensive to build, so
-it's constructed once, lazily, on first use rather than per solve() call.
+The runner (a live model/server connection) is expensive to build, so by
+default it's constructed once, lazily, on first use rather than per
+solve() call - or pass an already-built one via `runner=` (e.g.
+llm_runtime.build_openrouter_runner(experiment_config), or a fake for
+testing) to skip build_runner entirely and use experiment_config only
+for prompting; useful for running a local and a hosted module side by
+side off the same config without mutating it.
 tokenizer / ExperimentConfig (which already carries the PromptingConfig
 PromptBuilder needs, as its `prompt` field) are expected to be assembled
 once at the system level and passed in here — logging, memory, and
@@ -29,12 +34,12 @@ from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
 
 class SubsymbolicModule:
-    def __init__(self, experiment_config, tokenizer):
+    def __init__(self, experiment_config, tokenizer, runner=None):
         self.builder = PromptBuilder(experiment_config.prompt, tokenizer,
                                       resolver_registry=RESOLVER_REGISTRY,
                                       filter_registry=FILTER_REGISTRY)
         self.experiment_config = experiment_config
-        self._runner = None
+        self._runner = runner  # allows injecting an already-built runner - see module docstring
 
     @property
     def runner(self):

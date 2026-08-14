@@ -276,9 +276,11 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
 def plot_task_result(task, predicted_grid, eval_result=None):
     """Everything needed to judge one prediction at a glance: every train
     pair (so the transformation the task is asking for is actually visible,
-    not just its output), then test input / prediction / target with a
-    per-cell correctness overlay. Score/solved goes in a colored suptitle -
-    the one thing that must not be missable when skimming many of these.
+    not just its output), then the bottom row in the same input/output
+    order - test input, test output (target), the model's prediction, and
+    a per-cell correctness overlay. Score/solved goes in a colored
+    suptitle - the one thing that must not be missable when skimming many
+    of these.
 
     Unlike plot_task_with_prediction, this reads straight off an in-memory
     ARCTask (task.subtasks / task.test_subtask) - no ARCDataset lookup by
@@ -289,8 +291,8 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     n_train = len(subtasks)
     n_cols = max(n_train, 4)  # bottom row always needs 4: input/prediction/diff/target
 
-    fig = plt.figure(figsize=(2.6 * n_cols, 6.5))
-    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1])
+    fig = plt.figure(figsize=(2.2 * n_cols, 5.8))
+    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1], hspace=0.35, wspace=0.15)
 
     for i, subtask in enumerate(subtasks):
         ax_in = fig.add_subplot(gs[0, i])
@@ -314,8 +316,14 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     ax_test.set_yticklabels([])
     ax_test.set_title("Test input", fontsize=9)
 
-    ax_pred = fig.add_subplot(gs[2, 1])
-    ax_diff = fig.add_subplot(gs[2, 2])
+    ax_target = fig.add_subplot(gs[2, 1])
+    plot_grid(target_grid, ax=ax_target, cmap=ARC_CMAP, norm=ARC_NORM)
+    ax_target.set_xticklabels([])
+    ax_target.set_yticklabels([])
+    ax_target.set_title("Test output", fontsize=9)
+
+    ax_pred = fig.add_subplot(gs[2, 2])
+    ax_diff = fig.add_subplot(gs[2, 3])
     predicted = np.asarray(predicted_grid) if predicted_grid is not None else None
 
     if predicted is not None and predicted.ndim == 2:
@@ -340,12 +348,6 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     ax_pred.set_xticklabels([])
     ax_pred.set_yticklabels([])
 
-    ax_target = fig.add_subplot(gs[2, 3])
-    plot_grid(target_grid, ax=ax_target, cmap=ARC_CMAP, norm=ARC_NORM)
-    ax_target.set_xticklabels([])
-    ax_target.set_yticklabels([])
-    ax_target.set_title("Target", fontsize=9)
-
     for extra_col in range(4, n_cols):
         fig.add_subplot(gs[2, extra_col]).axis("off")
 
@@ -358,7 +360,7 @@ def plot_task_result(task, predicted_grid, eval_result=None):
         title = f"task {task_id}"
     fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg)
 
-    plt.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.subplots_adjust(top=0.88, bottom=0.05, left=0.03, right=0.98)
     return fig
 
 

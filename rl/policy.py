@@ -69,6 +69,15 @@ class ARCCustomNetwork(nn.Module):
             # Second head for the rest dimensions
             self.policy_nets.append(nn.Linear(self.latent_dim_pi, sum(action_dims[1:])))
         elif action_heads == 3:
+            # KNOWN LIMITATION: this branch hardcodes indices assuming a
+            # 5-dimensional action space (type + 2 coordinate pairs) -
+            # ARCGridWorld's action_space is always 3-dimensional
+            # (type + object1_idx + object2_idx, see arc_env.py's
+            # set_subtask), so action_dims[3]/[4] raise IndexError with
+            # every current config. Every other branch here is dim-count-
+            # agnostic (1: sum(), 2: slice, 5: loop over all dims) - only
+            # this one assumes a stale action-space shape. Use
+            # action_heads=1, 2, or 5 until this is redesigned for 3 dims.
             # First head for action type
             self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
             # Second head for first two coordinates

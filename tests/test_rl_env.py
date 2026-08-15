@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from rl.arc_env import ARCGridWorld
-from rl.training import create_vec_env
+from rl.training import create_agent, create_vec_env
 
 SUBMIT_ONLY = {0: "submit"}
 SUBMIT_AND_ROTATE = {0: "submit", 1: "rotate90"}
@@ -232,3 +232,21 @@ def test_create_vec_env_accepts_a_single_subtask_wrapped_in_a_list(subtask):
     vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5,
                               feasible_actions=SUBMIT_AND_ROTATE)
     assert vec_env.num_envs == 1
+
+
+def test_create_agent_builds_a_real_ppo_agent_from_default_config(subtask):
+    """Regression test: create_agent used to read vec_env.shapes_match, an
+    attribute nothing ever set (not create_vec_env, not ARCGridWorld) -
+    AttributeError on every real training run. action_heads=5 (not the
+    project default of 3) is used deliberately here: ARCCustomNetwork's
+    action_heads=3 branch hardcodes indices assuming a 5-dimensional
+    action space that no longer exists (ARCGridWorld's is always 3-
+    dimensional) - a separate, still-open issue, out of scope for this
+    test."""
+    vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5, feasible_actions=SUBMIT_ONLY)
+    try:
+        agent = create_agent(rl_config={"model_type": "PPO"}, vec_env=vec_env,
+                              model_config={"action_heads": 5})
+        assert agent is not None
+    finally:
+        vec_env.close()

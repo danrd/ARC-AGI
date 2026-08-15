@@ -278,18 +278,12 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     pair (so the transformation the task is asking for is actually visible,
     not just its output), then the bottom row in the same input/output
     order - test input, test output (target), the model's prediction, and
-    a per-cell correctness overlay. Score/solved goes in a colored
-    suptitle - the one thing that must not be missable when skimming many
-    of these.
-
-    Column/row sizes are weighted by each panel's own grid dimensions
-    (subgridspec width_ratios/height_ratios), not left uniform: ARC grids
-    within one task can differ hugely in aspect ratio (a couple of sparse
-    markers on a wide canvas next to a small dense pattern), and
-    imshow's forced square-pixel aspect means a uniform cell just
-    letterboxes the mismatched ones - most of the cell going to blank
-    margin around a tiny correctly-scaled image instead of the image
-    actually filling its cell.
+    a per-cell correctness overlay. The score goes in a colored suptitle
+    (green/red background already encodes solved/not, so the text itself
+    stays to just the number) - the one thing that must not be missable
+    when skimming many of these. If `task` carries an `index` attribute
+    (e.g. ARCDataset stamps one on - the 0..N-1 numbering task.id itself
+    doesn't carry), the title leads with that instead of the bare id.
 
     Unlike plot_task_with_prediction, this reads straight off an in-memory
     ARCTask (task.subtasks / task.test_subtask) - no ARCDataset lookup by
@@ -298,69 +292,46 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     """
     subtasks = task.subtasks
     n_train = len(subtasks)
+    n_cols = max(n_train, 4)  # bottom row always needs 4: input/prediction/diff/target
+
     TITLE_KWARGS = {"fontsize": 8, "pad": 2}
+
+    fig = plt.figure(figsize=(1.8 * n_cols, 5.0))
+    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1], hspace=0.28, wspace=0.06)
+
+    for i, subtask in enumerate(subtasks):
+        ax_in = fig.add_subplot(gs[0, i])
+        plot_grid(np.array(subtask.train_inp), ax=ax_in, cmap=ARC_CMAP, norm=ARC_NORM)
+        ax_in.set_xticklabels([])
+        ax_in.set_yticklabels([])
+        ax_in.set_title(f"Train {i + 1} input", **TITLE_KWARGS)
+
+        ax_out = fig.add_subplot(gs[1, i])
+        plot_grid(np.array(subtask.train_out), ax=ax_out, cmap=ARC_CMAP, norm=ARC_NORM)
+        ax_out.set_xticklabels([])
+        ax_out.set_yticklabels([])
+        ax_out.set_title(f"Train {i + 1} output", **TITLE_KWARGS)
 
     test_input = np.array(task.test_subtask.train_inp)
     target_grid = np.array(task.test_subtask.train_out)
-    predicted = np.asarray(predicted_grid) if predicted_grid is not None else None
-    has_prediction = predicted is not None and predicted.ndim == 2
 
-    # Bottom row's 4 slots: test input, target, prediction, diff. The diff
-    # overlay is always target_grid's own shape (see _correctness_overlay),
-    # and the prediction slot falls back to target_grid's width too when
-    # there's nothing to draw there - it's an empty axis either way.
-    test_row_grids = [test_input, target_grid, predicted if has_prediction else target_grid, target_grid]
-    test_row_widths = [g.shape[1] for g in test_row_grids]
-    test_row_height = max(g.shape[0] for g in test_row_grids)
-
-    n_cols = max(n_train, 4)  # bottom row always needs 4: input/target/prediction/diff
-    train_col_widths = [max(s.train_inp.shape[1], s.train_out.shape[1]) for s in subtasks]
-    train_row_heights = [
-        max((s.train_inp.shape[0] for s in subtasks), default=1),
-        max((s.train_out.shape[0] for s in subtasks), default=1),
-    ]
-
-    fig = plt.figure(figsize=(1.8 * n_cols, 5.6))
-    outer = fig.add_gridspec(
-        2, 1,
-        height_ratios=[sum(train_row_heights) if n_train else 1, test_row_height * 1.3],
-        hspace=0.12,
-    )
-
-    if n_train:
-        train_gs = outer[0].subgridspec(2, n_train, width_ratios=train_col_widths,
-                                         height_ratios=train_row_heights, hspace=0.35, wspace=0.08)
-        for i, subtask in enumerate(subtasks):
-            ax_in = fig.add_subplot(train_gs[0, i])
-            plot_grid(np.array(subtask.train_inp), ax=ax_in, cmap=ARC_CMAP, norm=ARC_NORM)
-            ax_in.set_xticklabels([])
-            ax_in.set_yticklabels([])
-            ax_in.set_title(f"Train {i + 1} input", **TITLE_KWARGS)
-
-            ax_out = fig.add_subplot(train_gs[1, i])
-            plot_grid(np.array(subtask.train_out), ax=ax_out, cmap=ARC_CMAP, norm=ARC_NORM)
-            ax_out.set_xticklabels([])
-            ax_out.set_yticklabels([])
-            ax_out.set_title(f"Train {i + 1} output", **TITLE_KWARGS)
-
-    test_gs = outer[1].subgridspec(1, 4, width_ratios=test_row_widths, wspace=0.12)
-
-    ax_test = fig.add_subplot(test_gs[0, 0])
+    ax_test = fig.add_subplot(gs[2, 0])
     plot_grid(test_input, ax=ax_test, cmap=ARC_CMAP, norm=ARC_NORM)
     ax_test.set_xticklabels([])
     ax_test.set_yticklabels([])
     ax_test.set_title("Test input", **TITLE_KWARGS)
 
-    ax_target = fig.add_subplot(test_gs[0, 1])
+    ax_target = fig.add_subplot(gs[2, 1])
     plot_grid(target_grid, ax=ax_target, cmap=ARC_CMAP, norm=ARC_NORM)
     ax_target.set_xticklabels([])
     ax_target.set_yticklabels([])
     ax_target.set_title("Test output", **TITLE_KWARGS)
 
-    ax_pred = fig.add_subplot(test_gs[0, 2])
-    ax_diff = fig.add_subplot(test_gs[0, 3])
+    ax_pred = fig.add_subplot(gs[2, 2])
+    ax_diff = fig.add_subplot(gs[2, 3])
+    predicted = np.asarray(predicted_grid) if predicted_grid is not None else None
 
-    if has_prediction:
+    if predicted is not None and predicted.ndim == 2:
         plot_grid(predicted, ax=ax_pred, cmap=ARC_CMAP, norm=ARC_NORM)
         ax_pred.set_title("Prediction", **TITLE_KWARGS)
         overlay, is_correct = _correctness_overlay(predicted, target_grid)
@@ -382,13 +353,18 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     ax_pred.set_xticklabels([])
     ax_pred.set_yticklabels([])
 
+    for extra_col in range(4, n_cols):
+        fig.add_subplot(gs[2, extra_col]).axis("off")
+
     task_id = getattr(task, "id", getattr(task, "label", "?"))
+    task_index = getattr(task, "index", None)
+    task_label = f"task {task_index} ({task_id})" if task_index is not None else f"task {task_id}"
     if eval_result is not None:
         bg = "#c8f0c8" if eval_result.solved else "#f0c8c8"
-        title = f"task {task_id}: score={eval_result.primary_score:.3f} solved={eval_result.solved}"
+        title = f"{task_label}: score={eval_result.primary_score:.3f}"
     else:
         bg = "#dddddd"
-        title = f"task {task_id}"
+        title = task_label
     fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg, y=0.995)
 
     fig.subplots_adjust(top=0.90, bottom=0.02, left=0.02, right=0.99)

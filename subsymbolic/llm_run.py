@@ -86,7 +86,11 @@ def run_llm_over_tasks(
         show_progress: print each task's score as it's scored, and (if
             result_plotter is set) display its figure inline via
             plt.show() - live feedback for a notebook-driven run, instead
-            of only being visible later on the wandb dashboard.
+            of only being visible later on the wandb dashboard. The
+            printed line leads with `task.index` instead of the bare id
+            when a task happens to carry one - purely an optional,
+            generic attribute as far as this loop is concerned, not an
+            ARC-specific contract.
 
     Returns {"results": [...], "solved_tasks": [...], "avg_score": float}.
     """
@@ -148,7 +152,9 @@ def run_llm_over_tasks(
             fig = result_plotter(task, generation, eval_result)
 
         if show_progress:
-            print(f"task {task_id}: score={eval_result.primary_score:.3f} solved={eval_result.solved}")
+            task_index = getattr(task, "index", None)
+            task_label = f"task {task_index} ({task_id})" if task_index is not None else f"task {task_id}"
+            print(f"{task_label}: score={eval_result.primary_score:.3f} solved={eval_result.solved}")
             if fig is not None:
                 import matplotlib.pyplot as plt  # lazy: show_progress is opt-in, plotting shouldn't be a hard dependency otherwise
                 plt.show()

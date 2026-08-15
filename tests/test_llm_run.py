@@ -149,9 +149,12 @@ def _fake_module(prompts, generations):
 
 class _FakeTask:
     """A minimal stand-in for run_llm_over_tasks' generic task contract -
-    only the `.id` it actually requires."""
-    def __init__(self, id):
+    only the `.id` it actually requires. `.index` is optional (None by
+    default) - run_llm_over_tasks only reads it opportunistically for
+    show_progress's printed line, never requires it."""
+    def __init__(self, id, index=None):
         self.id = id
+        self.index = index
 
     def __repr__(self):
         return f"_FakeTask({self.id!r})"
@@ -312,6 +315,25 @@ def test_show_progress_prints_the_score_line(fake_wandb, capsys):
     assert "task t1: score=1.000 solved=True" in out
 
 
+def test_show_progress_leads_with_index_when_the_task_carries_one(fake_wandb, capsys):
+    """task.index is an optional, generic attribute as far as this loop is
+    concerned - present here purely to check the printed line picks it up
+    when set, not because run_llm_over_tasks requires or knows about ARC's
+    own 0..N-1 task numbering."""
+    prompts = {"t1": "prompt-1"}
+    generations = {"prompt-1": "CORRECT"}
+    module = _fake_module(prompts, generations)
+
+    run_llm_over_tasks(
+        tasks=[_FakeTask("t1", index=37)], subsymbolic_module=module, evaluator=_exact_match_evaluator,
+        log_config=WandbLogConfig(project="test-proj"),
+        show_progress=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "task 37 (t1): score=1.000 solved=True" in out
+
+
 def test_show_progress_off_by_default_prints_nothing_about_score(fake_wandb, capsys):
     prompts = {"t1": "prompt-1"}
     generations = {"prompt-1": "CORRECT"}
@@ -373,7 +395,6 @@ def test_arc_result_plotter_renders_a_comparison_for_a_well_formed_prediction():
 
     assert len(fig.axes) > 0
     assert "score=1.00" in fig.get_suptitle()
-    assert "solved=True" in fig.get_suptitle()
 
 
 def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_parse():
@@ -388,7 +409,7 @@ def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_p
     fig = arc_result_plotter(task, generated, eval_result)
 
     assert len(fig.axes) > 0
-    assert "solved=False" in fig.get_suptitle()
+    assert "score=" in fig.get_suptitle()
 
 
 def test_arc_result_plotter_parses_with_the_same_options_as_the_evaluator():

@@ -308,7 +308,8 @@ def plot_task_result(task, predicted_grid, eval_result=None, raw_text=None):
     if predicted is not None and predicted.ndim == 2:
         plot_grid(predicted, ax=axes[1], cmap=ARC_CMAP, norm=ARC_NORM)
         similarity = eval_result.primary_score if eval_result is not None else None
-        axes[1].set_title(f"Prediction with similarity {similarity}")
+        similarity_text = f"{similarity:.2f}" if similarity is not None else "None"
+        axes[1].set_title(f"Prediction with similarity {similarity_text}")
     else:
         axes[1].set_title("Prediction did not parse into a grid")
         axes[1].set_xticks([])

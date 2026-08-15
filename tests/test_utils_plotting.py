@@ -230,7 +230,19 @@ def test_plot_task_result_shows_similarity_on_the_prediction_panel():
     fig = plot_task_result(task, predicted_grid=task.test_subtask.train_out,
                             eval_result=SimpleNamespace(primary_score=0.827, solved=False))
 
-    assert any("Prediction with similarity 0.827" in t for t in _title_texts(fig))
+    assert any("Prediction with similarity 0.83" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_task_result_rounds_similarity_to_two_decimal_places():
+    task = _fake_task()
+
+    fig = plot_task_result(task, predicted_grid=task.test_subtask.train_out,
+                            eval_result=SimpleNamespace(primary_score=0.123456789, solved=False))
+
+    titles = _title_texts(fig)
+    assert any("Prediction with similarity 0.12" in t for t in titles)
+    assert not any("0.123456789" in t for t in titles)
     plt.close(fig)
 
 

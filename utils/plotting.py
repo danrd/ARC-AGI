@@ -274,100 +274,44 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
     return fig
 
 def plot_task_result(task, predicted_grid, eval_result=None):
-    """Everything needed to judge one prediction at a glance: every train
-    pair (so the transformation the task is asking for is actually visible,
-    not just its output), then the bottom row in the same input/output
-    order - test input, test output (target), the model's prediction, and
-    a per-cell correctness overlay. The score goes in a colored suptitle
-    (green/red background already encodes solved/not, so the text itself
-    stays to just the number) - the one thing that must not be missable
-    when skimming many of these. If `task` carries an `index` attribute
-    (e.g. ARCDataset stamps one on - the 0..N-1 numbering task.id itself
-    doesn't carry), the title leads with that instead of the bare id.
+    """The plot_preds format (input / prediction-with-similarity / target,
+    one row) applied to a single (task, prediction) pair instead of a
+    dataset-indexed batch - task input, the model's prediction, and the
+    known target, each its own panel. If `task` carries an `index`
+    attribute (e.g. ARCDataset stamps one on - the 0..N-1 numbering
+    task.id itself doesn't carry), panel titles lead with that instead of
+    the bare id, same as plot_preds' own "Task {idx}" convention.
 
     Unlike plot_task_with_prediction, this reads straight off an in-memory
-    ARCTask (task.subtasks / task.test_subtask) - no ARCDataset lookup by
-    id needed, so it works from anywhere a task object is already at hand
-    (e.g. subsymbolic.arc_evaluators.arc_result_plotter, mid-inference).
+    ARCTask (task.test_subtask) - no ARCDataset lookup by id needed, so it
+    works from anywhere a task object is already at hand (e.g.
+    subsymbolic.arc_evaluators.arc_result_plotter, mid-inference).
     """
-    subtasks = task.subtasks
-    n_train = len(subtasks)
-    n_cols = max(n_train, 4)  # bottom row always needs 4: input/prediction/diff/target
-
-    TITLE_KWARGS = {"fontsize": 8, "pad": 2}
-
-    fig = plt.figure(figsize=(1.8 * n_cols, 5.0))
-    gs = fig.add_gridspec(3, n_cols, height_ratios=[1, 1, 1.1], hspace=0.28, wspace=0.06)
-
-    for i, subtask in enumerate(subtasks):
-        ax_in = fig.add_subplot(gs[0, i])
-        plot_grid(np.array(subtask.train_inp), ax=ax_in, cmap=ARC_CMAP, norm=ARC_NORM)
-        ax_in.set_xticklabels([])
-        ax_in.set_yticklabels([])
-        ax_in.set_title(f"Train {i + 1} input", **TITLE_KWARGS)
-
-        ax_out = fig.add_subplot(gs[1, i])
-        plot_grid(np.array(subtask.train_out), ax=ax_out, cmap=ARC_CMAP, norm=ARC_NORM)
-        ax_out.set_xticklabels([])
-        ax_out.set_yticklabels([])
-        ax_out.set_title(f"Train {i + 1} output", **TITLE_KWARGS)
+    task_id = getattr(task, "id", getattr(task, "label", "?"))
+    task_index = getattr(task, "index", None)
+    task_number = task_index if task_index is not None else task_id
 
     test_input = np.array(task.test_subtask.train_inp)
     target_grid = np.array(task.test_subtask.train_out)
-
-    ax_test = fig.add_subplot(gs[2, 0])
-    plot_grid(test_input, ax=ax_test, cmap=ARC_CMAP, norm=ARC_NORM)
-    ax_test.set_xticklabels([])
-    ax_test.set_yticklabels([])
-    ax_test.set_title("Test input", **TITLE_KWARGS)
-
-    ax_target = fig.add_subplot(gs[2, 1])
-    plot_grid(target_grid, ax=ax_target, cmap=ARC_CMAP, norm=ARC_NORM)
-    ax_target.set_xticklabels([])
-    ax_target.set_yticklabels([])
-    ax_target.set_title("Test output", **TITLE_KWARGS)
-
-    ax_pred = fig.add_subplot(gs[2, 2])
-    ax_diff = fig.add_subplot(gs[2, 3])
     predicted = np.asarray(predicted_grid) if predicted_grid is not None else None
 
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    plot_grid(test_input, ax=axes[0], cmap=ARC_CMAP, norm=ARC_NORM)
+    axes[0].set_title(f"Task {task_number} input")
+
     if predicted is not None and predicted.ndim == 2:
-        plot_grid(predicted, ax=ax_pred, cmap=ARC_CMAP, norm=ARC_NORM)
-        ax_pred.set_title("Prediction", **TITLE_KWARGS)
-        overlay, is_correct = _correctness_overlay(predicted, target_grid)
-        ax_diff.imshow(overlay, cmap=DIFF_CMAP, norm=DIFF_NORM)
-        ax_diff.grid(True, which="both", color="white", linewidth=0.5)
-        ax_diff.set_xticks(np.arange(-0.5, overlay.shape[1]), [])
-        ax_diff.set_yticks(np.arange(-0.5, overlay.shape[0]), [])
-        if is_correct:
-            diff_title = "MATCH"
-        elif predicted.shape != target_grid.shape:
-            diff_title = f"shape mismatch ({predicted.shape[0]}x{predicted.shape[1]} vs {target_grid.shape[0]}x{target_grid.shape[1]})"
-        else:
-            diff_title = "mismatch"
-        ax_diff.set_title(diff_title, **TITLE_KWARGS)
+        plot_grid(predicted, ax=axes[1], cmap=ARC_CMAP, norm=ARC_NORM)
+        similarity = eval_result.primary_score if eval_result is not None else None
+        axes[1].set_title(f"Prediction with similarity {similarity}")
     else:
-        ax_pred.axis("off")
-        ax_pred.set_title("didn't parse into a grid", **TITLE_KWARGS)
-        ax_diff.axis("off")
-    ax_pred.set_xticklabels([])
-    ax_pred.set_yticklabels([])
+        axes[1].axis("off")
+        axes[1].set_title("Prediction did not parse into a grid")
 
-    for extra_col in range(4, n_cols):
-        fig.add_subplot(gs[2, extra_col]).axis("off")
+    plot_grid(target_grid, ax=axes[2], cmap=ARC_CMAP, norm=ARC_NORM)
+    axes[2].set_title(f"Task {task_number} target")
 
-    task_id = getattr(task, "id", getattr(task, "label", "?"))
-    task_index = getattr(task, "index", None)
-    task_label = f"task {task_index} ({task_id})" if task_index is not None else f"task {task_id}"
-    if eval_result is not None:
-        bg = "#c8f0c8" if eval_result.solved else "#f0c8c8"
-        title = f"{task_label}: score={eval_result.primary_score:.3f}"
-    else:
-        bg = "#dddddd"
-        title = task_label
-    fig.suptitle(title, fontsize=13, fontweight="bold", backgroundcolor=bg, y=0.995)
-
-    fig.subplots_adjust(top=0.90, bottom=0.02, left=0.02, right=0.99)
+    plt.tight_layout()
     return fig
 
 

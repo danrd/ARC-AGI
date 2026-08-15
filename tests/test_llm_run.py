@@ -394,7 +394,8 @@ def test_arc_result_plotter_renders_a_comparison_for_a_well_formed_prediction():
     fig = arc_result_plotter(task, generated, eval_result)
 
     assert len(fig.axes) > 0
-    assert "score=1.00" in fig.get_suptitle()
+    titles = [ax.get_title() for ax in fig.axes]
+    assert any("Prediction with similarity 1.0" in t for t in titles)
 
 
 def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_parse():
@@ -409,7 +410,8 @@ def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_p
     fig = arc_result_plotter(task, generated, eval_result)
 
     assert len(fig.axes) > 0
-    assert "score=" in fig.get_suptitle()
+    titles = [ax.get_title() for ax in fig.axes]
+    assert any("did not parse" in t for t in titles)
 
 
 def test_arc_result_plotter_parses_with_the_same_options_as_the_evaluator():
@@ -426,4 +428,4 @@ def test_arc_result_plotter_parses_with_the_same_options_as_the_evaluator():
 
     assert eval_result.solved is True
     titles = [ax.get_title() for ax in fig.axes]
-    assert any("MATCH" in t for t in titles)
+    assert any("Prediction with similarity 1.0" in t for t in titles)

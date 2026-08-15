@@ -280,6 +280,23 @@ def test_plot_task_result_shows_raw_text_when_prediction_did_not_parse():
     plt.close(fig)
 
 
+def test_plot_task_result_preserves_line_breaks_in_raw_text():
+    """Regression test: textwrap.wrap(whole_text) treats '\\n' as ordinary
+    whitespace and collapses it - flattening exactly the row breaks that
+    matter most for a botched grid attempt (e.g. 'grid shape: 1,1\\n1 6'
+    becoming one run-together line)."""
+    task = _fake_task()
+
+    fig = plot_task_result(task, predicted_grid=None,
+                            eval_result=SimpleNamespace(primary_score=0.0, solved=False),
+                            raw_text="grid shape: 1,1\n1 6")
+
+    prediction_ax = fig.axes[1]
+    ax_texts = [t.get_text() for t in prediction_ax.texts]
+    assert any("grid shape: 1,1\n1 6" in t for t in ax_texts)
+    plt.close(fig)
+
+
 def test_plot_task_result_truncates_a_very_long_raw_text():
     task = _fake_task()
     long_text = "word " * 500

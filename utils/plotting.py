@@ -318,7 +318,13 @@ def plot_task_result(task, predicted_grid, eval_result=None, raw_text=None):
         axes[1].set_facecolor("#fdf2f2")
         if raw_text:
             import textwrap
-            wrapped_lines = textwrap.wrap(raw_text, width=48) or [""]
+            # Wrap each original line on its own - textwrap.wrap(whole_text)
+            # treats '\n' as ordinary whitespace and collapses it, which
+            # flattens exactly the row breaks that matter most for a
+            # botched grid attempt.
+            wrapped_lines = []
+            for line in raw_text.split("\n"):
+                wrapped_lines.extend(textwrap.wrap(line, width=48) or [""])
             max_lines = 22
             if len(wrapped_lines) > max_lines:
                 wrapped_lines = wrapped_lines[:max_lines] + ["... (truncated)"]

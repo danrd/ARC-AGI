@@ -325,12 +325,12 @@ def plot_task_result(task, predicted_grid, eval_result=None, raw_text=None):
             # botched grid attempt.
             wrapped_lines = []
             for line in raw_text.split("\n"):
-                wrapped_lines.extend(textwrap.wrap(line, width=48) or [""])
-            max_lines = 22
+                wrapped_lines.extend(textwrap.wrap(line, width=32) or [""])
+            max_lines = 14
             if len(wrapped_lines) > max_lines:
                 wrapped_lines = wrapped_lines[:max_lines] + ["... (truncated)"]
             axes[1].text(0.5, 0.5, "\n".join(wrapped_lines), transform=axes[1].transAxes,
-                         ha="center", va="center", fontsize=7, family="monospace", color="#555555")
+                         ha="center", va="center", fontsize=11, family="monospace", color="#555555")
 
     plot_grid(target_grid, ax=axes[2], cmap=ARC_CMAP, norm=ARC_NORM)
     axes[2].set_title(f"Task {task_number} target")

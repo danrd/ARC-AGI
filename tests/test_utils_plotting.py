@@ -287,7 +287,7 @@ def test_plot_task_result_shows_raw_text_when_prediction_did_not_parse():
                             raw_text="I cannot determine the pattern here.")
 
     prediction_ax = fig.axes[1]
-    ax_texts = [t.get_text() for t in prediction_ax.texts]
+    ax_texts = [" ".join(t.get_text().split()) for t in prediction_ax.texts]
     assert any("I cannot determine the pattern here." in t for t in ax_texts)
     plt.close(fig)
 

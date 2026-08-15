@@ -50,15 +50,6 @@ class PromptingConfig(BaseModel):
     resolvers: Optional[List[str]] = Field(default_factory=list)  # project-specific complex prompting methods
     join_format: Literal["xml", "md", "plain"] = "xml"  # approach for blocks composing
     chat_template: Optional[str] = None  # optionaly use specific chat template
-    # Extra kwargs for tokenizer.apply_chat_template() when chat_template is
-    # set - e.g. {"enable_thinking": False} to turn off a Qwen3-style
-    # reasoning trace. Only takes effect for local in-process backends that
-    # consume this already-built string (LlamaCppRunner, HFRunner) -
-    # server-backed tiers (ServerRunner) apply their own template from raw
-    # messages and need the equivalent set on
-    # GenerationConfig.chat_template_kwargs instead. Unlike arc-challenge,
-    # there's no aggregating config here to auto-sync the two - set both by
-    # hand if you don't know ahead of time which tier will end up active.
     chat_template_kwargs: Dict[str, Any] = Field(default_factory=dict)
     assistant_prefix: Optional[str] = None  # string to add before assistant response
     project: Dict[str, Any] = {}  # other project specific prompting settings
@@ -165,15 +156,9 @@ class PromptBuilder:
               overrides: Optional[Dict[str, str]] = None) -> Optional[str]:
         """Render and join all configured blocks.
 
-        `context` feeds Jinja variables to every block template.
-        `overrides` fully replaces a block's rendered text by name (keeps the
-        old prompts_modifications behaviour, without touching templates) -
-        merged on top of config.block_overrides, with per-call values
-        winning. Set block_overrides once on the config for a quick
-        notebook-style wording tweak that doesn't need a new template
-        version file; pass overrides= to override just this one call.
-        Returns None if the prompt can't fit within token_limit (even after
-        trimming the examples block down to `min_examples`).
+        Args:
+            context: feeds Jinja variables to every block template.
+            overrides: fully replaces a block's rendered text by name
         """
         context = context or {}
         overrides = {**self.config.block_overrides, **(overrides or {})}

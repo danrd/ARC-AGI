@@ -183,11 +183,6 @@ class GenerationConfig(BaseModel):
         if seed is not None:
             params["seed"] = seed
 
-        # top_k, repetition_penalty, and chat_template_kwargs aren't part of
-        # the official Chat Completions schema - the openai client's
-        # chat.completions.create() rejects unrecognized keyword arguments
-        # before a request is even sent. vLLM (and other OpenAI-compatible
-        # servers) accept them as vendor extensions via extra_body instead.
         extra_body: Dict[str, Any] = {}
         if self.top_k != -1:
             extra_body["top_k"] = self.top_k
@@ -250,11 +245,6 @@ class ServerRunner(BaseRunner):
     def client(self):
         if self._client is None:
             from openai import OpenAI
-            # The openai client's own default (600s) is tuned for a hosted
-            # API - CPU-only inference of a large local model can run well
-            # past that on a single request, well before anything is
-            # actually wrong, so this needs to be a config-level knob
-            # rather than left at the library default.
             self._client = OpenAI(base_url=f"http://127.0.0.1:{self.port}/v1", api_key="not-needed",
                                    timeout=self.request_timeout)
         return self._client
@@ -405,11 +395,7 @@ class OpenRouterRunner(BaseRunner):
 def build_openrouter_runner(config) -> OpenRouterRunner:
     """Construct an OpenRouterRunner from config.llm's OpenRouter fields
     and config.to_chat_completions() - the hosted counterpart to
-    llm_setup.build_runner(), but never chained into its local-backend
-    fallback: opted into explicitly, same as OpenRouterRunner itself
-    (e.g. via SubsymbolicModule(experiment_config, tokenizer, runner=
-    build_openrouter_runner(experiment_config)) to run it alongside a
-    local module built from the same config)."""
+    llm_setup.build_runner()."""
     return OpenRouterRunner(
         models=config.llm.openrouter_models,
         generation_kwargs=config.to_chat_completions(),

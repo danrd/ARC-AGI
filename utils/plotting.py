@@ -273,7 +273,7 @@ def plot_grids_comparison(grid_1, grid_2, target_grid=None):
     plt.tight_layout()
     return fig
 
-def plot_task_result(task, predicted_grid, eval_result=None):
+def plot_task_result(task, predicted_grid, eval_result=None, raw_text=None):
     """The plot_preds format (input / prediction-with-similarity / target,
     one row) applied to a single (task, prediction) pair instead of a
     dataset-indexed batch - task input, the model's prediction, and the
@@ -281,6 +281,11 @@ def plot_task_result(task, predicted_grid, eval_result=None):
     attribute (e.g. ARCDataset stamps one on - the 0..N-1 numbering
     task.id itself doesn't carry), panel titles lead with that instead of
     the bare id, same as plot_preds' own "Task {idx}" convention.
+
+    `raw_text`: the model's raw generation, shown in the prediction panel
+    instead of a blank box when `predicted_grid` is None (didn't parse
+    into a grid) - otherwise there's nothing to look at to tell a genuine
+    non-answer from a near-miss format the parser just doesn't handle yet.
 
     Unlike plot_task_with_prediction, this reads straight off an in-memory
     ARCTask (task.test_subtask) - no ARCDataset lookup by id needed, so it
@@ -305,8 +310,20 @@ def plot_task_result(task, predicted_grid, eval_result=None):
         similarity = eval_result.primary_score if eval_result is not None else None
         axes[1].set_title(f"Prediction with similarity {similarity}")
     else:
-        axes[1].axis("off")
         axes[1].set_title("Prediction did not parse into a grid")
+        axes[1].set_xticks([])
+        axes[1].set_yticks([])
+        for spine in axes[1].spines.values():
+            spine.set_color("lightgrey")
+        axes[1].set_facecolor("#fdf2f2")
+        if raw_text:
+            import textwrap
+            wrapped_lines = textwrap.wrap(raw_text, width=48) or [""]
+            max_lines = 22
+            if len(wrapped_lines) > max_lines:
+                wrapped_lines = wrapped_lines[:max_lines] + ["... (truncated)"]
+            axes[1].text(0.5, 0.5, "\n".join(wrapped_lines), transform=axes[1].transAxes,
+                         ha="center", va="center", fontsize=7, family="monospace", color="#555555")
 
     plot_grid(target_grid, ax=axes[2], cmap=ARC_CMAP, norm=ARC_NORM)
     axes[2].set_title(f"Task {task_number} target")

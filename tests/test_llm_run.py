@@ -402,7 +402,8 @@ def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_p
     """generated_text that doesn't parse into a grid at all can't be
     compared cell-by-cell - the plotter still has to return something
     loggable instead of raising, same as the evaluator still returns a
-    (zero) score instead of raising."""
+    (zero) score instead of raising. The raw generation should still be
+    visible in the prediction panel - see plot_task_result's raw_text."""
     task = _FakeArcTask()
     generated = "not a grid at all"
     eval_result = arc_grid_evaluator(task, generated)
@@ -412,6 +413,9 @@ def test_arc_result_plotter_falls_back_to_target_only_when_prediction_does_not_p
     assert len(fig.axes) > 0
     titles = [ax.get_title() for ax in fig.axes]
     assert any("did not parse" in t for t in titles)
+    prediction_ax = fig.axes[1]
+    ax_texts = [t.get_text() for t in prediction_ax.texts]
+    assert any(generated in t for t in ax_texts)
 
 
 def test_arc_result_plotter_parses_with_the_same_options_as_the_evaluator():

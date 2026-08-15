@@ -252,13 +252,43 @@ def test_plot_task_result_leads_with_index_when_the_task_carries_one():
 
 def test_plot_task_result_handles_a_prediction_that_never_parsed():
     """predicted_grid=None (arc_result_plotter's signal that generated_text
-    didn't parse into a grid at all) must not crash - there's nothing to
-    compare cell-by-cell, so the prediction panel is just left empty
-    instead."""
+    didn't parse into a grid at all) must not crash even with no raw_text
+    given - there's nothing to compare cell-by-cell or show, so the
+    prediction panel is just left blank (but still framed) instead."""
     task = _fake_task()
 
     fig = plot_task_result(task, predicted_grid=None,
                             eval_result=SimpleNamespace(primary_score=0.0, solved=False))
 
     assert any("did not parse" in t for t in _title_texts(fig))
+    plt.close(fig)
+
+
+def test_plot_task_result_shows_raw_text_when_prediction_did_not_parse():
+    """The whole point of raw_text: a blank panel can't distinguish a
+    genuine non-answer from a near-miss format the parser doesn't handle
+    yet - the model's actual output has to be visible to tell them apart."""
+    task = _fake_task()
+
+    fig = plot_task_result(task, predicted_grid=None,
+                            eval_result=SimpleNamespace(primary_score=0.0, solved=False),
+                            raw_text="I cannot determine the pattern here.")
+
+    prediction_ax = fig.axes[1]
+    ax_texts = [t.get_text() for t in prediction_ax.texts]
+    assert any("I cannot determine the pattern here." in t for t in ax_texts)
+    plt.close(fig)
+
+
+def test_plot_task_result_truncates_a_very_long_raw_text():
+    task = _fake_task()
+    long_text = "word " * 500
+
+    fig = plot_task_result(task, predicted_grid=None,
+                            eval_result=SimpleNamespace(primary_score=0.0, solved=False),
+                            raw_text=long_text)
+
+    prediction_ax = fig.axes[1]
+    ax_texts = [t.get_text() for t in prediction_ax.texts]
+    assert any("truncated" in t for t in ax_texts)
     plt.close(fig)

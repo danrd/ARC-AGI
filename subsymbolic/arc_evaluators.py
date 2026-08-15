@@ -45,9 +45,11 @@ def arc_result_plotter(task, generated_text: str, eval_result: EvalResult,
                         colors_str: bool = False, expected_prefix: str = ""):
     """The wandb-loggable counterpart to arc_grid_evaluator: parses
     generated_text the same way (same colors_str/expected_prefix, so the
-    picture matches what was actually scored) and renders the whole task -
-    every train pair plus test input/prediction/target - via
-    utils.plotting.plot_task_result. Wired in as run_llm_over_tasks'
+    picture matches what was actually scored) and renders it via
+    utils.plotting.plot_task_result - passing generated_text through as
+    plot_task_result's raw_text so an unparseable generation is still
+    visible (not just a blank "didn't parse" panel) when it doesn't
+    produce a predicted_grid. Wired in as run_llm_over_tasks'
     result_plotter - only built when WandbLogConfig.log_result_plot or
     show_progress is on.
     """
@@ -55,4 +57,4 @@ def arc_result_plotter(task, generated_text: str, eval_result: EvalResult,
 
     parsed = parse_llm_output(expected_prefix + generated_text, colors_str=colors_str)
     predicted_grid = parsed if isinstance(parsed, np.ndarray) and parsed.ndim == 2 else None
-    return plot_task_result(task, predicted_grid, eval_result=eval_result)
+    return plot_task_result(task, predicted_grid, eval_result=eval_result, raw_text=generated_text)

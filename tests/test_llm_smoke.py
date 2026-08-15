@@ -88,6 +88,25 @@ def test_prompt_builds_without_a_model(case_id, blocks, join_format, arc_task, t
     assert isinstance(prompt, str) and prompt.strip()
 
 
+def test_prompt_does_not_end_with_a_mismatched_partial_answer(arc_task, tiny_tokenizer):
+    """Regression test: output_format/v1.j2 used to end with a bare
+    'grid shape: ' - a leftover raw-completion-style prefill from the
+    pre-refactor pipeline (where a trailing prompt fragment really was a
+    literal continuation seed). Under the current chat-completions
+    pipeline (ServerRunner/OpenRouterRunner wrap the whole prompt into
+    ONE user message - chat models never continue text from inside the
+    user's own turn), that tail did nothing useful and just cued the
+    model to echo "grid shape: n,m" instead of the actually-documented
+    "n,m:" header, silently breaking parse_llm_output for otherwise
+    correct answers."""
+    config = _make_config(MINIMAL_BLOCKS, "plain")
+    builder = _make_builder(config, tiny_tokenizer)
+
+    prompt = builder.build(arc_task, context=_context_for(arc_task))
+
+    assert not prompt.rstrip().endswith("grid shape:")
+
+
 @pytest.fixture(scope="session")
 def cpu_runner(supra_router_gguf_path):
     base = BaseConfig(device="cpu")

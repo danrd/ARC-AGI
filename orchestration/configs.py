@@ -76,8 +76,8 @@ class ExperimentConfig(BaseModel):
     def to_hf(self) -> dict:
         return self.generation.to_hf(seed=self.base.seed)
 
-    def to_chat_completions(self) -> dict:
-        return self.generation.to_chat_completions(seed=self.base.seed)
+    def to_chat_completions(self, grammar_backend: str = "llama_cpp") -> dict:
+        return self.generation.to_chat_completions(seed=self.base.seed, grammar_backend=grammar_backend)
 
     def to_wandb_config(self) -> Dict[str, Any]:
         """LLM-relevant slice for subsymbolic.llm_run.run_llm_over_tasks'

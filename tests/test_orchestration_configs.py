@@ -36,6 +36,17 @@ def test_to_wandb_config_last_field_wins_on_name_collision():
         assert wandb_config[key] == generation_dump[key]
 
 
+def test_to_chat_completions_forwards_grammar_backend_to_generation():
+    """llm_setup passes grammar_backend explicitly (it just started either
+    a llama.cpp or a vllm server, so it knows which) - this thin wrapper
+    has to actually forward it, not just seed."""
+    config = ExperimentConfig(generation=GenerationConfig(grammar='root ::= "a"'))
+
+    params = config.to_chat_completions(grammar_backend="vllm")
+
+    assert params["extra_body"]["guided_grammar"] == 'root ::= "a"'
+
+
 def test_chat_template_kwargs_syncs_from_generation_to_prompt():
     config = ExperimentConfig(generation=GenerationConfig(chat_template_kwargs={"enable_thinking": False}))
 

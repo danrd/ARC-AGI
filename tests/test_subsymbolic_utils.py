@@ -18,6 +18,32 @@ def test_parse_llm_output_accepts_concatenated_digit_rows():
     assert np.array_equal(result, np.array([[0, 1, 2], [3, 4, 5]]))
 
 
+def test_parse_llm_output_rejects_a_row_line_missing_its_data():
+    """Regression test: a row line with only the row number and no data at
+    all (e.g. a grammar-constrained generation cut short by max_tokens
+    mid-row) used to IndexError on parts[1] instead of returning ""."""
+    result = parse_llm_output("1,1:\n1")
+
+    assert result == ""
+
+
+def test_parse_llm_output_rejects_an_out_of_range_row_number():
+    """Regression test: a row number beyond n_rows used to IndexError when
+    writing into result[row_num-1, ...] instead of returning ""."""
+    result = parse_llm_output("3,3:\n99 012")
+
+    assert result == ""
+
+
+def test_parse_llm_output_rejects_a_zero_row_number():
+    """Regression test: row_num=0 gives row_num-1=-1, which numpy silently
+    accepts as "last row" instead of raising - a garbled row used to
+    silently overwrite an unrelated row rather than failing to parse."""
+    result = parse_llm_output("3,3:\n0 012")
+
+    assert result == ""
+
+
 def test_parse_llm_output_rejects_space_separated_multi_column_rows():
     """Regression/documentation test: line.split() on a space-separated row
     ("1 0 1 2") produces more than 2 parts for any n_cols > 1, which hits

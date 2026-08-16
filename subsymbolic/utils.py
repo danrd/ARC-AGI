@@ -130,10 +130,19 @@ def parse_llm_output(text, colors_str=False, max_grid_dim=30):
             line = lines[i].strip()
             # Split by whitespace and remove the row number
             parts = line.split()
+            if len(parts) < 1:
+                return ""
             try:
                 # Identify current row
                 row_num = int(parts[0])
             except ValueError:
+                return ""
+            # A row line with no data at all (just the row number), or a
+            # row number outside [1, n_rows] - out of range would otherwise
+            # either IndexError on the result[] write below, or (for
+            # row_num <= 0) silently wrap around and overwrite an
+            # unrelated row via Python's negative indexing.
+            if len(parts) < 2 or not (1 <= row_num <= n_rows):
                 return ""
             row_data = parts[1]
             if len(parts) > 2:

@@ -2,7 +2,6 @@ import json
 import os
 import random
 import numpy as np
-import torch
 import pickle
 
 def check_module_devices(model):
@@ -25,6 +24,11 @@ def seed_everything(seed=42):
     os.environ['PYTHONHASHSEED'] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
+    try:
+        import torch  # lazy: the only torch-dependent line in this module - importing it
+                       # unconditionally forced torch on every caller of load_json/load_pickle/etc too
+    except ImportError:
+        return
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True

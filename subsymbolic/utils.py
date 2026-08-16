@@ -154,3 +154,40 @@ def parse_llm_output(text, colors_str=False, max_grid_dim=30):
                     except (ValueError, KeyError):
                         return ""
     return result
+
+
+def build_grid_grammar(colors_str: bool = False, max_dim: int = 30) -> str:
+    """GBNF grammar (llama.cpp grammar-constrained decoding) matching the
+    format parse_llm_output actually accepts - not the "1 x_1 ... x_m"
+    space-separated notation the format instructions describe. In practice
+    `line.split()` producing more than 2 parts (any row with 2+ columns
+    written as separate space-separated values) hits `if len(parts) > 2:
+    return ""` and is rejected outright - only a single concatenated digit
+    string per row (e.g. "1 012") ever actually parses for n_cols > 1. This
+    grammar only forces that working shape.
+
+    What it does NOT enforce: that the row count matches the declared n, that
+    row numbers are sequential, or that each row's digit count matches the
+    declared m - GBNF is a static, context-free grammar and n/m are only
+    known once the model itself generates them, so exact structural
+    consistency can't be forced this way. What it DOES guarantee: every
+    generated token is a digit, comma, colon, space or newline - no
+    reasoning/preamble text is representable at all. Row-count/shape
+    consistency is still parse_llm_output's job, same as before.
+
+    Args:
+        colors_str: match parse_llm_output(colors_str=True)'s letter-coded
+            cell values (b/B/R/G/Y/g/M/O/S/W) instead of digits 0-9.
+        max_dim: only bounds the header's digit count (1-2 digits covers up
+            to 99) - parse_llm_output separately rejects anything outside
+            [1, max_dim].
+    """
+    dim_rule = "[1-9] [0-9]?" if max_dim <= 99 else "[1-9] [0-9]? [0-9]?"
+    cell_char_class = "[0-9]" if not colors_str else "[bBRGYgMOSW]"
+    return (
+        "root   ::= header \"\\n\" row (\"\\n\" row)*\n"
+        f"header ::= dim \",\" dim (\":\")?\n"
+        f"dim    ::= {dim_rule}\n"
+        f"row    ::= dim \" \" cell+\n"
+        f"cell   ::= {cell_char_class}\n"
+    )

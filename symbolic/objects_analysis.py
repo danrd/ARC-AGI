@@ -9,6 +9,88 @@ colors_mapping = {
     0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
     5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
 }
+
+# ---------------------------------------------------------------------------
+# Object embedding schema
+#
+# The object vector is a contract between this module and everything that
+# consumes it (rl.features' GNN above all). Declaring the composition once
+# here - rather than letting a hand-written flattening sequence imply it and
+# consumers keep their own copies of the resulting sizes - is what keeps the
+# two from drifting apart: a consumer asks for a dimension or a group's
+# indices, it never restates them.
+#
+# Groups exist because consumers want different cuts of the same vector:
+# "everything intrinsic to the object" (colour, size, topology - invariant to
+# where it sits on the grid) versus "where it sits", and separately the
+# colour/spatial/shape split rl.features processes through separate heads.
+# Indices are therefore requested by group, not assumed contiguous.
+# ---------------------------------------------------------------------------
+
+COLOR = "color"
+SIZE = "size"
+TOPOLOGY = "topology"
+POSITION = "position"
+
+#: (field name, group, how many vector slots it occupies)
+OBJECT_SCHEMA = (
+    ("color_shares",      COLOR,    10),
+    ("hor_size",          SIZE,      1),
+    ("vert_size",         SIZE,      1),
+    ("size",              SIZE,      1),
+    ("symmetry_type",     TOPOLOGY,  1),
+    ("compactness",       TOPOLOGY,  1),
+    ("closure",           TOPOLOGY,  1),
+    ("inner_holes",       TOPOLOGY,  1),
+    ("outer_holes",       TOPOLOGY,  1),
+    ("inner_holes_share", TOPOLOGY,  1),
+    ("i_center",          POSITION,  1),
+    ("j_center",          POSITION,  1),
+    ("min_i",             POSITION,  1),
+    ("min_j",             POSITION,  1),
+    ("max_i",             POSITION,  1),
+    ("max_j",             POSITION,  1),
+)
+
+#: Bumped whenever the composition or order of OBJECT_SCHEMA changes. The
+#: vector is a model input, so a checkpoint trained against one version reads
+#: a different meaning out of the same slot under another - store this
+#: alongside saved weights so the mismatch surfaces as an error rather than
+#: as quietly worse predictions.
+OBJECT_SCHEMA_VERSION = 1
+
+#: Intrinsic to the object, i.e. unchanged if it were moved elsewhere on the
+#: grid. Most ARC transformations are translation-invariant, so a consumer
+#: that wants to generalise across position asks for these alone.
+INTERNAL_GROUPS = (COLOR, SIZE, TOPOLOGY)
+EXTERNAL_GROUPS = (POSITION,)
+
+
+def group_indices(*groups: str) -> tuple:
+    """Vector positions belonging to the named groups, in vector order.
+
+    Returns indices rather than a slice on purpose: which fields sit next to
+    each other is an implementation detail of the schema, and a consumer that
+    hard-codes a range silently starts reading different fields the moment
+    the order changes.
+    """
+    wanted = set(groups)
+    unknown = wanted - {group for _, group, _ in OBJECT_SCHEMA}
+    if unknown:
+        raise ValueError(f"Unknown embedding group(s): {sorted(unknown)}")
+
+    indices = []
+    position = 0
+    for _name, group, arity in OBJECT_SCHEMA:
+        if group in wanted:
+            indices.extend(range(position, position + arity))
+        position += arity
+    return tuple(indices)
+
+
+OBJECT_DIM = sum(arity for _, _, arity in OBJECT_SCHEMA)
+INTERNAL_DIM = len(group_indices(*INTERNAL_GROUPS))
+EXTERNAL_DIM = len(group_indices(*EXTERNAL_GROUPS))
 class GridObject():
     """Class for storing identified objects on a grid."""
     def __init__(self, shape:str, coords:List[tuple], color:List[float], label:str, grid_shape:tuple, font_color=0, grid=None):
@@ -552,34 +634,21 @@ class GridObject():
         else:
             embedding_dict["inner_holes_share"] = 0.0
 
-        # Create flat vector from all features (immutable)
+        # Flatten in the order OBJECT_SCHEMA declares, so composition and
+        # layout cannot disagree: adding a feature means adding a schema
+        # entry, and every consumer's view of the vector follows from it.
         flat_vector = []
-        flat_vector.extend(color_shares_vec)  # 10 elements for color shares
-        flat_vector.extend([
-            embedding_dict["hor_size"],
-            embedding_dict["vert_size"],
-            embedding_dict["size"],
-            embedding_dict["i_center"],
-            embedding_dict["j_center"],
-            embedding_dict["min_i"],
-            embedding_dict["min_j"],
-            embedding_dict["max_i"],
-            embedding_dict["max_j"],
-        ])
-        flat_vector.extend([embedding_dict["symmetry_type"]])
-        flat_vector.extend([
-            embedding_dict["compactness"],
-        ])
-        flat_vector.extend([
-            embedding_dict["closure"],
-        ])
-        flat_vector.extend([
-            embedding_dict["inner_holes"],
-            embedding_dict["outer_holes"],
-        ])
-        flat_vector.extend([
-            embedding_dict["inner_holes_share"]
-        ])
+        for name, _group, arity in OBJECT_SCHEMA:
+            value = embedding_dict[name]
+            if arity == 1:
+                flat_vector.append(value)
+                continue
+            if len(value) != arity:
+                raise ValueError(
+                    f"Embedding field {name!r} produced {len(value)} values, "
+                    f"but OBJECT_SCHEMA reserves {arity}"
+                )
+            flat_vector.extend(value)
 
         # Store as immutable tuples
         self.embedding_dict = dict(embedding_dict)  # Shallow copy to prevent external mutation

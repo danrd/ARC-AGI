@@ -18,6 +18,54 @@ colors_mapping = {
 }
 inverse_colors_mapping = {v:k for k, v in colors_mapping.items()}
 
+# ---------------------------------------------------------------------------
+# Relation embedding schema - the relation-side counterpart to
+# objects_analysis.OBJECT_SCHEMA, and likewise the one place the vector's
+# width and layout are defined. _create_embedding fills these slots in
+# exactly this order, and rl.features asks for the dimensions and group
+# indices instead of restating them.
+# ---------------------------------------------------------------------------
+
+SIMILARITY_REL = "similarity"
+SHAPE_REL = "shape"
+SPATIAL_REL = "spatial"
+
+#: (feature name, group), in vector order.
+RELATION_SCHEMA = (
+    ('same_color',           SIMILARITY_REL),
+    ('same_size',            SIMILARITY_REL),
+    ('same_vert_size',       SIMILARITY_REL),
+    ('same_hor_size',        SIMILARITY_REL),
+    ('shape_similarity',     SHAPE_REL),
+    ('match_score',          SHAPE_REL),
+    ('translation_symmetry', SHAPE_REL),
+    ('horizontal_symmetry',  SHAPE_REL),
+    ('vertical_symmetry',    SHAPE_REL),
+    ('rotation',             SHAPE_REL),
+    ('in_line',              SPATIAL_REL),
+    ('in_diagonal',          SPATIAL_REL),
+    ('x_aligned_with',       SPATIAL_REL),
+    ('y_aligned_with',       SPATIAL_REL),
+    ('normalized_distance',  SPATIAL_REL),
+    ('x_offset',             SPATIAL_REL),
+    ('y_offset',             SPATIAL_REL),
+)
+
+RELATION_FEATURE_NAMES = tuple(name for name, _group in RELATION_SCHEMA)
+RELATION_DIM = len(RELATION_SCHEMA)
+RELATION_SCHEMA_VERSION = 1
+
+
+def relation_group_indices(*groups: str) -> tuple:
+    """Vector positions belonging to the named relation groups, in vector
+    order - see objects_analysis.group_indices for why indices rather than
+    ranges."""
+    wanted = set(groups)
+    unknown = wanted - {group for _name, group in RELATION_SCHEMA}
+    if unknown:
+        raise ValueError(f"Unknown relation embedding group(s): {sorted(unknown)}")
+    return tuple(i for i, (_name, group) in enumerate(RELATION_SCHEMA) if group in wanted)
+
 # Immutable dataclasses for representation levels
 @dataclass(frozen=True)
 class ObjectsSummary:
@@ -875,14 +923,7 @@ class GridSummary():
 
     def _create_embedding(self, obj1, obj2, relation_lookup, distances, grid_size, objects_tuple):
         """Relation embedding creation."""
-        relation_feature_names = (
-            'same_color', 'same_size', 'same_vert_size', 'same_hor_size',
-            'shape_similarity', 'match_score', 'translation_symmetry',
-            'horizontal_symmetry', "vertical_symmetry", 'rotation',
-            'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with',
-            'normalized_distance', 'x_offset', 'y_offset'
-        )
-        embedding = np.zeros(len(relation_feature_names), dtype=np.float32)
+        embedding = np.zeros(RELATION_DIM, dtype=np.float32)
         idx = 0
 
         # Basic comparisons

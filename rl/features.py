@@ -6,6 +6,22 @@ from torch_geometric.data import Data, Batch
 from gymnasium import spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
+from symbolic.objects_analysis import (
+    COLOR,
+    OBJECT_DIM,
+    POSITION,
+    SIZE,
+    TOPOLOGY,
+    group_indices,
+)
+from symbolic.summaries import (
+    RELATION_DIM,
+    SHAPE_REL,
+    SIMILARITY_REL,
+    SPATIAL_REL,
+    relation_group_indices,
+)
+
 # =============================================================================
 # APPROACH 1: GRAPH NEURAL NETWORK (GNN) APPROACH
 # =============================================================================
@@ -15,11 +31,12 @@ class ObjectRelationGNN(nn.Module):
     Objects are nodes, relations are edges.
     """
 
-    def __init__(self, object_dim=25, relation_dim=17, hidden_dim=128, output_dim=256, num_layers=3):
+    def __init__(self, object_dim=OBJECT_DIM, relation_dim=RELATION_DIM,
+                 hidden_dim=128, output_dim=256, num_layers=3):
         super().__init__()
 
-        self.object_dim = object_dim  # 32 from create_embedding
-        self.relation_dim = relation_dim  # 17 from relation embedding
+        self.object_dim = object_dim
+        self.relation_dim = relation_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.num_layers = num_layers
@@ -163,8 +180,8 @@ class ARCGNNExtractor(BaseFeaturesExtractor):
 
         # GNN for object-relation processing
         self.gnn = ObjectRelationGNN(
-            object_dim=25,  # From create_embedding method
-            relation_dim=17,  # From relation create_embedding
+            object_dim=OBJECT_DIM,
+            relation_dim=RELATION_DIM,
             output_dim=gnn_output_dim
         )
 
@@ -261,13 +278,21 @@ class ObjectProcessor(nn.Module):
     """Enhanced object processor with better feature grouping and attention
     """
 
-    def __init__(self, object_dim=25, hidden_dim=128, output_dim=64):
+    def __init__(self, object_dim=OBJECT_DIM, hidden_dim=128, output_dim=64):
         super().__init__()
 
-        # Feature group dimensions based on create_embedding structure
-        self.color_dim = 10  # color_shares
-        self.spatial_dim = 9  # size (3) and position features (6)
-        self.shape_dim = 6  # symmetry + compactness +  closure + holes (3)
+        # Which slots of the object vector feed each head, taken from the
+        # schema that defines the vector rather than restated as ranges: the
+        # groups a consumer cares about need not sit next to each other, and
+        # a hard-coded range silently reads different fields once the schema
+        # changes. Registered as buffers so they follow the module's device.
+        self.register_buffer("color_index", torch.tensor(group_indices(COLOR), dtype=torch.long))
+        self.register_buffer("spatial_index", torch.tensor(group_indices(SIZE, POSITION), dtype=torch.long))
+        self.register_buffer("shape_index", torch.tensor(group_indices(TOPOLOGY), dtype=torch.long))
+
+        self.color_dim = len(group_indices(COLOR))
+        self.spatial_dim = len(group_indices(SIZE, POSITION))
+        self.shape_dim = len(group_indices(TOPOLOGY))
 
         # Specialized processors for each feature group
         self.color_processor = nn.Sequential(
@@ -307,14 +332,13 @@ class ObjectProcessor(nn.Module):
         self.layer_norm = nn.LayerNorm(output_dim)
 
     def forward(self, x):
-        """x: tensor of shape (batch_size, max_objects, 32)
-        """
+        """x: tensor of shape (batch_size, max_objects, OBJECT_DIM)"""
         batch_size, max_objects, _ = x.shape
 
         # Split into feature groups
-        color_features = x[:, :, :10]
-        spatial_features = x[:, :, 10:19]
-        shape_features = x[:, :, 19:32]
+        color_features = x.index_select(-1, self.color_index)
+        spatial_features = x.index_select(-1, self.spatial_index)
+        shape_features = x.index_select(-1, self.shape_index)
 
         # Process each group
         color_emb = self.color_processor(color_features)    # (batch, max_objects, 16)
@@ -338,13 +362,21 @@ class RelationProcessor(nn.Module):
     """Enhanced relation processor with semantic grouping
     """
 
-    def __init__(self, relation_dim=17, hidden_dim=64, output_dim=32):
+    def __init__(self, relation_dim=RELATION_DIM, hidden_dim=64, output_dim=32):
         super().__init__()
 
-        # Feature group dimensions based on relation embedding structure
-        self.similarity_dim = 4  # same_color, same_size, same_vert_size, same_hor_size
-        self.shape_rel_dim = 6  #  shape_similarity, match_score, translation_symmetry, 'horizontal_symmetry', "vertical_symmetry", 'rotation',
-        self.spatial_rel_dim = 7  # 'in_line', 'in_diagonal', 'x_aligned_with', 'y_aligned_with', 'normalized_distance', 'x_offset', 'y_offset'
+        # Slots feeding each head, taken from RELATION_SCHEMA rather than
+        # restated as ranges - see ObjectProcessor for the reasoning.
+        self.register_buffer("similarity_index",
+                             torch.tensor(relation_group_indices(SIMILARITY_REL), dtype=torch.long))
+        self.register_buffer("shape_rel_index",
+                             torch.tensor(relation_group_indices(SHAPE_REL), dtype=torch.long))
+        self.register_buffer("spatial_rel_index",
+                             torch.tensor(relation_group_indices(SPATIAL_REL), dtype=torch.long))
+
+        self.similarity_dim = len(relation_group_indices(SIMILARITY_REL))
+        self.shape_rel_dim = len(relation_group_indices(SHAPE_REL))
+        self.spatial_rel_dim = len(relation_group_indices(SPATIAL_REL))
 
         # Specialized processors
         self.similarity_processor = nn.Sequential(
@@ -377,14 +409,13 @@ class RelationProcessor(nn.Module):
         self.layer_norm = nn.LayerNorm(output_dim)
 
     def forward(self, x):
-        """x: tensor of shape (batch_size, max_relations, 17)
-        """
+        """x: tensor of shape (batch_size, max_relations, RELATION_DIM)"""
         batch_size, max_relations, _ = x.shape
 
         # Split into feature groups
-        similarity_features = x[:, :, :4]
-        shape_rel_features = x[:, :, 4:10]
-        spatial_rel_features = x[:, :, 10:17]
+        similarity_features = x.index_select(-1, self.similarity_index)
+        shape_rel_features = x.index_select(-1, self.shape_rel_index)
+        spatial_rel_features = x.index_select(-1, self.spatial_rel_index)
 
         # Process each group
         similarity_emb = self.similarity_processor(similarity_features)
@@ -432,13 +463,13 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
 
         # Enhanced object processor
         self.object_processor = ObjectProcessor(
-            object_dim=25,
+            object_dim=OBJECT_DIM,
             output_dim=object_output_dim
         )
 
         # Enhanced relation processor
         self.relation_processor = RelationProcessor(
-            relation_dim=17,
+            relation_dim=RELATION_DIM,
             output_dim=relation_output_dim
         )
 

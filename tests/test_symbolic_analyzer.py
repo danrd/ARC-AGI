@@ -46,7 +46,6 @@ class _StubTaskAnalysis(TaskAnalysis):
             for patterns in per_example_patterns
         ]
         self.consistent_patterns = self._infer_consistent_patterns()
-        self.transformation_rules = self._synthesize_transformation_rules()
 
 
 # ---------------------------------------------------------------------------

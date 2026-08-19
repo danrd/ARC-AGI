@@ -834,7 +834,6 @@ class TaskAnalysis:
 
         # Infer consistent patterns across training examples
         self.consistent_patterns = self._infer_consistent_patterns()
-        self.transformation_rules = self._synthesize_transformation_rules()
 
     def _infer_consistent_patterns(self) -> List[TransformationPattern]:
         """Find patterns that appear consistently across training examples.
@@ -935,37 +934,6 @@ class TaskAnalysis:
                 agreed[key] = example_values[0]
         return agreed
 
-    def _synthesize_transformation_rules(self) -> List[str]:
-        """Synthesize high-level transformation rules from consistent patterns."""
-        rules = []
-
-        for pattern in self.consistent_patterns:
-            if pattern.confidence < 0.5:
-                continue
-
-            if pattern.pattern_type == 'color_mapping':
-                rules.append("Apply consistent color mapping")
-            elif pattern.pattern_type == 'size_scaling':
-                rules.append("Scale objects (pattern detected in multiple examples)")
-            elif pattern.pattern_type == 'object_addition':
-                rules.append("Add new objects to the output")
-            elif pattern.pattern_type == 'object_deletion':
-                rules.append("Remove objects from the input")
-            elif pattern.pattern_type == 'translation':
-                rules.append("Translate objects by consistent offset")
-
-        # Grid shape rules
-        if self.subtasks_analyses:
-            shape_changes = [s.grid_diff.has_size_change for s in self.subtasks_analyses]
-            if all(shape_changes):
-                rules.append("Output grid has different size than input (all examples)")
-            elif not any(shape_changes):
-                rules.append("Output grid preserves input dimensions (all examples)")
-            else:
-                rules.append("Output grid size varies (inconsistent across examples)")
-
-        return rules
-
     def get_task_summary(self) -> str:
         """Generate comprehensive task summary."""
         summary = [f"Task {self.task_id} Analysis:"]
@@ -987,13 +955,9 @@ class TaskAnalysis:
             summary.append("  No consistent patterns detected")
 
         summary.append("\n" + "="*60)
-        summary.append("Inferred Transformation Rules:")
+        summary.append("Transformation Hypothesis:")
         summary.append("="*60)
-        if self.transformation_rules:
-            for i, rule in enumerate(self.transformation_rules, 1):
-                summary.append(f"  {i}. {rule}")
-        else:
-            summary.append("  No clear transformation rules identified")
+        summary.append(self.get_transformation_hypothesis())
 
         return "\n".join(summary)
 

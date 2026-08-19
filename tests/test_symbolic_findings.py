@@ -282,6 +282,36 @@ class TestInvariants:
         assert "object_count" not in subjects
 
     @staticmethod
+    def test_consistent_resizing_is_stated_as_a_grid_observation():
+        examples = [_example([[1]], [[1]], size_change=True) for _ in range(2)]
+
+        observations = build_task_findings(_stub_analysis([], examples)).grid_observations
+
+        assert [f.subject for f in observations] == ["grid_resize"]
+        assert "always a different size" in observations[0].statement
+
+    @staticmethod
+    def test_inconsistent_resizing_is_stated_rather_than_passed_over():
+        """Neither an invariant nor a consistent change, but still worth
+        saying: it tells a solver it cannot assume a fixed size relation."""
+        examples = [_example([[1]], [[1]], size_change=True),
+                    _example([[1]], [[1]], size_change=False)]
+
+        findings = build_task_findings(_stub_analysis([], examples))
+
+        assert "resized in some examples but not others" in findings.grid_observations[0].statement
+        assert "grid_size" not in {f.subject for f in findings.invariants}
+
+    @staticmethod
+    def test_preserved_size_is_an_invariant_not_a_grid_observation():
+        examples = [_example([[1]], [[1]]) for _ in range(2)]
+
+        findings = build_task_findings(_stub_analysis([], examples))
+
+        assert findings.grid_observations == ()
+        assert "grid_size" in {f.subject for f in findings.invariants}
+
+    @staticmethod
     def test_no_examples_yields_no_invariants():
         assert build_task_findings(_stub_analysis([], [])).invariants == ()
 

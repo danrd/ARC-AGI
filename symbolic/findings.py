@@ -243,22 +243,35 @@ def _invariant_findings(task_analysis) -> Tuple[Finding, ...]:
 
 
 def _grid_observation_findings(task_analysis) -> Tuple[Finding, ...]:
-    """Grid-level claims that hold across every example without being
-    preservation. Only the "always resized" case lives here - "always the
-    same size" is preservation and belongs with the invariants."""
+    """Grid-level claims about size that aren't preservation.
+
+    "Always the same size" is preservation and belongs with the invariants;
+    the other two cases live here. The inconsistent case is worth stating
+    outright rather than passing over in silence: "sometimes resized,
+    sometimes not" tells a solver it cannot assume a fixed size relation,
+    which is a different and more useful thing to know than nothing at all.
+    """
     analyses = task_analysis.subtasks_analyses
     example_count = len(analyses)
     if not example_count:
         return ()
 
-    if all(a.grid_diff.has_size_change for a in analyses):
-        return (Finding(
-            subject="grid_resize",
-            statement="the output grid is always a different size from the input",
-            evidence=Evidence(tuple(range(example_count)), example_count),
-            confidence=1.0,
-        ),)
-    return ()
+    resized = [a.grid_diff.has_size_change for a in analyses]
+    everywhere = Evidence(tuple(range(example_count)), example_count)
+
+    if all(resized):
+        statement = "the output grid is always a different size from the input"
+    elif any(resized):
+        statement = "the output grid is resized in some examples but not others"
+    else:
+        return ()  # always preserved - reported as an invariant instead
+
+    return (Finding(
+        subject="grid_resize",
+        statement=statement,
+        evidence=everywhere,
+        confidence=1.0,
+    ),)
 
 
 def build_task_findings(task_analysis) -> TaskFindings:

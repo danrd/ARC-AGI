@@ -20,7 +20,64 @@ from symbolic.findings import (
     TaskFindings,
     build_task_findings,
     render_findings,
+    render_hypothesis,
+    render_insights,
 )
+
+
+def _parameter_keys_by_pattern_type():
+    """Which parameter keys each detector puts into the pattern it emits,
+    read out of the source rather than by running the (slow) real analysis
+    over enough tasks to hit every branch.
+
+    Keyed by pattern type rather than pooled: a key can be perfectly real for
+    one detector and meaningless for another - `offset` belongs to
+    `translation`, while `uniform_translation` writes `shift` - so a pooled
+    check would wave exactly that confusion through.
+    """
+    import ast
+    import collections
+    import pathlib
+
+    source = pathlib.Path("symbolic/analyzer.py").read_text(encoding="utf-8")
+    by_type = collections.defaultdict(set)
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        pattern_type = keywords.get("pattern_type")
+        parameters = keywords.get("parameters")
+        if not isinstance(pattern_type, ast.Constant) or not isinstance(pattern_type.value, str):
+            continue
+        if not isinstance(parameters, ast.Dict):
+            continue
+        by_type[pattern_type.value].update(
+            key.value for key in parameters.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        )
+    return by_type
+
+
+def test_every_phrase_references_a_parameter_its_own_detector_produces():
+    """Regression test: the phrase table named `offset` where
+    uniform_translation writes `shift`, and `factor` where size_scaling
+    writes `scale_factor`. Nothing failed - the phrase simply never matched,
+    so those findings silently fell back to "parameters differ" and threw
+    away a value that had been measured. A wrong key name cannot be caught by
+    reading the output, only here."""
+    from symbolic.findings import _PHRASES
+
+    produced = _parameter_keys_by_pattern_type()
+
+    wrong = {}
+    for pattern_type, (_template, required) in _PHRASES.items():
+        if not required or pattern_type not in produced:
+            continue
+        missing = set(required) - produced[pattern_type]
+        if missing:
+            wrong[pattern_type] = sorted(missing)
+
+    assert not wrong, f"phrased but never produced by that detector: {wrong}"
 
 
 def _finding(subject, statement, indices, total, confidence=0.9, **params):
@@ -124,15 +181,19 @@ def _stub_analysis(patterns, examples, task_id="stub"):
 class TestBuildFindings:
     @staticmethod
     def test_agreed_parameter_is_named_in_the_statement():
+        """The parameter name has to be the one the detector actually
+        produces - `shift` for uniform_translation, not `offset`. Getting it
+        wrong doesn't fail loudly: the phrase silently degrades to "parameters
+        differ" and a measured value is thrown away."""
         analysis = _stub_analysis(
-            [_pattern("uniform_translation", common={"offset": (1, 2)})],
+            [_pattern("uniform_translation", common={"shift": (1, 2)})],
             [_example([[1]], [[1]]), _example([[1]], [[1]])],
         )
 
         findings = build_task_findings(analysis)
 
         assert "(1, 2)" in findings.transformations[0].statement
-        assert findings.transformations[0].parameters == {"offset": (1, 2)}
+        assert findings.transformations[0].parameters == {"shift": (1, 2)}
 
     @staticmethod
     def test_parameter_that_varied_never_reaches_the_statement_as_a_value():
@@ -279,8 +340,121 @@ class TestRender:
         assert render_findings(_findings(), budget=1, count_tokens=len) is None
 
     @staticmethod
+    def test_grid_observation_is_rendered_among_the_changes():
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            grid_observations=(_finding("grid_resize", "the output is always resized", (0, 1), 2),),
+        )
+
+        text = render_findings(findings)
+
+        assert "What changes:" in text
+        assert "always resized" in text
+
+    @staticmethod
     def test_a_section_with_nothing_left_does_not_print_its_header():
         findings = _findings(n_transformations=1, n_invariants=1)
         first_only = render_findings(findings, budget=0, count_tokens=lambda s: 0 if "invariant" not in s else 99)
 
         assert "What stays the same:" not in first_only
+
+
+# ---------------------------------------------------------------------------
+# the other two views over the same findings
+# ---------------------------------------------------------------------------
+
+class TestHypothesisView:
+    @staticmethod
+    def test_findings_are_tiered_by_confidence():
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(
+                _finding("a", "certain thing", (0, 1), 2, confidence=0.95),
+                _finding("b", "likely thing", (0, 1), 2, confidence=0.6),
+            ),
+        )
+
+        text = render_hypothesis(findings)
+
+        assert text.index("certain thing") < text.index("MEDIUM CONFIDENCE")
+        assert "likely thing" in text.split("MEDIUM CONFIDENCE")[1]
+
+    @staticmethod
+    def test_low_confidence_findings_are_left_out_entirely():
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("a", "barely a guess", (0,), 2, confidence=0.2),),
+        )
+
+        assert "barely a guess" not in render_hypothesis(findings)
+
+    @staticmethod
+    def test_absent_first_section_does_not_leave_a_blank_line_at_the_top():
+        """Cosmetic, but it is the first thing a reader sees."""
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("a", "likely thing", (0, 1), 2, confidence=0.6),),
+        )
+
+        assert render_hypothesis(findings).startswith("MEDIUM CONFIDENCE")
+
+    @staticmethod
+    def test_nothing_found_says_so_rather_than_returning_an_empty_string():
+        text = render_hypothesis(TaskFindings(task_id="t", example_count=0))
+
+        assert "No clear transformation hypothesis" in text
+
+
+class TestInsightsView:
+    @staticmethod
+    def test_step_is_emitted_when_its_parameter_held_across_examples():
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("color_based_deletion", "...", (0, 1), 2,
+                                       confidence=0.9, color="green"),),
+        )
+
+        assert render_insights(findings) == ["Delete all objects with color: green"]
+
+    @staticmethod
+    def test_step_is_dropped_when_its_parameter_never_held():
+        """Insights are meant to be executable, so an unresolved parameter
+        removes the step rather than softening it into words - which is the
+        one place this view is stricter than the prose one."""
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("color_based_deletion", "...", (0, 1), 2, confidence=0.9),),
+        )
+
+        assert render_insights(findings) == []
+
+    @staticmethod
+    def test_step_is_dropped_below_the_confidence_threshold():
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("color_based_deletion", "...", (0, 1), 2,
+                                       confidence=0.5, color="green"),),
+        )
+
+        assert render_insights(findings) == []
+
+    @staticmethod
+    def test_causal_shift_rule_selects_the_specific_step():
+        """'hor_size' contains 'size', so the more specific rule has to be
+        tested first or every shift collapses to the generic one."""
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("causal_shift", "...", (0, 1), 2,
+                                       confidence=0.9, rule="shift_equals_hor_size"),),
+        )
+
+        assert render_insights(findings) == ["For each object: horizontal_shift = object.hor_size"]
+
+    @staticmethod
+    def test_unknown_subject_produces_no_step():
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("some_new_detector", "...", (0, 1), 2, confidence=0.9),),
+        )
+
+        assert render_insights(findings) == []

@@ -19,7 +19,7 @@ Two rules the rest of this module exists to enforce:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -80,10 +80,21 @@ class TaskFindings:
     example_count: int
     transformations: Tuple[Finding, ...] = field(default_factory=tuple)
     invariants: Tuple[Finding, ...] = field(default_factory=tuple)
+    #: Grid-level claims that are consistent but aren't preservation ("the
+    #: output is always a different size"), kept apart from `transformations`
+    #: because they come from the grid diff rather than from a detector, and
+    #: carry no detector confidence to rank against.
+    grid_observations: Tuple[Finding, ...] = field(default_factory=tuple)
+
+    @property
+    def changes(self) -> Tuple[Finding, ...]:
+        """Everything that describes the transformation rather than what it
+        leaves alone."""
+        return self.transformations + self.grid_observations
 
     @property
     def is_empty(self) -> bool:
-        return not self.transformations and not self.invariants
+        return not self.transformations and not self.invariants and not self.grid_observations
 
 
 def _ranked(findings: Sequence[Finding]) -> Tuple[Finding, ...]:
@@ -97,19 +108,25 @@ def _ranked(findings: Sequence[Finding]) -> Tuple[Finding, ...]:
 # Phrasings for the pattern types the analyzer actually emits. The value is a
 # format string over the agreed parameters; when a referenced parameter wasn't
 # established, the generic fallback is used instead of naming a value.
+#
+# The parameter names here are the ones the detectors actually put in
+# `parameters` (`shift`, not `offset`; `scale_factor`, not `factor`) - naming
+# a key that is never produced doesn't fail loudly, it just quietly degrades
+# every one of those findings to the "parameters differ" fallback, throwing
+# away a value that was measured.
 _PHRASES: Dict[str, Tuple[str, Tuple[str, ...]]] = {
-    "uniform_translation": ("every object moves by offset {offset}", ("offset",)),
+    "uniform_translation": ("every object moves by {shift}", ("shift",)),
     "translation": ("objects move between input and output", ()),
     "causal_shift": ("objects are shifted according to: {rule}", ("rule",)),
     "color_mapping": ("colors are remapped consistently", ()),
     "color_based_deletion": ("objects of color {color} are removed", ("color",)),
-    "shape_based_deletion": ("objects shaped {shape} are removed", ("shape",)),
-    "position_based_deletion": ("objects at {position} are removed", ("position",)),
+    "shape_based_deletion": ("all {shape} objects are removed", ("shape",)),
+    "position_based_deletion": ("objects at {positions} are removed", ("positions",)),
     "object_deletion": ("objects are removed from the input", ()),
     "object_addition": ("new objects appear in the output", ()),
     "aligned_addition": ("new objects are added {alignment_type} with existing ones", ("alignment_type",)),
     "shape_duplication": ("shapes from the input are duplicated", ()),
-    "size_scaling": ("objects are scaled by factor {factor}", ("factor",)),
+    "size_scaling": ("objects are scaled by factor {scale_factor:.2f}", ("scale_factor",)),
     "symmetry_change": ("the symmetry of the grid changes", ()),
 }
 
@@ -118,7 +135,13 @@ def _statement_for(pattern_type: str, agreed: Mapping[str, Any]) -> str:
     """Render a pattern as a sentence, naming only established parameters."""
     template, required = _PHRASES.get(pattern_type, (None, ()))
     if template is not None and all(key in agreed for key in required):
-        return template.format(**{key: agreed[key] for key in required})
+        try:
+            return template.format(**{key: agreed[key] for key in required})
+        except (ValueError, TypeError):
+            # A parameter of an unexpected type for its format spec (a scale
+            # factor that isn't a number, say) - fall through rather than
+            # crash the whole summary over one malformed value.
+            pass
 
     readable = pattern_type.replace("_", " ")
     if template is not None:
@@ -146,8 +169,9 @@ def _transformation_findings(task_analysis) -> Tuple[Finding, ...]:
 
 
 def _object_count(grid_summary, level: int) -> Optional[int]:
-    """Objects the summary parsed at its primary level, or None when that
-    level isn't present (levels are caller-selected and may not include it)."""
+    """Objects the summary parsed at its primary level, or None when there is
+    nothing to count from - the summary is absent, or that level wasn't
+    parsed (levels are caller-selected and may not include it)."""
     repr_levels = getattr(grid_summary, "repr_levels", None) or {}
     level_summary = repr_levels.get(level)
     if level_summary is None or getattr(level_summary, "objects", None) is None:
@@ -179,12 +203,21 @@ def _invariant_findings(task_analysis) -> Tuple[Finding, ...]:
             confidence=1.0,
         ))
 
+    # Each invariant is claimed only when every ingredient it needs is
+    # present in every example. A missing ingredient means "cannot tell",
+    # which is not the same as "holds" - so it withdraws the claim rather
+    # than being skipped over on the way to asserting one.
     palette_kept = []
     for analysis in analyses:
+        input_grid = getattr(analysis, "input_grid", None)
+        output_grid = getattr(analysis, "output_grid", None)
+        if input_grid is None or output_grid is None:
+            palette_kept.append(None)
+            continue
         palette_kept.append(
-            set(np.unique(analysis.input_grid).tolist()) == set(np.unique(analysis.output_grid).tolist())
+            set(np.unique(input_grid).tolist()) == set(np.unique(output_grid).tolist())
         )
-    if all(palette_kept):
+    if palette_kept and all(kept is True for kept in palette_kept):
         findings.append(Finding(
             subject="palette",
             statement="input and output use the same set of colors",
@@ -195,8 +228,8 @@ def _invariant_findings(task_analysis) -> Tuple[Finding, ...]:
     counts = []
     for analysis in analyses:
         level = getattr(analysis, "primary_level", 2)
-        before = _object_count(analysis.input_summary, level)
-        after = _object_count(analysis.output_summary, level)
+        before = _object_count(getattr(analysis, "input_summary", None), level)
+        after = _object_count(getattr(analysis, "output_summary", None), level)
         counts.append(None if before is None or after is None else before == after)
     if counts and all(kept is True for kept in counts):
         findings.append(Finding(
@@ -209,6 +242,25 @@ def _invariant_findings(task_analysis) -> Tuple[Finding, ...]:
     return _ranked(findings)
 
 
+def _grid_observation_findings(task_analysis) -> Tuple[Finding, ...]:
+    """Grid-level claims that hold across every example without being
+    preservation. Only the "always resized" case lives here - "always the
+    same size" is preservation and belongs with the invariants."""
+    analyses = task_analysis.subtasks_analyses
+    example_count = len(analyses)
+    if not example_count:
+        return ()
+
+    if all(a.grid_diff.has_size_change for a in analyses):
+        return (Finding(
+            subject="grid_resize",
+            statement="the output grid is always a different size from the input",
+            evidence=Evidence(tuple(range(example_count)), example_count),
+            confidence=1.0,
+        ),)
+    return ()
+
+
 def build_task_findings(task_analysis) -> TaskFindings:
     """Convert a TaskAnalysis into the structured form consumers read."""
     return TaskFindings(
@@ -216,6 +268,7 @@ def build_task_findings(task_analysis) -> TaskFindings:
         example_count=len(task_analysis.subtasks_analyses),
         transformations=_transformation_findings(task_analysis),
         invariants=_invariant_findings(task_analysis),
+        grid_observations=_grid_observation_findings(task_analysis),
     )
 
 
@@ -244,7 +297,7 @@ def render_findings(findings: TaskFindings, budget: Optional[int] = None,
     unlimited = budget is None
 
     sections = (
-        (_CHANGES_HEADER, findings.transformations),
+        (_CHANGES_HEADER, findings.changes),
         (_INVARIANTS_HEADER, findings.invariants),
     )
 
@@ -269,3 +322,128 @@ def render_findings(findings: TaskFindings, budget: Optional[int] = None,
     if not rendered_sections:
         return None
     return "\n".join(rendered_sections)
+
+
+# ---------------------------------------------------------------------------
+# Alternative views over the same findings
+#
+# These exist so there is exactly one place a claim is worded. They are
+# different *presentations* of the same structure - a tiered prose read for a
+# human, an imperative read for something meant to execute the rule - not
+# second opinions about what the analysis found.
+# ---------------------------------------------------------------------------
+
+HIGH_CONFIDENCE = 0.8
+MEDIUM_CONFIDENCE = 0.5
+#: Insights are meant to be executable, so they demand more than prose does.
+INSIGHT_CONFIDENCE = 0.7
+
+_NO_HYPOTHESIS = ("No clear transformation hypothesis could be established. "
+                   "The transformation may be highly variable or complex.")
+
+
+def render_hypothesis(findings: TaskFindings) -> str:
+    """Tiered prose read of the findings, for a human or an LLM."""
+    high = [f for f in findings.transformations if f.confidence >= HIGH_CONFIDENCE]
+    medium = [f for f in findings.transformations
+              if MEDIUM_CONFIDENCE <= f.confidence < HIGH_CONFIDENCE]
+    grid = list(findings.grid_observations)
+    grid += [f for f in findings.invariants if f.subject == "grid_size"]
+
+    def block(header, items, with_evidence=True):
+        lines = [header]
+        for finding in items:
+            suffix = f" [{finding.evidence.render()}]" if with_evidence else ""
+            lines.append(f"  • {finding.statement}{suffix}")
+        return "\n".join(lines)
+
+    # Assembled as whole blocks joined by a blank line, rather than each
+    # header carrying a leading newline of its own - otherwise a summary
+    # whose first block happens to be absent opens with a stray blank line.
+    blocks = []
+    if high:
+        blocks.append(block("HIGH CONFIDENCE RULES:", high))
+    if medium:
+        blocks.append(block("MEDIUM CONFIDENCE OBSERVATIONS:", medium))
+    if grid:
+        blocks.append(block("GRID OBSERVATIONS:", grid, with_evidence=False))
+
+    return "\n\n".join(blocks) if blocks else _NO_HYPOTHESIS
+
+
+def _insight_causal_shift(params: Mapping[str, Any]) -> Optional[str]:
+    rule = params.get("rule")
+    if not isinstance(rule, str):
+        return None
+    # Order matters: "hor_size" and "vert_size" both contain "size", so the
+    # specific tests have to come first.
+    if "inner_holes" in rule:
+        return "For each object: shift_amount = count(inner_holes)"
+    if "hor_size" in rule:
+        return "For each object: horizontal_shift = object.hor_size"
+    if "vert_size" in rule:
+        return "For each object: vertical_shift = object.vert_size"
+    if "size" in rule:
+        return "For each object: shift_amount = object.size"
+    return None
+
+
+def _insight_aligned_addition(params: Mapping[str, Any]) -> Optional[str]:
+    alignment = params.get("alignment_type")
+    if not isinstance(alignment, str):
+        return None
+    if "x_aligned" in alignment:
+        return "Create new objects x-aligned with existing objects"
+    if "y_aligned" in alignment:
+        return "Create new objects y-aligned with existing objects"
+    return None
+
+
+def _insight_size_scaling(params: Mapping[str, Any]) -> Optional[str]:
+    factor = params.get("scale_factor")
+    if not isinstance(factor, (int, float)):
+        return None
+    return f"Scale all objects by factor: {factor:.2f}"
+
+
+def _keyed_insight(template: str, key: str):
+    def build(params: Mapping[str, Any]) -> Optional[str]:
+        if key not in params:
+            return None
+        return template.format(**{key: params[key]})
+    return build
+
+
+#: subject -> builder producing an executable step, or None when the
+#: parameters it needs weren't established across the examples.
+_INSIGHT_BUILDERS: Dict[str, Callable[[Mapping[str, Any]], Optional[str]]] = {
+    "causal_shift": _insight_causal_shift,
+    "aligned_addition": _insight_aligned_addition,
+    "size_scaling": _insight_size_scaling,
+    "shape_duplication": lambda params: "Duplicate shapes from input (possibly with transformations)",
+    "color_mapping": lambda params: "Apply color mapping transformation to all objects",
+    "color_based_deletion": _keyed_insight("Delete all objects with color: {color}", "color"),
+    "shape_based_deletion": _keyed_insight("Delete all objects with shape: {shape}", "shape"),
+    "uniform_translation": _keyed_insight("Translate all objects by offset: {shift}", "shift"),
+}
+
+
+def render_insights(findings: TaskFindings) -> List[str]:
+    """Imperative read: transformation steps that could actually be executed.
+
+    Stricter than the prose above, and deliberately so - a step whose
+    parameter never held across the examples cannot be executed, so it is
+    dropped rather than softened into words. The caller gets fewer steps, all
+    of them backed by a value every example agreed on.
+    """
+    insights = []
+    for finding in findings.transformations:
+        if finding.confidence < INSIGHT_CONFIDENCE:
+            continue
+        builder = _INSIGHT_BUILDERS.get(finding.subject)
+        if builder is None:
+            continue
+        insight = builder(finding.parameters)
+        if insight:
+            insights.append(insight)
+    return insights

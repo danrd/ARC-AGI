@@ -56,7 +56,7 @@ class _FakeAnalyzer:
 
     def analyze_task(self, task):
         type(self).calls += 1
-        return SimpleNamespace(task=task)
+        return SimpleNamespace(task=task, get_findings=lambda: type(self).findings)
 
 
 @pytest.fixture
@@ -64,8 +64,6 @@ def fake_analysis(monkeypatch):
     _FakeAnalyzer.calls = 0
     _FakeAnalyzer.findings = _findings()
     monkeypatch.setattr("symbolic.analyzer.SymbolicAnalyzer", _FakeAnalyzer)
-    monkeypatch.setattr("symbolic.findings.build_task_findings",
-                         lambda analysis: _FakeAnalyzer.findings)
     return _FakeAnalyzer
 
 

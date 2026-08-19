@@ -1025,150 +1025,39 @@ class TaskAnalysis:
 
         return stats
 
+    def get_findings(self):
+        """Structured claims drawn from this analysis - see symbolic.findings.
+
+        The entry point for anything that wants to read the analysis rather
+        than print it, and the common source behind every rendered view of
+        it. Built once: the analysis is immutable after __init__, so the
+        findings drawn from it are too.
+        """
+        from symbolic.findings import build_task_findings
+
+        if getattr(self, "_findings", None) is None:
+            self._findings = build_task_findings(self)
+        return self._findings
+
     def get_transformation_hypothesis(self) -> str:
-        """Generate a human-readable hypothesis about the transformation."""
-        hypothesis_parts = []
+        """Human-readable hypothesis about the transformation.
 
-        # Analyze consistent patterns to build hypothesis
-        high_confidence_patterns = [p for p in self.consistent_patterns if p.confidence >= 0.8]
-        medium_confidence_patterns = [p for p in self.consistent_patterns if 0.5 <= p.confidence < 0.8]
+        Wording lives in symbolic.findings, not here: this used to carry its
+        own if/elif chain over pattern types, phrasing the same claims a
+        second time alongside the structured output, and the two had already
+        drifted apart on parameter names. One source of phrasing, several
+        views over it.
+        """
+        from symbolic.findings import render_hypothesis
 
-        if high_confidence_patterns:
-            hypothesis_parts.append("HIGH CONFIDENCE RULES:")
-            for pattern in high_confidence_patterns:
-                # A parameter missing from common_values did not hold across
-                # the examples. Say so instead of naming a value: the reader
-                # cannot tell a filled-in default from a measurement, so a
-                # plausible number here is worse than no number.
-                common = pattern.parameters.get('common_values', {})
-
-                if pattern.pattern_type == 'causal_shift':
-                    if 'rule' in common:
-                        hypothesis_parts.append(
-                            f"  • Objects are shifted based on: {str(common['rule']).replace('_', ' ')}")
-                    else:
-                        hypothesis_parts.append("  • Objects are shifted, but the rule differs between examples")
-
-                elif pattern.pattern_type == 'aligned_addition':
-                    if 'alignment_type' in common:
-                        hypothesis_parts.append(
-                            f"  • New objects are added {common['alignment_type']} with existing objects")
-                    else:
-                        hypothesis_parts.append("  • New objects are added in line with existing ones (alignment differs between examples)")
-
-                elif pattern.pattern_type == 'shape_duplication':
-                    hypothesis_parts.append("  • Shapes are duplicated from input to create new objects")
-
-                elif pattern.pattern_type == 'color_based_deletion':
-                    if 'color' in common:
-                        hypothesis_parts.append(f"  • Objects with color {common['color']} are removed")
-                    else:
-                        hypothesis_parts.append("  • Objects are removed by color, but the color differs between examples")
-
-                elif pattern.pattern_type == 'shape_based_deletion':
-                    if 'shape' in common:
-                        hypothesis_parts.append(f"  • All {common['shape']} objects are removed")
-                    else:
-                        hypothesis_parts.append("  • Objects are removed by shape, but the shape differs between examples")
-
-                elif pattern.pattern_type == 'uniform_translation':
-                    if 'shift' in common:
-                        hypothesis_parts.append(f"  • All objects are translated by {common['shift']}")
-                    else:
-                        hypothesis_parts.append("  • All objects are translated, but the offset differs between examples")
-
-                elif pattern.pattern_type == 'color_mapping':
-                    hypothesis_parts.append("  • Colors are mapped according to consistent rules")
-
-                elif pattern.pattern_type == 'size_scaling':
-                    factor = common.get('scale_factor')
-                    if isinstance(factor, (int, float)):
-                        hypothesis_parts.append(f"  • Objects are scaled by factor {factor:.2f}")
-                    else:
-                        hypothesis_parts.append("  • Objects are scaled (factor varies)")
-
-        if medium_confidence_patterns:
-            hypothesis_parts.append("\nMEDIUM CONFIDENCE OBSERVATIONS:")
-            for pattern in medium_confidence_patterns:
-                hypothesis_parts.append(f"  • {pattern.description}")
-
-        # Add grid size observations
-        size_changes = [a.grid_diff.has_size_change for a in self.subtasks_analyses]
-        if all(size_changes):
-            hypothesis_parts.append("\nGRID OBSERVATIONS:")
-            hypothesis_parts.append("  • Output grid size always differs from input")
-        elif not any(size_changes):
-            hypothesis_parts.append("\nGRID OBSERVATIONS:")
-            hypothesis_parts.append("  • Output grid size always matches input")
-
-        if not hypothesis_parts:
-            return "No clear transformation hypothesis could be established. The transformation may be highly variable or complex."
-
-        return "\n".join(hypothesis_parts)
+        return render_hypothesis(self.get_findings())
 
     def get_actionable_insights(self) -> List[str]:
-        """Extract actionable transformation steps that could be programmed.
+        """Transformation steps that could be programmed - the imperative
+        view of the same findings behind get_transformation_hypothesis."""
+        from symbolic.findings import render_insights
 
-        Stricter than the hypothesis text above: an insight is meant to be
-        executable, and a step whose parameter never held across the
-        examples cannot be executed. Those are dropped rather than
-        softened into prose - the caller gets fewer steps, all of them
-        backed by a value every example agreed on.
-        """
-        insights = []
-
-        for pattern in self.consistent_patterns:
-            if pattern.confidence < 0.7:
-                continue
-
-            common = pattern.parameters.get('common_values', {})
-
-            if pattern.pattern_type == 'causal_shift':
-                rule = common.get('rule')
-                if not isinstance(rule, str):
-                    continue
-                if 'inner_holes' in rule:
-                    insights.append("For each object: shift_amount = count(inner_holes)")
-                elif 'hor_size' in rule:
-                    insights.append("For each object: horizontal_shift = object.hor_size")
-                elif 'vert_size' in rule:
-                    insights.append("For each object: vertical_shift = object.vert_size")
-                elif 'size' in rule:
-                    insights.append("For each object: shift_amount = object.size")
-
-            elif pattern.pattern_type == 'aligned_addition':
-                alignment = common.get('alignment_type')
-                if not isinstance(alignment, str):
-                    continue
-                if 'x_aligned' in alignment:
-                    insights.append("Create new objects x-aligned with existing objects")
-                elif 'y_aligned' in alignment:
-                    insights.append("Create new objects y-aligned with existing objects")
-
-            elif pattern.pattern_type == 'shape_duplication':
-                insights.append("Duplicate shapes from input (possibly with transformations)")
-
-            elif pattern.pattern_type == 'color_based_deletion':
-                if 'color' in common:
-                    insights.append(f"Delete all objects with color: {common['color']}")
-
-            elif pattern.pattern_type == 'shape_based_deletion':
-                if 'shape' in common:
-                    insights.append(f"Delete all objects with shape: {common['shape']}")
-
-            elif pattern.pattern_type == 'uniform_translation':
-                if 'shift' in common:
-                    insights.append(f"Translate all objects by offset: {common['shift']}")
-
-            elif pattern.pattern_type == 'color_mapping':
-                insights.append("Apply color mapping transformation to all objects")
-
-            elif pattern.pattern_type == 'size_scaling':
-                factor = common.get('scale_factor')
-                if isinstance(factor, (int, float)):
-                    insights.append(f"Scale all objects by factor: {factor:.2f}")
-
-        return insights
+        return render_insights(self.get_findings())
 
 
 # ============================================================================

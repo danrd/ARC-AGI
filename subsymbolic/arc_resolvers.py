@@ -51,14 +51,13 @@ def _task_findings(task):
     without limit.
     """
     from symbolic.analyzer import SymbolicAnalyzer
-    from symbolic.findings import build_task_findings
 
     key = str(getattr(task, "label", None) or getattr(task, "id", id(task)))
     if key in _findings_cache:
         _findings_cache.move_to_end(key)
         return _findings_cache[key]
 
-    findings = build_task_findings(SymbolicAnalyzer().analyze_task(task))
+    findings = SymbolicAnalyzer().analyze_task(task).get_findings()
     _findings_cache[key] = findings
     if len(_findings_cache) > _FINDINGS_CACHE_SIZE:
         _findings_cache.popitem(last=False)

@@ -885,6 +885,10 @@ class TaskAnalysis:
                     'common_values': common_values,
                     'values': dict(observed_values),
                     'examples_seen': n_seen,
+                    # Which examples, not just how many: a claim the reader
+                    # cannot trace back to specific examples is one they
+                    # cannot verify or refute.
+                    'example_indices': tuple(idx for idx, _ in occurrences),
                 }
             ))
 

@@ -8,7 +8,7 @@ from itertools import product
 from scipy.spatial.distance import euclidean
 from scipy import stats as st
 from rl.arc_task import ARCSubtask
-from symbolic.objects_analysis import GridObject
+from symbolic.objects_analysis import GridObject, matching_transforms
 from symbolic.utils import find_upper_left_corner, coords_transform, count_unique_cells, dict_to_list, check_subset_condition
 from symbolic.patterns import generate_patterns, find_connected_components_with_color, find_connected_components_excluding_colors
 
@@ -1269,26 +1269,33 @@ class RelationAnalyzer():
 
     @staticmethod
     def rotation_symmetry(obj1:GridObject, obj2:GridObject):
-        """Identify rotation relations between objects."""
+        """Identify rotation relations between objects.
+
+        Gated on the objects' cached congruence_key (see GridObject / this
+        module's calculate_shape_similarity): two masks that aren't
+        congruent under *any* rotation or reflection can't be related by
+        one of the specific ones checked below either, so that O(1) key
+        comparison skips the O(size) transform work entirely for the
+        overwhelming majority of pairs, which share no shape at all.
+        matching_transforms (not relating_transform) is used because the
+        three relation names below are independent flags, not one label -
+        a mask symmetric under more than one operation can legitimately
+        earn more than one of them, same as the previous per-transform
+        checks did.
+        """
         rotations = []
         if len(obj1.coords) > 1 and len(obj2.coords) > 1: # exclude cells
             if len(obj1.coords) == len(obj2.coords):
-                grid1 = obj1.obj_mask
-                grid2 = obj2.obj_mask
-                if ((grid1.shape == np.rot90(grid2, k=1).shape
-                    and (grid1 == np.rot90(grid2, k=1)).all())
-                    or (grid1.shape == np.rot90(grid2, k=2).shape
-                    and (grid1 == np.rot90(grid2, k=2)).all())
-                    or (grid1.shape == np.rot90(grid2, k=3).shape
-                    and (grid1 == np.rot90(grid2, k=3)).all())
-                ):
-                    rotations.append('rotation')
-                if (grid1.shape == np.flipud(grid2).shape
-                    and (grid1 == np.flipud(grid2)).all()):
-                    rotations.append('horizontal_symmetry')
-                if (grid1.shape == np.fliplr(grid2).shape
-                    and (grid1 == np.fliplr(grid2)).all()):
-                    rotations.append('vertical_symmetry')
+                key1 = getattr(obj1, "congruence_key", None)
+                key2 = getattr(obj2, "congruence_key", None)
+                if key1 is not None and key1 == key2:
+                    matches = matching_transforms(obj1.obj_mask, obj2.obj_mask)
+                    if matches & {'rot90', 'rot180', 'rot270'}:
+                        rotations.append('rotation')
+                    if 'horizontal_flip' in matches:
+                        rotations.append('horizontal_symmetry')
+                    if 'vertical_flip' in matches:
+                        rotations.append('vertical_symmetry')
         return rotations
 
     @staticmethod
@@ -1422,7 +1429,21 @@ class RelationAnalyzer():
 
 
 def calculate_shape_similarity(obj1, obj2):
-    """Shape similarity calculation based on binary masks overlap ratio."""
+    """Shape similarity: 1.0 when the two objects are the same shape up to
+    rotation/reflection, else an IoU-based overlap ratio as a softer signal.
+
+    The congruence check comes first and is the cheap path (an O(1) key
+    comparison, once each key is cached on construction - see GridObject's
+    congruence_key) - it also catches every rotated/reflected duplicate that
+    the overlap ratio below cannot: that ratio only ever crops at two fixed
+    alignments (top-left, center) without trying any rotation, so a shape
+    and its 90-degree turn scored near 0 even though they're identical.
+    """
+    key1 = getattr(obj1, "congruence_key", None)
+    key2 = getattr(obj2, "congruence_key", None)
+    if key1 is not None and key1 == key2:
+        return 1.0
+
     # Quick size filter
     size_ratio = min(obj1.size, obj2.size) / max(obj1.size, obj2.size)
     if size_ratio < 0.5:

@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List
+from typing import List, Optional
 from collections import defaultdict
 from symbolic.utils import find_upper_left_corner, coords_transform
 from symbolic.patterns import find_connected_components_with_color
@@ -9,6 +9,72 @@ colors_mapping = {
     0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
     5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
 }
+
+# ---------------------------------------------------------------------------
+# Shape congruence
+#
+# Whether two objects have "the same shape" (up to rotation/reflection) is a
+# question about pairs, not a category one object can be assigned in
+# isolation - shape classification answers a different question and stays
+# out of this. All 8 named transforms below are the dihedral group of the
+# square, generated the same way this module's own symmetry checks already
+# do (np.rot90/flipud/fliplr on obj_mask) so the naming agrees with
+# GridObject.symmetry's "horizontal"/"vertical" convention: horizontal_flip
+# mirrors top against bottom (flipud), vertical_flip mirrors left against
+# right (fliplr).
+# ---------------------------------------------------------------------------
+
+MASK_TRANSFORMS = (
+    ("identity",         lambda m: m),
+    ("rot90",            lambda m: np.rot90(m, 1)),
+    ("rot180",           lambda m: np.rot90(m, 2)),
+    ("rot270",           lambda m: np.rot90(m, 3)),
+    ("horizontal_flip",  lambda m: np.flipud(m)),
+    ("vertical_flip",    lambda m: np.fliplr(m)),
+    ("transpose",        lambda m: m.T),
+    ("anti_transpose",   lambda m: np.rot90(m, 2).T),
+)
+
+
+def _stamp(mask: np.ndarray):
+    """A hashable, orderable identity for a mask's content and shape - shape
+    has to travel with the bytes explicitly, since a rotation that swaps
+    height and width would otherwise leave two differently-shaped masks
+    looking identical once flattened."""
+    return (mask.shape, mask.tobytes())
+
+
+def congruence_key(mask: np.ndarray):
+    """Identical for two masks exactly when one is some rotation/reflection
+    of the other - the smallest of its 8 dihedral variants. O(size) once;
+    every subsequent congruence check against this object is then an O(1)
+    equality on the returned key instead of repeating the transforms."""
+    return min(_stamp(transform(mask)) for _name, transform in MASK_TRANSFORMS)
+
+
+def relating_transform(mask_a: np.ndarray, mask_b: np.ndarray) -> Optional[str]:
+    """Which single named transform turns mask_a into mask_b, or None if
+    they aren't congruent at all. When several transforms coincide (mask_a
+    has its own symmetry), the one earliest in MASK_TRANSFORMS wins, so an
+    identity match is always reported as "identity" rather than some
+    symmetry-preserving rotation that happens to land on the same result."""
+    target = _stamp(mask_b)
+    for name, transform in MASK_TRANSFORMS:
+        if _stamp(transform(mask_a)) == target:
+            return name
+    return None
+
+
+def matching_transforms(mask_a: np.ndarray, mask_b: np.ndarray) -> frozenset:
+    """Every named transform that turns mask_a into mask_b - plural, unlike
+    relating_transform: a mask symmetric under more than one operation (e.g.
+    a shape that is both its own 180-degree rotation and its own left-right
+    mirror) can satisfy several at once, and a caller distinguishing
+    "is this a rotation" from "is this a reflection" as independent
+    questions (as this module's own relation flags do) needs to see all of
+    them, not just whichever sorts first."""
+    target = _stamp(mask_b)
+    return frozenset(name for name, transform in MASK_TRANSFORMS if _stamp(transform(mask_a)) == target)
 
 # ---------------------------------------------------------------------------
 # Object embedding schema
@@ -437,6 +503,11 @@ class GridObject():
 
         self.obj_mask = obj_mask
         self.obj_structure = obj_structure
+        # Computed once here rather than per pair a relation embedding
+        # compares this object against - see congruence_key's own docstring
+        # for why that turns an O(size) operation into an O(1) one at every
+        # later use.
+        self.congruence_key = congruence_key(obj_mask)
         return tuple(contour)
 
     def inner_contour_split(self):

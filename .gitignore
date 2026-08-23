@@ -5,3 +5,4 @@ data/eval_predictions
 wandb
 __pycache__/
 .venv/
+*.log

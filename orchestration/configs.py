@@ -101,7 +101,8 @@ class ExperimentConfig(BaseModel):
         generation = GenerationConfig(**exp_params.get("generation", {}))
         prompt = PromptingConfig(**exp_params.get("prompt", {}))
         rl = RlConfig(**exp_params.get("rl", {}))
-        return cls(base=base, llm=llm, generation=generation, prompt=prompt, rl=rl)
+        logging = WandbLogConfig(**exp_params.get("logging", {}))
+        return cls(base=base, llm=llm, generation=generation, prompt=prompt, rl=rl, logging=logging)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":

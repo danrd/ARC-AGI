@@ -7,6 +7,25 @@ from subsymbolic.llm_setup import LlmConfig
 from subsymbolic.prompt_builder import PromptingConfig
 
 
+def test_from_dict_applies_logging_overrides():
+    """Regression test: from_dict used to build base/llm/generation/prompt/rl
+    from the input dict but never read "logging", so any wandb project/group/
+    plot override there was silently dropped in favour of WandbLogConfig's
+    defaults - no error, just the wrong project name at runtime."""
+    config = ExperimentConfig.from_dict({
+        "logging": {"project": "ARC-1", "log_result_plot": True},
+    })
+
+    assert config.logging.project == "ARC-1"
+    assert config.logging.log_result_plot is True
+
+
+def test_from_dict_defaults_logging_when_absent():
+    config = ExperimentConfig.from_dict({})
+
+    assert config.logging.project == "llm-run"
+
+
 def test_to_wandb_config_flattens_llm_and_generation_only():
     """Not base/prompt/rl/system/logging/project - those aren't "what was
     queried", they're run mechanics or unrelated subsystems."""

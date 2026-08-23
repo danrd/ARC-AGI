@@ -26,6 +26,36 @@ def test_from_dict_defaults_logging_when_absent():
     assert config.logging.project == "llm-run"
 
 
+def test_from_dict_applies_system_overrides():
+    """Same bug as logging: from_dict() never read "system", so
+    max_system_iterations/verbose overrides were silently dropped."""
+    config = ExperimentConfig.from_dict({
+        "system": {"max_system_iterations": 9, "verbose": False},
+    })
+
+    assert config.system.max_system_iterations == 9
+    assert config.system.verbose is False
+
+
+def test_from_dict_applies_nested_agent_run_config():
+    """system.agent_run_config is itself a nested dataclass - a plain
+    **dict unpack into SystemRunConfig would leave it as a raw dict
+    instead of an AgentRunConfig instance, breaking attribute access
+    later (e.g. config.system.agent_run_config.max_agent_iterations)."""
+    config = ExperimentConfig.from_dict({
+        "system": {"agent_run_config": {"max_agent_iterations": 7}},
+    })
+
+    assert config.system.agent_run_config.max_agent_iterations == 7
+
+
+def test_from_dict_defaults_system_when_absent():
+    config = ExperimentConfig.from_dict({})
+
+    assert config.system.max_system_iterations == 5
+    assert config.system.agent_run_config.max_agent_iterations == 3
+
+
 def test_to_wandb_config_flattens_llm_and_generation_only():
     """Not base/prompt/rl/system/logging/project - those aren't "what was
     queried", they're run mechanics or unrelated subsystems."""

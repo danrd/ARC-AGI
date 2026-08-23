@@ -102,7 +102,11 @@ class ExperimentConfig(BaseModel):
         prompt = PromptingConfig(**exp_params.get("prompt", {}))
         rl = RlConfig(**exp_params.get("rl", {}))
         logging = WandbLogConfig(**exp_params.get("logging", {}))
-        return cls(base=base, llm=llm, generation=generation, prompt=prompt, rl=rl, logging=logging)
+        system_params = dict(exp_params.get("system", {}))
+        agent_run_config = AgentRunConfig(**system_params.pop("agent_run_config", {}))
+        system = SystemRunConfig(agent_run_config=agent_run_config, **system_params)
+        return cls(base=base, llm=llm, generation=generation, prompt=prompt, rl=rl,
+                    logging=logging, system=system)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":

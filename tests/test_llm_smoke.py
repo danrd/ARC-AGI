@@ -173,3 +173,37 @@ def test_gpu_llm_smoke(arc_task, tiny_tokenizer, gpu_runner):
 
     output = gpu_runner.generate(prompt)
     assert isinstance(output, str) and output != ""
+
+
+@pytest.fixture(scope="session")
+def llama_cpp_gpu_runner(supra_router_gguf_path):
+    """Same tiny GGUF as cpu_runner, but with n_gpu_layers=-1 - exercises
+    llama.cpp's own CPU/GPU split specifically. device="cpu" here is not a
+    typo: in this codebase's device tiers (see llm_setup.py's module
+    docstring) "cpu" means "the llama.cpp fallback chain", which can itself
+    offload layers to GPU - it's orthogonal to gpu_runner above, which goes
+    through the separate HF/vLLM device="gpu" tier instead."""
+    if not gpu_enabled():
+        pytest.skip("GPU tests are opt-in: set ARC_TEST_GPU=1 to run")
+
+    base = BaseConfig(device="cpu")
+    llm = LlmConfig(framework="llama_cpp", model=supra_router_gguf_path, n_gpu_layers=-1)
+    generation = GenerationConfig(max_tokens=64, temperature=0.0)
+    config = ExperimentConfig(base=base, llm=llm, generation=generation)
+    with build_runner(config) as runner:
+        yield runner
+
+
+@pytest.mark.gpu
+def test_llama_cpp_gpu_llm_smoke(arc_task, tiny_tokenizer, llama_cpp_gpu_runner):
+    """Confirms the llama.cpp GPU-offload path itself actually runs end to
+    end, not just that CUDA was detected at import time (llama_supports_gpu_offload()
+    can be True while a CUDA-built wheel still crashes on real inference -
+    see the AVX512-vs-actual-CPU mismatch this was written to catch)."""
+    config = _make_config(MINIMAL_BLOCKS, "xml")
+    builder = _make_builder(config, tiny_tokenizer)
+    prompt = builder.build(arc_task, context=_context_for(arc_task))
+    assert prompt is not None
+
+    output = llama_cpp_gpu_runner.generate(prompt)
+    assert isinstance(output, str) and output != ""

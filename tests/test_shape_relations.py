@@ -14,7 +14,6 @@ untouched by this change).
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from symbolic.objects_analysis import GridObject
 from symbolic.summaries import RelationAnalyzer, calculate_shape_similarity

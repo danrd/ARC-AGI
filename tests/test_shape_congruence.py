@@ -11,7 +11,6 @@ tested in test_symbolic.py.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from symbolic.objects_analysis import congruence_key, matching_transforms, relating_transform
 

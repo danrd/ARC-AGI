@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from rl.arc_task import ARCSubtask, ARCTask
+from rl.arc_task import ARCSubtask
 from symbolic.analyzer import SubtaskAnalysis, TransformationPattern, TaskAnalysis
 
 

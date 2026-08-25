@@ -52,7 +52,6 @@ def test_object_feature_groups_cover_the_whole_object_vector():
     because Python clamps an over-long slice, so the head silently received 6
     columns instead of the 13 it asked for, and would have started reading
     different fields the moment the vector's width changed."""
-    import torch
 
     from rl.features import ObjectProcessor
     from symbolic.objects_analysis import OBJECT_DIM

@@ -12,6 +12,7 @@ from typing import List
 import pytest
 
 from rl.arc_task import ARCSubtask, ARCTask
+from subsymbolic.prompt_builder import ApproxTokenizer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODEL_CACHE_DIR = REPO_ROOT / "data" / "pretrained_models"
@@ -31,23 +32,12 @@ GPU_MODEL_CANDIDATES: List[str] = [
 ]
 
 
-class ApproxTokenizer:
-    """Whitespace-split token counter, standing in for a real tokenizer.
-
-    PromptBuilder only needs `.tokenize(text)` to return something with a
-    `len()` for token-budget accounting during prompt assembly - it doesn't
-    need real subword tokenization for that. Using a real HF tokenizer here
-    would mean downloading one just to count tokens approximately anyway.
-    Doesn't support `apply_chat_template`, so configs with `chat_template`
-    set aren't exercised by this suite (see test_llm_smoke.py's note).
-    """
-
-    def tokenize(self, text: str) -> List[str]:
-        return text.split()
-
-
 @pytest.fixture(scope="session")
 def tiny_tokenizer() -> ApproxTokenizer:
+    """Enough for token-budget accounting, which is all PromptBuilder asks
+    of a tokenizer. It has no `apply_chat_template`, so configs setting
+    `chat_template` aren't exercised by this suite - see test_llm_smoke.py's
+    note on that."""
     return ApproxTokenizer()
 
 

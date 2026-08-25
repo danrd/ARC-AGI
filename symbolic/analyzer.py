@@ -3,7 +3,7 @@ from typing import List, Tuple, Dict, Optional, Any
 from collections import defaultdict, Counter
 import numpy as np
 from symbolic.summaries import GridSummary, calculate_shape_similarity
-from symbolic.utils import BACKGROUND_NONE, infer_background
+from symbolic.utils import BACKGROUND_NONE, infer_task_canvas, resolve_background
 
 colors_mapping = {
         0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
@@ -47,11 +47,14 @@ class ObjectChange:
 class BackgroundSummary:
     """What a task's examples showed about the background.
 
-    None in `per_example_*` means that grid established no background at
-    all (see symbolic.utils.infer_background) - not that it was black.
-    `consistent_color` is set only when every example that established one
+    None in `per_example_*` means that grid's background colour could not
+    be identified - neither from the grid nor from the task's other grids -
+    not that it was black, and not that the grid has no canvas. Every grid
+    sits on one; a canvas painted over completely leaves nothing to read.
+
+    `consistent_color` is set only when every example that identified one
     agreed; it stays None both when they disagreed and when none was ever
-    established, which `varies_across_examples` tells apart.
+    identified, which `varies_across_examples` tells apart.
 
     `preserved_by_transformation` is None - not True - when no example had
     a background on both sides to compare. "All zero comparisons agreed" is
@@ -82,18 +85,24 @@ class TransformationPattern:
 class SubtaskAnalysis:
     """Analyzes a single input-output example pair."""
 
-    def __init__(self, subtask, font_color: Optional[int] = None, levels: List[int] = [2]):
+    def __init__(self, subtask, font_color: Optional[int] = None, levels: List[int] = [2],
+                 task_canvas: Optional[int] = None):
         """Initialize analysis for a single ARCSubtask.
 
         Args:
             subtask: ARCSubtask instance with train_inp and train_out
             font_color: Background colour to ignore. None (the default)
-                infers it per grid - see symbolic.utils.infer_background -
+                infers it per grid - see symbolic.utils.resolve_background -
                 so a task whose background isn't black, or isn't the same
                 colour in input and output, is read correctly. Passing an
                 int forces that colour for both grids, which is what a
                 caller who already knows the background should do.
             levels: Representation levels to analyze
+            task_canvas: the colour the surrounding task established as its
+                canvas, used only to settle grids whose own signals are
+                inconclusive - a covered canvas is still the canvas. Left
+                None when analysing a subtask on its own, which is simply
+                less evidence, not different evidence.
         """
 
         self.subtask = subtask
@@ -106,8 +115,10 @@ class SubtaskAnalysis:
         # Inferred separately per grid: a transformation is free to change
         # the background, and forcing the input's colour onto the output
         # would then hide every object the output actually has.
-        self.input_background = font_color if font_color is not None else infer_background(self.input_grid)
-        self.output_background = font_color if font_color is not None else infer_background(self.output_grid)
+        self.input_background = (font_color if font_color is not None
+                                 else resolve_background(self.input_grid, task_canvas))
+        self.output_background = (font_color if font_color is not None
+                                  else resolve_background(self.output_grid, task_canvas))
         # GridSummary and the object extraction below it compare cells against
         # a colour, so they need one: where no background was established,
         # BACKGROUND_NONE stands in - a value no ARC colour can take, so
@@ -874,9 +885,18 @@ class TaskAnalysis:
         self.train_subtasks = task.subtasks
         self.subtasks_analyses = []
 
+        # Established before any subtask is analysed, from every grid at
+        # once: a grid where the canvas is painted over can't show its
+        # colour, but the task's other grids can - and that is exactly the
+        # evidence a per-grid rule has no access to.
+        self.task_canvas = (font_color if font_color is not None
+                            else infer_task_canvas(
+                                [g for s in self.train_subtasks
+                                 for g in (s.train_inp, s.train_out)]))
+
         # Analyze each subtask
         for subtask in self.train_subtasks:
-            analysis = SubtaskAnalysis(subtask, font_color, levels)
+            analysis = SubtaskAnalysis(subtask, font_color, levels, task_canvas=self.task_canvas)
             self.subtasks_analyses.append(analysis)
 
         self.background = self._summarize_background()
@@ -890,9 +910,12 @@ class TaskAnalysis:
         Deliberately reports disagreement rather than resolving it. A task
         whose examples genuinely use different backgrounds is not a task
         with one background plus noise - measured over ARC-AGI-2's training
-        set, 7.1% of tasks are like that, and 19.4% establish no background
-        anywhere. Picking a winner in either case would state as fact
-        something the examples never showed.
+        set, 7.1% of tasks are like that. Picking a winner would state as
+        fact something the examples never showed.
+
+        Where a colour is missing here it stayed unidentified even after
+        the task's other grids were consulted (see self.task_canvas) - the
+        canvas is painted over too heavily for any grid to reveal it.
         """
         inputs = [a.input_background for a in self.subtasks_analyses]
         outputs = [a.output_background for a in self.subtasks_analyses]
@@ -1126,4 +1149,6 @@ class SymbolicAnalyzer:
         return TaskAnalysis(task, font_color=self.font_color, levels=self.levels)
 
     def analyze_subtask(self, subtask) -> SubtaskAnalysis:
+        """One example on its own - no sibling grids, so a covered canvas
+        stays unidentified here where analyze_task would recover it."""
         return SubtaskAnalysis(subtask, font_color=self.font_color, levels=self.levels)

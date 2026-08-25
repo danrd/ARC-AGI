@@ -1,9 +1,11 @@
 """Tests for symbolic/utils.py's infer_background.
 
-The behaviour worth pinning down is when it *declines* to answer. Naming a
-background that isn't there is worse than naming none: every consumer
-downstream treats that colour as "not an object", so a wrong guess deletes
-real content from the analysis. The thresholds come from measurements over
+The behaviour worth pinning down is when it *declines* to answer. Naming
+the wrong colour is worse than naming none: every consumer downstream
+treats that colour as "not an object", so a wrong guess deletes real
+content from the analysis. Declining says the colour is unidentified,
+never that the grid has no canvas - every grid sits on one, and a canvas
+painted over completely just leaves nothing to read off that grid. The thresholds come from measurements over
 ARC-AGI-2's training set - see the function's docstring - so the tests here
 cover the decision boundary rather than re-deriving the statistics.
 """
@@ -13,9 +15,12 @@ import numpy as np
 
 from symbolic.utils import (
     BACKGROUND_MIN_BORDER_PURITY,
+    BACKGROUND_MIN_COVERED_SHARE,
     BACKGROUND_MIN_DOMINANCE,
     _border_cells,
     infer_background,
+    infer_task_canvas,
+    resolve_background,
 )
 
 
@@ -60,17 +65,17 @@ class TestFindsAnObviousBackground:
         assert infer_background(np.full((5, 5), 8, dtype=int)) == 8
 
 
-class TestDeclinesWhenThereIsNoBackground:
+class TestDeclinesWhenTheColourIsNotIdentifiable:
     @staticmethod
-    def test_a_colour_map_on_a_tiny_grid_has_none():
-        """Three colours, three cells each - the most common one is not a
-        background, it's just the one that happens to be first."""
+    def test_a_colour_map_on_a_tiny_grid_yields_none():
+        """Three colours, three cells each - the most common one isn't the
+        canvas, it's just the one that happens to be first."""
         grid = _grid(["123", "123", "123"])
 
         assert infer_background(grid) is None
 
     @staticmethod
-    def test_a_dense_two_colour_checkerboard_has_none():
+    def test_a_dense_two_colour_checkerboard_yields_none():
         grid = np.indices((8, 8)).sum(axis=0) % 2
 
         assert infer_background(grid) is None
@@ -221,3 +226,101 @@ class TestBackgroundSummary:
 
         assert bg.per_example_input == (3,)
         assert bg.consistent_color == 3
+
+
+# -- the canvas a task's other grids reveal ------------------------------------
+
+class TestTaskCanvas:
+    """A grid whose own signals are inconclusive is often the canvas painted
+    over, and the task's other grids still show which colour that is - of the
+    2100 grids infer_background declines across ARC-AGI-2's training set,
+    31.4% belong to a task that establishes a canvas elsewhere."""
+
+    @staticmethod
+    def _clear(color):
+        grid = np.full((8, 8), color, dtype=int)
+        grid[3, 3] = 9
+        return grid
+
+    @staticmethod
+    def _covered(color, other, share_of_canvas):
+        """A grid where `color` survives on roughly `share_of_canvas` of the
+        cells and `other` covers the rest - a canvas painted over."""
+        grid = np.full((10, 10), other, dtype=int)
+        keep = int(round(100 * share_of_canvas))
+        grid.flat[:keep] = color
+        return grid
+
+    def test_a_majority_of_grids_agreeing_names_the_canvas(self):
+        grids = [self._clear(7), self._clear(7), self._covered(7, 2, 0.45)]
+
+        assert infer_task_canvas(grids) == 7
+
+    def test_no_agreement_means_no_canvas(self):
+        """Two examples on different backgrounds: neither is the task's
+        canvas, and declaring one would flatten a real difference."""
+        grids = [self._clear(7), self._clear(1)]
+
+        assert infer_task_canvas(grids) is None
+
+    def test_grids_that_never_identify_one_give_no_canvas(self):
+        dense = _grid(["123", "231", "312"])
+
+        assert infer_task_canvas([dense, dense, dense]) is None
+
+    def test_a_minority_is_not_enough(self):
+        """One clear grid out of four doesn't make its colour the task's
+        canvas - the majority bar exists so a single example can't decide."""
+        dense = _grid(["123", "231", "312"])
+        grids = [self._clear(7), dense, dense, dense]
+
+        assert infer_task_canvas(grids) is None
+
+
+class TestResolveBackground:
+    @staticmethod
+    def _covered(color, other, share_of_canvas):
+        grid = np.full((10, 10), other, dtype=int)
+        grid.flat[:int(round(100 * share_of_canvas))] = color
+        return grid
+
+    def test_the_grids_own_reading_wins_over_the_task_canvas(self):
+        """What keeps a task whose examples use different backgrounds from
+        being flattened: a grid that shows its own colour keeps it."""
+        grid = np.full((8, 8), 1, dtype=int)
+        grid[3, 3] = 9
+
+        assert resolve_background(grid, task_canvas=7) == 1
+
+    def test_a_covered_canvas_is_recovered_from_the_task(self):
+        """The case a per-grid rule gets wrong: the canvas is still there,
+        just painted over, and the task's other grids name it."""
+        grid = self._covered(color=7, other=2, share_of_canvas=0.45)
+
+        assert infer_background(grid) is None       # this grid alone can't say
+        assert resolve_background(grid, task_canvas=7) == 7
+
+    def test_a_colour_too_thin_to_be_a_covered_canvas_is_refused(self):
+        """Below the bar it's content that happens to share the canvas's
+        colour; excluding it would delete real objects. The grid has to be
+        one the per-grid rule declines, or its own reading answers first
+        and the canvas branch is never reached."""
+        grid = _grid(["712", "121", "212"])
+
+        assert infer_background(grid) is None                      # inconclusive on its own
+        assert (grid == 7).mean() < BACKGROUND_MIN_COVERED_SHARE   # one cell of 7
+        assert resolve_background(grid, task_canvas=7) is None
+
+    def test_a_fully_covered_canvas_stays_unidentified(self):
+        """Nothing left to observe. Excluding a colour with no cells would
+        be a no-op anyway, so nothing is lost by not claiming it."""
+        grid = _grid(["123", "231", "312"])
+
+        assert infer_background(grid) is None
+        assert (grid == 7).sum() == 0
+        assert resolve_background(grid, task_canvas=7) is None
+
+    def test_without_a_task_canvas_it_matches_the_per_grid_rule(self):
+        dense = _grid(["123", "231", "312"])
+
+        assert resolve_background(dense, task_canvas=None) is infer_background(dense)

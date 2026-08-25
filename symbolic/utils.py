@@ -3,7 +3,7 @@ import copy
 from typing import List, Union
 import sys
 import numpy as np
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 def find_upper_left_corner(grid_size:tuple)->tuple:
     """Finds left upper corner of the grid to take into account padding.
@@ -278,12 +278,30 @@ def pad_grid(grid:np.array, target_shape, pad_val):
 BACKGROUND_MIN_DOMINANCE = 0.6
 BACKGROUND_MIN_BORDER_PURITY = 0.9
 
-# Stand-in for "this grid has no background", for the code below the
-# analyzer that has to compare cells against *some* colour. Outside ARC's
-# 0-9 palette (and clear of patterns.py's pad_val=10), so nothing ever
-# equals it and every colour is treated as foreground - which is exactly
-# what "no background" means. Kept distinct from None so the fact that
-# none was established stays visible at the analyzer level.
+# Share of a grid the task's canvas colour must still hold for that grid to
+# be read as "the canvas, covered over" rather than as content that happens
+# to share its colour. Of the 660 grids where the task establishes a canvas
+# but the grid's own signals don't, the colour holds >=40% in 66.2% of them
+# (median 0.44, and it is still the grid's most common colour in 66.2%),
+# while 15.6% hold under 5% - content, not a covered canvas.
+BACKGROUND_MIN_COVERED_SHARE = 0.4
+
+# Fraction of a task's grids that must agree on a colour before it counts
+# as that task's canvas.
+BACKGROUND_TASK_CANVAS_MAJORITY = 0.5
+
+# Stand-in for "no background colour was identified for this grid", for the
+# code below the analyzer that has to compare cells against *some* colour.
+# Outside ARC's 0-9 palette (and clear of patterns.py's pad_val=10), so
+# nothing ever equals it and every colour is treated as foreground.
+#
+# Note what this does NOT claim. A grid always sits on some canvas; when it
+# is painted over completely there is nothing left to observe, so the colour
+# is unidentified rather than absent. Treating every colour as foreground is
+# the right handling either way - there is no colour it would be safe to
+# exclude - but the distinction matters for what gets reported: see
+# infer_task_canvas, which recovers the colour from a task's other grids
+# when a single grid can't show it.
 BACKGROUND_NONE = -1
 
 
@@ -295,7 +313,8 @@ def _border_cells(grid: np.array) -> np.array:
 
 
 def infer_background(grid: np.array) -> Union[int, None]:
-    """The grid's background colour, or None when it hasn't got one.
+    """The grid's background colour, or None when this grid alone doesn't
+    show which colour it is.
 
     Two independent signals have to agree: the most common colour overall,
     and the most common colour along the border. Measured over ARC-AGI-2's
@@ -304,18 +323,23 @@ def infer_background(grid: np.array) -> Union[int, None]:
     the time when it covers under 40% - and there the border isn't uniform
     either (median purity 0.38).
 
-    Grids in that second group have no background to find: a colour map on
-    a 3x3, a dense mosaic, a few tiles. Naming one anyway would hand every
-    consumer a fabricated fact, so this returns None instead and leaves
-    them to treat every colour as foreground - the rule findings.py already
-    applies to any parameter that wasn't established. On the same data the
-    rule names a background for 67.5% of grids; the 32.5% it declines sit
-    squarely in the ambiguous band (median dominance 0.48, p90 0.57)
-    rather than being clear cases wrongly refused.
+    None means unidentified, not absent. Every grid sits on some canvas;
+    a dense mosaic or a colour map on a 3x3 is one painted over so heavily
+    that nothing about it can be read off this grid. Naming a colour anyway
+    would hand every consumer a fabricated fact - and an expensive one,
+    since whatever is called background stops being an object - so the
+    answer is withheld, the rule findings.py applies to any parameter that
+    wasn't established. Where the colour is recoverable from the task's
+    other grids, infer_task_canvas recovers it; this function deliberately
+    knows about one grid only.
 
-    This is per grid on purpose. Assuming 0 (which this replaces as a
-    hardcoded default) is wrong for 22.8% of tasks, and in 7.1% the
-    background isn't even the same colour across one task's own examples.
+    On the same data this names a colour for 67.5% of grids, and the 32.5%
+    it declines sit squarely in the ambiguous band (median dominance 0.48,
+    p90 0.57) rather than being clear cases wrongly refused.
+
+    Per grid on purpose: assuming 0 (the hardcoded default this replaces)
+    is wrong for 22.8% of tasks, and in 7.1% the background isn't even the
+    same colour across one task's own examples.
     """
     grid = np.asarray(grid)
     if grid.size == 0:
@@ -334,4 +358,65 @@ def infer_background(grid: np.array) -> Union[int, None]:
         return None
     if dominance >= BACKGROUND_MIN_DOMINANCE or border_purity >= BACKGROUND_MIN_BORDER_PURITY:
         return dominant
+    return None
+
+
+def infer_task_canvas(grids) -> Union[int, None]:
+    """The colour a task's grids agree is their canvas, or None if they
+    don't agree on one.
+
+    A grid whose own signals are inconclusive (see infer_background) is
+    often just the canvas painted over, and the task's other grids still
+    show which colour that is - evidence a per-grid rule throws away. Of
+    the 2100 grids infer_background declines across ARC-AGI-2's training
+    set, 31.4% belong to a task that establishes a canvas elsewhere.
+
+    Two separate bars, because two different things can go wrong. A tie
+    disqualifies outright: a task whose examples genuinely use different
+    backgrounds (7.1% of them) has two grids naming two colours, and
+    whichever Counter happens to return first is not the task's canvas -
+    picking it would flatten a real difference into a wrong fact. Past
+    that, the winner still has to be established by BACKGROUND_TASK_CANVAS_
+    MAJORITY of the grids, so one confident grid out of five can't decide
+    for the rest.
+    """
+    verdicts = [infer_background(grid) for grid in grids]
+    established = [v for v in verdicts if v is not None]
+    if not established:
+        return None
+
+    ranked = Counter(established).most_common()
+    colour, agreeing = ranked[0]
+    if len(ranked) > 1 and ranked[1][1] == agreeing:
+        return None  # tied - the examples disagree, so the task has no one canvas
+    if agreeing / len(verdicts) < BACKGROUND_TASK_CANVAS_MAJORITY:
+        return None
+    return colour
+
+
+def resolve_background(grid: np.array, task_canvas: Union[int, None] = None) -> Union[int, None]:
+    """This grid's background colour, using the task's canvas to settle
+    what the grid alone couldn't.
+
+    The grid's own reading wins where it has one - that is what keeps a
+    task whose examples use different backgrounds from being flattened
+    onto a single colour. Only where the grid is inconclusive does the
+    task's canvas fill in, and only while that colour still holds
+    BACKGROUND_MIN_COVERED_SHARE of the grid: below that it is content
+    that happens to share the canvas's colour, not the canvas showing
+    through, and excluding it would delete real objects.
+
+    A canvas covered *completely* (0% left) is left unidentified too. It
+    costs nothing either way - excluding a colour with no cells is a no-op -
+    but claiming a measurement no cell supports is not free.
+    """
+    own = infer_background(grid)
+    if own is not None:
+        return own
+    if task_canvas is None:
+        return None
+
+    grid = np.asarray(grid)
+    if grid.size and (grid == task_canvas).mean() >= BACKGROUND_MIN_COVERED_SHARE:
+        return task_canvas
     return None

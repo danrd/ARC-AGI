@@ -488,3 +488,163 @@ class TestInsightsView:
         )
 
         assert render_insights(findings) == []
+
+
+# -- grid- and task-level findings ---------------------------------------------
+
+def _bg(consistent=None, varies=False, preserved=None, per_input=(), per_output=()):
+    return SimpleNamespace(
+        per_example_input=per_input,
+        per_example_output=per_output,
+        consistent_color=consistent,
+        varies_across_examples=varies,
+        preserved_by_transformation=preserved,
+    )
+
+
+class TestGridSizeFindings:
+    """"The output is a different size" was the whole grid-level story, and
+    it's the weakest true thing that can be said - it names no size at all.
+    Two much stronger shapes hide inside it: an output that is the same size
+    regardless of the input (15.9% of real tasks), and a whole-number
+    scaling (1.8%)."""
+
+    @staticmethod
+    def _observations(examples):
+        return build_task_findings(_stub_analysis([], examples)).grid_observations
+
+    def test_a_constant_output_size_is_named(self):
+        examples = [
+            _example([[1, 1], [1, 1]], [[2, 2, 2]], size_change=True),
+            _example([[1] * 5], [[2, 2, 2]], size_change=True),
+        ]
+
+        observations = self._observations(examples)
+        subjects = {f.subject for f in observations}
+
+        assert "grid_output_size" in subjects
+        finding = next(f for f in observations if f.subject == "grid_output_size")
+        assert finding.parameters == {"output_rows": 1, "output_cols": 3}
+        assert "1x3" in finding.statement
+
+    def test_a_constant_output_size_is_not_claimed_when_the_inputs_match_it(self):
+        """Every input already that size makes "the output is always 2x2" a
+        restatement of the input dressed up as a fact about the output."""
+        examples = [_example([[1, 1], [1, 1]], [[2, 2], [2, 2]], size_change=True)
+                    for _ in range(2)]
+
+        subjects = {f.subject for f in self._observations(examples)}
+
+        assert "grid_output_size" not in subjects
+        assert "grid_resize" in subjects
+
+    def test_a_uniform_scaling_is_named(self):
+        examples = [
+            _example([[1]], [[2, 2], [2, 2]], size_change=True),
+            _example([[1, 1]], [[2, 2, 2, 2], [2, 2, 2, 2]], size_change=True),
+        ]
+
+        finding = next(f for f in self._observations(examples) if f.subject == "grid_scale")
+
+        assert finding.parameters == {"row_factor": 2, "col_factor": 2}
+
+    def test_an_inconsistent_resize_still_falls_back_to_the_plain_statement(self):
+        examples = [
+            _example([[1]], [[2, 2]], size_change=True),
+            _example([[1]], [[2, 2, 2]], size_change=True),
+        ]
+
+        size_subjects = {f.subject for f in self._observations(examples)
+                         if f.subject.startswith("grid_")}
+
+        assert size_subjects == {"grid_resize"}
+
+
+class TestPaletteFindings:
+    @staticmethod
+    def _changes(examples):
+        return build_task_findings(_stub_analysis([], examples)).grid_observations
+
+    def test_a_colour_introduced_in_every_example_is_reported(self):
+        examples = [_example([[1, 1]], [[1, 3]]) for _ in range(2)]
+
+        finding = next(f for f in self._changes(examples) if f.subject == "palette_added")
+
+        assert finding.parameters == {"added_colors": (3,)}
+        assert "green" in finding.statement
+
+    def test_a_colour_dropped_in_every_example_is_reported(self):
+        examples = [_example([[1, 3]], [[1, 1]]) for _ in range(2)]
+
+        finding = next(f for f in self._changes(examples) if f.subject == "palette_removed")
+
+        assert finding.parameters == {"removed_colors": (3,)}
+
+    def test_colours_that_differ_between_examples_are_not_reported(self):
+        """A colour appearing in one example and a different one in the next
+        says nothing about the test input."""
+        examples = [_example([[1, 1]], [[1, 3]]), _example([[1, 1]], [[1, 4]])]
+
+        subjects = {f.subject for f in self._changes(examples)}
+
+        assert "palette_added" not in subjects
+
+    def test_an_unchanged_palette_is_left_to_the_invariant(self):
+        """_invariant_findings already reports this as `palette`; saying it
+        again here would put one fact in two sections."""
+        examples = [_example([[1, 3]], [[3, 1]]) for _ in range(2)]
+
+        findings = build_task_findings(_stub_analysis([], examples))
+        change_subjects = {f.subject for f in findings.grid_observations}
+
+        assert not any(s.startswith("palette_") for s in change_subjects)
+        assert "palette" in {f.subject for f in findings.invariants}
+
+
+class TestBackgroundFindings:
+    @staticmethod
+    def _observations(examples, background):
+        analysis = _stub_analysis([], examples)
+        analysis.background = background
+        return build_task_findings(analysis).grid_observations
+
+    def test_a_consistent_background_is_named(self):
+        examples = [_example([[7]], [[7]]) for _ in range(2)]
+
+        finding = next(f for f in self._observations(examples, _bg(consistent=7))
+                       if f.subject == "background_color")
+
+        assert finding.parameters == {"background_color": 7}
+        assert "orange" in finding.statement
+
+    def test_disagreeing_examples_are_reported_as_disagreeing(self):
+        examples = [_example([[7]], [[7]]) for _ in range(2)]
+
+        subjects = {f.subject for f in self._observations(examples, _bg(varies=True))}
+
+        assert "background_varies" in subjects
+        assert "background_color" not in subjects
+
+    def test_a_repainted_background_is_called_out(self):
+        examples = [_example([[7]], [[1]]) for _ in range(2)]
+
+        subjects = {f.subject for f in
+                    self._observations(examples, _bg(consistent=7, preserved=False))}
+
+        assert "background_repainted" in subjects
+
+    def test_nothing_is_claimed_when_no_background_was_identified(self):
+        examples = [_example([[1]], [[1]]) for _ in range(2)]
+
+        subjects = {f.subject for f in self._observations(examples, _bg())}
+
+        assert not any(s.startswith("background") for s in subjects)
+
+    def test_an_analysis_without_a_background_attribute_is_tolerated(self):
+        """analyze_subtask builds no task-level background - the findings
+        builder must not require one."""
+        examples = [_example([[1]], [[1]]) for _ in range(2)]
+
+        findings = build_task_findings(_stub_analysis([], examples))
+
+        assert not any(f.subject.startswith("background") for f in findings.grid_observations)

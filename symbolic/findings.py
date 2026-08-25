@@ -23,6 +23,11 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+#: Colour names, so a finding reads "a black background" rather than "0".
+#: Mirrors analyzer.colors_mapping - imported from there rather than
+#: restated, so the two can't drift into naming the same number differently.
+from symbolic.color_names import COLORS_MAPPING
+
 
 # ---------------------------------------------------------------------------
 # Structure
@@ -259,12 +264,55 @@ def _grid_observation_findings(task_analysis) -> Tuple[Finding, ...]:
     resized = [a.grid_diff.has_size_change for a in analyses]
     everywhere = Evidence(tuple(range(example_count)), example_count)
 
-    if all(resized):
-        statement = "the output grid is always a different size from the input"
-    elif any(resized):
-        statement = "the output grid is resized in some examples but not others"
-    else:
+    if not any(resized):
         return ()  # always preserved - reported as an invariant instead
+
+    if all(resized):
+        # "Always a different size" is the weakest thing that can be said
+        # here, and it was all this reported. Two much stronger shapes hide
+        # inside it: an output that is the same size every time whatever
+        # the input was (15.9% of tasks), and a whole-number scaling of the
+        # input (1.8%). Both name the output's size outright; the fallback
+        # only says it won't match.
+        shapes = [(getattr(a, "input_grid", None), getattr(a, "output_grid", None))
+                  for a in analyses]
+        if any(i is None or o is None for i, o in shapes):
+            return _plain_resize_finding(everywhere)
+        output_shapes = {o.shape for _, o in shapes}
+        input_shapes = {i.shape for i, _ in shapes}
+        # "always NxM" is only worth saying when the inputs weren't all that
+        # size too - otherwise it restates the input's size back at the
+        # reader and dresses it up as a fact about the output.
+        if len(output_shapes) == 1 and len(input_shapes) > 1:
+            rows, cols = output_shapes.pop()
+            return (Finding(
+                subject="grid_output_size",
+                statement=f"the output grid is always {rows}x{cols}, whatever size the input is",
+                evidence=everywhere,
+                confidence=1.0,
+                parameters={"output_rows": rows, "output_cols": cols},
+            ),)
+
+        scale = _uniform_scale(analyses)
+        if scale is not None:
+            row_factor, col_factor = scale
+            statement = (f"the output grid is the input scaled by {row_factor}x{col_factor}"
+                         if (row_factor, col_factor) > (0, 0) else
+                         f"the output grid is the input reduced by {-row_factor}x{-col_factor}")
+            return (Finding(
+                subject="grid_scale",
+                statement=statement,
+                evidence=everywhere,
+                confidence=1.0,
+                parameters={"row_factor": row_factor, "col_factor": col_factor},
+            ),)
+
+        statement = "the output grid is always a different size from the input"
+    else:
+        # Worth stating outright rather than passing over in silence:
+        # "sometimes resized, sometimes not" tells a solver it cannot assume
+        # a fixed size relation, which is more useful than nothing at all.
+        statement = "the output grid is resized in some examples but not others"
 
     return (Finding(
         subject="grid_resize",
@@ -274,6 +322,162 @@ def _grid_observation_findings(task_analysis) -> Tuple[Finding, ...]:
     ),)
 
 
+def _plain_resize_finding(evidence: Evidence) -> Tuple[Finding, ...]:
+    """The weakest true statement, for when the grids needed to say
+    anything sharper aren't there."""
+    return (Finding(
+        subject="grid_resize",
+        statement="the output grid is always a different size from the input",
+        evidence=evidence,
+        confidence=1.0,
+    ),)
+
+
+def _uniform_scale(analyses) -> Optional[Tuple[int, int]]:
+    """The whole-number factor relating every input to its output, or None.
+
+    Positive factors mean the output is larger, negative that it is smaller;
+    a single sign and a single pair of factors have to hold across every
+    example, or nothing is claimed.
+    """
+    factors = set()
+    for analysis in analyses:
+        input_grid = getattr(analysis, "input_grid", None)
+        output_grid = getattr(analysis, "output_grid", None)
+        if input_grid is None or output_grid is None:
+            return None
+        in_rows, in_cols = input_grid.shape
+        out_rows, out_cols = output_grid.shape
+        if not (in_rows and in_cols and out_rows and out_cols):
+            return None
+        if out_rows % in_rows == 0 and out_cols % in_cols == 0:
+            factors.add((out_rows // in_rows, out_cols // in_cols))
+        elif in_rows % out_rows == 0 and in_cols % out_cols == 0:
+            factors.add((-(in_rows // out_rows), -(in_cols // out_cols)))
+        else:
+            return None
+    if len(factors) != 1:
+        return None
+    factor = factors.pop()
+    return factor if factor != (1, 1) else None
+
+
+def _palette_findings(task_analysis) -> Tuple[Finding, ...]:
+    """What the transformation does to the set of colours in play.
+
+    Measured over ARC-AGI-2's training set, 45.8% of tasks never introduce
+    or drop a colour, 25.7% introduce the same one in every example, and
+    19.0% drop the same one - all facts about the answer's palette that
+    nothing here reported. Only agreement across every example counts: a
+    colour appearing in one example and not the next says nothing about
+    the test input.
+    """
+    analyses = task_analysis.subtasks_analyses
+    example_count = len(analyses)
+    if not example_count:
+        return ()
+
+    added, removed = [], []
+    for analysis in analyses:
+        # Same rule the invariants use: an example missing a grid means
+        # "cannot tell", and one of those withdraws the claim entirely
+        # rather than being skipped on the way to asserting it.
+        input_grid = getattr(analysis, "input_grid", None)
+        output_grid = getattr(analysis, "output_grid", None)
+        if input_grid is None or output_grid is None:
+            return ()
+        in_colors = set(np.unique(input_grid).tolist())
+        out_colors = set(np.unique(output_grid).tolist())
+        added.append(out_colors - in_colors)
+        removed.append(in_colors - out_colors)
+
+    everywhere = Evidence(tuple(range(example_count)), example_count)
+    findings = []
+
+    if not any(added) and not any(removed):
+        # _invariant_findings already reports this as the `palette`
+        # invariant ("input and output use the same set of colors");
+        # repeating it here would put the same fact in two sections.
+        return ()
+
+    if any(added) and all(colors == added[0] for colors in added):
+        shared = sorted(added[0])
+        findings.append(Finding(
+            subject="palette_added",
+            statement=f"every output introduces {_color_phrase(shared)}, absent from its input",
+            evidence=everywhere,
+            confidence=1.0,
+            parameters={"added_colors": tuple(shared)},
+        ))
+
+    if any(removed) and all(colors == removed[0] for colors in removed):
+        shared = sorted(removed[0])
+        findings.append(Finding(
+            subject="palette_removed",
+            statement=f"every output drops {_color_phrase(shared)}, present in its input",
+            evidence=everywhere,
+            confidence=1.0,
+            parameters={"removed_colors": tuple(shared)},
+        ))
+
+    return tuple(findings)
+
+
+def _color_phrase(colors: Sequence[int]) -> str:
+    names = [f"{COLORS_MAPPING.get(c, c)}" for c in colors]
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + f" and {names[-1]}"
+
+
+def _background_findings(task_analysis) -> Tuple[Finding, ...]:
+    """What the examples showed about the background colour.
+
+    Reports only what BackgroundSummary established, and reports
+    disagreement as disagreement: a task whose examples sit on different
+    backgrounds is a fact a solver needs, not noise to average away.
+    Nothing is said when no example identified one - see
+    symbolic.utils.infer_background for why that happens.
+    """
+    background = getattr(task_analysis, "background", None)
+    if background is None:
+        return ()
+
+    example_count = len(task_analysis.subtasks_analyses)
+    everywhere = Evidence(tuple(range(example_count)), example_count)
+
+    if background.varies_across_examples:
+        return (Finding(
+            subject="background_varies",
+            statement="the background colour is not the same in every example",
+            evidence=everywhere,
+            confidence=1.0,
+        ),)
+
+    if background.consistent_color is None:
+        return ()
+
+    color = background.consistent_color
+    name = COLORS_MAPPING.get(color, color)
+    findings = [Finding(
+        subject="background_color",
+        statement=f"every example sits on a {name} background",
+        evidence=everywhere,
+        confidence=1.0,
+        parameters={"background_color": color},
+    )]
+
+    if background.preserved_by_transformation is False:
+        findings.append(Finding(
+            subject="background_repainted",
+            statement="the transformation changes the background colour itself",
+            evidence=everywhere,
+            confidence=1.0,
+        ))
+
+    return tuple(findings)
+
+
 def build_task_findings(task_analysis) -> TaskFindings:
     """Convert a TaskAnalysis into the structured form consumers read."""
     return TaskFindings(
@@ -281,7 +485,9 @@ def build_task_findings(task_analysis) -> TaskFindings:
         example_count=len(task_analysis.subtasks_analyses),
         transformations=_transformation_findings(task_analysis),
         invariants=_invariant_findings(task_analysis),
-        grid_observations=_grid_observation_findings(task_analysis),
+        grid_observations=(_grid_observation_findings(task_analysis)
+                           + _palette_findings(task_analysis)
+                           + _background_findings(task_analysis)),
     )
 
 

@@ -5,10 +5,10 @@ import numpy as np
 from symbolic.summaries import GridSummary, calculate_shape_similarity
 from symbolic.utils import BACKGROUND_NONE, infer_task_canvas, resolve_background
 
-colors_mapping = {
-        0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
-        5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown'
-        }
+from symbolic.color_names import COLORS_MAPPING
+
+#: Kept as the name the rest of this module already uses.
+colors_mapping = COLORS_MAPPING
 
 @dataclass(frozen=True)
 class CellChange:

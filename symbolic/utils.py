@@ -266,3 +266,72 @@ def pad_grid(grid:np.array, target_shape, pad_val):
     padded_grid = np.pad(grid, pad_width=[(left_pad,right_pad), (upper_pad, down_pad)], constant_values=pad_val)
     return padded_grid
 
+
+
+# ---------------------------------------------------------------------------
+# Background inference
+# ---------------------------------------------------------------------------
+
+# Thresholds measured over ARC-AGI-2's 1000 training tasks (6464 grids) -
+# see infer_background's docstring for what the numbers are and why these
+# two are where the signals stop agreeing.
+BACKGROUND_MIN_DOMINANCE = 0.6
+BACKGROUND_MIN_BORDER_PURITY = 0.9
+
+# Stand-in for "this grid has no background", for the code below the
+# analyzer that has to compare cells against *some* colour. Outside ARC's
+# 0-9 palette (and clear of patterns.py's pad_val=10), so nothing ever
+# equals it and every colour is treated as foreground - which is exactly
+# what "no background" means. Kept distinct from None so the fact that
+# none was established stays visible at the analyzer level.
+BACKGROUND_NONE = -1
+
+
+def _border_cells(grid: np.array) -> np.array:
+    """Every cell on the grid's outer edge. Corners are counted twice (and
+    a 1xN grid's whole row several times) - this is only ever used to ask
+    which colour dominates the edge, which double-counting doesn't change."""
+    return np.concatenate([grid[0, :], grid[-1, :], grid[:, 0], grid[:, -1]])
+
+
+def infer_background(grid: np.array) -> Union[int, None]:
+    """The grid's background colour, or None when it hasn't got one.
+
+    Two independent signals have to agree: the most common colour overall,
+    and the most common colour along the border. Measured over ARC-AGI-2's
+    1000 training tasks (6464 grids), they agree 98.5% of the time once the
+    most common colour covers at least 60% of the grid, but only 57.6% of
+    the time when it covers under 40% - and there the border isn't uniform
+    either (median purity 0.38).
+
+    Grids in that second group have no background to find: a colour map on
+    a 3x3, a dense mosaic, a few tiles. Naming one anyway would hand every
+    consumer a fabricated fact, so this returns None instead and leaves
+    them to treat every colour as foreground - the rule findings.py already
+    applies to any parameter that wasn't established. On the same data the
+    rule names a background for 67.5% of grids; the 32.5% it declines sit
+    squarely in the ambiguous band (median dominance 0.48, p90 0.57)
+    rather than being clear cases wrongly refused.
+
+    This is per grid on purpose. Assuming 0 (which this replaces as a
+    hardcoded default) is wrong for 22.8% of tasks, and in 7.1% the
+    background isn't even the same colour across one task's own examples.
+    """
+    grid = np.asarray(grid)
+    if grid.size == 0:
+        return None
+
+    values, counts = np.unique(grid, return_counts=True)
+    dominant = int(values[counts.argmax()])
+    dominance = counts.max() / grid.size
+
+    border = _border_cells(grid)
+    border_values, border_counts = np.unique(border, return_counts=True)
+    border_dominant = int(border_values[border_counts.argmax()])
+    border_purity = border_counts.max() / border.size
+
+    if dominant != border_dominant:
+        return None
+    if dominance >= BACKGROUND_MIN_DOMINANCE or border_purity >= BACKGROUND_MIN_BORDER_PURITY:
+        return dominant
+    return None

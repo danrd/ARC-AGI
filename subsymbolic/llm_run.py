@@ -86,6 +86,25 @@ class WandbLogConfig(BaseModel):
     checkpoint_interval: int = Field(default=1, ge=1)
 
 
+class LlmRunSummary(dict):
+    """What run_llm_over_tasks returns: still a plain dict (so
+    summary["results"], ["solved_tasks"], ["avg_score"] all work as
+    before), with one thing changed - how it prints.
+
+    "results" holds every task's full prompt text and full raw generation,
+    which is exactly what you want to have and exactly what you don't want
+    printed. A notebook auto-displays the value of a call that wasn't
+    assigned to anything, so finishing a run dumped the whole thing - every
+    prompt, every generation - into the cell output. Showing the headline
+    numbers instead loses nothing: the data is still under the same keys.
+    """
+
+    def __repr__(self) -> str:
+        return (f"LlmRunSummary(tasks={len(self.get('results', []))}, "
+                f"solved={len(self.get('solved_tasks', []))}, "
+                f"avg_score={self.get('avg_score', 0.0):.3f})")
+
+
 def _print_debug_task_info(task, prompt: str, generation: str, eval_result: EvalResult,
                             processing_time_min: float) -> None:
     """debug=True's per-task dump - the full raw generation, not just the
@@ -189,7 +208,10 @@ def run_llm_over_tasks(
           ids (not just "summary/total_solved"'s count) as a run summary
           value.
 
-    Returns {"results": [...], "solved_tasks": [...], "avg_score": float}.
+    Returns an LlmRunSummary - a dict of {"results": [...],
+    "solved_tasks": [...], "avg_score": float} that prints as a one-line
+    headline rather than dumping every prompt and generation when a
+    notebook auto-displays it.
     """
     log_config = log_config or WandbLogConfig()
     context_builder = context_builder or (lambda task: {})
@@ -301,4 +323,4 @@ def run_llm_over_tasks(
     if not debug:
         wandb.finish()
     avg_score = float(sum(r["primary_score"] for r in all_results) / len(all_results)) if all_results else 0.0
-    return {"results": all_results, "solved_tasks": solved_tasks, "avg_score": avg_score}
+    return LlmRunSummary(results=all_results, solved_tasks=solved_tasks, avg_score=avg_score)

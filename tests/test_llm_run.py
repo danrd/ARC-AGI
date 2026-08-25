@@ -696,3 +696,54 @@ def test_arc_result_plotter_parses_with_the_same_options_as_the_evaluator():
     assert eval_result.solved is True
     titles = [ax.get_title() for ax in fig.axes]
     assert any("Prediction with similarity 1.0" in t for t in titles)
+
+
+# -- LlmRunSummary -------------------------------------------------------------
+
+def test_summary_prints_a_headline_not_every_prompt(fake_wandb):
+    """Regression test: the return value carries every task's full prompt
+    and full raw generation, and a notebook auto-displays the value of a
+    call that wasn't assigned - so finishing a run dumped the whole thing
+    into the cell output."""
+    from subsymbolic.llm_run import LlmRunSummary
+
+    summary = LlmRunSummary(
+        results=[{"task_id": "t1", "prompt_text": "SECRET-PROMPT" * 500,
+                  "generation_result": "SECRET-GENERATION" * 500, "primary_score": 0.5}],
+        solved_tasks=["t1"],
+        avg_score=0.5,
+    )
+
+    text = repr(summary)
+
+    assert "SECRET-PROMPT" not in text
+    assert "SECRET-GENERATION" not in text
+    assert "tasks=1" in text and "solved=1" in text and "0.500" in text
+    assert len(text) < 100
+
+
+def test_summary_is_still_a_plain_dict(fake_wandb):
+    """The compact repr must not cost callers their subscript access."""
+    from subsymbolic.llm_run import LlmRunSummary
+
+    summary = LlmRunSummary(results=[{"task_id": "t1"}], solved_tasks=["t1"], avg_score=0.5)
+
+    assert isinstance(summary, dict)
+    assert summary["results"] == [{"task_id": "t1"}]
+    assert summary["solved_tasks"] == ["t1"]
+    assert summary["avg_score"] == 0.5
+    assert dict(summary) == {"results": [{"task_id": "t1"}], "solved_tasks": ["t1"],
+                             "avg_score": 0.5}
+
+
+def test_run_llm_over_tasks_returns_a_compactly_printing_summary(fake_wandb):
+    from subsymbolic.llm_run import LlmRunSummary
+
+    summary = run_llm_over_tasks(
+        tasks=[_FakeTask("t1")],
+        subsymbolic_module=_fake_module({"t1": "prompt-1"}, {"prompt-1": "CORRECT"}),
+        evaluator=_exact_match_evaluator,
+    )
+
+    assert isinstance(summary, LlmRunSummary)
+    assert repr(summary).startswith("LlmRunSummary(")

@@ -301,7 +301,12 @@ class EnvironmentSimulator:
             return [deepcopy(obj) for obj in objects]
         objects = list(objects)
         for idx in {int(action[1]), int(action[2])}:
-            objects[idx] = deepcopy(objects[idx])
+            # The action space has a slot per max_objects, not per object in
+            # this subtask, so an index can name an empty one. The env scores
+            # that as an action that does nothing (see ARCGridWorld.step), and
+            # an action that does nothing has no object to copy.
+            if idx < len(objects):
+                objects[idx] = deepcopy(objects[idx])
         return objects
 
     def sample_action(self):

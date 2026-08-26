@@ -378,29 +378,35 @@ class RelationProcessor(nn.Module):
         self.shape_rel_dim = len(relation_group_indices(SHAPE_REL))
         self.spatial_rel_dim = len(relation_group_indices(SPATIAL_REL))
 
-        # Specialized processors
+        # One head per relation group, each sized from its own slice of the
+        # schema. The name of a head, the width it is built at and the
+        # features fed to it in forward() all have to name the same group -
+        # they read as three independent choices and are one.
         self.similarity_processor = nn.Sequential(
             nn.Linear(self.similarity_dim, 16),
             nn.ReLU(),
             nn.Linear(16, 8)
         )
 
-        self.shape_spatial_processor = nn.Sequential(
-            nn.Linear(self.spatial_rel_dim , 16),
+        self.spatial_processor = nn.Sequential(
+            nn.Linear(self.spatial_rel_dim, 16),
             nn.ReLU(),
             nn.Linear(16, 8)
         )
 
-        self.spatial_rel_processor = nn.Sequential(
+        # Wider than the other two: shape relations are the ones a match has
+        # to be judged on rather than read off, and dropout because they are
+        # the noisiest (shape_similarity and match_score are both estimates).
+        self.shape_processor = nn.Sequential(
             nn.Linear(self.shape_rel_dim, 32),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(32, 16)
         )
 
-        # Relation fusion
+        # Relation fusion. 8 (similarity) + 8 (spatial) + 16 (shape).
         self.fusion_net = nn.Sequential(
-            nn.Linear(32, hidden_dim),  # 8 + 8 + 16
+            nn.Linear(32, hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(hidden_dim, output_dim)
@@ -419,8 +425,8 @@ class RelationProcessor(nn.Module):
 
         # Process each group
         similarity_emb = self.similarity_processor(similarity_features)
-        shape_rel_emb = self.spatial_rel_processor(shape_rel_features)
-        spatial_rel_emb = self.shape_spatial_processor(spatial_rel_features)
+        shape_rel_emb = self.shape_processor(shape_rel_features)
+        spatial_rel_emb = self.spatial_processor(spatial_rel_features)
 
         # Combine features
         combined_features = torch.cat([similarity_emb, shape_rel_emb, spatial_rel_emb], dim=-1)

@@ -70,8 +70,10 @@ def test_set_subtask_and_reset_produces_valid_observation(subtask):
     assert {"grid", "action_space"} <= obs.keys()
     assert obs["grid"].shape == subtask.train_out_shape
     assert len(env.objects) > 0
-    assert env.action_space.nvec[1] == len(env.objects)
-    assert env.action_space.nvec[2] == len(env.objects)
+    # Object slots, not this subtask's object count: the action space is the
+    # same for every subtask so one agent can be trained across several.
+    assert env.action_space.nvec[1] == env.max_objects
+    assert env.action_space.nvec[2] == env.max_objects
 
 
 def test_reset_returns_to_the_same_starting_state(subtask):
@@ -259,7 +261,11 @@ def test_create_agent_restores_a_checkpoint(subtask, tmp_path):
     variable - which says nothing about the path argument that got you
     there. load is a classmethod on the algorithm, and the env has to go
     with it or the restored model has no spaces to check against."""
-    vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5, feasible_actions=SUBMIT_ONLY)
+    # objects_emb alone: this is about create_agent's branching, and the
+    # default observation space builds a 133M-parameter extractor twice over
+    # (see MAX_OBJECTS - the relation block is quadratic in it).
+    vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5, feasible_actions=SUBMIT_ONLY,
+                              observation_space_elements=["objects_emb"])
     try:
         original = create_agent(rl_config={"model_type": "PPO"}, vec_env=vec_env,
                                 model_config={"action_heads": 5})
@@ -279,7 +285,8 @@ def test_create_agent_names_an_unsupported_model_type(subtask):
     """Every branch has to either return an agent or say why it can't - one
     that falls through returns an unbound local, and the error then names
     the variable rather than the argument that caused it."""
-    vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5, feasible_actions=SUBMIT_ONLY)
+    vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=5, feasible_actions=SUBMIT_ONLY,
+                              observation_space_elements=["objects_emb"])
     try:
         with pytest.raises(ValueError, match="DQN"):
             create_agent(rl_config={"model_type": "DQN"}, vec_env=vec_env)
@@ -289,21 +296,21 @@ def test_create_agent_names_an_unsupported_model_type(subtask):
 
 # -- the observation matches the space it was declared under -----------------
 
-def _multi_object_subtask() -> ARCSubtask:
+def _multi_object_subtask(n_objects: int = 3) -> ARCSubtask:
     """Built by hand rather than taken from the fixture task, which resizes:
     the env starts from a zeroed grid of the *output* shape while its objects
     come from the input, so a resizing task puts object coordinates outside
     the grid and transformations index out of bounds - unrelated to what
-    these tests check. Several separate objects, so there are pairs for the
+    these tests check. Several separated objects, so there are pairs for the
     relation embeddings to be about.
     """
     inp = np.zeros((8, 8), dtype=int)
-    inp[1:3, 1:3] = 3          # a 2x2 block
-    inp[5, 1:5] = 4            # a horizontal line
-    inp[1:4, 6] = 2            # a vertical line
+    spots = [(1, 1), (1, 4), (1, 6), (4, 1), (4, 4), (6, 6), (6, 1)]
+    for k, (i, j) in enumerate(spots[:n_objects]):
+        inp[i, j] = k % 9 + 1
     out = inp.copy()
-    out[5, 1:5] = 3
-    return ARCSubtask("shape_preserving", inp, out)
+    out[spots[0]] = 9
+    return ARCSubtask(f"shape_preserving_{n_objects}", inp, out)
 
 
 @pytest.mark.parametrize("elements", [
@@ -365,16 +372,75 @@ def test_the_embeddings_keep_their_fractional_values():
     assert np.any(embeddings % 1 != 0), "every value is a whole number - they were rounded"
 
 
-def test_relations_are_shaped_by_the_object_count():
-    """One object means no pairs, but the observation still has to be the
-    shape its Box declares - an unshaped empty array belongs to no space."""
+def test_the_embedding_blocks_are_sized_by_the_slot_count_not_the_task():
+    """The whole point of max_objects: two subtasks with different object
+    counts have to produce the same shapes, or one agent cannot see rollouts
+    from both."""
+    small = _multi_object_subtask()
+    large = _multi_object_subtask(n_objects=6)
+    shapes = []
+    for subtask in (small, large):
+        env = make_env(observation_space_elements=["objects_emb", "relations_emb"])
+        env.set_subtask(subtask)
+        obs, _ = env.reset(seed=0)
+        shapes.append({k: obs[k].shape for k in ("objects_emb", "relations_emb")})
+        assert obs["objects_emb"].shape[0] == env.max_objects
+        assert obs["relations_emb"].shape[0] == env.max_objects
+
+    assert len(env.initial_objects) > 3  # the two subtasks really do differ
+    assert shapes[0] == shapes[1]
+
+
+def test_padding_rows_are_zero_and_real_objects_are_not():
+    """How a consumer tells the two apart without a separate mask - the
+    convention ARCGNNExtractor already reads."""
     subtask = _multi_object_subtask()
-    env = make_env(observation_space_elements=["relations_emb"])
+    env = make_env(observation_space_elements=["objects_emb"])
     env.set_subtask(subtask)
     obs, _ = env.reset(seed=0)
 
     n_objects = len(env.initial_objects)
+    occupied = obs["objects_emb"][:n_objects]
+    padding = obs["objects_emb"][n_objects:]
 
-    assert obs["relations_emb"].ndim == 2
-    assert obs["relations_emb"].shape[0] == n_objects
+    assert not padding.any()
+    assert all(row.any() for row in occupied)
+
+
+def test_an_action_naming_an_empty_slot_does_nothing_rather_than_raising():
+    """The action space has max_objects slots whatever the subtask holds, so
+    a sampled index can name a slot no object occupies. That has to be an
+    action that changes nothing - not an IndexError, and not quietly
+    redirected to some other object."""
+    subtask = _multi_object_subtask()
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE,
+                   observation_space_elements=["objects_emb", "relations_emb"])
+    env.set_subtask(subtask)
+    before, _ = env.reset(seed=0)
+    empty_slot = env.max_objects - 1
+    assert empty_slot >= len(env.initial_objects)
+
+    obs, reward, done, truncated, info = env.step(np.array([1, empty_slot, 0]))
+
+    assert np.array_equal(obs["grid"], before["grid"])
+    assert reward < 0  # scored as an ineffective action
     assert env.observation_space["relations_emb"].contains(obs["relations_emb"])
+
+
+def test_a_vec_env_spans_subtasks_with_different_object_counts():
+    """What the fixed shapes buy: training on a mix of subtasks instead of
+    one at a time. This raised `could not broadcast input array from shape
+    (5,96) into shape (2,24)` - DummyVecEnv takes the first env's space and
+    every other env's observation has to fit it."""
+    subtasks = [_multi_object_subtask(), _multi_object_subtask(n_objects=6)]
+    vec_env = create_vec_env(subtasks, n_envs=1, max_episode_len=5,
+                              feasible_actions=SUBMIT_ONLY,
+                              observation_space_elements=["objects_emb", "relations_emb"])
+    try:
+        obs = vec_env.reset()
+
+        assert vec_env.num_envs == 2
+        assert obs["relations_emb"].shape[0] == 2  # one row of observations per env
+        assert obs["objects_emb"].shape[0] == 2
+    finally:
+        vec_env.close()

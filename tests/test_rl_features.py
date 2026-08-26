@@ -93,3 +93,28 @@ def test_relation_feature_groups_cover_the_whole_relation_vector():
     )
 
     assert sorted(covered) == list(range(RELATION_DIM))
+
+
+def test_each_relation_head_is_built_at_the_width_of_the_group_it_names():
+    """A head's name, the width it is built at, and the features forward()
+    passes it are three separate lines of code that have to agree. Two of
+    them were crossed - the head named for spatial relations was built at the
+    shape group's width and fed the shape group - which the totals hid,
+    because they were crossed consistently. Nothing here checks the totals;
+    it checks that each name means what it says.
+    """
+    from rl.features import RelationProcessor
+
+    processor = RelationProcessor()
+    expected = {
+        "similarity_processor": processor.similarity_dim,
+        "shape_processor": processor.shape_rel_dim,
+        "spatial_processor": processor.spatial_rel_dim,
+    }
+
+    for name, width in expected.items():
+        first_linear = getattr(processor, name)[0]
+        assert first_linear.in_features == width, (
+            f"{name} is built at width {first_linear.in_features}, "
+            f"but the group it names is {width} wide"
+        )

@@ -13,6 +13,27 @@ from symbolic.summaries import GridSummary, RELATION_DIM
 #: rounds every fraction away - `shape_similarity`, `normalized_distance` and
 #: the rest collapse to 0 or 1 - so they carry their own.
 EMBEDDING_DTYPE = np.float32
+
+#: How many objects an observation has room for. Object-derived parts of the
+#: observation are padded to this, and the action space is sized by it, so
+#: both are the same shape for every task - which is what lets one agent see
+#: rollouts from several subtasks instead of being trained on one at a time.
+#: Without it the shapes follow each task's object count and a vec env over
+#: two subtasks cannot even be built.
+#:
+#: 16 covers 97.2% of grids in ARC-AGI-2's training set (median 2 objects,
+#: p90 8, p99 23, max 73 at representation level 1). Past that the cost grows
+#: quadratically - the relation block is MAX_OBJECTS x (MAX_OBJECTS-1) x
+#: RELATION_DIM - for a thinning tail: 24 buys 99.1% at 2.3x the width. What
+#: to do about the grids that overflow is open; today the extra objects are
+#: neither shown nor addressable (see _visible_object_count).
+MAX_OBJECTS = 16
+
+#: A padded row is all zeros, and a real object's embedding never is -
+#: checked over 742 objects, and it follows from OBJECT_SCHEMA, whose size
+#: and bounding-box fields are positive for any non-empty object. So the
+#: padding is distinguishable without a separate mask, which is the
+#: convention ARCGNNExtractor already reads (`obj_emb.sum(dim=1) != 0`).
 class ARCGridWorld(gymnasium.Env):
     def __init__(
                 self, max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
@@ -20,7 +41,9 @@ class ARCGridWorld(gymnasium.Env):
                 milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                 observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:'submit'},
+                max_objects=MAX_OBJECTS,
                 ):
+        self.max_objects = max_objects
         self.step_no = 0
         self.right_placement_reward = right_placement_reward
         self.action_penalty = action_penalty
@@ -44,10 +67,12 @@ class ARCGridWorld(gymnasium.Env):
         self.actions_dict = feasible_actions
         self.action_name_to_idx = {name: idx for idx, name in self.actions_dict.items()}
         self.objects = []
+        # Sized by max_objects rather than by the subtask, and so identical
+        # for every subtask - set_subtask only fills in the action count.
         self.action_space = spaces.MultiDiscrete([
-            1, # Action types
-            30,    # Object 1 index
-            30,    # Object 2 index
+            len(self.actions_dict),  # Action types
+            self.max_objects,        # Object 1 index
+            self.max_objects,        # Object 2 index
         ])
         # Initialize observation space
         self.observation_space = {
@@ -92,16 +117,49 @@ class ARCGridWorld(gymnasium.Env):
         self.train_inp = self.subtask.train_inp
         self.train_out = self.subtask.train_out
         self.subtask_label = self.subtask.label
-        self.action_space = spaces.MultiDiscrete([ # adapt action space to specific task
-            len(self.actions_dict.keys()),
-            len(self.initial_objects),
-            len(self.initial_objects),
-        ])
+        # The action space stays as __init__ built it: sized by max_objects,
+        # the same for every subtask. Indices past this subtask's object
+        # count address nothing and are handled in step().
         if "objects_emb" in self.observation_space_elements:
-            self.initial_objects_emb = np.array([obj.create_embedding() for obj in self.initial_objects])
+            self.initial_objects_emb = self._pad_objects(
+                [obj.create_embedding() for obj in self.initial_objects])
         if "relations_emb" in self.observation_space_elements:
-            self.initial_relation_emb = self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
+            self.initial_relation_emb = self._pad_relations(
+                self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level))
         self.reset(seed=self.seed)
+
+    def _visible_object_count(self) -> int:
+        """Objects this env shows and lets actions address. Objects past
+        max_objects are still in self.objects - World reads that list, and
+        cell2obj maps cells to it - but they have no row in the observation
+        and no index in the action space, so nothing can name them."""
+        return min(len(self.objects) or len(self.initial_objects), self.max_objects)
+
+    def _pad_objects(self, embeddings) -> np.ndarray:
+        """(max_objects, OBJECT_DIM), zero-padded. A real object's embedding
+        is never all zeros, so the padding stays distinguishable."""
+        padded = np.zeros((self.max_objects, OBJECT_DIM), dtype=EMBEDDING_DTYPE)
+        rows = np.asarray(embeddings, dtype=EMBEDDING_DTYPE).reshape(-1, OBJECT_DIM)
+        keep = min(len(rows), self.max_objects)
+        padded[:keep] = rows[:keep]
+        return padded
+
+    def _pad_relations(self, embeddings) -> np.ndarray:
+        """(max_objects, (max_objects - 1) * RELATION_DIM), zero-padded.
+
+        Each row holds one object's vectors against the others laid end to
+        end, so a row from a grid with fewer objects is shorter than the slot
+        it goes into and the remainder stays zero - the same "no relation
+        recorded" that an absent pair leaves.
+        """
+        padded = np.zeros((self.max_objects, (self.max_objects - 1) * RELATION_DIM),
+                          dtype=EMBEDDING_DTYPE)
+        rows = np.asarray(embeddings, dtype=EMBEDDING_DTYPE)
+        if rows.ndim == 2 and rows.size:
+            keep_rows = min(rows.shape[0], self.max_objects)
+            keep_cols = min(rows.shape[1], padded.shape[1])
+            padded[:keep_rows, :keep_cols] = rows[:keep_rows, :keep_cols]
+        return padded
 
     def initialize_observation_space(self, subtask):
         shape_x = self.subtask.train_out_shape[0]
@@ -125,22 +183,24 @@ class ARCGridWorld(gymnasium.Env):
         self.observation_space = {}
         self.observation_space['grid'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x, shape_y), dtype=self.grid_dtype)
         # Flat, matching np.array(self.action_space.nvec) - the three entries
-        # are action count, object count, object count, and 900 bounds the
-        # last two because a 30x30 grid cannot hold more objects than cells.
+        # are action count, object slots, object slots. Bounded by 900
+        # because a 30x30 grid cannot hold more objects than cells.
         self.observation_space['action_space'] = spaces.Box(low=0, high=900, shape=(3,), dtype=np.int64)
         if self.input_pattern == 'separate':
             self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
         if "target" in self.observation_space_elements:
             self.observation_space['target'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x, shape_y), dtype=self.grid_dtype)
-        n_objects = len(self.initial_objects)
+        # Both embedding blocks are sized by max_objects, not by this
+        # subtask's object count, so they are the same shape for every
+        # subtask - see MAX_OBJECTS.
         if "objects_emb" in self.observation_space_elements:
             # Width and bounds from OBJECT_SCHEMA, which is what
             # GridObject.create_embedding fills: every field it declares is
-            # normalised into [0, 1].
+            # normalised into [0, 1], and zero rows are padding.
             self.observation_space['objects_emb'] = spaces.Box(
-                low=0, high=1, shape=(n_objects, OBJECT_DIM), dtype=EMBEDDING_DTYPE)
+                low=0, high=1, shape=(self.max_objects, OBJECT_DIM), dtype=EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
-            # One row per object, holding its vector against each of the
+            # One row per object slot, holding its vector against each of the
             # others - see GridSummary.get_relation_embeddings_as_numpy, which
             # this shape has to agree with. Unbounded: size_ratio is a ratio of
             # areas (379 at the widest measured over ARC-AGI-2's training set)
@@ -148,7 +208,7 @@ class ARCGridWorld(gymnasium.Env):
             # guess that observations fall outside of.
             self.observation_space['relations_emb'] = spaces.Box(
                 low=-np.inf, high=np.inf,
-                shape=(n_objects, max(n_objects - 1, 0) * RELATION_DIM),
+                shape=(self.max_objects, (self.max_objects - 1) * RELATION_DIM),
                 dtype=EMBEDDING_DTYPE)
         self.observation_space = spaces.Dict(self.observation_space)
 
@@ -260,12 +320,22 @@ class ARCGridWorld(gymnasium.Env):
            return self.submit_grid()
         # Parse action with MultiDiscrete functionality
         add, transform = self.world.parse_action(action)
-        object_1 = self.objects[action[1]]
-        object_2 = self.objects[action[2]]
-        # Apply action and get modified grid if needed
-        new_grid = self.world.step(add, transform, object_1, object_2, self.grid, self.objects, self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
+        # The action space has max_objects slots whatever the subtask holds,
+        # so an index can name a slot no object occupies. That is an action
+        # that does nothing, scored like any other ineffective one - not an
+        # error, and not silently redirected to some other object, which
+        # would teach the policy that a wrong index still works.
+        visible = self._visible_object_count()
+        if action[1] >= visible or action[2] >= visible:
+            new_grid = self.grid
+            eq_check = True
+        else:
+            object_1 = self.objects[action[1]]
+            object_2 = self.objects[action[2]]
+            # Apply action and get modified grid if needed
+            new_grid = self.world.step(add, transform, object_1, object_2, self.grid, self.objects, self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
+            eq_check = np.array_equal(new_grid, self.grid)
 
-        eq_check = np.array_equal(new_grid, self.grid)
         # Update grid if it was transformed
         if new_grid is not None and eq_check:
             reward += -1 * self.action_penalty # penalty for ineffective actions
@@ -281,17 +351,17 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             obs['target'] = self.train_out.copy().astype(self.grid_dtype)
         if "objects_emb" in self.observation_space_elements:
-            # Same dtype as reset() and submit_grid() hand back: an episode
-            # whose observations change type partway through is one the policy
-            # sees two different things in.
-            self.objects_emb = np.array([obj.create_embedding() for obj in self.objects],
-                                        dtype=EMBEDDING_DTYPE)
+            # Same shape and dtype as reset() and submit_grid() hand back: an
+            # episode whose observations change shape or type partway through
+            # is one the policy sees two different things in.
+            self.objects_emb = self._pad_objects([obj.create_embedding() for obj in self.objects])
             obs['objects_emb'] = self.objects_emb.copy()
         if "relations_emb" in self.observation_space_elements:
             for obj_idx in list(set([action[1], action[2]])): # update involved objects relation embeddings
-                self.grid_summary.update_representation_level(self.repr_level, self.objects[obj_idx])
-            self.relations_emb = self.grid_summary.get_relation_embeddings_as_numpy(
-                level=self.repr_level).astype(EMBEDDING_DTYPE)
+                if obj_idx < visible:
+                    self.grid_summary.update_representation_level(self.repr_level, self.objects[obj_idx])
+            self.relations_emb = self._pad_relations(
+                self.grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level))
             obs['relations_emb'] = self.relations_emb.copy()
 
         right_placement, done = self.step_intersection(self.grid)
@@ -337,12 +407,20 @@ class ARCGridWorld(gymnasium.Env):
             return grid, objects, max_int, self._submit_reward(max_int), True
 
         add, transform = self.world.parse_action(action)
-        object_1 = objects[action[1]]
-        object_2 = objects[action[2]]
-        cell2obj = self.initial_grid_summary.repr_levels[self.repr_level].cell2obj
-        new_grid = self.world.step(add, transform, object_1, object_2, grid, objects, cell2obj)
+        # An index can name a slot no object occupies - the action space has
+        # max_objects of them whatever the subtask holds. Scored exactly as
+        # step() scores it, or a simulated rollout would value an action the
+        # real env does not.
+        visible = min(len(objects), self.max_objects)
+        if action[1] >= visible or action[2] >= visible:
+            new_grid, eq_check = grid, True
+        else:
+            object_1 = objects[action[1]]
+            object_2 = objects[action[2]]
+            cell2obj = self.initial_grid_summary.repr_levels[self.repr_level].cell2obj
+            new_grid = self.world.step(add, transform, object_1, object_2, grid, objects, cell2obj)
+            eq_check = np.array_equal(new_grid, grid)
 
-        eq_check = np.array_equal(new_grid, grid)
         reward = -1 * self.action_penalty if (new_grid is not None and eq_check) else 0.0
 
         new_max_int = self.maximal_intersection(new_grid)

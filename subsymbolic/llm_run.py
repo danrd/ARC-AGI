@@ -227,8 +227,16 @@ def run_llm_over_tasks(
     if not debug:
         import wandb  # lazy: debug runs (and just constructing WandbLogConfig/EvalResult) shouldn't require wandb installed
         config_dict = {"run_description": run_description, **(extra_config or {})}
+        # Resume only when there is something to resume. Passing resume= with
+        # no id still makes wandb ask the server for the resume status of the
+        # id it just generated - a call that answers nothing and fails the
+        # whole run if it cannot be made. And "must" rather than "allow": an
+        # id that names no run means the caller mistyped it or is pointing at
+        # the wrong project, and starting a fresh run under that id instead
+        # would silently redo work they asked to continue.
+        resume_kwargs = {"resume": "must", "id": run_id} if run_id else {}
         run = wandb.init(project=log_config.project, name=run_name, group=log_config.group,
-                          config=config_dict, resume="allow", id=run_id)
+                          config=config_dict, **resume_kwargs)
         # log_mode="MUTABLE": this table is logged repeatedly (once per checkpoint)
         # after further add_data() calls in between - wandb's default IMMUTABLE mode
         # would silently drop everything past the first log() for the same table.

@@ -383,6 +383,37 @@ def test_run_llm_over_tasks_sends_run_description_to_wandb_config_and_results(fa
     assert summary["results"][0]["run_description"] == "baseline sweep"
 
 
+def test_a_fresh_run_does_not_ask_wandb_to_resume(fake_wandb):
+    """resume= was passed whatever run_id held. With no id wandb generates
+    one and then asks the server for *its* resume status - a call that can
+    only answer "no such run", and that takes the whole run down with it
+    when the server is unreachable (a proxy answering 403, an expired key).
+    """
+    module = _fake_module({"t1": "prompt-1"}, {"prompt-1": "CORRECT"})
+
+    run_llm_over_tasks(tasks=[_FakeTask("t1")], subsymbolic_module=module,
+                        evaluator=_exact_match_evaluator,
+                        log_config=WandbLogConfig(project="test-proj"), run_id=None)
+
+    assert "resume" not in fake_wandb.init_kwargs
+    assert "id" not in fake_wandb.init_kwargs
+
+
+def test_resuming_a_named_run_demands_that_run(fake_wandb):
+    """The opposite case: an id was given, so the run has to be the one it
+    names. Under resume="allow" an id naming no run starts a fresh one under
+    that id, and the caller silently redoes the work they asked to continue.
+    """
+    module = _fake_module({"t1": "prompt-1"}, {"prompt-1": "CORRECT"})
+
+    run_llm_over_tasks(tasks=[_FakeTask("t1")], subsymbolic_module=module,
+                        evaluator=_exact_match_evaluator,
+                        log_config=WandbLogConfig(project="test-proj"), run_id="resume-me")
+
+    assert fake_wandb.init_kwargs["id"] == "resume-me"
+    assert fake_wandb.init_kwargs["resume"] == "must"
+
+
 def test_run_llm_over_tasks_skips_prompt_that_doesnt_fit(fake_wandb):
     prompts = {"t1": None}  # PromptBuilder.build() returns None when it doesn't fit token_limit
     module = _fake_module(prompts, generations={})

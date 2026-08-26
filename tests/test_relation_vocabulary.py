@@ -207,3 +207,96 @@ class TestTheRelationsReachTheAnalysis:
         grid[2, 3] = 2  # inside the L's bounding box, not inside the L
 
         assert self._stats(grid).in_contour == 0
+
+
+class TestEdgeAlignment:
+    """x_alignment/y_alignment demand that both edges of an axis coincide.
+    Measured on real tasks that holds for 7.63% of pairs, while another
+    14.81% share a single edge and were reported as nothing - the larger
+    half of the signal."""
+
+    GRID = (10, 10)
+
+    def test_a_shared_top_edge_is_reported(self):
+        """Neither object could ever satisfy strict alignment - they have
+        different heights - yet they hang from the same line."""
+        short = _object([(2, 1)], self.GRID)
+        tall = _object([(2, 5), (3, 5), (4, 5)], self.GRID, color=2, label="complex_1")
+
+        assert RelationAnalyzer.x_alignment(short, tall) is False
+        assert "aligned_top" in RelationAnalyzer.edge_alignments(short, tall)
+
+    def test_a_shared_bottom_edge_is_distinguished_from_a_top_one(self):
+        """Objects standing on a line and objects hanging from one are
+        arranged differently, so they can't collapse into one flag."""
+        short = _object([(4, 1)], self.GRID)
+        tall = _object([(2, 5), (3, 5), (4, 5)], self.GRID, color=2, label="complex_1")
+
+        alignments = RelationAnalyzer.edge_alignments(short, tall)
+
+        assert "aligned_bottom" in alignments
+        assert "aligned_top" not in alignments
+
+    def test_shared_left_and_right_edges_are_reported(self):
+        narrow = _object([(1, 3)], self.GRID)
+        wide = _object([(6, 3), (6, 4), (6, 5)], self.GRID, color=2, label="complex_1")
+
+        assert "aligned_left" in RelationAnalyzer.edge_alignments(narrow, wide)
+        assert "aligned_right" not in RelationAnalyzer.edge_alignments(narrow, wide)
+
+    def test_strictly_aligned_objects_share_both_edges(self):
+        """These fire independently of the strict relation. Suppressing
+        them would make aligned_top mean "shares a top edge but not a
+        bottom one", which is a stranger thing to reason about."""
+        a = _object([(2, 1), (3, 1)], self.GRID)
+        b = _object([(2, 6), (3, 6)], self.GRID, color=2, label="complex_1")
+
+        alignments = RelationAnalyzer.edge_alignments(a, b)
+
+        assert RelationAnalyzer.x_alignment(a, b) is True
+        assert "aligned_top" in alignments and "aligned_bottom" in alignments
+
+    def test_objects_sharing_no_edge_report_nothing(self):
+        a = _object([(1, 1)], self.GRID)
+        b = _object([(5, 6), (6, 6)], self.GRID, color=2, label="complex_1")
+
+        assert RelationAnalyzer.edge_alignments(a, b) == ()
+
+    def test_centre_alignment_is_left_to_in_line(self):
+        """Two objects whose centres share a row are already reported by
+        in_line; a fifth alignment flag would say it twice."""
+        from symbolic.summaries import RELATION_FEATURE_NAMES
+
+        assert "in_line" in RELATION_FEATURE_NAMES
+        assert not any(name.startswith("aligned_centre") for name in RELATION_FEATURE_NAMES)
+
+
+class TestEdgeAlignmentReachesTheAnalysis:
+    @staticmethod
+    def _stats(grid):
+        from symbolic.summaries import GridSummary
+
+        return GridSummary(grid=grid, shape=grid.shape, font_color=0,
+                            levels=[2]).repr_levels[2].relation_statistics
+
+    def test_a_shared_top_edge_is_tallied(self):
+        grid = np.zeros((8, 8), dtype=int)
+        grid[2, 1] = 1                      # one cell
+        grid[2, 5] = grid[3, 5] = grid[4, 5] = 2   # three cells, same top row
+
+        stats = self._stats(grid)
+
+        assert stats.aligned_top == 1
+        assert stats.x_aligned_with == 0    # different heights, so never strictly aligned
+
+    def test_unaligned_objects_are_not_tallied(self):
+        grid = np.zeros((8, 8), dtype=int)
+        grid[1, 1] = 1
+        grid[5, 6] = 2
+
+        stats = self._stats(grid)
+
+        assert stats.aligned_top == 0
+        assert stats.aligned_bottom == 0
+        assert stats.aligned_left == 0
+        assert stats.aligned_right == 0

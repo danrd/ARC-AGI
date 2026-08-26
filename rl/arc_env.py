@@ -5,7 +5,14 @@ from copy import copy, deepcopy
 from rl.utils import repad
 from rl.arc_world import World
 from symbolic.utils import pad_grid
-from symbolic.summaries import GridSummary
+from symbolic.objects_analysis import OBJECT_DIM
+from symbolic.summaries import GridSummary, RELATION_DIM
+
+#: Embeddings are real-valued, unlike every other part of the observation
+#: (grids and the action space are integer). Casting them to the grid's dtype
+#: rounds every fraction away - `shape_similarity`, `normalized_distance` and
+#: the rest collapse to 0 or 1 - so they carry their own.
+EMBEDDING_DTYPE = np.float32
 class ARCGridWorld(gymnasium.Env):
     def __init__(
                 self, max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
@@ -117,15 +124,32 @@ class ARCGridWorld(gymnasium.Env):
         # Update observation space for current grid size
         self.observation_space = {}
         self.observation_space['grid'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x, shape_y), dtype=self.grid_dtype)
-        self.observation_space['action_space'] = spaces.Box(low=0, high=900, shape=(1, 3), dtype=np.int64)
+        # Flat, matching np.array(self.action_space.nvec) - the three entries
+        # are action count, object count, object count, and 900 bounds the
+        # last two because a 30x30 grid cannot hold more objects than cells.
+        self.observation_space['action_space'] = spaces.Box(low=0, high=900, shape=(3,), dtype=np.int64)
         if self.input_pattern == 'separate':
             self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
         if "target" in self.observation_space_elements:
             self.observation_space['target'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x, shape_y), dtype=self.grid_dtype)
+        n_objects = len(self.initial_objects)
         if "objects_emb" in self.observation_space_elements:
-            self.observation_space['objects_emb'] = spaces.Box(low=0, high=1, shape=(len(self.initial_objects), 32), dtype=self.grid_dtype)
+            # Width and bounds from OBJECT_SCHEMA, which is what
+            # GridObject.create_embedding fills: every field it declares is
+            # normalised into [0, 1].
+            self.observation_space['objects_emb'] = spaces.Box(
+                low=0, high=1, shape=(n_objects, OBJECT_DIM), dtype=EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
-            self.observation_space['relations_emb'] = spaces.Box(low=0, high=1, shape=(len(self.initial_objects), len(self.initial_objects)*8), dtype=self.grid_dtype)
+            # One row per object, holding its vector against each of the
+            # others - see GridSummary.get_relation_embeddings_as_numpy, which
+            # this shape has to agree with. Unbounded: size_ratio is a ratio of
+            # areas (379 at the widest measured over ARC-AGI-2's training set)
+            # and the offsets are signed, so any finite bound here would be a
+            # guess that observations fall outside of.
+            self.observation_space['relations_emb'] = spaces.Box(
+                low=-np.inf, high=np.inf,
+                shape=(n_objects, max(n_objects - 1, 0) * RELATION_DIM),
+                dtype=EMBEDDING_DTYPE)
         self.observation_space = spaces.Dict(self.observation_space)
 
     def initialize_targets(self):
@@ -184,9 +208,9 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             obs['target'] = np.array(self.train_out).copy().astype(self.grid_dtype)
         if "objects_emb" in self.observation_space_elements:
-            obs['objects_emb'] = self.objects_emb.copy().astype(self.grid_dtype)
+            obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
-            obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)
+            obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
         truncated = False
         info = {}
         reward = self._submit_reward(self.max_int)
@@ -217,10 +241,10 @@ class ARCGridWorld(gymnasium.Env):
             obs['target'] = np.array(self.train_out).copy().astype(self.grid_dtype)
         if "objects_emb" in self.observation_space_elements:
             self.objects_emb = self.initial_objects_emb.copy()
-            obs['objects_emb'] = self.objects_emb.copy().astype(self.grid_dtype)
+            obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
             self.relations_emb = self.initial_relation_emb.copy()
-            obs['relations_emb'] = self.relations_emb.copy().astype(self.grid_dtype)
+            obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
 
         info = {}
         return (obs, info)
@@ -257,11 +281,18 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             obs['target'] = self.train_out.copy().astype(self.grid_dtype)
         if "objects_emb" in self.observation_space_elements:
-            obs['objects_emb'] = np.array([obj.create_embedding() for obj in self.objects])
+            # Same dtype as reset() and submit_grid() hand back: an episode
+            # whose observations change type partway through is one the policy
+            # sees two different things in.
+            self.objects_emb = np.array([obj.create_embedding() for obj in self.objects],
+                                        dtype=EMBEDDING_DTYPE)
+            obs['objects_emb'] = self.objects_emb.copy()
         if "relations_emb" in self.observation_space_elements:
             for obj_idx in list(set([action[1], action[2]])): # update involved objects relation embeddings
                 self.grid_summary.update_representation_level(self.repr_level, self.objects[obj_idx])
-            obs['relations_emb'] = self.grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
+            self.relations_emb = self.grid_summary.get_relation_embeddings_as_numpy(
+                level=self.repr_level).astype(EMBEDDING_DTYPE)
+            obs['relations_emb'] = self.relations_emb.copy()
 
         right_placement, done = self.step_intersection(self.grid)
         reward += right_placement * self.right_placement_reward  # Bonus for effective transformations

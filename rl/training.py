@@ -10,24 +10,38 @@ from utils.plotting import plot_grid
 from data.configs.rl_configs import load_PPO_config
 
 def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretrained:str=None, agent_init=None):
+    """Build the agent to train with: a caller-supplied one, one restored
+    from a checkpoint, or a fresh one configured from rl_config.
+
+    Every branch has to either return an agent or say why it can't. A branch
+    that falls through returns whatever the name happened to be bound to,
+    which for a function-local name is nothing at all - an UnboundLocalError
+    naming `agent`, which says nothing about the argument that caused it.
+    """
     if agent_init:
-        agent = agent_init
-    elif path_to_pretrained:
-        agent = agent.load(path_to_pretrained)
-    else:
-        if rl_config['model_type'] == 'PPO':
-            PPO_config = load_PPO_config()
-            if model_config:
-                PPO_config.update(model_config)
-            policy = PPO_config['policy'] if PPO_config['policy'] != 'default' else "MultiInputPolicy"
-            policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
-                             'action_heads':PPO_config['action_heads'],
-                             'features_extractor_kwargs':{'extr_arch': PPO_config['extr_arch']}}
-            agent = PPO(policy, vec_env, batch_size=PPO_config['batch_size'], n_steps=PPO_config['n_steps'], verbose=PPO_config['verbose'],
-                        n_epochs=PPO_config['n_epochs'], gamma=PPO_config['gamma'], max_grad_norm=PPO_config['max_grad_norm'],
-                        learning_rate=PPO_config['learning_rate'], clip_range=PPO_config['clip_range'], ent_coef=PPO_config['ent_coef'],
-                        vf_coef=PPO_config['vf_coef'], use_sde = PPO_config['use_sde'], policy_kwargs=policy_kwargs)
-    return agent
+        return agent_init
+    if path_to_pretrained:
+        # A classmethod on the algorithm, not a method on an instance - there
+        # is no agent yet at this point. The env goes in with it: a model
+        # loaded without one has no observation/action space to check against
+        # and cannot .learn().
+        return PPO.load(path_to_pretrained, env=vec_env)
+    if rl_config['model_type'] != 'PPO':
+        raise ValueError(
+            f"Unsupported model_type {rl_config['model_type']!r} - this builds PPO agents. "
+            "Pass agent_init=<your agent> to use anything else."
+        )
+    PPO_config = load_PPO_config()
+    if model_config:
+        PPO_config.update(model_config)
+    policy = PPO_config['policy'] if PPO_config['policy'] != 'default' else "MultiInputPolicy"
+    policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
+                     'action_heads':PPO_config['action_heads'],
+                     'features_extractor_kwargs':{'extr_arch': PPO_config['extr_arch']}}
+    return PPO(policy, vec_env, batch_size=PPO_config['batch_size'], n_steps=PPO_config['n_steps'], verbose=PPO_config['verbose'],
+               n_epochs=PPO_config['n_epochs'], gamma=PPO_config['gamma'], max_grad_norm=PPO_config['max_grad_norm'],
+               learning_rate=PPO_config['learning_rate'], clip_range=PPO_config['clip_range'], ent_coef=PPO_config['ent_coef'],
+               vf_coef=PPO_config['vf_coef'], use_sde = PPO_config['use_sde'], policy_kwargs=policy_kwargs)
 
 
 def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, action_penalty=1.0,

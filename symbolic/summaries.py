@@ -930,7 +930,17 @@ class GridSummary():
         return new_level
 
     def get_relation_embeddings_as_numpy(self, level=1):
-        """Return all relation embeddings for the specified level in numpy array format."""
+        """All relation embeddings at `level`, one row per object: that
+        object's vector against each of the others, laid end to end.
+
+        The shape is `(n_objects, (n_objects - 1) * RELATION_DIM)` and follows
+        from the object count alone - a pair with no embedding leaves zeros
+        rather than shortening the row, and a grid with one object or none
+        gives a correctly-shaped empty array rather than a shapeless one. The
+        consumer is a gym observation declared against a fixed Box, so a shape
+        that depended on which pairs happened to be related would not fit the
+        space it was declared under.
+        """
         current_level = self.repr_levels[level]
 
         if current_level.relation_embeddings is None:
@@ -942,24 +952,12 @@ class GridSummary():
         all_objects = current_level.objects
         n_objects = len(all_objects)
 
+        # Width from the schema, not from whichever embedding happened to be
+        # found first: RELATION_SCHEMA is what _create_embedding fills, so it
+        # is the one place the width is decided.
+        result = np.zeros((n_objects, max(n_objects - 1, 0) * RELATION_DIM), dtype=np.float32)
         if n_objects <= 1:
-            return np.array([])
-
-        # Get embedding dimensions from first valid embedding
-        sample_length = 0
-        for obj1_label, embeddings_dict in relation_embeddings.items():
-            for obj2_label, embedding in embeddings_dict.items():
-                if isinstance(embedding, np.ndarray) and len(embedding) > 0:
-                    sample_length = len(embedding)
-                    break
-            if sample_length > 0:
-                break
-
-        if sample_length == 0:
-            return np.array([])
-
-        # Pre-allocate result array
-        result = np.zeros((n_objects, (n_objects-1) * sample_length), dtype=np.float32)
+            return result
 
         for i, obj in enumerate(all_objects):
             obj_label = obj.label
@@ -972,10 +970,10 @@ class GridSummary():
                 other_label = other_obj.label
                 embedding = relation_embeddings.get(obj_label, {}).get(other_label)
 
-                if isinstance(embedding, np.ndarray) and len(embedding) == sample_length:
-                    result[i, col_idx:col_idx+sample_length] = embedding
+                if isinstance(embedding, np.ndarray) and len(embedding) == RELATION_DIM:
+                    result[i, col_idx:col_idx+RELATION_DIM] = embedding
 
-                col_idx += sample_length
+                col_idx += RELATION_DIM
 
         return result
 

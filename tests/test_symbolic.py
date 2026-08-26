@@ -19,7 +19,7 @@ import pytest
 
 from rl.arc_task import ARCSubtask
 
-from symbolic.summaries import GridSummary, RelationAnalyzer, SubtaskSummary
+from symbolic.summaries import RELATION_DIM, GridSummary, RelationAnalyzer, SubtaskSummary
 # summaries.py carried a byte-identical second copy of this, which nothing in
 # production used - the RL transformators call this one.
 from rl.arc_transformators import get_rotations
@@ -450,6 +450,25 @@ class TestGridSummary:
         second = summary.get_relation_embeddings_as_numpy(level=1)
 
         assert np.array_equal(first, second)
+
+    @staticmethod
+    @pytest.mark.parametrize("n_objects", [0, 1, 2, 3])
+    def test_the_shape_follows_from_the_object_count_alone(n_objects: int):
+        """Including when there are no pairs to describe. The consumer is a
+        gym observation declared against a fixed Box (see rl.arc_env), and an
+        unshaped empty array belongs to no space - so a grid with one object
+        has to give back (1, 0), not ().
+        """
+        grid = np.zeros((3, 3 * max(n_objects, 1)), dtype=int)
+        for k in range(n_objects):
+            grid[1, 3 * k + 1] = k + 1  # isolated single cells, no two adjacent
+        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+        found = len(summary.repr_levels[1].objects)
+
+        embeddings = summary.get_relation_embeddings_as_numpy(level=1)
+
+        assert embeddings.ndim == 2
+        assert embeddings.shape == (found, max(found - 1, 0) * RELATION_DIM)
 
 
 class TestMatchScore:

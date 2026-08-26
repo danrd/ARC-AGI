@@ -408,128 +408,6 @@ class SubtaskSummary:
             'y_aligned_with': int(rel_summary.y_aligned_with)
         }
 
-def prepare_features(
-    inp_grid_summary,
-    out_grid_summary,
-    level : int,
-) -> Dict[str, float]:
-    """Standalone function to prepare features from grid summaries."""
-    # Get level 1 representations
-    inp_level = inp_grid_summary.repr_levels[level]
-    out_level = out_grid_summary.repr_levels[level]
-
-    # Calculate x_change_ratio and y_change_ratio
-    inp_shape = inp_grid_summary.shape
-    out_shape = out_grid_summary.shape
-    x_change_ratio = out_shape[1] / inp_shape[1] if inp_shape[1] > 0 else 1.0  # width ratio (j dimension)
-    y_change_ratio = out_shape[0] / inp_shape[0] if inp_shape[0] > 0 else 1.0  # height ratio (i dimension)
-
-    total_objects_inp = len(inp_level.objects)
-    total_objects_out = len(out_level.objects)
-
-    # Extract features using the same helper methods
-    temp_subtask = SubtaskSummary(
-        subtask=None,  # We don't need the actual subtask for this
-        subtask_label="temp",
-        inp_grid_summary=inp_grid_summary,
-        out_grid_summary=out_grid_summary
-    )
-
-    inp_features = {}
-    inp_features.update(temp_subtask._extract_object_features(inp_level.objects_summary))
-    inp_features.update(temp_subtask._extract_relation_features(inp_level.relation_statistics))
-
-    out_features = {}
-    out_features.update(temp_subtask._extract_object_features(out_level.objects_summary))
-    out_features.update(temp_subtask._extract_relation_features(out_level.relation_statistics))
-
-    def calculate_share_non_font(grid_summary):
-        total_cells = grid_summary.shape[0] * grid_summary.shape[1]
-        if total_cells == 0:
-            return 0
-
-        # Count non-font cells by summing all color counts except font color
-        total_non_font = 0
-        for color, count in grid_summary.repr_levels[level].objects_summary.colors.items():
-            # Skip font color (assuming font_color is mapped to color name)
-            if color != colors_mapping[grid_summary.font_color]:
-                total_non_font += count
-
-        return total_non_font / total_cells
-
-    share_non_font_inp = calculate_share_non_font(inp_grid_summary)
-    share_non_font_out = calculate_share_non_font(out_grid_summary)
-
-    unique_elements_inp = np.unique(inp_grid_summary.grid)
-    unique_elements_out = np.unique(out_grid_summary.grid)
-
-    # Calculate mean object compactness
-    def calculate_mean_compactness(level):
-        """Calculate mean compactness of objects in the level."""
-        if not level.objects:
-            return 0.0
-        total_compactness = 0.0
-        compactness_count = 0
-        for obj in level.objects:
-            if hasattr(obj, 'compactness'):
-                total_compactness += obj.compactness
-                compactness_count += 1
-        return total_compactness / compactness_count if compactness_count > 0 else 0.0
-
-    mean_compactness_inp = calculate_mean_compactness(inp_level)
-    mean_compactness_out = calculate_mean_compactness(out_level)
-
-    # Calculate mean distance between objects
-    def calculate_mean_distance(level):
-        """Calculate mean distance between all object pairs."""
-        if len(level.objects) < 2:
-            return 0.0
-
-        total_distance = 0.0
-        count = 0
-
-        # Get object labels or indices
-        object_labels = []
-        if hasattr(level.objects[0], 'label'):
-            object_labels = [obj.label for obj in level.objects]
-        else:
-            # Use indices if no label
-            object_labels = list(range(len(level.objects)))
-
-        # Calculate distances for all unique pairs
-        for i in range(len(object_labels)):
-            for j in range(i + 1, len(object_labels)):
-                distance = level.distances.get_distance(
-                    str(object_labels[i]),
-                    str(object_labels[j])
-                )
-                total_distance += distance
-                count += 1
-
-        return total_distance / count if count > 0 else 0.0
-
-    mean_distance_inp = calculate_mean_distance(inp_level)
-    mean_distance_out = calculate_mean_distance(out_level)
-
-    # Calculate differences
-    summary_diff = {}
-    for k in inp_features.keys():
-        if k in out_features and k not in ['shape2size', 'size2shape', 'shapes', 'colors']:
-            # Для непрерывных признаков применяем округление
-            value = out_features[k] - inp_features[k]
-            if isinstance(value, float):
-                summary_diff[k] = round(value, 3)  # округление разностей до 3 знаков
-            else:
-                summary_diff[k] = value
-
-    summary_diff['x_change_ratio'] = round(x_change_ratio, 3)
-    summary_diff['y_change_ratio'] = round(y_change_ratio, 3)
-    summary_diff['share_non_font_diff'] = round(share_non_font_out - share_non_font_inp, 3)
-    summary_diff['total_objects_diff'] = int(total_objects_out - total_objects_inp)
-    summary_diff['unique_elements_diff'] = max(len(set(unique_elements_out).difference(unique_elements_inp)), len(set(unique_elements_inp).difference(unique_elements_out)))
-    summary_diff['mean_compactness_diff'] = round(mean_compactness_out - mean_compactness_inp, 3)
-    summary_diff['mean_distance_diff'] = round(mean_distance_out - mean_distance_inp, 3)
-    return summary_diff
 
 class GridSummary():
     """Class for creating summary for a given grid."""
@@ -1655,47 +1533,6 @@ def calculate_shape_similarity(obj1, obj2):
 
 
 
-def get_rotations(coords:List[tuple]) -> List[List[tuple]]:
-    """Generate all possible 90-degree rotations of a set of coordinates.
-    Args:
-        coords: List of (x, y) coordinate tuples
-    Returns:
-        List of lists of coordinate tuples, each representing a rotation
-    """
-    if not coords:
-        return []
-
-    # Sort coordinates for consistency
-    coords = sorted(coords, key=lambda x: (x[1], x[0]))
-
-    # Get reference point (top-left)
-    ref_x, ref_y = coords[0]
-
-    # Normalize coordinates relative to reference point
-    normalized = [(x - ref_x, y - ref_y) for x, y in coords]
-
-    # Find the size of the bounding box
-    max_x = max(x for x, y in normalized)
-    max_y = max(y for x, y in normalized)
-
-    rotations = []
-    # Original orientation
-    rotations.append(coords.copy())
-
-    # 90 degrees clockwise - (x, y) -> (y, -x + max_x)
-    rot_90 = [(ref_x + y, ref_y + (max_x - x)) for x, y in normalized]
-    rotations.append(sorted(rot_90, key=lambda x: (x[1], x[0])))
-
-    # 180 degrees - (x, y) -> (-x + max_x, -y + max_y)
-    rot_180 = [(ref_x + (max_x - x), ref_y + (max_y - y)) for x, y in normalized]
-    rotations.append(sorted(rot_180, key=lambda x: (x[1], x[0])))
-
-    # 270 degrees clockwise - (x, y) -> (-y + max_y, x)
-    rot_270 = [(ref_x + (max_y - y), ref_y + x) for x, y in normalized]
-    rotations.append(sorted(rot_270, key=lambda x: (x[1], x[0])))
-
-    return rotations
-
 def has_holes(obj):
     """Check if object has any holes."""
     return (hasattr(obj, 'inner_holes') and obj.inner_holes) or \
@@ -1837,19 +1674,6 @@ def calculate_optimal_placement(hole, filler):
     offset_y = hole_center[1] - filler_center[1]
 
     return (filler.coords[0][0] + offset_x, filler.coords[0][1] + offset_y)
-
-def estimate_hole_reduction(obj1, obj2):
-    """Estimate how many holes would be reduced by merging.
-    """
-    # Simple estimation: if objects are complementary shapes, might reduce holes
-    # This is a heuristic - in practice, you'd need to simulate the merge, so
-    # the actual hole counts aren't consulted here, only the size ratio.
-    size_ratio = min(obj1.size, obj2.size) / max(obj1.size, obj2.size)
-
-    if size_ratio > 0.7:  # Similar sizes
-        return 1  # Likely to reduce at least one hole
-    else:
-        return 0  # Unlikely to reduce holes
 
 def calculate_match_score_hole_based(grid, obj1, obj2, all_objects, font_color):
     """New match score based on hole filling potential.

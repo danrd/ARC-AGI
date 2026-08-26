@@ -19,7 +19,10 @@ import pytest
 
 from rl.arc_task import ARCSubtask
 
-from symbolic.summaries import GridSummary, RelationAnalyzer, SubtaskSummary, get_rotations
+from symbolic.summaries import GridSummary, RelationAnalyzer, SubtaskSummary
+# summaries.py carried a byte-identical second copy of this, which nothing in
+# production used - the RL transformators call this one.
+from rl.arc_transformators import get_rotations
 from symbolic.objects_analysis import GridObject
 from symbolic.patterns import (
     generate_patterns,

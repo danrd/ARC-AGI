@@ -1,11 +1,13 @@
 """Structured analysis output: the contract between the symbolic layer and
 whoever consumes it (a prompt block, an agent, RL).
 
-The analyzer's own `get_task_summary()` / `get_transformation_hypothesis()`
-return glued-together prose, which leaves a programmatic consumer nothing to
-read: the structure exists inside the analyzer and is thrown away on the way
-out. Here the structure is what's produced, and text is rendered on top of it,
-so every consumer reads the same thing.
+The analyzer used to answer only in glued-together prose, which left a
+programmatic consumer nothing to read: the structure existed inside the
+analyzer and was thrown away on the way out. Here the structure is what's
+produced, and text is rendered on top of it, so every consumer reads the same
+thing - `TaskAnalysis.get_transformation_hypothesis()` and
+`get_actionable_insights()` are now two renderings of what's built here, and
+the prose-only methods beside them have been deleted.
 
 Two rules the rest of this module exists to enforce:
 

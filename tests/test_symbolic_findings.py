@@ -320,7 +320,7 @@ class TestInvariants:
 # rendering under a budget
 # ---------------------------------------------------------------------------
 
-def _findings(n_transformations=2, n_invariants=1):
+def _findings(n_transformations=2, n_invariants=1, n_observations=0):
     return TaskFindings(
         task_id="t",
         example_count=2,
@@ -329,6 +329,9 @@ def _findings(n_transformations=2, n_invariants=1):
         ),
         invariants=tuple(
             _finding(f"i{i}", f"invariant {i}", (0, 1), 2) for i in range(n_invariants)
+        ),
+        grid_observations=tuple(
+            _finding(f"g{i}", f"observation {i}", (0, 1), 2) for i in range(n_observations)
         ),
     )
 
@@ -370,7 +373,26 @@ class TestRender:
         assert render_findings(_findings(), budget=1, count_tokens=len) is None
 
     @staticmethod
-    def test_grid_observation_is_rendered_among_the_changes():
+    def test_grid_observations_get_their_own_heading():
+        """They used to be appended to the transformations and printed under
+        "What changes". Several of them state that something never changes,
+        so that heading made the block say the opposite of what it means."""
+        findings = TaskFindings(
+            task_id="t", example_count=2,
+            transformations=(_finding("t", "objects move right", (0, 1), 2),),
+            grid_observations=(_finding("background_color",
+                                        "every example sits on a black background", (0, 1), 2),),
+        )
+
+        text = render_findings(findings)
+
+        assert "What the grids show:" in text
+        changes_block = text.split("What the grids show:")[0]
+        assert "objects move right" in changes_block
+        assert "black background" not in changes_block
+
+    @staticmethod
+    def test_an_observation_alone_still_gets_its_own_heading_not_the_changes_one():
         findings = TaskFindings(
             task_id="t", example_count=2,
             grid_observations=(_finding("grid_resize", "the output is always resized", (0, 1), 2),),
@@ -378,8 +400,33 @@ class TestRender:
 
         text = render_findings(findings)
 
-        assert "What changes:" in text
+        assert "What changes:" not in text
+        assert "What the grids show:" in text
         assert "always resized" in text
+
+    @staticmethod
+    def test_the_three_sections_keep_their_order():
+        text = render_findings(_findings(n_transformations=1, n_invariants=1, n_observations=1))
+
+        assert (text.index("What changes:")
+                < text.index("What the grids show:")
+                < text.index("What stays the same:"))
+
+    @staticmethod
+    def test_a_tight_budget_drops_the_sections_from_the_tail():
+        """Section order is what decides which claims survive a cut, so
+        splitting the block must not have moved anything: the transformation
+        outlives the observation, which outlives the invariant."""
+        findings = _findings(n_transformations=1, n_invariants=1, n_observations=1)
+        # Budgets that exactly fit the leading sections, taken from rendering
+        # those sections alone rather than guessed as a fraction.
+        first_two = len(render_findings(_findings(1, 0, 1)))
+        first_only = len(render_findings(_findings(1, 0, 0)))
+
+        assert render_findings(findings, budget=first_two, count_tokens=len) == render_findings(
+            _findings(1, 0, 1))
+        assert render_findings(findings, budget=first_only, count_tokens=len) == render_findings(
+            _findings(1, 0, 0))
 
     @staticmethod
     def test_a_section_with_nothing_left_does_not_print_its_header():

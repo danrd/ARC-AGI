@@ -71,19 +71,31 @@ class ARCDataset:
         self.aug_start_idx = self.cur_idx + 400 * 14
 
     def load_ARC2(self):
-        """Load dataset files and set splitting for training.
-        Args:
-            additional_datasets (Union[List[str], bool]) : If provided - list of additional datasets.
+        """Add ARC-AGI-2's tasks on top of the ARC-AGI-1 ones already built.
+
+        Note this *adds* rather than replaces: ARC-AGI-2 re-packages most of
+        ARC-AGI-1's training set, so 773 of its 1120 keys are labels
+        self.tasks already carries (772 of them the same task with its train
+        pairs in a different order). Those tasks end up in the list twice,
+        under one label, and self.idx2label then maps two indices to it.
         """
-        training_challenges = load_json('data/dataset/ARC2/arc-agi_training_challenges.json')
-        training_solutions = load_json('data/dataset/ARC2/arc-agi_training_solutions.json')
-        evaluation_challenges = load_json('data/dataset/ARC2/arc-agi_evaluation_challenges.json')
-        evaluation_solutions = load_json('data/dataset/ARC2/arc-agi_evaluation_solutions.json')
+        training_challenges = load_json('data/datasets/ARC2/arc-agi_training_challenges.json')
+        training_solutions = load_json('data/datasets/ARC2/arc-agi_training_solutions.json')
+        evaluation_challenges = load_json('data/datasets/ARC2/arc-agi_evaluation_challenges.json')
+        evaluation_solutions = load_json('data/datasets/ARC2/arc-agi_evaluation_solutions.json')
+        # Where the training half ends, read off the file rather than
+        # hardcoded: the union below keeps training's keys first, so this
+        # index stays right whatever the two files hold. The old fixed 999 /
+        # 1119 were correct only for exactly 1000 + 120 tasks, and a shorter
+        # file made the second one never fire - dropping that subset's extra
+        # test cases on the floor without a word.
+        last_train_idx = len(training_challenges) - 1
         training_challenges = training_challenges | evaluation_challenges
         training_solutions = training_solutions | evaluation_solutions
         self.training_challenges =  self.training_challenges | training_challenges
         self.training_solutions = self.training_solutions | training_solutions | evaluation_solutions
         tasks_keys = list(training_challenges.keys())
+        last_idx = len(tasks_keys) - 1
         tasks = []
         additional_tasks = []
         for idx, key in enumerate(tasks_keys):
@@ -100,11 +112,11 @@ class ARCDataset:
                 else:
                     task = ARCTask(f'{key}_{j+1}', subtasks, test_inp[j], test_out[j])
                     additional_tasks.append(task)
-            if idx == 999:
+            if idx == last_train_idx:
                 self.subsets['arc2_train_add'] = len(additional_tasks)
                 self.additional_tasks.extend(additional_tasks)
                 additional_tasks = []
-            if idx == 1119:
+            if idx == last_idx:
                 self.subsets['arc2_eval_add'] = len(additional_tasks)
                 self.additional_tasks.extend(additional_tasks)
                 additional_tasks = []

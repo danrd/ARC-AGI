@@ -47,18 +47,40 @@ def test_tokenizer_model_can_be_set_separately_from_model():
     assert config.tokenizer_model == "Qwen/Qwen3.6-27B"
 
 
+def test_the_model_cache_defaults_somewhere_writable():
+    """The default was '/data/pretrained_models' - /data at the filesystem
+    root, which an ordinary machine has no write access to. Every CPU
+    backend then failed at once with a bare `PermissionError: '/data'`,
+    naming a path that appears nowhere the caller configured.
+
+    Every test around this one mocks hf_hub_download, so none of them ever
+    touched the path; this one asks about the path itself.
+    """
+    import os
+    from pathlib import Path
+
+    default = LlmConfig().pretrained_models_dir
+
+    assert not os.path.isabs(default), (
+        f"{default!r} is absolute, so it does not follow the checkout - "
+        "every other data path here (blocks_dir, ARCDataset's) is relative"
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    assert (repo_root / default).is_dir(), f"{default!r} is not a directory in the repo"
+
+
 def test_resolve_local_model_path_downloads_the_quant_file():
     config = SimpleNamespace(llm=LlmConfig())
     with patch("huggingface_hub.hf_hub_download") as mock_download:
-        mock_download.return_value = "/data/pretrained_models/Qwen3.6-27B-Q4_K_M.gguf"
+        mock_download.return_value = "data/pretrained_models/Qwen3.6-27B-Q4_K_M.gguf"
         path = resolve_local_model_path(config)
 
     mock_download.assert_called_once_with(
         repo_id="unsloth/Qwen3.6-27B-GGUF",
         filename="Qwen3.6-27B-Q4_K_M.gguf",
-        local_dir="/data/pretrained_models",
+        local_dir="data/pretrained_models",
     )
-    assert path == "/data/pretrained_models/Qwen3.6-27B-Q4_K_M.gguf"
+    assert path == "data/pretrained_models/Qwen3.6-27B-Q4_K_M.gguf"
 
 
 def test_resolve_local_model_path_honors_pretrained_models_dir_override():

@@ -68,7 +68,12 @@ class LlmConfig(BaseModel):
     model: str = 'unsloth/Qwen3.6-27B-GGUF'
     tokenizer_model: Optional[str] = None
     quant_file: str = 'Qwen3.6-27B-Q4_K_M.gguf'
-    pretrained_models_dir: str = '/data/pretrained_models' # Where quant_file GGUFs live once downloaded
+    # Where quant_file GGUFs live once downloaded. Repo-relative, like every
+    # other data path here (prompt_builder's blocks_dir, ARCDataset's
+    # datasets) - a leading slash makes it /data at the filesystem root,
+    # which on an ordinary machine is not writable and takes down every CPU
+    # backend at once with a bare PermissionError.
+    pretrained_models_dir: str = 'data/pretrained_models'
     max_context: int = 9000  # llm token limit for computational resources to control
     openrouter_models: List[str] = ["google/gemma-4-26b-a4b-it",
                                     "nvidia/nemotron-3-ultra-550b-a55b"]
@@ -125,7 +130,7 @@ def resolve_local_model_path(config) -> str:
     if not quant_file:
         return model
     from huggingface_hub import hf_hub_download
-    local_dir = getattr(config.llm, "pretrained_models_dir", "/data/pretrained_models")
+    local_dir = getattr(config.llm, "pretrained_models_dir", LlmConfig.model_fields["pretrained_models_dir"].default)
     return hf_hub_download(repo_id=model, filename=quant_file, local_dir=local_dir)
 
 

@@ -969,10 +969,10 @@ class TaskAnalysis:
     def get_transformation_hypothesis(self) -> str:
         """Human-readable hypothesis about the transformation.
 
-        Wording lives in symbolic.findings, not here: this used to carry its
-        own if/elif chain over pattern types, phrasing the same claims a
-        second time alongside the structured output, and the two had already
-        drifted apart on parameter names. One source of phrasing, several
+        Wording lives in symbolic.findings, not here. An if/elif chain over
+        pattern types in this method would phrase the same claims a second
+        time alongside the structured output, and two wordings of one claim
+        drift - on parameter names first. One source of phrasing, several
         views over it.
         """
         from symbolic.findings import render_hypothesis

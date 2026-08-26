@@ -1,12 +1,14 @@
-"""Tests for the object-transform functions integrated into
-rl/arc_transformators.py this round: symmetry_reflection,
-symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy,
-dense_outer_contour - plus their wiring into rl.arc_world.World.apply_transform.
+"""Tests for the object-transform functions in rl/arc_transformators.py:
+symmetry_reflection, symmetric_restoration, color_swap, shape_swap,
+color_copy, shape_copy, dense_outer_contour - plus their wiring into
+rl.arc_world.World.apply_transform.
 
 Same philosophy as the rest of the RL test suite: a handful of exact tests
-built by hand where the right answer is known, plus smoke tests (crash-or-not
-+ "no duplicate coordinates", the specific bug class two of these functions
-had before this round) for the rest.
+built by hand where the right answer is known, plus smoke tests for the rest
+- crash-or-not, and "no duplicate coordinates", which is the failure these
+functions are prone to: several of them write coordinates computed two ways
+into one object, and a coordinate emitted twice corrupts every size and
+compactness read off it afterwards.
 """
 from __future__ import annotations
 

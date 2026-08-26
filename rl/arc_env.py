@@ -93,7 +93,6 @@ class ARCGridWorld(gymnasium.Env):
         if "objects_emb" in self.observation_space_elements:
             self.initial_objects_emb = np.array([obj.create_embedding() for obj in self.initial_objects])
         if "relations_emb" in self.observation_space_elements:
-            self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
             self.initial_relation_emb = self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level)
         self.reset(seed=self.seed)
 

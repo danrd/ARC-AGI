@@ -83,9 +83,9 @@ class TestRotationSymmetryMatchesRealPairs:
 
     @staticmethod
     def test_identical_pair_is_not_flagged_as_a_symmetry_relation():
-        """Identity carries no rotation/reflection flag, same as before this
-        change - that claim belongs to the separate same_shape relation,
-        which this change doesn't touch."""
+        """Identity carries no rotation/reflection flag: two identical
+        objects are related by same_shape, and saying it a second time here
+        would double-count the one fact across two relations."""
         obj1, obj2 = _object(L_COORDS, "a"), _object(list(L_COORDS), "b")
 
         assert RelationAnalyzer.rotation_symmetry(obj1, obj2) == []

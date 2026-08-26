@@ -83,12 +83,12 @@ class ARCDataset:
         training_solutions = load_json('data/datasets/ARC2/arc-agi_training_solutions.json')
         evaluation_challenges = load_json('data/datasets/ARC2/arc-agi_evaluation_challenges.json')
         evaluation_solutions = load_json('data/datasets/ARC2/arc-agi_evaluation_solutions.json')
-        # Where the training half ends, read off the file rather than
-        # hardcoded: the union below keeps training's keys first, so this
-        # index stays right whatever the two files hold. The old fixed 999 /
-        # 1119 were correct only for exactly 1000 + 120 tasks, and a shorter
-        # file made the second one never fire - dropping that subset's extra
-        # test cases on the floor without a word.
+        # Where the training half ends, read off the file rather than fixed:
+        # the union below keeps training's keys first, so this index is right
+        # whatever the two files hold. A fixed boundary that overshoots never
+        # fires, and the subset it was meant to close is then built and
+        # dropped on the floor without a word - see how additional_tasks is
+        # reset below.
         last_train_idx = len(training_challenges) - 1
         training_challenges = training_challenges | evaluation_challenges
         training_solutions = training_solutions | evaluation_solutions

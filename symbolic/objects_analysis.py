@@ -122,7 +122,10 @@ OBJECT_SCHEMA = (
 #: vector is a model input, so a checkpoint trained against one version reads
 #: a different meaning out of the same slot under another - store this
 #: alongside saved weights so the mismatch surfaces as an error rather than
-#: as quietly worse predictions.
+#: as quietly worse predictions. Nothing reads it yet: nothing in this
+#: repository saves weights (rl.training.create_agent only loads), so there
+#: is nothing to attach it to here. See summaries.RELATION_SCHEMA_VERSION,
+#: which carries the same caveat.
 OBJECT_SCHEMA_VERSION = 1
 
 #: Intrinsic to the object, i.e. unchanged if it were moved elsewhere on the

@@ -20,10 +20,6 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
             if model_config:
                 PPO_config.update(model_config)
             policy = PPO_config['policy'] if PPO_config['policy'] != 'default' else "MultiInputPolicy"
-            # 'shapes_match' used to be threaded through here too, but no
-            # vec_env/env ever set it and no feature extractor's
-            # constructor ever accepted it - a non-functional attribute
-            # that only raised AttributeError, never anything else.
             policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
                              'action_heads':PPO_config['action_heads'],
                              'features_extractor_kwargs':{'extr_arch': PPO_config['extr_arch']}}

@@ -1,13 +1,14 @@
 """Structured analysis output: the contract between the symbolic layer and
 whoever consumes it (a prompt block, an agent, RL).
 
-The analyzer used to answer only in glued-together prose, which left a
-programmatic consumer nothing to read: the structure existed inside the
-analyzer and was thrown away on the way out. Here the structure is what's
-produced, and text is rendered on top of it, so every consumer reads the same
-thing - `TaskAnalysis.get_transformation_hypothesis()` and
-`get_actionable_insights()` are now two renderings of what's built here, and
-the prose-only methods beside them have been deleted.
+The structure is what's produced here, and text is rendered on top of it. An
+analyzer that answers only in glued-together prose leaves a programmatic
+consumer nothing to read - the structure exists inside it and is thrown away
+on the way out - and every separately-worded view of the same analysis is one
+more thing to drift. So this module holds the claims, and each way of showing
+them is a rendering over it: `render_findings` for a prompt block,
+`TaskAnalysis.get_transformation_hypothesis()` and `get_actionable_insights()`
+for prose and for executable steps.
 
 Two rules the rest of this module exists to enforce:
 
@@ -513,14 +514,18 @@ def render_findings(findings: TaskFindings, budget: Optional[int] = None,
     not even the first finding fits, so the caller can omit the block instead
     of emitting a lone header.
 
-    Three sections, because grid observations are neither of the other two:
-    they used to be appended to the transformations and printed under "What
-    changes", which put "every example sits on a black background" - a thing
-    that by construction never changes - under the heading for things that
-    do. Measured over ARC-AGI-2's 1000 training tasks, that block ran to 5103
-    lines, 1654 of them (32.4%) observations rather than changes, 750 of
-    those the background statement; 93.7% of tasks were affected. Section
-    order is unchanged, so what a tight budget drops is the same as before.
+    Three sections, because grid observations are neither of the other two.
+    Several of them state that something does not vary - "every example sits
+    on a black background" - so printing them beside the transformations puts
+    a claim under the heading for its opposite, and they are not preservation
+    claims either: they describe the grids rather than what the transformation
+    left alone. Not a rare corner: over ARC-AGI-2's 1000 training tasks they
+    are 1654 of the 5103 lines outside the invariants (32.4%), 750 of those
+    the background statement, and 93.7% of tasks carry at least one.
+
+    Sections are rendered in order and the budget is spent in that order, so
+    this order is also the drop order: the rule first, then what the grids
+    show, then what holds.
     """
     if findings.is_empty:
         return None

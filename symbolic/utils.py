@@ -22,10 +22,9 @@ def find_upper_left_corner(grid_size:tuple)->tuple:
 
     Grids are currently anchored at the top-left, so this is always (0, 0)
     regardless of grid_size. Kept as the single place ~30 call sites ask
-    "where does this grid start", so re-introducing centered padding means
-    changing this one function rather than all of them. (It used to compute
-    a centered offset against a fixed 30x30 canvas; that computation was
-    dead - the return ignored it - and has been removed.)
+    "where does this grid start", so anchoring them anywhere else - centering
+    on a fixed canvas, say - is a change to this one function rather than to
+    all of them.
     """
     return (0, 0)
 

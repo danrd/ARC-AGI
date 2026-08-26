@@ -60,6 +60,18 @@ RELATION_SCHEMA = (
 
 RELATION_FEATURE_NAMES = tuple(name for name, _group in RELATION_SCHEMA)
 RELATION_DIM = len(RELATION_SCHEMA)
+
+#: Bumped whenever the composition or order of RELATION_SCHEMA changes - the
+#: relation-side counterpart to objects_analysis.OBJECT_SCHEMA_VERSION, and
+#: carried for the same reason: the vector is a model input, so a checkpoint
+#: trained against one version reads a different meaning out of the same slot
+#: under another.
+#:
+#: Neither constant is read anywhere yet, and can't be until there is
+#: something to attach it to - nothing in this repository saves weights
+#: (rl.training.create_agent only loads). A run that does save them elsewhere
+#: should store this next to them, so a mismatch surfaces as an error instead
+#: of as quietly worse predictions.
 RELATION_SCHEMA_VERSION = 3
 
 
@@ -1423,10 +1435,10 @@ class RelationAnalyzer():
         if in_contour == "object_1":
             triples1.append((self.obj1.label, "in_contour", self.obj2.label))
             triples2.append((self.obj2.label, "has_in_contour", self.obj1.label))
-            # Counted here too: this branch used to write the triples and
-            # skip the tally, so containment was only ever counted when the
-            # contained object happened to be the second of the pair - which
-            # of the two that is depends on iteration order, not on the grid.
+            # Both branches tally. Which of the pair is the contained one
+            # falls out of iteration order, not out of the grid, so counting
+            # only one of them would make the statistic depend on the order
+            # objects happen to be visited in.
             relation_statistics["in_contour"] += 1
 
         if self.touches(self.obj1, self.obj2):

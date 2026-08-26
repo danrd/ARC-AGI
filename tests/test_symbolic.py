@@ -437,6 +437,20 @@ class TestGridSummary:
             assert embeddings.ndim == 2, "Should be 2D"
             assert np.all(np.isfinite(embeddings)), "All values should be finite"
 
+    @staticmethod
+    def test_embeddings_are_the_same_however_many_times_they_are_asked_for(grid: np.ndarray):
+        """The call can replace the stored level with one carrying embeddings,
+        so it is worth pinning that doing it twice changes nothing - callers
+        ask for these once per reset and once per step against the same
+        summary.
+        """
+        summary = GridSummary(grid=grid, shape=grid.shape, font_color=0, levels=[1])
+
+        first = summary.get_relation_embeddings_as_numpy(level=1)
+        second = summary.get_relation_embeddings_as_numpy(level=1)
+
+        assert np.array_equal(first, second)
+
 
 class TestMatchScore:
     """Test match score calculations on grids."""
@@ -1141,11 +1155,13 @@ class TestStress:
 
     @staticmethod
     def test_repeated_operations():
-        """Test repeated operations for memory leaks."""
+        """Repeated construction must not leak memory or degrade in speed.
+
+        A timing assertion alone would not catch a leak, so the peak-memory
+        bound comes from resource_budget and the per-op time is asserted
+        separately below.
+        """
         grid = GridLibrary.multicolor_regions()
-        # The docstring above says "memory leaks" but this used to only ever
-        # check timing - resource_budget actually checks peak memory growth
-        # too now.
         with resource_budget(max_memory_mb=20.0):
             start = time.perf_counter()
             for _ in range(100):

@@ -211,6 +211,16 @@ def collect_random_rollouts(env,
         # was right" are different questions and only step_intersection's
         # done answers the second. The env's own counters answer it directly.
         rollout['solved'] = bool(env.max_int == env.target_int)
+        # Progress, alongside the reward. total_reward is denominated in
+        # whichever reward_approach the env was built with, and the
+        # approaches do not share a scale - approach 1 runs -4..+4 over the
+        # milestones where approach 2 runs -4..+10 - so rewards from two of
+        # them cannot be compared, and a search that is doing better can
+        # score lower. The intersection is the same count of cells whatever
+        # the approach, which makes these three the comparable record.
+        rollout['max_int'] = int(env.max_int)
+        rollout['base_int'] = int(env.base_int)
+        rollout['target_int'] = int(env.target_int)
 
         # Every rollout is kept, and select_best_rollouts ranks them.
         # Selecting on total_reward > 0 here threw away the entire run on
@@ -504,6 +514,16 @@ def collect_mcts_rollouts(env,
         # was right" are different questions and only step_intersection's
         # done answers the second. The env's own counters answer it directly.
         rollout['solved'] = bool(env.max_int == env.target_int)
+        # Progress, alongside the reward. total_reward is denominated in
+        # whichever reward_approach the env was built with, and the
+        # approaches do not share a scale - approach 1 runs -4..+4 over the
+        # milestones where approach 2 runs -4..+10 - so rewards from two of
+        # them cannot be compared, and a search that is doing better can
+        # score lower. The intersection is the same count of cells whatever
+        # the approach, which makes these three the comparable record.
+        rollout['max_int'] = int(env.max_int)
+        rollout['base_int'] = int(env.base_int)
+        rollout['target_int'] = int(env.target_int)
 
         # Every rollout is kept, and select_best_rollouts ranks them.
         # Selecting on total_reward > 0 here threw away the entire run on

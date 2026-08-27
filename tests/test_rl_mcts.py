@@ -84,6 +84,28 @@ def test_collect_random_rollouts_does_not_crash(env):
         assert rollout["solved"] == (env.max_int == env.target_int)
 
 
+@pytest.mark.parametrize("reward_approach", [1, 2, 3])
+def test_a_rollout_records_progress_and_not_only_reward(env, reward_approach):
+    """The one part of the record two reward approaches can be compared on.
+
+    total_reward is denominated in whichever approach the env was built
+    with, and they do not share a scale - approach 1 pays -4..+4 across the
+    milestones where approach 2 pays -4..+10 - so a search doing better can
+    score lower, and comparing the two on reward answers nothing. The
+    intersection is the same count of cells in every approach.
+    """
+    env.reward_approach = reward_approach
+    env.reset()
+
+    rollouts = mcts.collect_random_rollouts(
+        env, promising_actions=[], n_rollouts=3, max_episode_len=4)
+
+    for rollout in rollouts:
+        assert rollout["base_int"] <= rollout["target_int"]
+        assert rollout["max_int"] <= rollout["target_int"]
+        assert rollout["solved"] == (rollout["max_int"] == rollout["target_int"])
+
+
 # -- selection: what survives the filters ------------------------------------
 
 def _rollout(total_reward, length, solved=False, action_types=()):

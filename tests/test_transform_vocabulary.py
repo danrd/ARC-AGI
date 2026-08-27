@@ -1,7 +1,7 @@
 """Every transform arc_world dispatches, exercised under its real name.
 
 Nothing covered this: the RL tests build environments with two or three
-actions, so most of the vocabulary was never called from a test, and five
+actions, so most of the vocabulary is never called from them, and several
 transforms raised on every invocation without anything noticing. MCTS
 enumerates the whole action space, so one of these takes a whole rollout
 down.
@@ -70,10 +70,7 @@ STUBS = ["copy", "copy_input", "paste", "cut"]
 #: Transforms known to raise, with the diagnosis. Listed so the suite is
 #: green on a known state rather than silent about it - remove an entry when
 #: it is fixed, and the test starts demanding it stay fixed.
-KNOWN_BROKEN = {
-    "rotate90": "IndexError in GridObject.reinit_obj - rotation puts coords "
-                 "outside the grid on non-square objects",
-}
+KNOWN_BROKEN: dict = {}
 
 ACTION_NAMES = SINGLE + PAIR + STUBS
 PAIRWISE = set(PAIR)
@@ -123,9 +120,10 @@ def _env(task_id, inp, out):
 
 @pytest.fixture(scope="module")
 def envs():
-    """Several tasks, not one. These transforms raise on particular object
-    shapes - gravity on 13 of 17 tasks, rotate90 on 1 of 27 - so a single
-    fixture task reports them green while they are broken everywhere else.
+    """Several tasks, not one. These transforms fail on particular object
+    shapes rather than on all of them - gravity used to raise on 13 of 17
+    tasks and rotate90 on 1 of 27 - so a single fixture task reports them
+    green while they are broken everywhere else.
     """
     with open(REPO_ROOT / "data" / "datasets" / "ARC" / "training_challenges.json") as f:
         challenges = json.load(f)
@@ -212,6 +210,37 @@ def test_a_transform_is_reachable_on_some_task(name):
             return
     pytest.fail(f"{name!r} changed nothing on any of {tried} tasks - "
                  "either the name misses its branch or the transform is inert")
+
+
+def test_a_rotation_that_would_leave_the_grid_is_refused():
+    """Not clipped. Rotating a non-square object about its own centre can put
+    cells outside the grid, and the three ways out are not equal: clipping
+    keeps the object but loses cells, so every size, contour and hole read
+    off it afterwards describes something that is not on the grid. Refusing
+    costs one action that does nothing, which the env already scores as
+    ineffective.
+
+    A five-cell horizontal line centred at (0, 2) becomes a vertical one
+    spanning rows -2..2 - two rows above the grid.
+    """
+    grid = np.zeros((5, 5), dtype=int)
+    grid[0, :] = 3
+    out = grid.copy()
+    out[2, :] = 3
+
+    names = {0: "submit", 1: "rotate90"}
+    env = ARCGridWorld(max_episode_len=4, feasible_actions=names, repr_level=1,
+                       input_pattern="start", observation_space_elements=["objects_emb"])
+    env.set_subtask(ARCSubtask("edge_line", grid, out))
+    env.reset()
+    before = env.grid.copy()
+
+    env.step(np.array([1, 0, 0]))
+
+    assert np.array_equal(env.grid, before)
+    # And the object still describes what is on the grid.
+    obj = env.objects[0]
+    assert all(0 <= i < 5 and 0 <= j < 5 for i, j in obj.coords)
 
 
 def test_the_stubs_are_still_stubs():

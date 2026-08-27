@@ -1301,8 +1301,24 @@ def symmetry_transformation(grid:np.array, obj1:GridObject, font_color:int, tran
     """Symmetry transform of object on grid with corresponding grid changes."""
     coords = obj1.coords
     new_mask, new_obj_structure, new_coords_offsets, new_coords, coords_mapping = object_rotation(obj1, transf_type)
-    new_coords_on_grid = []
     old_center = obj1.center
+
+    # A rotation that would leave the grid does not happen. Rotating a
+    # non-square object about its own centre can put cells outside, and the
+    # three ways out are not equal: clipping keeps the object but loses
+    # cells, so every size, contour and hole read off it afterwards
+    # describes something that is not on the grid; refusing costs one action
+    # that does nothing, which the env already scores as ineffective.
+    #
+    # The cells were in fact already filtered while drawing - into a
+    # `new_coords_on_grid` list that was then thrown away, with reinit_obj
+    # handed the unfiltered coordinates. That is where the IndexError came
+    # from, one frame into GridObject reading grid[i, j] for a cell that has
+    # no i, j. Checked before anything is written, because the clearing
+    # below mutates the grid.
+    if any(not (0 <= x < grid.shape[0] and 0 <= y < grid.shape[1]) for x, y in new_coords):
+        return grid
+
     # Store original colors
     colors = {(new_coords[0], new_coords[1]): grid[(old_coords[0], old_coords[1])]
               for new_coords, old_coords in coords_mapping.items()}
@@ -1310,9 +1326,7 @@ def symmetry_transformation(grid:np.array, obj1:GridObject, font_color:int, tran
     for x, y in coords:
         grid[x, y] = font_color
     for x, y in new_coords:
-        if 0 <= x < grid.shape[0] and 0 <= y < grid.shape[1]:
-            new_coords_on_grid.append((x, y))
-            grid[x, y] = colors[(x, y)]
+        grid[x, y] = colors[(x, y)]
     obj1.reinit_obj(new_coords, grid)
     obj1.center = old_center # keep center when rotating
     return grid

@@ -242,10 +242,11 @@ def test_merge_returns_a_grid_when_it_finds_no_configuration(monkeypatch):
     """Reached through the env only after several steps put the objects
     somewhere no placement fits, so it is asked of the function directly.
 
-    This branch returned `(all_grid_objects, grid, {...})` while every other
-    path returns the grid. The caller assigns that to new_grid, and the run
-    dies two steps later inside maximal_intersection with numpy complaining
-    about an inhomogeneous array - naming neither merge nor this branch.
+    Every other path out of perform_merge returns the grid, and the caller
+    assigns whatever it gets to new_grid. A branch handing back anything
+    else - `(all_grid_objects, grid, {...})`, say - kills the run two steps
+    later inside maximal_intersection, with numpy complaining about an
+    inhomogeneous array and naming neither merge nor the branch.
     """
     from rl import arc_transformators
     from symbolic.objects_analysis import GridObject
@@ -373,6 +374,97 @@ def test_an_alignment_that_would_leave_the_grid_is_refused():
 
     assert np.array_equal(result, before)
     assert all(0 <= i < 6 and 0 <= j < 6 for i, j in tall.coords)
+
+
+@pytest.mark.parametrize("merge", ["center_merge", "color_merge"])
+def test_a_merge_that_would_leave_the_grid_is_refused(merge):
+    """Same all-or-nothing rule as the alignments, and reached the same way:
+    the merges shift object 2 so its centre lands on a cell of object 1, and
+    a target near an edge puts part of it past the border. color_merge is
+    the worse of the two because a negative index is not an error to numpy -
+    it writes at the far edge and the run continues on a grid nobody asked
+    for, until a shift large enough to raise finally names the wrong place.
+    """
+    from rl import arc_transformators
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((6, 6), dtype=int)
+    grid[0, 0] = 2
+    for row in (2, 3, 4):
+        grid[row, 4] = 2
+    anchor = GridObject(shape="cell", coords=[(0, 0)], color=[2], label="a",
+                         grid_shape=grid.shape, grid=grid)
+    tall = GridObject(shape="line", coords=[(2, 4), (3, 4), (4, 4)], color=[2], label="b",
+                       grid_shape=grid.shape, grid=grid)
+    before = grid.copy()
+
+    # Both merges send the tall object's centre (3, 4) to the anchor's cell
+    # (0, 0): a shift of (-3, -4), which puts its top cell at row -1.
+    result = getattr(arc_transformators, merge)(grid, anchor, tall, font_color=0)
+
+    assert np.array_equal(result, before)
+    assert all(0 <= i < 6 and 0 <= j < 6 for i, j in tall.coords)
+
+
+def _ring_inverted():
+    """A ring keeps its hole and loses its eight-cell body to
+    inverse_obj_color."""
+    from rl.arc_transformators import inverse_obj_color
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((5, 5), dtype=int)
+    ring = [(i, j) for i in range(3) for j in range(3) if (i, j) != (1, 1)]
+    for i, j in ring:
+        grid[i, j] = 1
+    obj = GridObject(shape="ring", coords=ring, color=[1], label="a",
+                      grid_shape=grid.shape, grid=grid)
+    inverse_obj_color(grid, obj, font_color=0)
+    return grid, obj
+
+
+def _cell_emitted():
+    """A single cell grows the three cells it emits before hitting the
+    blocker."""
+    from rl.arc_transformators import emission_with_collision
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((5, 5), dtype=int)
+    grid[2, 0] = 1
+    grid[2, 4] = 3
+    obj = GridObject(shape="cell", coords=[(2, 0)], color=[1], label="a",
+                      grid_shape=grid.shape, grid=grid)
+    blocker = GridObject(shape="cell", coords=[(2, 4)], color=[3], label="b",
+                          grid_shape=grid.shape, grid=grid)
+    grid = emission_with_collision(grid, obj, emission_color=2, font_color=0,
+                                   direction="E", collision_type="stop",
+                                   collision_color=4,
+                                   cell2obj={(2, 0): 0, (2, 4): 1},
+                                   objects=[obj, blocker])
+    return grid, obj
+
+
+@pytest.mark.parametrize("build", [_ring_inverted, _cell_emitted],
+                          ids=["inverse_obj_color", "emission_with_collision"])
+def test_an_object_that_changes_shape_keeps_its_structure(build):
+    """obj_structure numbers an object's cells by their index in coords, so
+    the two are only meaningful together and every cell has to carry a
+    number. Transforms that give an object a different set of cells go
+    through reinit_obj, which recomputes both; assigning coords alone leaves
+    a structure describing the shape the object no longer has.
+
+    Either direction of the mismatch is a bug, and they fail differently. A
+    structure numbering more cells than coords holds sends object_rotation
+    past the end of the list. One numbering fewer is quieter: the rotation
+    runs and silently leaves the unnumbered cells behind.
+    """
+    from rl.arc_transformators import symmetry_transformation
+
+    grid, obj = build()
+
+    assert obj.obj_structure.max() == len(obj.coords)
+    # And the rotation that reads it gets through, with nothing dropped.
+    symmetry_transformation(grid, obj, font_color=0, transf_type="rot90")
+    assert obj.obj_structure.max() == len(obj.coords)
 
 
 def test_the_stubs_are_still_stubs():

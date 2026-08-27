@@ -304,10 +304,9 @@ def perform_merge(grid:np.ndarray, obj1:GridObject, obj2:GridObject,
 
     if not best_match:
         # The grid, like every other path out of here and like every other
-        # transform. This branch returned a 3-tuple, which the caller then
-        # used as the grid - and the failure surfaced two steps later in
-        # maximal_intersection, as numpy refusing to build an array out of
-        # an object list, a grid and a dict.
+        # transform. A caller cannot tell a refusal from a success, so
+        # anything else here reaches the env as the new grid and only fails
+        # a step or two later, far from the branch that produced it.
         return grid
 
     # Extract the objects from the match
@@ -322,14 +321,18 @@ def perform_merge(grid:np.ndarray, obj1:GridObject, obj2:GridObject,
 def inverse_obj_color(grid:np.array, obj:GridObject, font_color:int):
     if len(obj.colors) == 1 and (len(obj.inner_holes) + len(obj.outer_holes) > 0):
         base_color = obj.color_numbers[0]
-        coords_copy = copy(obj.coords)
         non_object_coords_copy = copy(obj.non_object_coords)
         for i, j in obj.non_object_coords:
             grid[i, j] = base_color
         for i, j in obj.coords:
             grid[i, j] = font_color
-        obj.coords = non_object_coords_copy
-        obj.non_object_coords = coords_copy
+        # Through reinit_obj rather than by assigning coords: obj_structure
+        # indexes into coords, so the two only stay in step when both are
+        # recomputed together. A structure left describing the previous
+        # shape sends object_rotation past the end of the coords list.
+        # non_object_coords is recomputed there too and is not assigned back.
+        if non_object_coords_copy:
+            obj.reinit_obj(list(non_object_coords_copy), grid)
     elif len(obj.colors) == 2:
         color_1 = obj.color_numbers[0]
         color_2 = obj.color_numbers[1]
@@ -1122,8 +1125,10 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
             new_grid[x, y] = collision_color
         collision_cells.extend(contour_cells)
 
-    # Update obj1 coordinates
-    obj1.coords = tuple(new_coords)
+    # Through reinit_obj rather than by assigning coords, so obj_structure
+    # and everything else read off the object follow the new shape.
+    if new_coords:
+        obj1.reinit_obj(list(new_coords), new_grid)
 
     return new_grid
 
@@ -1343,13 +1348,8 @@ def symmetry_transformation(grid:np.array, obj1:GridObject, font_color:int, tran
     # cells, so every size, contour and hole read off it afterwards
     # describes something that is not on the grid; refusing costs one action
     # that does nothing, which the env already scores as ineffective.
-    #
-    # The cells were in fact already filtered while drawing - into a
-    # `new_coords_on_grid` list that was then thrown away, with reinit_obj
-    # handed the unfiltered coordinates. That is where the IndexError came
-    # from, one frame into GridObject reading grid[i, j] for a cell that has
-    # no i, j. Checked before anything is written, because the clearing
-    # below mutates the grid.
+    # Checked before anything is written, because the clearing below
+    # mutates the grid.
     if not all_on_grid(new_coords, grid.shape):
         return grid
 
@@ -1445,12 +1445,18 @@ def center_merge(grid: np.array, obj1: GridObject, obj2: GridObject, font_color:
     for x, y in obj2_coords:
         grid[x, y] = font_color
 
-    # Place object_2 with its center at object_1's center
-    for x, y in obj2_coords:
-        new_x, new_y = x + shift_x, y + shift_y
-        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-            new_coords.append((new_x, new_y))
-            grid[new_x, new_y] = colors[(x, y)]
+    # Whole or not at all: placing only the cells that land on the grid
+    # erases the object from where it was and draws part of it where it was
+    # going. A refused move puts back what the clearing above erased.
+    targets = [(x + shift_x, y + shift_y) for x, y in obj2_coords]
+    if not all_on_grid(targets, grid.shape):
+        for x, y in obj2_coords:
+            grid[x, y] = colors[(x, y)]
+        return grid
+
+    for (x, y), (new_x, new_y) in zip(obj2_coords, targets):
+        new_coords.append((new_x, new_y))
+        grid[new_x, new_y] = colors[(x, y)]
     # Update object_2 coordinates
     obj2.reinit_obj(new_coords, grid)
 
@@ -1491,9 +1497,17 @@ def color_merge(grid: np.array, obj1: GridObject, obj2: GridObject, font_color:i
     for x, y in obj2_coords:
         grid[x, y] = font_color
 
-    # Place object_2 centered at the matching cell
-    for x, y in obj2_coords:
-        new_x, new_y = x + shift_x, y + shift_y
+    # Whole or not at all, as in center_merge. A shift computed from a
+    # matching cell near an edge can be large enough to put targets at a
+    # negative index, which numpy reads as a wrap-around rather than an
+    # error until it goes further out still.
+    targets = [(x + shift_x, y + shift_y) for x, y in obj2_coords]
+    if not all_on_grid(targets, grid.shape):
+        for x, y in obj2_coords:
+            grid[x, y] = colors[(x, y)]
+        return grid
+
+    for (x, y), (new_x, new_y) in zip(obj2_coords, targets):
         new_coords.append((new_x, new_y))
         grid[new_x, new_y] = colors[(x, y)]
 

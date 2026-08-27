@@ -1237,19 +1237,28 @@ def objects_swap(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int
     for x, y in obj2_coords:
         grid[x, y] = font_color
 
-    # Place object_1 at object_2's position
-    for x, y in obj1_coords:
-        new_x, new_y = x + shift1_to_2_x, y + shift1_to_2_y
-        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-            new_coords1.append((new_x, new_y))
-            grid[new_x, new_y] = colors1[(x, y)]
+    # A swap is one move, so it is both objects or neither: placing only the
+    # cells that land on the grid erases each object from where it was and
+    # draws part of it where it was going. Objects of different sizes make
+    # this the common case rather than an edge one - the smaller one moves
+    # by the distance between the centres, which for a large partner reaches
+    # well past the border - and an object left with no cells at all takes
+    # reinit_obj down on min() of an empty sequence.
+    targets1 = [(x + shift1_to_2_x, y + shift1_to_2_y) for x, y in obj1_coords]
+    targets2 = [(x + shift2_to_1_x, y + shift2_to_1_y) for x, y in obj2_coords]
+    if not (all_on_grid(targets1, grid.shape) and all_on_grid(targets2, grid.shape)):
+        for x, y in obj1_coords:
+            grid[x, y] = colors1[(x, y)]
+        for x, y in obj2_coords:
+            grid[x, y] = colors2[(x, y)]
+        return grid
 
-    # Place object_2 at object_1's position
-    for x, y in obj2_coords:
-        new_x, new_y = x + shift2_to_1_x, y + shift2_to_1_y
-        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-            new_coords2.append((new_x, new_y))
-            grid[new_x, new_y] = colors2[(x, y)]
+    for (x, y), target in zip(obj1_coords, targets1):
+        new_coords1.append(target)
+        grid[target] = colors1[(x, y)]
+    for (x, y), target in zip(obj2_coords, targets2):
+        new_coords2.append(target)
+        grid[target] = colors2[(x, y)]
     obj1.reinit_obj(new_coords1, grid)
     obj2.reinit_obj(new_coords2, grid)
     return grid
@@ -1263,18 +1272,26 @@ def upscale(grid:np.array, obj1:GridObject, font_color:int):
     for x, y in coords:
         grid[x, y] = font_color
 
-    # Place upscaled object - each cell becomes a 2x2 square
+    # Each cell becomes a 2x2 square, so the object doubles in size and
+    # doubles its distance from the origin - it leaves the grid readily.
+    # Whole or not at all, as everywhere else: a half-drawn upscale is a
+    # shape nothing in the task describes.
+    targets = {}
     for orig_x, orig_y in coords:
-        color = colors[(orig_x, orig_y)]
-        # Create 2x2 square
         for dx in range(2):
             for dy in range(2):
-                new_x, new_y = orig_x * 2 + dx - (max_x-min_x+1) // 2, orig_y * 2 + dy - (max_y-min_y+1) // 2
-                if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-                    new_coords.append((new_x, new_y))
-                    grid[new_x, new_y] = color
-    if len(new_coords) > 0:
-        obj1.reinit_obj(new_coords, grid)
+                new_x = orig_x * 2 + dx - (max_x - min_x + 1) // 2
+                new_y = orig_y * 2 + dy - (max_y - min_y + 1) // 2
+                targets[(new_x, new_y)] = colors[(orig_x, orig_y)]
+    if not all_on_grid(targets, grid.shape):
+        for x, y in coords:
+            grid[x, y] = colors[(x, y)]
+        return grid
+
+    for target, color in targets.items():
+        new_coords.append(target)
+        grid[target] = color
+    obj1.reinit_obj(new_coords, grid)
     return grid
 
 def define_coords(obj:GridObject, new_obj_structure:np.array):

@@ -376,14 +376,19 @@ def test_an_alignment_that_would_leave_the_grid_is_refused():
     assert all(0 <= i < 6 and 0 <= j < 6 for i, j in tall.coords)
 
 
-@pytest.mark.parametrize("merge", ["center_merge", "color_merge"])
-def test_a_merge_that_would_leave_the_grid_is_refused(merge):
+@pytest.mark.parametrize("transform", ["center_merge", "color_merge", "objects_swap"])
+def test_a_placement_that_would_leave_the_grid_is_refused(transform):
     """Same all-or-nothing rule as the alignments, and reached the same way:
-    the merges shift object 2 so its centre lands on a cell of object 1, and
-    a target near an edge puts part of it past the border. color_merge is
-    the worse of the two because a negative index is not an error to numpy -
-    it writes at the far edge and the run continues on a grid nobody asked
-    for, until a shift large enough to raise finally names the wrong place.
+    these transforms move object 2 by the distance between the two centres,
+    which for a distant or a much larger partner puts part of it past the
+    border.
+
+    They fail differently. objects_swap can leave an object with no cells at
+    all, which takes reinit_obj down on min() of an empty sequence.
+    color_merge is quieter and worse: a negative index is not an error to
+    numpy, so it writes at the far edge and the run continues on a grid
+    nobody asked for, until a shift large enough to raise finally names the
+    wrong place.
     """
     from rl import arc_transformators
     from symbolic.objects_analysis import GridObject
@@ -398,12 +403,41 @@ def test_a_merge_that_would_leave_the_grid_is_refused(merge):
                        grid_shape=grid.shape, grid=grid)
     before = grid.copy()
 
-    # Both merges send the tall object's centre (3, 4) to the anchor's cell
-    # (0, 0): a shift of (-3, -4), which puts its top cell at row -1.
-    result = getattr(arc_transformators, merge)(grid, anchor, tall, font_color=0)
+    # Every one of them sends the tall object's centre (3, 4) to the
+    # anchor's cell (0, 0): a shift of (-3, -4), putting its top cell at
+    # row -1. The anchor's own half of the swap fits, which is the point -
+    # one side being possible does not make the move possible.
+    result = getattr(arc_transformators, transform)(grid, anchor, tall, font_color=0)
 
     assert np.array_equal(result, before)
     assert all(0 <= i < 6 and 0 <= j < 6 for i, j in tall.coords)
+    assert all(0 <= i < 6 and 0 <= j < 6 for i, j in anchor.coords)
+
+
+def test_an_upscale_that_would_leave_the_grid_is_refused():
+    """Doubling puts a cell at twice its distance from the origin, so an
+    object anywhere but the top left leaves the grid readily - and unlike
+    the moves, an upscale that keeps only what fits is not even the right
+    shape.
+
+    A 2x2 block in the bottom-right corner of a 6x6 grid wants rows and
+    columns 7 through 10.
+    """
+    from rl.arc_transformators import upscale
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((6, 6), dtype=int)
+    block = [(4, 4), (4, 5), (5, 4), (5, 5)]
+    for i, j in block:
+        grid[i, j] = 3
+    obj = GridObject(shape="square", coords=block, color=[3], label="a",
+                      grid_shape=grid.shape, grid=grid)
+    before = grid.copy()
+
+    result = upscale(grid, obj, font_color=0)
+
+    assert np.array_equal(result, before)
+    assert sorted(obj.coords) == block
 
 
 def _ring_inverted():

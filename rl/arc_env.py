@@ -255,12 +255,21 @@ class ARCGridWorld(gymnasium.Env):
                     reward = 0
 
         elif self.reward_approach == 2: # partial reward for some achieved milestones
+            # The partial credit is kept at the first milestone that was not
+            # reached, not overwritten by the penalty. Assigning there paid
+            # the same -milestones_rewards[-1] for every submit short of the
+            # solved one, so this approach was flat where it is meant to have
+            # a gradient - and the only positive submit in any approach was
+            # the fully solved one, which is why nothing positive ever came
+            # out of a search. The penalty is now what a submit that achieved
+            # nothing is worth, so giving up still costs.
             for idx, milestone_int in enumerate(self.milestones.keys()):
                 if max_int >= milestone_int:
                     reward += self.milestones_rewards[idx]
                 else:
-                    reward = -1 * self.milestones_rewards[-1]
                     break
+            if reward == 0:
+                reward = -1 * self.milestones_rewards[-1]
         elif self.reward_approach == 4: # monotonic scaling reward based on percentage of the task complition
             reward = self.max_reward_base
         return reward

@@ -193,6 +193,32 @@ def test_reward_approach_submit_does_not_crash(subtask, reward_approach):
     assert done is True
 
 
+def test_reward_approach_2_pays_for_partial_progress(subtask):
+    """The one approach whose point is a gradient short of the answer.
+
+    Asked of _submit_reward across the range rather than waited for from a
+    rollout, because nothing solves these tasks and the interesting values
+    are exactly the ones a rollout never reaches. Approach 2 paid the same
+    penalty at every intersection below the target, which left the fully
+    solved submit as the only positive one in any approach - so a search
+    maximising total reward has nothing to climb towards and never submits.
+    """
+    env = make_env(reward_approach=2)
+    env.set_subtask(subtask)
+    env.reset()
+    milestones = sorted(env.milestones)
+
+    nothing = env._submit_reward(env.max_int)
+    partial = [env._submit_reward(m) for m in milestones[:-1]]
+    solved = env._submit_reward(env.target_int)
+
+    assert nothing < 0, "a submit that achieved nothing should still cost"
+    assert all(p > 0 for p in partial), \
+        f"every reached milestone should pay: {partial}"
+    assert partial == sorted(partial), f"payment should grow with progress: {partial}"
+    assert solved > max(partial), "solving should beat any partial result"
+
+
 def test_reward_approach_4_is_currently_broken(subtask):
     """Regression tracker, not desired behavior: reward_approach == 4
     reads self.max_reward_base, which is never set anywhere in

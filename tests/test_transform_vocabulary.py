@@ -297,6 +297,84 @@ def test_a_rotation_that_would_leave_the_grid_is_refused():
     assert all(0 <= i < 5 and 0 <= j < 5 for i, j in obj.coords)
 
 
+@pytest.mark.parametrize("name", [n for n in ACTION_NAMES if n not in STUBS])
+def test_a_transform_survives_being_applied_repeatedly(envs, name):
+    """Everything above steps once from reset. These break later: after a
+    few steps the objects have been rewritten, moved to edges, emptied - and
+    a transform that is fine on a freshly parsed grid raises on that.
+
+    Measured before this test existed: 1 of 12 tasks crashed a rollout at
+    12 steps, 7 of 12 at 25.
+    """
+    index = ACTION_NAMES.index(name) + 1
+    indices = (0, 1) if name in PAIRWISE else (0, 0)
+
+    failures = []
+    for task_id, env in envs:
+        env.reset()
+        try:
+            for _ in range(12):
+                _, _, done, truncated, _ = env.step(np.array([index, *indices]))
+                if done or truncated:
+                    break
+        except Exception as exc:
+            failures.append(f"{task_id}: {type(exc).__name__}: {exc}")
+
+    if failures and name in KNOWN_BROKEN:
+        pytest.xfail(f"{KNOWN_BROKEN[name]} - {len(failures)}/{len(envs)}: {failures[0]}")
+    assert not failures, (
+        f"{name!r} raised when applied repeatedly on {len(failures)} of "
+        f"{len(envs)} tasks:\n  " + "\n  ".join(failures[:3])
+    )
+
+
+@pytest.mark.parametrize("name", [n for n in ACTION_NAMES if n not in STUBS])
+def test_a_transform_leaves_colours_as_tuples(envs, name):
+    """GridObject.__init__ writes `tuple(color)`, and consumers concatenate
+    these - merge does `obj1.color_numbers + obj2.color_numbers`. Two sites
+    wrote a list instead, and one of them (`recolor`) travelled with the
+    object, so the mismatch surfaced inside a different transform entirely,
+    as `can only concatenate list (not "tuple") to list`.
+    """
+    index = ACTION_NAMES.index(name) + 1
+    indices = (0, 1) if name in PAIRWISE else (0, 0)
+
+    for task_id, env in envs:
+        env.reset()
+        env.step(np.array([index, *indices]))
+        for obj in env.objects:
+            assert isinstance(obj.color_numbers, tuple), \
+                f"{name!r} on {task_id} left {obj.label}.color_numbers a " \
+                f"{type(obj.color_numbers).__name__}"
+
+
+def test_an_alignment_that_would_leave_the_grid_is_refused():
+    """Directly, because the fixture tasks do not reach it: the alignment
+    transforms placed the cells that happened to land on the grid and
+    dropped the rest, which erases the object from where it was and draws
+    part of it where it was going.
+    """
+    from rl.arc_transformators import x_alignment
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((6, 6), dtype=int)
+    grid[0, 0] = 1
+    for row in (2, 3, 4):
+        grid[row, 4] = 2
+    anchor = GridObject(shape="cell", coords=[(0, 0)], color=[1], label="a",
+                         grid_shape=grid.shape, grid=grid)
+    tall = GridObject(shape="line", coords=[(2, 4), (3, 4), (4, 4)], color=[2], label="b",
+                       grid_shape=grid.shape, grid=grid)
+    before = grid.copy()
+
+    # Aligning the tall object's centre row (3) with the anchor's (0) shifts
+    # it up by three, putting its top cell at row -1.
+    result = x_alignment(grid, anchor, tall, font_color=0)
+
+    assert np.array_equal(result, before)
+    assert all(0 <= i < 6 and 0 <= j < 6 for i, j in tall.coords)
+
+
 def test_the_stubs_are_still_stubs():
     """copy/copy_input/paste/cut return the grid untouched by design. Pinned
     so that becomes a deliberate state rather than a suspicion, and so

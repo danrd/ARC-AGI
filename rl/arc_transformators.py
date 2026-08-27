@@ -78,6 +78,21 @@ def check_intersection(coords1: List[tuple], coords2: List[tuple]) -> bool:
     """Check if two sets of coordinates intersect."""
     return bool(set(coords1).intersection(set(coords2)))
 
+
+def all_on_grid(coords, grid_shape) -> bool:
+    """Whether every coordinate is a cell of a grid this shape.
+
+    The rule several transforms need and each used to half-apply: they
+    filtered the cells that fit while drawing and kept the rest, so an
+    object ended up erased from where it was and partly drawn where it was
+    going - and when nothing fit, reinit_obj got an empty coordinate list
+    and failed several frames later in define_edges, with min() over
+    nothing. A move happens whole or not at all, and this is the test.
+    """
+    rows, cols = grid_shape
+    return all(0 <= x < rows and 0 <= y < cols for x, y in coords)
+
+
 def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
                                  position: tuple, rotation_idx: int,
                                  all_grid_objects: List['GridObject'],
@@ -110,8 +125,7 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
     # against an edge produced coordinates the merged object then indexed the
     # grid with - an IndexError several frames away from the placement that
     # caused it.
-    rows, cols = grid.shape
-    if any(not (0 <= x < rows and 0 <= y < cols) for x, y in shifted_coords):
+    if not all_on_grid(shifted_coords, grid.shape):
         return {"valid": False, "hole_reduction": 0, "compactness": 0}
 
     # Check if the shifted obj2 intersects with obj1 coords
@@ -135,7 +149,10 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
         merged_obj = GridObject(
             shape="complex",
             coords=merged_coords,
-            color=obj1.color_numbers+obj2.color_numbers,  # Assume we keep the color of obj1
+            # tuple() on both sides: color_numbers is a tuple everywhere it is
+            # set, and stating it here keeps a stray list from making this a
+            # TypeError rather than the concatenation it reads as.
+            color=tuple(obj1.color_numbers) + tuple(obj2.color_numbers),
             label=f"merged_{obj1.label}_{obj2.label}",
             grid_shape=grid.shape,  # Assume we keep the positioning of obj1
             grid=grid,
@@ -700,10 +717,8 @@ def gravity(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int):
     # blocked, handed reinit_obj an empty coordinate list, which fails in
     # define_edges several frames later with min() over nothing.
     targets = [(x + shift_x, y + shift_y) for x, y in obj2_coords]
-    fits = all(0 <= new_x < new_grid.shape[0] and 0 <= new_y < new_grid.shape[1]
-               and new_grid[new_x, new_y] == font_color
-               for new_x, new_y in targets)
-    if not fits:
+    if not all_on_grid(targets, new_grid.shape) or \
+            any(new_grid[x, y] != font_color for x, y in targets):
         return grid
 
     for (x, y), (new_x, new_y) in zip(obj2_coords, targets):
@@ -791,12 +806,18 @@ def x_alignment(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int)
     for x, y in obj2_coords:
         new_grid[x, y] = font_color
 
-    # Place object_2 in new position
-    for x, y in obj2_coords:
-        new_x, new_y = x + shift_x, y + shift_y
-        if 0 <= new_x < new_grid.shape[0] and 0 <= new_y < new_grid.shape[1]:
-            new_coords.append((new_x, new_y))
-            new_grid[new_x, new_y] = colors[(x, y)]
+    # Whole or not at all, as in gravity. Placing the cells that happen to
+    # land on the grid and dropping the rest leaves the object erased from
+    # where it was and partly drawn where it was going, and - when none of
+    # them land - hands reinit_obj an empty coordinate list, which fails
+    # several frames later in define_edges with min() over nothing.
+    targets = [(x + shift_x, y + shift_y) for x, y in obj2_coords]
+    if not all_on_grid(targets, new_grid.shape):
+        return grid
+
+    for (x, y), (new_x, new_y) in zip(obj2_coords, targets):
+        new_coords.append((new_x, new_y))
+        new_grid[new_x, new_y] = colors[(x, y)]
     obj2.reinit_obj(new_coords, new_grid)
     return new_grid
 
@@ -821,12 +842,18 @@ def y_alignment(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int)
     for x, y in obj2_coords:
         new_grid[x, y] = font_color
 
-    # Place object_2 in new position
-    for x, y in obj2_coords:
-        new_x, new_y = x + shift_x, y + shift_y
-        if 0 <= new_x < new_grid.shape[0] and 0 <= new_y < new_grid.shape[1]:
-            new_coords.append((new_x, new_y))
-            new_grid[new_x, new_y] = colors[(x, y)]
+    # Whole or not at all, as in gravity. Placing the cells that happen to
+    # land on the grid and dropping the rest leaves the object erased from
+    # where it was and partly drawn where it was going, and - when none of
+    # them land - hands reinit_obj an empty coordinate list, which fails
+    # several frames later in define_edges with min() over nothing.
+    targets = [(x + shift_x, y + shift_y) for x, y in obj2_coords]
+    if not all_on_grid(targets, new_grid.shape):
+        return grid
+
+    for (x, y), (new_x, new_y) in zip(obj2_coords, targets):
+        new_coords.append((new_x, new_y))
+        new_grid[new_x, new_y] = colors[(x, y)]
     obj2.reinit_obj(new_coords, new_grid)
     return new_grid
 
@@ -998,10 +1025,12 @@ def emission_with_collision(grid:np.array, obj1:GridObject, emission_color:float
 
                 if collision_obj and collision_obj.label not in collision_objects:
                     collision_objects.append(collision_obj.label)
-                    if isinstance(collision_obj.color_numbers, list):
-                        collision_obj.color_numbers = [collision_color]
-                    else:
-                        collision_obj.color_numbers = tuple([collision_color])
+                    # A tuple, like GridObject.__init__ writes and like every
+                    # consumer expects. The branch this replaces preserved
+                    # whichever type the object happened to carry, which is how
+                    # a list got as far as merge's `obj1.color_numbers +
+                    # obj2.color_numbers` and made it a TypeError.
+                    collision_obj.color_numbers = (collision_color,)
                     collision_obj.colors = tuple([COLORS_MAPPING[collision_color]])
                     for cx, cy in collision_obj.coords:
                         new_grid[cx, cy] = collision_color
@@ -1321,7 +1350,7 @@ def symmetry_transformation(grid:np.array, obj1:GridObject, font_color:int, tran
     # from, one frame into GridObject reading grid[i, j] for a cell that has
     # no i, j. Checked before anything is written, because the clearing
     # below mutates the grid.
-    if any(not (0 <= x < grid.shape[0] and 0 <= y < grid.shape[1]) for x, y in new_coords):
+    if not all_on_grid(new_coords, grid.shape):
         return grid
 
     # Store original colors
@@ -1609,27 +1638,25 @@ def shape_swap(grid: np.array, obj1: GridObject, obj2: GridObject, font_color: f
     obj1_color = obj1.color_numbers[0] if obj1.color_numbers else font_color
     obj2_color = obj2.color_numbers[0] if obj2.color_numbers else font_color
 
+    obj1_relatives = [(x - obj1_center[0], y - obj1_center[1]) for x, y in obj1.coords]
+    obj2_relatives = [(x - obj2_center[0], y - obj2_center[1]) for x, y in obj2.coords]
+
+    new_obj2_coords = [(obj2_center[0] + dx, obj2_center[1] + dy) for dx, dy in obj1_relatives]
+    new_obj1_coords = [(obj1_center[0] + dx, obj1_center[1] + dy) for dx, dy in obj2_relatives]
+
+    # Both halves or neither, and checked before anything is cleared: a swap
+    # where one shape fits and the other does not is not half a swap.
+    if not (all_on_grid(new_obj1_coords, grid.shape) and all_on_grid(new_obj2_coords, grid.shape)):
+        return grid
+
     for x, y in obj1.coords:
         grid[x, y] = font_color
     for x, y in obj2.coords:
         grid[x, y] = font_color
-
-    obj1_relatives = [(x - obj1_center[0], y - obj1_center[1]) for x, y in obj1.coords]
-    obj2_relatives = [(x - obj2_center[0], y - obj2_center[1]) for x, y in obj2.coords]
-
-    new_obj2_coords = []
-    for dx, dy in obj1_relatives:
-        new_x, new_y = obj2_center[0] + dx, obj2_center[1] + dy
-        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-            new_obj2_coords.append((new_x, new_y))
-            grid[new_x, new_y] = obj2_color
-
-    new_obj1_coords = []
-    for dx, dy in obj2_relatives:
-        new_x, new_y = obj1_center[0] + dx, obj1_center[1] + dy
-        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-            new_obj1_coords.append((new_x, new_y))
-            grid[new_x, new_y] = obj1_color
+    for x, y in new_obj2_coords:
+        grid[x, y] = obj2_color
+    for x, y in new_obj1_coords:
+        grid[x, y] = obj1_color
 
     obj1.reinit_obj(new_obj1_coords, grid)
     obj2.reinit_obj(new_obj2_coords, grid)
@@ -1656,18 +1683,17 @@ def shape_copy(grid: np.array, obj1: GridObject, obj2: GridObject, font_color: f
     obj1_center = obj1.center
     obj1_color = obj1.color_numbers[0] if obj1.color_numbers else font_color
 
-    for x, y in obj1.coords:
-        grid[x, y] = font_color
-
     obj2_center = obj2.center
     obj2_relatives = [(x - obj2_center[0], y - obj2_center[1]) for x, y in obj2.coords]
+    new_obj1_coords = [(obj1_center[0] + dx, obj1_center[1] + dy) for dx, dy in obj2_relatives]
 
-    new_obj1_coords = []
-    for dx, dy in obj2_relatives:
-        new_x, new_y = obj1_center[0] + dx, obj1_center[1] + dy
-        if 0 <= new_x < grid.shape[0] and 0 <= new_y < grid.shape[1]:
-            new_obj1_coords.append((new_x, new_y))
-            grid[new_x, new_y] = obj1_color
+    if not all_on_grid(new_obj1_coords, grid.shape):
+        return grid
+
+    for x, y in obj1.coords:
+        grid[x, y] = font_color
+    for x, y in new_obj1_coords:
+        grid[x, y] = obj1_color
 
     obj1.reinit_obj(new_obj1_coords, grid)
 

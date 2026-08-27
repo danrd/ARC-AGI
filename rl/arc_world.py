@@ -64,8 +64,11 @@ class World:
                 coords = obj1.coords
                 for x, y in coords:
                     new_grid[x, y] = add
-                obj1.color_numbers = [add]
-                obj1.colors = [COLORS_MAPPING[color] for color in obj1.color_numbers]
+                # Tuples, matching GridObject.__init__ and every other site
+                # that sets these. A list here travelled with the object and
+                # turned merge's colour concatenation into a TypeError.
+                obj1.color_numbers = (add,)
+                obj1.colors = tuple(COLORS_MAPPING[color] for color in obj1.color_numbers)
 
             elif transform == "upscale4":
                 """Upscale object by 4x: each cell becomes a 2x2 square."""

@@ -1,0 +1,9 @@
+Return *only* a JSON object, with no text before or after it:
+
+{"shortlist": ["<agent name>", "..."], "reasoning": "<one sentence per listed agent, why the task looks like its specialization>"}
+
+Rules:
+- List at most {{ shortlist_size }} agents, most promising first.
+- Use agent names exactly as spelled above. An agent not on the list above does not exist.
+- Order is what matters. Do not attach scores or probabilities: they would suggest a precision you do not have.
+- If the analysis does not distinguish between agents, list the ones it does not rule out rather than guessing a single one.

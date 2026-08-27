@@ -206,7 +206,11 @@ def collect_random_rollouts(env,
 
         rollout['total_reward'] = total_reward
         rollout['length'] = step_count
-        rollout['solved'] = any(rollout['dones'])
+        # Not any(dones): submit_grid ends the episode with done=True
+        # whatever it submitted, so "the episode finished" and "the answer
+        # was right" are different questions and only step_intersection's
+        # done answers the second. The env's own counters answer it directly.
+        rollout['solved'] = bool(env.max_int == env.target_int)
 
         # Every rollout is kept, and select_best_rollouts ranks them.
         # Selecting on total_reward > 0 here threw away the entire run on
@@ -308,13 +312,14 @@ class EnvironmentSimulator:
     why simulating deep/wide trees doesn't need get_state()/set_state() at
     all: nothing real ever changes during the search.
     """
-    def __init__(self, env):
+    def __init__(self, env, actions=None):
         self.env = env
         self.action_space = env.action_space
         # Computed once, from the env rather than from the action space: the
         # space is padded to max_objects and most of it addresses empty slots.
-        # See enumerate_actions.
-        self.all_actions = [list(action) for action in enumerate_actions(env)]
+        # See enumerate_actions. `actions` narrows it further to a pruned pool.
+        self.all_actions = [list(action) for action in
+                            (actions if actions is not None else enumerate_actions(env))]
 
     def simulate_step(self, state, action):
         """state: {"grid", "objects", "max_int", "prev_action"} snapshot.
@@ -354,12 +359,16 @@ class EnvironmentSimulator:
         return self.action_space.sample()
 
 class MCTS:
-    def __init__(self, env, max_iterations=1000, max_depth=10, c=1.414):
-        self.env_simulator = EnvironmentSimulator(env)
+    def __init__(self, env, max_iterations=1000, max_depth=10, c=1.414, actions=None):
+        """`actions` narrows what the tree may expand into - the pool an
+        iterative round has pruned down to (see rollout_preparation). None
+        means every action the env offers."""
+        self.env_simulator = EnvironmentSimulator(env, actions=actions)
         self.max_iterations = max_iterations
         self.max_depth = max_depth
         self.c = c
-        self.all_actions = [tuple(action) for action in enumerate_actions(env)]
+        self.all_actions = [tuple(action) for action in
+                            (actions if actions is not None else enumerate_actions(env))]
 
     def search(self, initial_state):
         """Perform MCTS search from an initial state snapshot (see
@@ -440,14 +449,18 @@ def env_state_snapshot(env) -> Dict[str, Any]:
 def collect_mcts_rollouts(env,
                           n_rollouts: int = 50,
                           mcts_iterations: int = 500,
-                          max_episode_len: int = 50) -> List[Dict[str, Any]]:
+                          max_episode_len: int = 50,
+                          actions=None) -> List[Dict[str, Any]]:
     """Collect rollouts using MCTS for action selection. MCTS search itself
     runs entirely on a snapshot of the env's state (see
     EnvironmentSimulator) - only the action it settles on for each real
     step is ever applied to `env` for real, via a normal env.step().
+
+    `actions` restricts the tree to a pruned pool; None searches everything
+    the env offers.
     """
     rollouts = []
-    mcts = MCTS(env, max_iterations=mcts_iterations)
+    mcts = MCTS(env, max_iterations=mcts_iterations, actions=actions)
 
     print(f"Collecting {n_rollouts} MCTS-guided rollouts...")
 
@@ -486,7 +499,11 @@ def collect_mcts_rollouts(env,
 
         rollout['total_reward'] = total_reward
         rollout['length'] = step_count
-        rollout['solved'] = any(rollout['dones'])
+        # Not any(dones): submit_grid ends the episode with done=True
+        # whatever it submitted, so "the episode finished" and "the answer
+        # was right" are different questions and only step_intersection's
+        # done answers the second. The env's own counters answer it directly.
+        rollout['solved'] = bool(env.max_int == env.target_int)
 
         # Every rollout is kept, and select_best_rollouts ranks them.
         # Selecting on total_reward > 0 here threw away the entire run on
@@ -508,7 +525,10 @@ def rollout_preparation(env,
                         min_len: int = 0,
                         reward_threshold: float = 0.0,
                         keep_best_actions: int = 0,
-                        mcts_iterations: int = 500
+                        mcts_iterations: int = 500,
+                        n_rounds: int = 1,
+                        keep_fraction: float = 0.5,
+                        min_pool: int = 4,
                        ) -> List[Dict[str, Any]]:
     """Search a task's action space and return the rollouts worth reading.
 
@@ -528,9 +548,18 @@ def rollout_preparation(env,
         keep_best_actions: fall back to this many best actions when none
             clears reward_threshold - see identify_promising_actions
         mcts_iterations: MCTS iterations per decision
+        n_rounds: how many collect-then-prune rounds to run. 1 is a single
+            pass over the whole pool. More rounds spend the same rollouts on
+            a shrinking set of actions: the first round is a broad sample,
+            each later one re-searches only what survived, so the depth
+            reachable within mcts_iterations grows as the branching drops.
+        keep_fraction: share of the pool each round keeps, by the mean
+            reward of the rollouts an action appeared in
+        min_pool: never prune below this many actions - a pool of one makes
+            every rollout identical and the round pointless
 
     Returns:
-        The selected rollouts, best first
+        The selected rollouts from every round, best first
     """
     # Step 1: Test individual actions
     print("Phase 1: Testing individual actions...")
@@ -541,24 +570,92 @@ def rollout_preparation(env,
     promising_actions = identify_promising_actions(action_results, reward_threshold,
                                                    keep_best=keep_best_actions)
 
-    # Step 3: Collect rollouts using selected method
-    print(f"Phase 3: Collecting rollouts using {method} method...")
-    if method == "random":
-        rollouts = collect_random_rollouts(
-            env, promising_actions, n_initial_rollouts
-        )
-    elif method == "mcts":
-        rollouts = collect_mcts_rollouts(
-            env, n_initial_rollouts, mcts_iterations
-        )
-    else:
-        raise ValueError(f"Unknown method: {method}")
+    # Step 3: Collect rollouts, narrowing the pool between rounds.
+    pool = enumerate_actions(env)
+    collected: List[Dict[str, Any]] = []
+    for round_no in range(1, max(n_rounds, 1) + 1):
+        print(f"Phase 3.{round_no}: Collecting rollouts using {method} method "
+              f"over {len(pool)} actions...")
+        if method == "random":
+            rollouts = collect_random_rollouts(env, promising_actions or pool,
+                                               n_initial_rollouts)
+        elif method == "mcts":
+            rollouts = collect_mcts_rollouts(env, n_initial_rollouts, mcts_iterations,
+                                             actions=pool)
+        else:
+            raise ValueError(f"Unknown method: {method}")
+        collected.extend(rollouts)
+
+        if round_no == n_rounds:
+            break
+        pruned = prune_actions(pool, rollouts, keep_fraction=keep_fraction, min_pool=min_pool)
+        if len(pruned) == len(pool):
+            print("Pruning changed nothing; stopping early")
+            break
+        pool = pruned
+        # The pool the next round searches is also the pool it samples from.
+        promising_actions = [a for a in promising_actions if list(a) in pool]
 
     # Step 4: Select best rollouts
     print("Phase 4: Selecting best rollouts...")
-    best_rollouts = select_best_rollouts(rollouts, top_k=top_k, min_len=min_len)
+    best_rollouts = select_best_rollouts(collected, top_k=top_k, min_len=min_len)
 
     return best_rollouts
+
+
+def action_statistics(rollouts: List[Dict[str, Any]]) -> Dict[tuple, Dict[str, float]]:
+    """Per action, how often it was used and what the rollouts using it
+    scored - the record an iterative round prunes on.
+
+    Scored by the *mean* of the rollouts it appears in, not the sum: an
+    action tried in twenty rollouts would otherwise outrank a better one
+    tried in two purely by turning up more often. `solved` counts the
+    rollouts that finished the task, which is the signal worth keeping even
+    when the reward says little.
+    """
+    stats: Dict[tuple, Dict[str, float]] = {}
+    for rollout in rollouts:
+        for action in rollout['actions']:
+            key = tuple(int(x) for x in np.asarray(action).reshape(-1))
+            entry = stats.setdefault(key, {'uses': 0, 'rollouts': 0,
+                                           'total_reward': 0.0, 'solved': 0})
+            entry['uses'] += 1
+        for key in {tuple(int(x) for x in np.asarray(a).reshape(-1))
+                    for a in rollout['actions']}:
+            entry = stats[key]
+            entry['rollouts'] += 1
+            entry['total_reward'] += float(rollout['total_reward'])
+            entry['solved'] += int(bool(rollout.get('solved')))
+    for entry in stats.values():
+        entry['mean_reward'] = entry['total_reward'] / entry['rollouts']
+    return stats
+
+
+def prune_actions(pool: List[List[int]], rollouts: List[Dict[str, Any]],
+                   keep_fraction: float = 0.5, min_pool: int = 4) -> List[List[int]]:
+    """The share of `pool` worth searching again, best first.
+
+    An action no rollout used has no record, and is dropped before one that
+    scored badly: the search had the chance to reach for it and did not.
+    Actions that appeared in a solving rollout are kept whatever the
+    fraction says - dropping something that finished the task to honour a
+    ratio would be the same mistake the length filter used to make.
+    """
+    if not rollouts or len(pool) <= min_pool:
+        return list(pool)
+
+    stats = action_statistics(rollouts)
+    keepers = {key for key, entry in stats.items() if entry['solved']}
+    target = max(min_pool, int(len(pool) * keep_fraction), len(keepers))
+
+    ranked = sorted(stats, key=lambda k: stats[k]['mean_reward'], reverse=True)
+    kept = list(keepers) + [k for k in ranked if k not in keepers]
+    kept = kept[:target]
+
+    # Back to the pool's own ordering and shape, so callers see a subset of
+    # what they passed rather than a differently-shaped list.
+    kept_set = set(kept)
+    return [action for action in pool if tuple(action) in kept_set]
 
 def select_best_rollouts(rollouts: List[Dict[str, Any]], top_k: int = 10, min_len: int = 0) -> List[Dict[str, Any]]:
     """The top k rollouts by total reward.

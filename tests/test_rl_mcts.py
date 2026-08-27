@@ -79,7 +79,9 @@ def test_collect_random_rollouts_does_not_crash(env):
     for rollout in rollouts:
         assert len(rollout["actions"]) == rollout["length"]
         assert len(rollout["observations"]) == len(rollout["actions"])
-        assert rollout["solved"] == any(rollout["dones"])
+        # Not any(dones): submitting ends the episode with done=True
+        # whatever was submitted, so that would call every rollout solved.
+        assert rollout["solved"] == (env.max_int == env.target_int)
 
 
 # -- selection: what survives the filters ------------------------------------
@@ -155,6 +157,117 @@ def test_extract_promising_actions_names_the_transforms_by_use():
 
 def test_extract_promising_actions_on_nothing_returns_nothing():
     assert mcts.extract_promising_actions([], {0: "submit"}) == []
+
+
+# -- iterative pruning --------------------------------------------------------
+
+def _rollout_with(actions, total_reward, solved=False):
+    return {"total_reward": total_reward, "length": len(actions), "solved": solved,
+            "dones": [False] * (len(actions) - 1) + [solved],
+            "actions": [np.array(a) for a in actions]}
+
+
+class TestPruning:
+    POOL = [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0]]
+
+    def test_an_action_is_scored_by_the_mean_of_its_rollouts_not_the_sum(self):
+        """An action tried twenty times would otherwise outrank a better one
+        tried twice purely by turning up more often."""
+        rollouts = [_rollout_with([[1, 0, 0]], 1.0), _rollout_with([[1, 0, 0]], 1.0),
+                    _rollout_with([[2, 0, 0]], 5.0)]
+
+        stats = mcts.action_statistics(rollouts)
+
+        assert stats[(1, 0, 0)]["mean_reward"] == 1.0
+        assert stats[(2, 0, 0)]["mean_reward"] == 5.0
+        assert stats[(1, 0, 0)]["uses"] == 2
+
+    def test_repeated_use_within_one_rollout_counts_once_toward_its_score(self):
+        rollouts = [_rollout_with([[1, 0, 0], [1, 0, 0], [1, 0, 0]], 3.0)]
+
+        stats = mcts.action_statistics(rollouts)
+
+        assert stats[(1, 0, 0)]["uses"] == 3
+        assert stats[(1, 0, 0)]["rollouts"] == 1
+        assert stats[(1, 0, 0)]["mean_reward"] == 3.0
+
+    def test_the_pool_shrinks_by_the_fraction(self):
+        rollouts = [_rollout_with([[i, 0, 0]], float(i)) for i in range(6)]
+
+        kept = mcts.prune_actions(self.POOL, rollouts, keep_fraction=0.5, min_pool=2)
+
+        assert len(kept) == 3
+        assert [5, 0, 0] in kept and [0, 0, 0] not in kept
+
+    def test_an_action_that_solved_survives_the_fraction(self):
+        """The same mistake the length filter used to make: honouring a ratio
+        by discarding something that finished the task."""
+        rollouts = [_rollout_with([[0, 0, 0]], -9.0, solved=True)]
+        rollouts += [_rollout_with([[i, 0, 0]], float(i)) for i in range(1, 6)]
+
+        kept = mcts.prune_actions(self.POOL, rollouts, keep_fraction=0.34, min_pool=2)
+
+        assert [0, 0, 0] in kept
+
+    def test_an_action_no_rollout_reached_for_is_dropped_first(self):
+        """The search had the chance and did not take it - that is weaker
+        evidence than a bad score, not stronger."""
+        rollouts = [_rollout_with([[1, 0, 0]], -5.0), _rollout_with([[2, 0, 0]], -6.0)]
+
+        kept = mcts.prune_actions(self.POOL, rollouts, keep_fraction=0.5, min_pool=2)
+
+        assert kept == [[1, 0, 0], [2, 0, 0]]
+
+    def test_a_small_pool_is_left_alone(self):
+        small = self.POOL[:3]
+
+        assert mcts.prune_actions(small, [_rollout_with([[0, 0, 0]], 1.0)],
+                                   keep_fraction=0.5, min_pool=4) == small
+
+    def test_pruning_preserves_the_pools_order_and_shape(self):
+        rollouts = [_rollout_with([[i, 0, 0]], float(i)) for i in range(6)]
+
+        kept = mcts.prune_actions(self.POOL, rollouts, keep_fraction=0.5, min_pool=2)
+
+        assert all(action in self.POOL for action in kept)
+        assert kept == [a for a in self.POOL if a in kept]  # original order
+
+
+@pytest.fixture
+def wide_env():
+    """Several objects and several real transform names, so there is a pool
+    to prune. The default fixture's task has one object and two actions -
+    a pool of two, which prune_actions leaves alone by design."""
+    from rl.arc_task import ARCSubtask
+
+    grid = np.zeros((8, 8), dtype=int)
+    for k, (i, j) in enumerate([(1, 1), (1, 5), (5, 1), (5, 5)]):
+        grid[i, j] = k + 1
+    out = grid.copy()
+    out[1, 1] = 9
+
+    actions = {0: "submit", 1: "rotate90", 2: "fliplr", 3: "flipud",
+               4: "color_inversion", 5: "x_alignment", 6: "y_alignment"}
+    e = ARCGridWorld(max_episode_len=4, feasible_actions=actions, repr_level=1,
+                     input_pattern="start", observation_space_elements=["objects_emb"])
+    e.set_subtask(ARCSubtask("wide", grid, out))
+    e.reset()
+    return e
+
+
+def test_rounds_narrow_the_pool_the_search_runs_over(wide_env, capsys):
+    """The point of the loop: each round re-searches only what survived, so
+    the depth reachable within one iteration budget grows as branching drops."""
+    mcts.rollout_preparation(wide_env, method="mcts", n_initial_rollouts=2,
+                              mcts_iterations=2, top_k=2, n_rounds=3, keep_fraction=0.5,
+                              min_pool=2)
+
+    sizes = [int(line.split("over ")[1].split(" actions")[0])
+             for line in capsys.readouterr().out.splitlines() if "Phase 3." in line]
+
+    assert len(sizes) >= 2, "expected more than one round"
+    assert sizes == sorted(sizes, reverse=True)
+    assert sizes[-1] < sizes[0]
 
 
 def test_environment_simulator_sample_and_step(env):

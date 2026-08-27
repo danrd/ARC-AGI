@@ -26,7 +26,7 @@ EMBEDDING_DTYPE = np.float32
 #: quadratically - the relation block is MAX_OBJECTS x (MAX_OBJECTS-1) x
 #: RELATION_DIM - for a thinning tail: 24 buys 99.1% at 2.3x the width. What
 #: to do about the grids that overflow is open; today the extra objects are
-#: neither shown nor addressable (see _visible_object_count).
+#: neither shown nor addressable (see visible_object_count).
 MAX_OBJECTS = 16
 
 #: A padded row is all zeros, and a real object's embedding never is -
@@ -128,11 +128,17 @@ class ARCGridWorld(gymnasium.Env):
                 self.initial_grid_summary.get_relation_embeddings_as_numpy(level=self.repr_level))
         self.reset(seed=self.seed)
 
-    def _visible_object_count(self) -> int:
+    def visible_object_count(self) -> int:
         """Objects this env shows and lets actions address. Objects past
         max_objects are still in self.objects - World reads that list, and
         cell2obj maps cells to it - but they have no row in the observation
-        and no index in the action space, so nothing can name them."""
+        and no index in the action space, so nothing can name them.
+
+        Public because the action space is sized by max_objects whatever the
+        subtask holds, so anything enumerating actions (rl.mcts) needs to
+        know where the real objects stop - the slots past this point are all
+        the same no-op, and there are (max_objects/n)^2 of them.
+        """
         return min(len(self.objects) or len(self.initial_objects), self.max_objects)
 
     def _pad_objects(self, embeddings) -> np.ndarray:
@@ -325,7 +331,7 @@ class ARCGridWorld(gymnasium.Env):
         # that does nothing, scored like any other ineffective one - not an
         # error, and not silently redirected to some other object, which
         # would teach the policy that a wrong index still works.
-        visible = self._visible_object_count()
+        visible = self.visible_object_count()
         if action[1] >= visible or action[2] >= visible:
             new_grid = self.grid
             eq_check = True

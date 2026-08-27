@@ -52,6 +52,26 @@ def process_observations(observations, device, pad_inp=True, multi_env=False):
         print(f"Warning: Unknown observation type: {type(observations)}")
         return observations
 
+def enumerate_actions(env) -> List[List[int]]:
+    """Every action worth trying on `env`, as [action, obj_1, obj_2] lists.
+
+    Not the whole action space: that has ARCGridWorld.MAX_OBJECTS slots
+    whatever the subtask holds, so it is the same shape for every subtask and
+    a single agent can train across several. Indices past the objects this
+    subtask actually has name nothing - the env scores them as an action that
+    changes nothing - and there are (max_objects / n)^2 of them, which for a
+    two-object grid at max_objects=16 is 64 identical no-ops for every real
+    action. A search that enumerates them spends almost all of its budget
+    rediscovering that they do nothing.
+    """
+    visible = env.visible_object_count() if hasattr(env, "visible_object_count") else None
+    dims = list(env.action_space.nvec)
+    if visible:
+        dims[1] = min(dims[1], visible)
+        dims[2] = min(dims[2], visible)
+    return [list(action) for action in itertools.product(*[range(int(d)) for d in dims])]
+
+
 def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str, Any]]:
     """Test each action individually (episode length 1) to identify promising actions.
 
@@ -64,8 +84,7 @@ def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str,
     """
     action_results = {}
 
-    all_actions = itertools.product(*[range(x) for x in env.action_space.nvec])  # for each dim in action_space generate all possible values, then - cartesian product
-    all_actions = [list(action) for action in list(all_actions)]  # iterator to list than each element - list instead of tuple
+    all_actions = enumerate_actions(env)
 
     if max_actions:
         all_actions = all_actions[:max_actions]
@@ -198,9 +217,9 @@ class MCTSNode:
         self.is_terminal = False
         self.untried_actions = untried_actions
 
-    def is_fully_expanded(self, action_space):
+    def is_fully_expanded(self, env_simulator):
         if self.untried_actions is None:
-            self.untried_actions = list(itertools.product(*[range(x) for x in action_space.nvec]))
+            self.untried_actions = list(env_simulator.all_actions)
         return len(self.untried_actions) == 0 and len(self.children) > 0
 
     def select_child(self, c=1.414):
@@ -218,7 +237,7 @@ class MCTSNode:
     def expand(self, env_simulator):
         """Expand node by adding a new child using environment simulator"""
         if self.untried_actions is None:
-            self.untried_actions = list(itertools.product(*[range(x) for x in env_simulator.action_space.nvec]))
+            self.untried_actions = list(env_simulator.all_actions)
 
         if not self.untried_actions:
             return None
@@ -275,6 +294,10 @@ class EnvironmentSimulator:
     def __init__(self, env):
         self.env = env
         self.action_space = env.action_space
+        # Computed once, from the env rather than from the action space: the
+        # space is padded to max_objects and most of it addresses empty slots.
+        # See enumerate_actions.
+        self.all_actions = [list(action) for action in enumerate_actions(env)]
 
     def simulate_step(self, state, action):
         """state: {"grid", "objects", "max_int", "prev_action"} snapshot.
@@ -319,7 +342,7 @@ class MCTS:
         self.max_iterations = max_iterations
         self.max_depth = max_depth
         self.c = c
-        self.all_actions = list(itertools.product(*[range(x) for x in env.action_space.nvec]))
+        self.all_actions = [tuple(action) for action in enumerate_actions(env)]
 
     def search(self, initial_state):
         """Perform MCTS search from an initial state snapshot (see
@@ -331,13 +354,13 @@ class MCTS:
             # Selection - traverse tree using UCB1
             node = root
 
-            while not node.is_terminal and node.is_fully_expanded(self.env_simulator.action_space):
+            while not node.is_terminal and node.is_fully_expanded(self.env_simulator):
                 node = node.select_child(self.c)
                 if node is None:
                     break
 
             # Expansion - add new child if possible
-            if not node.is_terminal and not node.is_fully_expanded(self.env_simulator.action_space):
+            if not node.is_terminal and not node.is_fully_expanded(self.env_simulator):
                 child = node.expand(self.env_simulator)
                 if child:
                     node = child

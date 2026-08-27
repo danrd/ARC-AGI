@@ -34,6 +34,35 @@ def env(arc_task):
     return e
 
 
+def test_the_search_does_not_enumerate_empty_object_slots(env):
+    """The action space is padded to max_objects so every subtask has the
+    same one - but indices past this subtask's objects name nothing, and
+    the env scores them all as the same do-nothing action. Enumerating them
+    costs (max_objects / n)^2: for a two-object grid at max_objects=16 that
+    is 64 identical no-ops for every real action, and a search that tries
+    them spends nearly all of its budget rediscovering that.
+    """
+    visible = env.visible_object_count()
+    assert visible < env.max_objects, "fixture task should not fill every slot"
+
+    actions = mcts.enumerate_actions(env)
+
+    assert len(actions) == len(env.actions_dict) * visible * visible
+    assert all(a[1] < visible and a[2] < visible for a in actions)
+    # Still real actions, not a narrower space of their own.
+    assert all(env.action_space.contains(np.array(a)) for a in actions)
+
+
+def test_the_tree_expands_over_the_same_actions_it_tests(env):
+    """Trimming one enumeration and not the other would leave the search
+    exploring slots that phase 1 already knows are empty."""
+    simulator = mcts.EnvironmentSimulator(env)
+    search = mcts.MCTS(env, max_iterations=2, max_depth=2)
+
+    assert [list(a) for a in search.all_actions] == mcts.enumerate_actions(env)
+    assert simulator.all_actions == mcts.enumerate_actions(env)
+
+
 def test_collect_random_rollouts_does_not_crash(env):
     # Also a resource guard: rollout collection deep-copies objects per
     # step (see EnvironmentSimulator's "copy only touched objects" design,
@@ -111,7 +140,7 @@ def test_mcts_node_expand_children_have_independent_untried_actions(env):
     (and every sibling's) list too."""
     simulator = mcts.EnvironmentSimulator(env)
     root = mcts.MCTSNode(state=mcts.env_state_snapshot(env))
-    root.is_fully_expanded(env.action_space)  # lazily initializes root.untried_actions as a side effect
+    root.is_fully_expanded(simulator)  # lazily initializes root.untried_actions as a side effect
 
     remaining_before = len(root.untried_actions)
     child = root.expand(simulator)
@@ -121,6 +150,32 @@ def test_mcts_node_expand_children_have_independent_untried_actions(env):
 
     child.expand(simulator)  # pop from the child's own list
     assert len(root.untried_actions) == remaining_before - 1  # unaffected by the child's pop
+
+
+def test_actions_exploration_runs_without_a_policy(arc_task):
+    """The entry point the analyst will read from, and the one nothing
+    covered. It passed the PPO agent where rollout_preparation wanted an
+    environment - `AttributeError: 'PPO' object has no attribute 'reset'`,
+    nine lines after a line that happened to work because an agent has an
+    action_space too.
+
+    Building that agent was also the only reason this path touched
+    rl.policy, whose action_heads=3 branch raises IndexError before any
+    search can start. MCTS reads the environment directly, so neither is
+    needed: no policy, no training, nothing to fail before the search.
+    """
+    from data.configs.rl_configs import rl_config
+    from rl.training import actions_exploration
+
+    config = dict(rl_config)
+    config.update(feasible_actions=SUBMIT_AND_ROTATE, max_episode_len=4,
+                   observation_space_elements=["objects_emb"])
+
+    promising = actions_exploration(arc_task.subtasks[0], config,
+                                     n_rollouts=2, mcts_iterations=2, top_k=2)
+
+    assert isinstance(promising, list)
+    assert all(name in SUBMIT_AND_ROTATE.values() for name in promising)
 
 
 def test_mcts_search_does_not_crash(env):

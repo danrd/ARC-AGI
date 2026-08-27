@@ -39,7 +39,11 @@ class World:
     def apply_transform(self, add, transform, obj1, obj2, grid, objects, cell2obj):
         """Apply the specified transformation to the grid."""
         if transform is None:
-            return grid, False  # No change
+            # The grid, not (grid, False): every other path out of here
+            # returns the grid alone, and the caller assigns whatever comes
+            # back straight to new_grid. A tuple there fails two steps later
+            # in maximal_intersection rather than here.
+            return grid
         new_grid = grid.copy()
 
         # 1 OBJECT

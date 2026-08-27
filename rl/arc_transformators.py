@@ -286,7 +286,12 @@ def perform_merge(grid:np.ndarray, obj1:GridObject, obj2:GridObject,
     best_match = find_most_probable_merge(grid, obj1, obj2, all_grid_objects)
 
     if not best_match:
-        return all_grid_objects, grid, {"status": "no_valid_match", "message": "No valid match found"}
+        # The grid, like every other path out of here and like every other
+        # transform. This branch returned a 3-tuple, which the caller then
+        # used as the grid - and the failure surfaced two steps later in
+        # maximal_intersection, as numpy refusing to build an array out of
+        # an object list, a grid and a dict.
+        return grid
 
     # Extract the objects from the match
     first_obj = best_match["obj1"]

@@ -212,6 +212,60 @@ def test_a_transform_is_reachable_on_some_task(name):
                  "either the name misses its branch or the transform is inert")
 
 
+@pytest.mark.parametrize("name", ACTION_NAMES)
+def test_a_transform_returns_a_grid(envs, name):
+    """Every branch hands back an array of the grid's shape - including the
+    branches that decline to do anything.
+
+    Two did not: apply_transform's `transform is None` returned
+    `(grid, False)`, and perform_merge's no-match branch returned
+    `(objects, grid, {...})`. The caller assigns whatever comes back to
+    new_grid, so the failure surfaces two steps later in
+    maximal_intersection as numpy refusing to build an array out of a
+    3-tuple - a message that names neither the transform nor the branch.
+    """
+    index = ACTION_NAMES.index(name) + 1
+    indices = (0, 1) if name in PAIRWISE else (0, 0)
+
+    for task_id, env in envs:
+        env.reset()
+        expected = env.grid.shape
+        env.step(np.array([index, *indices]))
+
+        assert isinstance(env.grid, np.ndarray), \
+            f"{name!r} on {task_id} left {type(env.grid).__name__} in env.grid"
+        assert env.grid.shape == expected, \
+            f"{name!r} on {task_id} changed the grid shape to {env.grid.shape}"
+
+
+def test_merge_returns_a_grid_when_it_finds_no_configuration(monkeypatch):
+    """Reached through the env only after several steps put the objects
+    somewhere no placement fits, so it is asked of the function directly.
+
+    This branch returned `(all_grid_objects, grid, {...})` while every other
+    path returns the grid. The caller assigns that to new_grid, and the run
+    dies two steps later inside maximal_intersection with numpy complaining
+    about an inhomogeneous array - naming neither merge nor this branch.
+    """
+    from rl import arc_transformators
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((5, 5), dtype=int)
+    grid[0, 0] = 1
+    grid[4, 4] = 2
+    obj1 = GridObject(shape="cell", coords=[(0, 0)], color=[1], label="a",
+                       grid_shape=grid.shape, grid=grid)
+    obj2 = GridObject(shape="cell", coords=[(4, 4)], color=[2], label="b",
+                       grid_shape=grid.shape, grid=grid)
+    monkeypatch.setattr(arc_transformators, "find_most_probable_merge",
+                         lambda *args, **kwargs: None)
+
+    result = arc_transformators.perform_merge(grid, obj1, obj2, [obj1, obj2], font_color=0)
+
+    assert isinstance(result, np.ndarray)
+    assert result.shape == grid.shape
+
+
 def test_a_rotation_that_would_leave_the_grid_is_refused():
     """Not clipped. Rotating a non-square object about its own centre can put
     cells outside the grid, and the three ways out are not equal: clipping

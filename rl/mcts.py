@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import collections
 import itertools
 import random
 import math
@@ -110,24 +111,32 @@ def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str,
     return action_results
 
 def identify_promising_actions(action_results: Dict[int, Dict[str, Any]],
-                              reward_threshold: float = 0.0) -> List[int]:
-    """Identify actions that resulted in positive rewards.
+                              reward_threshold: float = 0.0,
+                              keep_best: int = 0) -> List[int]:
+    """Actions worth building rollouts from, best first.
 
     Args:
         action_results: Results from test_individual_actions
         reward_threshold: Minimum reward to consider an action promising
+        keep_best: When nothing clears the threshold, fall back to this many
+            best-scoring actions instead of none. On this reward scale a
+            single step almost never scores above zero - measured over 42
+            ARC-AGI-1 tasks, 13 had any improving single action at all - so
+            a bare threshold empties the pool on most tasks and rollout
+            collection falls back to sampling the whole action space. The
+            ordering is still informative when the level is not: the least
+            bad actions are the ones that changed something without making
+            the grid worse. 0 keeps the old all-or-nothing behaviour.
 
     Returns:
         List of promising action IDs
     """
-    promising_actions = []
+    ranked = sorted(action_results, key=lambda a: action_results[a]['reward'], reverse=True)
+    promising_actions = [a for a in ranked if action_results[a]['reward'] > reward_threshold]
 
-    for action_id, result in action_results.items():
-        if result['reward'] > reward_threshold:
-            promising_actions.append(action_id)
-
-    # Sort by reward (descending)
-    promising_actions.sort(key=lambda x: action_results[x]['reward'], reverse=True)
+    if not promising_actions and keep_best:
+        promising_actions = ranked[:keep_best]
+        print(f"No action scored above {reward_threshold}; keeping the {len(promising_actions)} best")
 
     print(f"Found {len(promising_actions)} promising actions with reward > {reward_threshold}")
     for i, action_id in enumerate(promising_actions[:10]):  # Show top 10
@@ -197,10 +206,18 @@ def collect_random_rollouts(env,
 
         rollout['total_reward'] = total_reward
         rollout['length'] = step_count
+        rollout['solved'] = any(rollout['dones'])
 
-        # Only keep rollouts with positive total reward
-        if total_reward > 0:
-            rollouts.append(rollout)
+        # Every rollout is kept, and select_best_rollouts ranks them.
+        # Selecting on total_reward > 0 here threw away the entire run on
+        # this reward scale: measured over 42 ARC-AGI-1 tasks with the real
+        # transform vocabulary, a rollout's total is 0.0 or slightly
+        # negative almost always - reward_approach 3 pays 0 for submitting
+        # an incomplete answer while every ineffective step costs
+        # action_penalty, so a total clears 0 only when one step raises the
+        # intersection by more than the steps around it cost. Ranking needs
+        # something to rank.
+        rollouts.append(rollout)
 
     return rollouts
 
@@ -469,10 +486,18 @@ def collect_mcts_rollouts(env,
 
         rollout['total_reward'] = total_reward
         rollout['length'] = step_count
+        rollout['solved'] = any(rollout['dones'])
 
-        # Only keep rollouts with positive total reward
-        if total_reward > 0:
-            rollouts.append(rollout)
+        # Every rollout is kept, and select_best_rollouts ranks them.
+        # Selecting on total_reward > 0 here threw away the entire run on
+        # this reward scale: measured over 42 ARC-AGI-1 tasks with the real
+        # transform vocabulary, a rollout's total is 0.0 or slightly
+        # negative almost always - reward_approach 3 pays 0 for submitting
+        # an incomplete answer while every ineffective step costs
+        # action_penalty, so a total clears 0 only when one step raises the
+        # intersection by more than the steps around it cost. Ranking needs
+        # something to rank.
+        rollouts.append(rollout)
 
     return rollouts
 
@@ -480,23 +505,32 @@ def rollout_preparation(env,
                         method: str = "random",  # "random or "mcts"
                         n_initial_rollouts: int = 100,
                         top_k: int = 10,
-                        min_len: int = 5,
+                        min_len: int = 0,
                         reward_threshold: float = 0.0,
+                        keep_best_actions: int = 0,
                         mcts_iterations: int = 500
                        ) -> List[Dict[str, Any]]:
-    """Enhanced rollout preparation with individual action testing and sophisticated exploration.
+    """Search a task's action space and return the rollouts worth reading.
+
+    `env` is an ARCGridWorld, not a vec env and not an agent: the phases
+    below call reset()/step() expecting gymnasium's (obs, info) pair, and
+    MCTS reaches for env.grid/env.objects/env.max_int, none of which survive
+    DummyVecEnv or a wrapper stack.
 
     Args:
-        model: Model with environment
-        method: "focused" for promising-action-focused rollouts, "mcts" for MCTS-guided rollouts
+        env: the environment to search
+        method: "random" for promising-action-focused rollouts, "mcts" for
+            MCTS-guided ones
         n_initial_rollouts: Number of rollouts to collect
         top_k: Number of best rollouts to select
-        min_len: Minimum episode length
+        min_len: Minimum episode length, applied only to unsolved rollouts
         reward_threshold: Minimum reward for promising actions
+        keep_best_actions: fall back to this many best actions when none
+            clears reward_threshold - see identify_promising_actions
         mcts_iterations: MCTS iterations per decision
 
     Returns:
-        Dict with best rollouts dictionaries
+        The selected rollouts, best first
     """
     # Step 1: Test individual actions
     print("Phase 1: Testing individual actions...")
@@ -504,7 +538,8 @@ def rollout_preparation(env,
 
     # Step 2: Identify promising actions
     print("Phase 2: Identifying promising actions...")
-    promising_actions = identify_promising_actions(action_results, reward_threshold)
+    promising_actions = identify_promising_actions(action_results, reward_threshold,
+                                                   keep_best=keep_best_actions)
 
     # Step 3: Collect rollouts using selected method
     print(f"Phase 3: Collecting rollouts using {method} method...")
@@ -525,22 +560,33 @@ def rollout_preparation(env,
 
     return best_rollouts
 
-def select_best_rollouts(rollouts: List[Dict[str, Any]], top_k: int = 10, min_len: int = 5) -> List[Dict[str, Any]]:
-    """Select the top k rollouts based on total reward and episode length.
+def select_best_rollouts(rollouts: List[Dict[str, Any]], top_k: int = 10, min_len: int = 0) -> List[Dict[str, Any]]:
+    """The top k rollouts by total reward.
+
+    `min_len` drops rollouts too short to have explored anything - one step
+    of submit, mostly. It never drops a rollout that solved the task: an
+    episode ends the moment the intersection reaches the target, so a
+    solution is short *because* it worked, and a length floor cuts exactly
+    what the search is for. That is why it defaults to 0 rather than the 5
+    it used to: with max_episode_len at 25 and solutions two or three steps
+    long, 5 discarded them and kept the wandering.
 
     Args:
         rollouts: List of rollout dictionaries
         top_k: Number of best rollouts to select
-        min_len: Minimum length of episode to consider
+        min_len: Minimum episode length, applied only to unsolved rollouts
 
     Returns:
         List of selected rollout dictionaries
     """
-    # Filter by minimum length
-    rollouts = list(filter(lambda x: x['length'] > min_len, rollouts))
+    rollouts = [r for r in rollouts if r.get('solved') or r['length'] >= min_len]
 
-    # Sort rollouts by total reward (descending)
-    sorted_rollouts = sorted(rollouts, key=lambda x: x['total_reward'], reverse=True)
+    # Solved first, then by total reward. Reward alone can rank a wandering
+    # rollout above one that finished the task: an episode that solves it in
+    # two steps collects two steps' worth, while a long one accumulates
+    # whatever partial credit it picked up along the way.
+    sorted_rollouts = sorted(rollouts, key=lambda x: (bool(x.get('solved')), x['total_reward']),
+                              reverse=True)
 
     # Select top k
     selected_rollouts = sorted_rollouts[:top_k]
@@ -560,17 +606,27 @@ def reconstruct_rollout(grids, actions, rewards, infos):
     return rollout
 
 def extract_promising_actions(rollouts, feasible_actions, k=10):
-    sorted_actions = []
-    actions_dict = rollouts[0]['infos'][0]['action_mapping']
-    idx2name = {v: k for k, v in actions_dict.items()}
-    all_actions = [action.tolist()[0]
-                   for rollout in rollouts[:k]
-                   for action in rollout['actions']
-                  ]
-    action_names = list(set([idx2name[action] for action in all_actions]))
-    for action in feasible_actions:
-        for action_realization in action_names:
-            if action in action_realization:
-                sorted_actions.append(action)
-                break
-    return sorted_actions
+    """Which transformations the best rollouts actually used, most-used first.
+
+    `feasible_actions` is the env's `{index: name}` mapping (ARCGridWorld's
+    actions_dict), which is the only place the correspondence lives - this
+    used to read it out of `rollouts[0]['infos'][0]['action_mapping']`, a key
+    ARCGridWorld has never put in `info`, and then iterate `feasible_actions`
+    as if it were a collection of names, comparing an int against a string.
+    Neither could run; neither ever did, because the reward filter upstream
+    left `rollouts` empty every time.
+
+    Counted rather than set-collected: an action three of the best rollouts
+    reached for says more than one that appeared once, and the caller (the
+    analyst's prompt) wants them in priority order.
+    """
+    if not rollouts:
+        return []
+    counts = collections.Counter()
+    for rollout in rollouts[:k]:
+        for action in rollout['actions']:
+            index = int(np.asarray(action).reshape(-1)[0])
+            name = feasible_actions.get(index)
+            if name is not None:
+                counts[name] += 1
+    return [name for name, _ in counts.most_common()]

@@ -72,11 +72,89 @@ def test_collect_random_rollouts_does_not_crash(env):
         rollouts = mcts.collect_random_rollouts(
             env, promising_actions=[], n_rollouts=3, max_episode_len=4,
         )
-    assert isinstance(rollouts, list)
+    # Every rollout comes back, whatever it scored - selecting on
+    # total_reward > 0 here discarded the whole run, since on this reward
+    # scale a total is 0.0 or slightly negative almost always.
+    assert len(rollouts) == 3
     for rollout in rollouts:
-        assert rollout["total_reward"] > 0  # collect_random_rollouts only keeps these
         assert len(rollout["actions"]) == rollout["length"]
         assert len(rollout["observations"]) == len(rollout["actions"])
+        assert rollout["solved"] == any(rollout["dones"])
+
+
+# -- selection: what survives the filters ------------------------------------
+
+def _rollout(total_reward, length, solved=False, action_types=()):
+    return {
+        "total_reward": total_reward,
+        "length": length,
+        "solved": solved,
+        "dones": [False] * (length - 1) + [solved] if length else [],
+        "actions": [np.array([a, 0, 0]) for a in action_types],
+    }
+
+
+def test_a_solved_rollout_is_never_dropped_for_being_short():
+    """An episode ends the moment the intersection reaches the target, so a
+    solution is short *because* it worked. The old min_len=5 cut exactly
+    those and kept the wandering."""
+    solution = _rollout(total_reward=3.0, length=2, solved=True)
+    wandering = _rollout(total_reward=-1.0, length=20)
+
+    selected = mcts.select_best_rollouts([wandering, solution], top_k=5, min_len=5)
+
+    assert solution in selected
+
+
+def test_a_solved_rollout_outranks_a_higher_scoring_unsolved_one():
+    """Reward alone can rank a long partial-credit rollout above a finished
+    one, and the caller reads the list top-down."""
+    solution = _rollout(total_reward=1.0, length=2, solved=True)
+    lucky = _rollout(total_reward=9.0, length=20)
+
+    selected = mcts.select_best_rollouts([lucky, solution], top_k=5)
+
+    assert selected[0] is solution
+
+
+def test_selection_keeps_negative_rollouts():
+    """There is usually nothing else: on this reward scale a total is 0.0 or
+    slightly negative almost always, so anything that only kept positives
+    returned an empty list every time."""
+    rollouts = [_rollout(-1.0, 3), _rollout(-4.0, 6), _rollout(0.0, 2)]
+
+    selected = mcts.select_best_rollouts(rollouts, top_k=2)
+
+    assert [r["total_reward"] for r in selected] == [0.0, -1.0]
+
+
+def test_promising_actions_fall_back_to_the_best_when_none_clears_the_bar():
+    results = {(1, 0, 0): {"reward": -1.0}, (2, 0, 0): {"reward": -0.2},
+               (3, 0, 0): {"reward": -5.0}}
+
+    assert mcts.identify_promising_actions(results, reward_threshold=0.0) == []
+    fallback = mcts.identify_promising_actions(results, reward_threshold=0.0, keep_best=2)
+
+    assert fallback == [(2, 0, 0), (1, 0, 0)]  # least bad first
+
+
+def test_extract_promising_actions_names_the_transforms_by_use():
+    """It read an 'action_mapping' key out of infos that ARCGridWorld has
+    never produced, and iterated feasible_actions as if it held names rather
+    than {index: name} - comparing an int against a string. Neither could
+    run; the empty-rollouts filter upstream meant neither ever did."""
+    feasible = {0: "submit", 1: "rotate90", 2: "fliplr"}
+    rollouts = [_rollout(1.0, 3, action_types=(1, 2, 1)),
+                _rollout(0.5, 2, action_types=(1, 0))]
+
+    names = mcts.extract_promising_actions(rollouts, feasible)
+
+    assert names[0] == "rotate90"          # used three times across the two
+    assert set(names) == {"rotate90", "fliplr", "submit"}
+
+
+def test_extract_promising_actions_on_nothing_returns_nothing():
+    assert mcts.extract_promising_actions([], {0: "submit"}) == []
 
 
 def test_environment_simulator_sample_and_step(env):

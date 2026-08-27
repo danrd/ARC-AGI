@@ -18,6 +18,22 @@ class World:
 }
         self.inverse_colors_mapping =  {v:k for k, v in self.COLORS_MAPPING.items()}
         self.paded_cells = set()
+        # Parsed once per action name rather than once per step. The names
+        # are fixed for the life of the World and there are under a hundred
+        # of them, against ~117k parses in a single MCTS search - the same
+        # string split and dict lookup, repeated.
+        self._parsed_actions = {index: self._parse_name(name)
+                                 for index, name in self.actions_dict.items()}
+
+    def _parse_name(self, name):
+        """(add, transform) for one action name. A leading colour word names
+        the colour the transform paints with and is stripped off; without
+        one, `add` stays -1 and any branch that paints is expected not to be
+        reachable under this name."""
+        colour = name.split("_")[0]
+        if colour in self.inverse_colors_mapping:
+            return self.inverse_colors_mapping[colour], name[len(colour) + 1:]
+        return -1, name
 
     def parse_action(self, action):
         """Parse actions from MultiDiscrete action space:
@@ -26,15 +42,7 @@ class World:
         action[2]: index of the second object in self.objects
         if action[1] == action[2] - transform the object
         """
-        action_type = action[0]
-        add = -1
-        if self.actions_dict[action_type].split("_")[0] in self.inverse_colors_mapping.keys():
-            color = self.actions_dict[action_type].split("_")[0]
-            transform = self.actions_dict[action_type][len(color)+1:]
-            add = self.inverse_colors_mapping[color]
-        else:
-           transform = self.actions_dict[action_type]
-        return add, transform
+        return self._parsed_actions[int(action[0])]
 
     def apply_transform(self, add, transform, obj1, obj2, grid, objects, cell2obj):
         """Apply the specified transformation to the grid."""

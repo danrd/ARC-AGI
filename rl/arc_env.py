@@ -94,10 +94,38 @@ class ARCGridWorld(gymnasium.Env):
         self.right_placement = right_placement
         return right_placement, done
 
+    @property
+    def train_out(self):
+        return self._train_out
+
+    @train_out.setter
+    def train_out(self, value):
+        """Sets the validity mask maximal_intersection reads along with it.
+
+        A property rather than two assignments side by side, because the
+        mask is derived from the target and the two are only meaningful
+        together - set_subtask is not the only place the target is assigned,
+        and one that forgot the mask would leave it describing the previous
+        subtask, scoring every grid against the wrong region.
+        """
+        self._train_out = np.asarray(value)
+        self._target_valid = (self._train_out != self.pad_val)
+
     def maximal_intersection(self, grid:np.array):
-        """Calculate the number of common blocks for current grid and target grid."""
-        intersection = ((np.array(grid)==np.array(self.train_out)) * (grid!=self.pad_val) * (self.train_out!=self.pad_val)).sum() - ((np.array(grid)!=np.array(self.train_out)) * (grid!=self.pad_val) * (self.train_out!=self.pad_val)).sum()
-        return intersection
+        """Cells matching the target, less cells contradicting it, over the
+        region both grids call real.
+
+        The same count as before, arrived at with a third of the work. Both
+        halves ranged over the same valid region, so their sizes add up to
+        it: matches - misses is matches - (valid - matches). That leaves one
+        comparison instead of two, and the target's half of the validity
+        mask is fixed for the subtask rather than rebuilt per call - which
+        matters at the ~117k calls a single MCTS search makes.
+        """
+        grid = np.asarray(grid)
+        valid = (grid != self.pad_val) & self._target_valid
+        matches = np.count_nonzero((grid == self.train_out) & valid)
+        return 2 * matches - np.count_nonzero(valid)
 
     def set_subtask(self, subtask):
         """Assigns provided task into the environment. On each .reset, the env

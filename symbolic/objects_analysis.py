@@ -223,13 +223,67 @@ class GridObject():
             )
         return representation
 
+    #: Attributes that can be mutated in place, and so have to be copied
+    #: rather than shared. Everything else a GridObject carries is a str,
+    #: int, float, bool or tuple - immutable, and a copy of one is
+    #: indistinguishable from the original.
+    _MUTABLE_ATTRS = ("obj_mask", "obj_structure", "color_structure",
+                       "color_shares", "sub_objects", "positioning",
+                       "inner_holes", "outer_holes")
+
+    def __deepcopy__(self, memo=None):
+        """Copy what can change, share what cannot.
+
+        The generic deepcopy walks all 38 attributes recursively, and
+        `coords` is a tuple of tuples of numpy ints, so it descends to the
+        individual coordinate: ~719 recursive calls for one object. Almost
+        none of that is needed, and the search copies an object on every
+        simulated step - measured at 88% of an MCTS run's wall clock.
+
+        The three arrays are in fact replaced wholesale by
+        define_inner_contour rather than written into, so they could be
+        shared too; they are copied anyway, being bounding-box sized. A
+        mutable buffer shared on the belief that nobody writes to it fails
+        silently and long after the change that broke it.
+        """
+        clone = object.__new__(type(self))
+        state = dict(self.__dict__)
+        for name in self._MUTABLE_ATTRS:
+            value = state.get(name)
+            if value is None:
+                continue
+            if isinstance(value, np.ndarray):
+                state[name] = value.copy()
+            elif isinstance(value, (tuple, list)):
+                # Holes are GridObjects and take this same path; a plain
+                # list of strings (positioning) is simply rebuilt.
+                state[name] = type(value)(
+                    v.__deepcopy__() if isinstance(v, GridObject) else v for v in value)
+            elif isinstance(value, dict):
+                state[name] = {key: list(v) if isinstance(v, list) else v
+                                for key, v in value.items()}
+        clone.__dict__ = state
+        return clone
+
     def __eq__(self, other_GridObject):
         isGridObject = isinstance(other_GridObject, self.__class__)
         if not isGridObject:
             return False
         else:
             cells_check = self.check_equality(other_object=other_GridObject)
-            return cells_check and self.color == other_GridObject.color
+            # color_numbers, not color: there is no `color` attribute, so
+            # this raised AttributeError for every comparison of two
+            # objects - and defining __eq__ without __hash__ left the class
+            # unhashable on top of it.
+            return cells_check and self.color_numbers == other_GridObject.color_numbers
+
+    def __hash__(self):
+        """By identity, as the default would have been. Restored explicitly
+        because defining __eq__ sets __hash__ to None, and equality here is
+        shape-and-colour rather than identity - two distinct objects can be
+        equal, so hashing by value would need them to be interchangeable in
+        a set, which they are not."""
+        return id(self)
 
     def info(self):
         """Print all core attributes of the GridObject in a structured format."""

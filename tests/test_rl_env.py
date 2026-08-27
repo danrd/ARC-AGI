@@ -46,6 +46,39 @@ def test_maximal_intersection_exact():
     assert env.maximal_intersection(grid) == 1
 
 
+@pytest.mark.parametrize("seed", range(8))
+def test_maximal_intersection_matches_the_form_it_replaced(seed):
+    """The rewrite is algebra, not a new definition: both halves ranged over
+    the same valid region, so matches - misses is 2*matches - |valid|. Held
+    against the original expression on random grids, because a scoring
+    function that is merely close would move every reward in the system by a
+    little and be very hard to notice.
+    """
+    rng = np.random.default_rng(seed)
+    env = make_env(pad_val=10)
+    env.train_out = rng.integers(0, 11, (6, 6))
+    grid = rng.integers(0, 11, (6, 6))
+    target = np.asarray(env.train_out)
+
+    original = (((grid == target) * (grid != 10) * (target != 10)).sum()
+                - ((grid != target) * (grid != 10) * (target != 10)).sum())
+
+    assert env.maximal_intersection(grid) == original
+
+
+def test_the_target_validity_mask_follows_the_target():
+    """The mask is derived from train_out, so assigning a new target has to
+    rebuild it - left over from the previous subtask it would score every
+    grid against the wrong region, silently and forever."""
+    env = make_env(pad_val=10)
+    env.train_out = np.array([[10, 10], [10, 10]])
+    assert env.maximal_intersection(np.array([[1, 1], [1, 1]])) == 0
+
+    env.train_out = np.array([[1, 1], [1, 1]])
+
+    assert env.maximal_intersection(np.array([[1, 1], [1, 1]])) == 4
+
+
 def test_step_intersection_tracks_delta():
     env = make_env(pad_val=10)
     env.train_out = np.array([[1, 1], [1, 1]])

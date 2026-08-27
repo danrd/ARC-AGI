@@ -185,6 +185,84 @@ def test_the_generated_vocabulary_matches_the_dispatch():
         f"generated but no dispatch branch answers to them: {sorted(unanswered)}")
 
 
+def test_every_name_parses_the_way_it_reads():
+    """parse_action is a dict lookup now, filled once per World instead of
+    re-splitting the same strings ~117k times a search. The table has to
+    hold what reading the name gives: a leading colour word names what the
+    transform paints with and is stripped off, and a name without one keeps
+    add at -1.
+
+    Checked over the whole generated vocabulary rather than a sample, since
+    a name that parses wrong does not fail - it reaches a branch that paints
+    with the wrong colour, or no branch at all, and returns the grid.
+    """
+    from rl.arc_world import World
+
+    actions = {0: "submit", **{i + 1: name for i, name in enumerate(ACTION_NAMES)}}
+    world = World(objects=[], actions_dict=actions)
+
+    for index, name in actions.items():
+        add, transform = world.parse_action([index, 0, 0])
+        colour = name.split("_")[0]
+        if colour in world.inverse_colors_mapping:
+            assert add == world.inverse_colors_mapping[colour], name
+            assert transform == name[len(colour) + 1:], name
+        else:
+            assert add == -1, name
+            assert transform == name, name
+
+
+def test_the_parse_table_belongs_to_its_world():
+    """Built from the actions_dict the World was given, so two Worlds with
+    different vocabularies do not share an index's meaning."""
+    from rl.arc_world import World
+
+    first = World(objects=[], actions_dict={0: "submit", 1: "red_recolor"})
+    second = World(objects=[], actions_dict={0: "submit", 1: "blue_recolor"})
+
+    assert first.parse_action([1, 0, 0]) == (2, "recolor")
+    assert second.parse_action([1, 0, 0]) == (1, "recolor")
+
+
+def test_the_parse_table_is_built_once_and_not_reread():
+    """The table is filled at construction, so a vocabulary swapped in
+    afterwards is not picked up. Pinned rather than left to be discovered:
+    it is the one behavioural difference caching makes, and a caller
+    rewriting actions_dict on a live World would otherwise get the old
+    meanings back silently.
+    """
+    from rl.arc_world import World
+
+    world = World(objects=[], actions_dict={0: "submit", 1: "red_recolor"})
+    world.actions_dict = {0: "submit", 1: "blue_recolor"}
+
+    assert world.parse_action([1, 0, 0]) == (2, "recolor")
+
+
+def test_parsing_an_action_stays_within_a_budget():
+    """What the table is for. Correctness cannot tell it from the string
+    splitting it replaced - that is the point of an optimisation - so the
+    cost is asserted directly: measured at 0.46us per call against 0.11us,
+    over ~117k calls in one search.
+
+    The bound sits between the two with room on both sides - six times
+    the fast path, and a sixth of the slow one - because a timing assertion
+    with a narrow margin fails under a loaded suite rather than on the
+    change it is meant to catch.
+    """
+    from tests.resource_utils import resource_budget
+    from rl.arc_world import World
+
+    actions = {0: "submit", **{i + 1: name for i, name in enumerate(ACTION_NAMES)}}
+    world = World(objects=[], actions_dict=actions)
+    calls = 200_000
+    indices = [i % len(actions) for i in range(calls)]
+
+    with resource_budget(max_seconds=calls * 0.7e-6):
+        for index in indices:
+            world.parse_action([index, 0, 0])
+
+
 def test_the_two_object_list_matches_the_pair_block():
     """apply_transform picks its half of the chain by comparing the two
     object indices, so an action in the wrong list is handed to the half

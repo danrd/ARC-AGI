@@ -139,7 +139,11 @@ class World:
                 """Change color of outer holes of Object 1."""
                 new_grid = color_outer_holes(new_grid, obj1, add)
 
-            elif transform == "shift":
+            # startswith, not ==: the direction is part of the name
+            # ("shift_N"), and the exact match could only ever catch the bare
+            # word "shift" - out of which the next line then tried to split a
+            # direction, so shift_object was unreachable.
+            elif transform.startswith("shift_"):
                 direction = transform.split("shift_")[1]
                 new_grid = shift_object(new_grid, obj1, direction, self.font_color)
 

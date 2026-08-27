@@ -81,7 +81,7 @@ def check_intersection(coords1: List[tuple], coords2: List[tuple]) -> bool:
 def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
                                  position: tuple, rotation_idx: int,
                                  all_grid_objects: List['GridObject'],
-                                 grid_shape:tuple) -> Dict:
+                                 grid: np.ndarray) -> Dict:
     """Evaluate a potential match configuration between two objects.
     Args:
         obj1: First GridObject
@@ -105,6 +105,15 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
     # Apply offset to all coordinates in the rotation
     shifted_coords = [(x + offset_x, y + offset_y) for x, y in rotation_coords]
 
+    # A configuration that puts any cell off the grid is not a configuration.
+    # Only the intersection with other objects was checked, so a placement
+    # against an edge produced coordinates the merged object then indexed the
+    # grid with - an IndexError several frames away from the placement that
+    # caused it.
+    rows, cols = grid.shape
+    if any(not (0 <= x < rows and 0 <= y < cols) for x, y in shifted_coords):
+        return {"valid": False, "hole_reduction": 0, "compactness": 0}
+
     # Check if the shifted obj2 intersects with obj1 coords
     if not check_intersection(obj1.coords, shifted_coords):
         # Check if shifted obj2 intersects with any other grid objects
@@ -114,14 +123,22 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
                 if check_intersection(other_obj.coords, shifted_coords):
                     return {"valid": False, "hole_reduction": 0, "compactness": 0}
 
-        # Create a temporary merged object to evaluate
-        merged_coords = list(set(obj1.coords + shifted_coords))
+        # Create a temporary merged object to evaluate. Both sides are made
+        # lists first: obj1.coords is a tuple and shifted_coords a list, and
+        # `tuple + list` is a TypeError rather than the concatenation it
+        # reads as - which took every "merge" action down.
+        merged_coords = list(set(list(obj1.coords) + list(shifted_coords)))
+        # The grid goes in, not just its shape: GridObject reads
+        # grid[min_i:max_i+1, ...] for its colour structure, and the default
+        # grid=None made that a TypeError - every merge died here, before the
+        # temporary object it needed to score the configuration existed.
         merged_obj = GridObject(
             shape="complex",
             coords=merged_coords,
             color=obj1.color_numbers+obj2.color_numbers,  # Assume we keep the color of obj1
             label=f"merged_{obj1.label}_{obj2.label}",
-            grid_shape=grid_shape  # Assume we keep the positioning of obj1
+            grid_shape=grid.shape,  # Assume we keep the positioning of obj1
+            grid=grid,
         )
 
         # Calculate hole reduction
@@ -145,7 +162,7 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
     return {"valid": False, "hole_reduction": 0, "compactness": 0}
 
 def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
-                           all_grid_objects: List['GridObject'], grid_shape:tuple) -> Dict:
+                           all_grid_objects: List['GridObject'], grid: np.ndarray) -> Dict:
     """Find the best match configuration between two grid objects.
 
     Args:
@@ -167,7 +184,7 @@ def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
         # Try placing obj2 at each adjacent position of obj1
         for position in adjacent_positions:
             match_config = evaluate_match_configuration(
-                obj1, obj2, position, rotation_idx, all_grid_objects, grid_shape
+                obj1, obj2, position, rotation_idx, all_grid_objects, grid
             )
 
             if match_config["valid"]:
@@ -237,7 +254,7 @@ def find_most_probable_merge(grid: np.ndarray, obj1: 'GridObject', obj2: 'GridOb
     filtered_grid_objects = [obj for obj in all_grid_objects if id(obj) != id(obj1) and id(obj) != id(obj2)]
 
     # Try matching in both directions
-    match = find_best_object_match(obj1, obj2, [obj1, obj2] + filtered_grid_objects, grid.shape)
+    match = find_best_object_match(obj1, obj2, [obj1, obj2] + filtered_grid_objects, grid)
 
     best_match = None
     best_score = -float('inf')
@@ -653,9 +670,14 @@ def gravity(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int):
     # Calculate the direction and distance to move obj_2
     obj2_coords = obj2.coords
 
-    # Calculate the shift needed to make the closest points touch
-    shift_x = end[0] - start[0]
-    shift_y = end[1] - start[1]
+    # Land beside obj1's closest cell, not on it. `end` belongs to obj1, so
+    # shifting by end - start makes the two closest cells coincide - which is
+    # an overlap, not the touch the docstring describes, and leaves the
+    # destination occupied. path[-2] is the last cell before end, which is
+    # exactly the adjacent one. (len(path) < 3 returned above, so it exists.)
+    landing = path[-2]
+    shift_x = landing[0] - start[0]
+    shift_y = landing[1] - start[1]
 
     # Create a new grid to modify
     new_grid = grid.copy()
@@ -667,14 +689,21 @@ def gravity(grid:np.array, obj1:GridObject, obj2:GridObject, font_color:int):
     for x, y in obj2_coords:
         new_grid[x, y] = font_color
 
-    # Place object_2 in new position
-    for x, y in obj2_coords:
-        new_x, new_y = x + shift_x, y + shift_y
-        if 0 <= new_x < new_grid.shape[0] and 0 <= new_y < new_grid.shape[1] and new_grid[new_x, new_y]==font_color:
-            new_coords.append((new_x, new_y))
-            new_grid[new_x, new_y] = colors[(x, y)]
-        else:
-            break
+    # The move happens whole or not at all. Placing cell by cell and breaking
+    # on the first blocked one left the object erased from where it was and
+    # half-drawn where it was going - and, when the very first cell was
+    # blocked, handed reinit_obj an empty coordinate list, which fails in
+    # define_edges several frames later with min() over nothing.
+    targets = [(x + shift_x, y + shift_y) for x, y in obj2_coords]
+    fits = all(0 <= new_x < new_grid.shape[0] and 0 <= new_y < new_grid.shape[1]
+               and new_grid[new_x, new_y] == font_color
+               for new_x, new_y in targets)
+    if not fits:
+        return grid
+
+    for (x, y), (new_x, new_y) in zip(obj2_coords, targets):
+        new_coords.append((new_x, new_y))
+        new_grid[new_x, new_y] = colors[(x, y)]
     obj2.reinit_obj(new_coords, new_grid)
     return new_grid
 
@@ -1125,8 +1154,10 @@ def color_inner_holes(grid:np.array, obj1:GridObject, color:float):
     inner_holes_coords = []
     for inner_hole in obj1.inner_holes:
         inner_holes_coords.extend(inner_hole.coords)
-        inner_hole.color_numbers = tuple(color)
-        inner_hole.colors = tuple([COLORS_MAPPING[color]])
+        # (color,), not tuple(color): the hole takes one colour, and
+        # tuple() of an int is a TypeError rather than a one-element tuple.
+        inner_hole.color_numbers = (color,)
+        inner_hole.colors = (COLORS_MAPPING[color],)
     # Create a new grid to modify
     new_grid = grid.copy()
     for x, y in inner_holes_coords:

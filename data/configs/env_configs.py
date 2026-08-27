@@ -14,7 +14,7 @@ ACTION_TYPES = {
                 "connection": ["shortest_path", "background_shortest_path_left", "background_shortest_path_right", "contour_connection"],
 }
 TWO_OBJECTS_ACTION_TYPES = ["swap", "merge", "center_merge", "color_merge", "x_alignment", "y_alignment", "shortest_path", "background_shortest_path_left", "background_shortest_path_right", "contour_connection",
-                            "color_swap", "shape_swap", "color_copy", "shape_copy"]
+                            "color_swap", "shape_swap", "color_copy", "shape_copy", "gravity"]
 COLORS_MAPPING = {0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
                   5: 'gray', 6: 'magenta', 7: 'orange', 8: 'sky', 9: 'brown', 10: 'white'
 }
@@ -30,7 +30,8 @@ COLOR_DEPENDENT_ACTIONS = ["recolor", "shortest_path", "background_shortest_path
                           ]
 DOUBLE_COLOR_DEPENDENT_ACTIONS = ["contour_connection", "emission_with_object_recolor", "emission_with_recolor_collision", "emission_with_contour_collision"]
 DIRECTION_DEPENDENT_ACTIONS = ["emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision", "emission_with_object_recolor",
-                               "emission_with_recolor_collision", "emission_with_contour_collision", "emission_with_collision_stop", "shift"
+                               "emission_with_recolor_collision", "emission_with_contour_collision", "emission_with_collision_stop",
+                               "shift_object"
                               ]
 AGENT2ACTIONS = {
     'highlighter': ["submit", "recolor", "color_inversion"],

@@ -6,22 +6,27 @@ transforms raised on every invocation without anything noticing. MCTS
 enumerates the whole action space, so one of these takes a whole rollout
 down.
 
-Names are not free-form, and getting one wrong looks exactly like a broken
-transform. `World.parse_action` strips a leading colour word to get the
-`add` argument, and several branches then split a direction or a second
-colour out of what remains:
+Names are not free-form, and a wrong one looks exactly like a broken
+transform - it matches no branch, falls through, and returns the grid
+untouched. So the names here are not written out. They come from
+`define_feasible_actions` over the repo's own action config, which is what
+an env is actually configured with, and the two ends are checked against
+each other in test_the_generated_vocabulary_matches_the_dispatch.
+
+That check is the point of the file as much as the transforms are. The
+generator decorates a base action with a colour, a direction, or a second
+colour, and the dispatch takes those apart again:
 
     rotate90                                     bare
     red_recolor                                  <colour>_<name>
     red_emission_N                               <colour>_<name>_<direction>
     red_emission_with_blue_object_recolor_N      two colours and a direction
-    shift_N                                      direction, no colour
-    contour_connection_red                       colour *after* the name
+    red_contour_connection_blue                  a second colour, appended
 
-A name that matches no branch falls through and returns the grid unchanged,
-which is why NAMES below is derived from the dispatch itself in
-test_the_vocabulary_here_matches_the_dispatch - a transform added there and
-not here would silently go untested.
+Either end can drift. An action listed as direction-dependent under a name
+the roster spells differently never gets its direction, and the dispatch
+reads whatever is in that position as one - which is how `shift_object`
+came to raise KeyError('object') for three of the five agents.
 """
 from __future__ import annotations
 
@@ -32,34 +37,50 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS,
+                                      COLOR_DEPENDENT_ACTIONS,
+                                      DIRECTION_DEPENDENT_ACTIONS,
+                                      DOUBLE_COLOR_DEPENDENT_ACTIONS,
+                                      TWO_OBJECTS_ACTION_TYPES)
 from rl.arc_env import ARCGridWorld
 from rl.arc_task import ARCSubtask
+from rl.utils import define_feasible_actions
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: Single-object transforms: dispatched when both action indices name the
-#: same object.
-SINGLE = [
-    "rotate90", "fliplr", "flipud", "red_recolor", "upscale4",
-    "red_outer_contour", "color_inversion", "edge_gravity",
-    "edge_gravity_bottom", "red_color_inner_holes", "red_color_outer_holes",
-    "shift_N", "red_color_inner_part", "symmetry_reflection",
-    "symmetric_restoration", "red_dense_outer_contour",
-    "red_emission_N", "red_emission_with_turn_left_collision_N",
-    "red_emission_with_turn_right_collision_N",
-    "red_emission_with_collision_stop_N",
-    "red_emission_with_blue_object_recolor_N",
-    "red_emission_with_blue_recolor_collision_N",
-    "red_emission_with_blue_contour_collision_N",
-]
+#: Two colours and two directions rather than all ten and all eight. Every
+#: branch is reached either way - the decorations pick arguments, not
+#: branches - and the full cross product is 2926 names, which is a sweep
+#: over colour rather than over the vocabulary.
+COLOURS = ["red", "blue"]
+DIRECTIONS = ["N", "E"]
 
-#: Two-object transforms: dispatched when the indices name different objects.
-PAIR = [
-    "gravity", "x_alignment", "y_alignment", "shortest_path", "merge", "swap",
-    "center_merge", "color_merge", "color_swap", "shape_swap", "color_copy",
-    "shape_copy", "contour_connection_red", "shortest_path_left",
-    "shortest_path_right",
-]
+
+def _vocabulary():
+    """Names as the env gets them, paired with whether they take two objects.
+
+    Generated one base action at a time, because a generated name does not
+    always contain its base: `emission_with_object_recolor` comes back as
+    `red_emission_with_blue_object_recolor_N`, with the second colour spliced
+    into the middle. Asking per base keeps the association exact instead of
+    recovering it from the string.
+    """
+    bases = ({a for roster in AGENT2ACTIONS.values() for a in roster}
+             | {a for group in ACTION_TYPES.values() for a in group})
+    entries = []
+    for base in sorted(bases):
+        if base == "submit":
+            continue
+        generated = define_feasible_actions(
+            [base], COLOURS, DIRECTIONS, COLOR_DEPENDENT_ACTIONS,
+            DOUBLE_COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS)
+        for name in generated.values():
+            if name != "submit":
+                entries.append((name, base in TWO_OBJECTS_ACTION_TYPES))
+    return entries
+
+
+VOCABULARY = _vocabulary()
 
 #: Dispatched, but deliberately empty - each returns the grid untouched under
 #: a "FOR FURTHER IMPLEMENTATION" comment. Kept out of the effect test rather
@@ -72,8 +93,8 @@ STUBS = ["copy", "copy_input", "paste", "cut"]
 #: it is fixed, and the test starts demanding it stay fixed.
 KNOWN_BROKEN: dict = {}
 
-ACTION_NAMES = SINGLE + PAIR + STUBS
-PAIRWISE = set(PAIR)
+ACTION_NAMES = [name for name, _ in VOCABULARY]
+PAIRWISE = {name for name, is_pair in VOCABULARY if is_pair}
 
 
 def _dispatch_names():
@@ -141,15 +162,52 @@ def envs():
     return built
 
 
-def test_the_vocabulary_here_matches_the_dispatch():
-    """A transform added to arc_world and not here would be tested by
-    nothing, which is the state this file exists to end."""
-    single_names, pair_names = _dispatch_names()
-    covered = {n for n in ACTION_NAMES}
+def test_the_generated_vocabulary_matches_the_dispatch():
+    """Both directions, because both are silent failures.
 
-    for dispatched in single_names | pair_names:
-        assert any(dispatched in name for name in covered), \
-            f"{dispatched!r} is dispatched by arc_world but no test name reaches it"
+    A branch no generated name reaches is dead code the env can never run.
+    A generated name no branch answers to is worse: it occupies an index in
+    the action space, and every search that enumerates that space spends
+    rollouts on an action that returns the grid untouched - which reads as
+    an action that had nothing to do.
+    """
+    single_names, pair_names = _dispatch_names()
+    dispatched = single_names | pair_names
+
+    unreachable = [b for b in dispatched
+                    if not any(b in name for name in ACTION_NAMES)]
+    assert not unreachable, (
+        f"dispatched by arc_world but never generated: {sorted(unreachable)}")
+
+    unanswered = [name for name in ACTION_NAMES
+                   if not any(b in name for b in dispatched)]
+    assert not unanswered, (
+        f"generated but no dispatch branch answers to them: {sorted(unanswered)}")
+
+
+def test_the_two_object_list_matches_the_pair_block():
+    """apply_transform picks its half of the chain by comparing the two
+    object indices, so an action in the wrong list is handed to the half
+    that has no branch for it - and comes back with the grid untouched,
+    reading as a transform that had nothing to do rather than as one that
+    was never dispatched.
+
+    `gravity` sat outside the list while the pair block dispatched it.
+    """
+    single_names, pair_names = _dispatch_names()
+
+    # By containment, because the two ends spell some of these differently:
+    # the config's "background_shortest_path_left" is dispatched by a branch
+    # testing for "shortest_path_left" in the name.
+    missing = [b for b in pair_names
+                if not any(b in t for t in TWO_OBJECTS_ACTION_TYPES)]
+    assert not missing, (
+        f"dispatched in the pair block but not in TWO_OBJECTS_ACTION_TYPES: "
+        f"{sorted(missing)}")
+
+    stray = [t for t in TWO_OBJECTS_ACTION_TYPES if t in single_names]
+    assert not stray, (
+        f"listed as two-object but dispatched in the single block: {sorted(stray)}")
 
 
 @pytest.mark.parametrize("name", ACTION_NAMES)
@@ -499,6 +557,31 @@ def test_an_object_that_changes_shape_keeps_its_structure(build):
     # And the rotation that reads it gets through, with nothing dropped.
     symmetry_transformation(grid, obj, font_color=0, transf_type="rot90")
     assert obj.obj_structure.max() == len(obj.coords)
+
+
+def test_a_shift_with_no_direction_in_its_name_is_refused():
+    """The dispatch reads the direction off the end of the name, so a name
+    that carries none leaves whatever sits in that position to be read as
+    one. Refusing costs an action that does nothing, which the env already
+    scores as ineffective; a KeyError takes the whole rollout down.
+
+    Asked of the function directly, because the generated vocabulary now
+    always appends a direction - this guards the case where the two ends
+    disagree again, which is the case that produced KeyError('object').
+    """
+    from rl.arc_transformators import shift_object
+    from symbolic.objects_analysis import GridObject
+
+    grid = np.zeros((5, 5), dtype=int)
+    grid[2, 2] = 1
+    obj = GridObject(shape="cell", coords=[(2, 2)], color=[1], label="a",
+                      grid_shape=grid.shape, grid=grid)
+    before = grid.copy()
+
+    result = shift_object(grid, obj, direction="object", font_color=0)
+
+    assert np.array_equal(result, before)
+    assert obj.coords == ((2, 2),)
 
 
 def test_the_stubs_are_still_stubs():

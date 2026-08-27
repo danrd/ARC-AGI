@@ -70,7 +70,7 @@ class World:
                 obj1.color_numbers = (add,)
                 obj1.colors = tuple(COLORS_MAPPING[color] for color in obj1.color_numbers)
 
-            elif transform == "upscale4":
+            elif transform == "upscale_4":
                 """Upscale object by 4x: each cell becomes a 2x2 square."""
                 new_grid = upscale(new_grid, obj1, self.font_color)
 
@@ -146,12 +146,13 @@ class World:
                 """Change color of outer holes of Object 1."""
                 new_grid = color_outer_holes(new_grid, obj1, add)
 
-            # startswith, not ==: the direction is part of the name
-            # ("shift_N"), and the exact match could only ever catch the bare
-            # word "shift" - out of which the next line then tried to split a
-            # direction, so shift_object was unreachable.
+            # startswith, not ==: the direction is part of the name, and the
+            # exact match could only ever catch the bare word "shift". The
+            # direction is the last segment rather than everything after
+            # "shift_", because the action's own name carries an underscore
+            # too - define_feasible_actions builds "shift_object_N".
             elif transform.startswith("shift_"):
-                direction = transform.split("shift_")[1]
+                direction = transform.rsplit("_", 1)[1]
                 new_grid = shift_object(new_grid, obj1, direction, self.font_color)
 
             elif transform == "color_inner_part":

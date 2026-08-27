@@ -1396,7 +1396,13 @@ def shift_object(grid: np.array, obj1: GridObject, direction: str, font_color:in
         'NW': (-1, -1)   # Northwest
     }
 
-    # Get direction vector
+    # A name that carries no direction leaves whatever sits in that position
+    # to be read as one. The grid, then, like every other refusal here: the
+    # env scores an action that changes nothing as ineffective, where a
+    # KeyError takes the whole rollout down.
+    if direction not in directions:
+        return grid
+
     dx, dy = directions[direction]
 
     # Create new coordinates list for the shifted object

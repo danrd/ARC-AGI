@@ -13,6 +13,7 @@ reaches back into the original.
 """
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 
 import numpy as np
@@ -110,28 +111,41 @@ def test_the_immutable_attributes_are_shared():
     assert clone.color_numbers is obj.color_numbers
 
 
-def test_copying_stays_within_a_budget():
+def test_copying_beats_the_generic_walk_it_replaced():
     """The one test that can tell the two implementations apart.
 
     Everything above holds under the generic deepcopy too, and has to -
     __deepcopy__ is an optimisation, and an optimisation that changed the
-    answer would be a bug. What it changes is the cost, and the cost is the
-    point: measured at 240us per object against 8us, and the search copies
-    one on every simulated step.
+    answer would be a bug. What it changes is the cost, and the cost is why
+    it exists: measured at 240us per object against 8us, and the search
+    copies one on every simulated step.
 
-    The bound is loose on both sides - twelve times the measured fast
-    path, a tenth of the generic one - because a timing assertion with a
-    narrow margin fails under a loaded suite rather than on the change it
-    is meant to catch.
+    Against the generic walk rather than a wall-clock bound, because a
+    fixed number of seconds is a claim about the machine. Both are timed
+    here, back to back, on the same object - a loaded runner slows them
+    equally and the ratio survives it.
     """
-    from tests.resource_utils import resource_budget
-
     grid, obj = _ring()
-    copies = 500
+    copies = 300
 
-    with resource_budget(max_seconds=copies * 100e-6):
+    start = time.perf_counter()
+    for _ in range(copies):
+        deepcopy(obj)
+    with_override = time.perf_counter() - start
+
+    original = GridObject.__deepcopy__
+    del GridObject.__deepcopy__
+    try:
+        start = time.perf_counter()
         for _ in range(copies):
             deepcopy(obj)
+        generic = time.perf_counter() - start
+    finally:
+        GridObject.__deepcopy__ = original
+
+    assert with_override * 3 < generic, (
+        f"{generic / with_override:.1f}x faster than the generic walk, "
+        f"expected at least 3x - is __deepcopy__ still being used?")
 
 
 def test_two_objects_of_the_same_shape_and_colour_are_equal():

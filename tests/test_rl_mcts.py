@@ -304,6 +304,101 @@ def test_environment_simulator_sample_and_step(env):
     assert set(next_state.keys()) == {"grid", "objects", "max_int", "prev_action"}
 
 
+class TestWhatGetsCopiedBeforeASimulatedStep:
+    """_copy_touched_objects exists so a simulated step can mutate objects
+    without disturbing the state the tree branches from again. What it must
+    not do is pay for that when no transform will run at all - and most
+    sampled actions are exactly that case: the action space carries
+    max_objects slots whatever the subtask holds, so on a four-object grid
+    at max_objects=16, 94% of sampled index pairs name nothing.
+
+    Identity assertions rather than timings: "the same list came back" is
+    exactly the claim, and it does not depend on how fast the machine is.
+    """
+
+    def _simulator_and_objects(self, wide_env):
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        return simulator, list(wide_env.objects)
+
+    def test_an_index_naming_no_object_copies_nothing(self, wide_env):
+        simulator, objects = self._simulator_and_objects(wide_env)
+        assert len(objects) < 16, "the fixture is meant to leave empty slots"
+
+        returned = simulator._copy_touched_objects(objects, np.array([1, 15, 15]))
+
+        assert returned is objects
+
+    def test_submit_copies_nothing(self, wide_env):
+        """simulate_action returns before touching an object, whatever the
+        indices alongside it happen to be."""
+        simulator, objects = self._simulator_and_objects(wide_env)
+
+        returned = simulator._copy_touched_objects(objects, np.array([0, 0, 1]))
+
+        assert returned is objects
+
+    def test_a_real_action_still_copies_what_it_names(self, wide_env):
+        simulator, objects = self._simulator_and_objects(wide_env)
+
+        returned = simulator._copy_touched_objects(objects, np.array([1, 0, 2]))
+
+        assert returned is not objects
+        assert returned[0] is not objects[0]
+        assert returned[2] is not objects[2]
+        # And leaves the ones it does not name alone, which is the point of
+        # copying per action rather than the whole list.
+        assert returned[1] is objects[1]
+
+    def test_object_recolor_copies_everything_it_could_reach(self, wide_env):
+        """That variant recolors a third object it looks up through cell2obj,
+        so the two named indices do not bound what it can mutate."""
+        actions = {0: "submit", 1: "red_emission_with_blue_object_recolor_N"}
+        env = ARCGridWorld(max_episode_len=4, feasible_actions=actions, repr_level=1,
+                           input_pattern="start",
+                           observation_space_elements=["objects_emb"])
+        env.set_subtask(wide_env.subtask)
+        env.reset()
+        simulator = mcts.EnvironmentSimulator(env)
+        objects = list(env.objects)
+
+        returned = simulator._copy_touched_objects(objects, np.array([1, 0, 1]))
+
+        assert all(a is not b for a, b in zip(returned, objects))
+
+    def test_object_recolor_copies_nothing_when_the_indices_name_nothing(self, wide_env):
+        """The case the ordering is for. Reached with an empty slot, that
+        branch copied every object on the grid and then ran no transform."""
+        actions = {0: "submit", 1: "red_emission_with_blue_object_recolor_N"}
+        env = ARCGridWorld(max_episode_len=4, feasible_actions=actions, repr_level=1,
+                           input_pattern="start",
+                           observation_space_elements=["objects_emb"])
+        env.set_subtask(wide_env.subtask)
+        env.reset()
+        simulator = mcts.EnvironmentSimulator(env)
+        objects = list(env.objects)
+
+        returned = simulator._copy_touched_objects(objects, np.array([1, 15, 15]))
+
+        assert returned is objects
+
+    def test_a_skipped_copy_still_leaves_the_step_correct(self, wide_env):
+        """Returning the caller's own list is only safe because nothing
+        downstream writes to it. Stepping repeatedly on empty slots must
+        leave the objects the state started with untouched."""
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        state = mcts.env_state_snapshot(wide_env)
+        before = [tuple(obj.coords) for obj in state["objects"]]
+
+        for _ in range(5):
+            state, _reward, done, truncated, _info = simulator.simulate_step(
+                state, np.array([1, 15, 15]))
+            if done or truncated:
+                break
+
+        assert [tuple(obj.coords) for obj in state["objects"]] == before
+        assert [tuple(obj.coords) for obj in wide_env.objects] == before
+
+
 def test_environment_simulator_does_not_mutate_real_env(env):
     """Regression test: simulate_step used to run a real env.step() and try
     to undo it via get_state()/set_state(), which never captured

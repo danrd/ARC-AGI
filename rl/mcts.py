@@ -350,18 +350,36 @@ class EnvironmentSimulator:
         it's given, with one exception: the "object_recolor"
         emission-collision variant can also recolor a third object it
         looks up independently via cell2obj - copy every object in that
-        one case, to stay safe."""
+        one case, to stay safe.
+
+        Nothing is copied for an action that will not run a transform at
+        all. simulate_action returns early for submit, and treats an index
+        past the objects this subtask has as an action that changes nothing
+        - the action space carries a slot per max_objects whatever the
+        subtask holds, so most sampled actions name an empty one. Neither
+        reaches a transform, so neither can mutate anything.
+
+        The check comes first, before the object_recolor branch rather than
+        inside the per-index loop below it: that branch copies the whole
+        list, and reached with an index naming nothing it copied every
+        object on the grid to run no transform at all.
+        """
         transform_name = self.env.actions_dict.get(int(action[0]), '')
+        if transform_name == 'submit':
+            return objects
+        # Matching simulate_action's own bound, which is max_objects rather
+        # than len(objects): objects past that are in the list but have no
+        # index in the action space and nothing can name them.
+        visible = min(len(objects), self.env.max_objects)
+        first, second = int(action[1]), int(action[2])
+        if first >= visible or second >= visible:
+            return objects
+
         if 'object_recolor' in transform_name:
             return [deepcopy(obj) for obj in objects]
         objects = list(objects)
-        for idx in {int(action[1]), int(action[2])}:
-            # The action space has a slot per max_objects, not per object in
-            # this subtask, so an index can name an empty one. The env scores
-            # that as an action that does nothing (see ARCGridWorld.step), and
-            # an action that does nothing has no object to copy.
-            if idx < len(objects):
-                objects[idx] = deepcopy(objects[idx])
+        for idx in {first, second}:
+            objects[idx] = deepcopy(objects[idx])
         return objects
 
     def sample_action(self):

@@ -239,28 +239,45 @@ def test_the_parse_table_is_built_once_and_not_reread():
     assert world.parse_action([1, 0, 0]) == (2, "recolor")
 
 
-def test_parsing_an_action_stays_within_a_budget():
+def test_parsing_an_action_beats_the_splitting_it_replaced():
     """What the table is for. Correctness cannot tell it from the string
     splitting it replaced - that is the point of an optimisation - so the
-    cost is asserted directly: measured at 0.46us per call against 0.11us,
+    cost is asserted instead: measured at 0.49us per call against 0.09us,
     over ~117k calls in one search.
 
-    The bound sits between the two with room on both sides - six times
-    the fast path, and a sixth of the slow one - because a timing assertion
-    with a narrow margin fails under a loaded suite rather than on the
-    change it is meant to catch.
+    Against the old form rather than a wall-clock bound, because a fixed
+    number of seconds is a claim about the machine. Both are timed here,
+    back to back, over the same indices - a loaded runner slows them
+    equally and the ratio survives it.
     """
-    from tests.resource_utils import resource_budget
+    import time
+
     from rl.arc_world import World
 
     actions = {0: "submit", **{i + 1: name for i, name in enumerate(ACTION_NAMES)}}
     world = World(objects=[], actions_dict=actions)
-    calls = 200_000
-    indices = [i % len(actions) for i in range(calls)]
+    indices = [i % len(actions) for i in range(100_000)]
 
-    with resource_budget(max_seconds=calls * 0.7e-6):
-        for index in indices:
-            world.parse_action([index, 0, 0])
+    def by_splitting(action):
+        name = world.actions_dict[action[0]]
+        colour = name.split("_")[0]
+        if colour in world.inverse_colors_mapping:
+            return world.inverse_colors_mapping[colour], name[len(colour) + 1:]
+        return -1, name
+
+    start = time.perf_counter()
+    for index in indices:
+        world.parse_action([index, 0, 0])
+    cached = time.perf_counter() - start
+
+    start = time.perf_counter()
+    for index in indices:
+        by_splitting([index, 0, 0])
+    splitting = time.perf_counter() - start
+
+    assert cached * 2 < splitting, (
+        f"{splitting / cached:.1f}x faster than re-splitting, expected at "
+        f"least 2x - is parse_action reading the table?")
 
 
 def test_the_two_object_list_matches_the_pair_block():

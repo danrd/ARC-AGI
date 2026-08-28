@@ -61,18 +61,23 @@ RELATION_SCHEMA = (
 RELATION_FEATURE_NAMES = tuple(name for name, _group in RELATION_SCHEMA)
 RELATION_DIM = len(RELATION_SCHEMA)
 
-#: Bumped whenever the composition or order of RELATION_SCHEMA changes - the
-#: relation-side counterpart to objects_analysis.OBJECT_SCHEMA_VERSION, and
-#: carried for the same reason: the vector is a model input, so a checkpoint
-#: trained against one version reads a different meaning out of the same slot
-#: under another.
+#: Bumped whenever the composition or order of RELATION_SCHEMA changes, or
+#: whenever a slot keeps its name and changes what it means - the relation-side
+#: counterpart to objects_analysis.OBJECT_SCHEMA_VERSION, and carried for the
+#: same reason: the vector is a model input, so a checkpoint trained against
+#: one version reads a different meaning out of the same slot under another.
+#: A silent change of meaning is the worse of the two, since the width still
+#: matches and nothing else can catch it.
+#:
+#: 4: horizontal_symmetry/vertical_symmetry/rotation no longer fire on pairs
+#:    of identical masks (see RelationAnalyzer.rotation_symmetry).
 #:
 #: Neither constant is read anywhere yet, and can't be until there is
 #: something to attach it to - nothing in this repository saves weights
 #: (rl.training.create_agent only loads). A run that does save them elsewhere
 #: should store this next to them, so a mismatch surfaces as an error instead
 #: of as quietly worse predictions.
-RELATION_SCHEMA_VERSION = 3
+RELATION_SCHEMA_VERSION = 4
 
 
 def relation_group_indices(*groups: str) -> tuple:
@@ -1182,6 +1187,18 @@ class RelationAnalyzer():
         a mask symmetric under more than one operation can legitimately
         earn more than one of them, same as the previous per-transform
         checks did.
+
+        Equal masks earn nothing, and the guard has to be explicit: for a
+        mask that is its own mirror - a rectangle, a bar, a plus - the flip
+        lands back on the original, so `matching_transforms` reports the
+        flip alongside the identity and every pair of identical rectangles
+        was being flagged as horizontally *and* vertically symmetric *and*
+        rotated. Measured over 6522 real level-1 pairs that was 96.5% of
+        horizontal_symmetry's firings, 97.0% of vertical_symmetry's and
+        91.2% of rotation's: three features spending almost all of their
+        mass restating same_shape, which is why the first two correlated at
+        +0.979. What is left after the guard is the case the relation was
+        for - obj2 is a mirrored copy of obj1 and that is news.
         """
         rotations = []
         if len(obj1.coords) > 1 and len(obj2.coords) > 1: # exclude cells
@@ -1190,6 +1207,8 @@ class RelationAnalyzer():
                 key2 = getattr(obj2, "congruence_key", None)
                 if key1 is not None and key1 == key2:
                     matches = matching_transforms(obj1.obj_mask, obj2.obj_mask)
+                    if 'identity' in matches:
+                        return []
                     if matches & {'rot90', 'rot180', 'rot270'}:
                         rotations.append('rotation')
                     if 'horizontal_flip' in matches:
@@ -1298,13 +1317,24 @@ class RelationAnalyzer():
         objects meet. Two long bars can touch along their whole length and
         still have distant centres. Adjacency is what makes a pair read as
         one assembled thing rather than two things near each other, and
-        nothing in the vocabulary expressed it - it holds for 13.17% of
-        object pairs in real tasks.
+        nothing else in the vocabulary expresses it.
 
-        Edge adjacency only, matching the 4-connectivity the object
-        extraction itself uses: two objects meeting at a single corner are
-        not part of one structure by the same rule that kept them separate
-        objects in the first place.
+        Which representation level it is asked about decides whether it can
+        hold at all, and the answer is not the one this used to claim.
+        Level 1 objects are colour-agnostic 8-connected components
+        (retrieve_connected_components_hetero), so two cells that touch are
+        by construction the same object: measured over 5279 real level-1
+        pairs this is 0.00%, identically, and a level-1 consumer - the RL
+        observation among them, ARCGridWorld defaults to repr_level=1 - is
+        carrying a constant-zero channel. Level 2 splits components by
+        colour, where neighbouring objects of different colours are exactly
+        what the extraction leaves behind, and there it holds for 2.15% of
+        pairs.
+
+        Edge adjacency only. Not, as this used to say, because it matches
+        the extraction's connectivity - that is 8-connected (patterns.py's
+        finders default to folds=8) - but as a deliberate choice: objects
+        meeting at a single corner do not read as one assembled structure.
         """
         cells2 = set(map(tuple, obj2.coords))
         for i, j in obj1.coords:

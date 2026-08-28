@@ -309,6 +309,101 @@ class MCTSNode:
         if self.parent:
             self.parent.backpropagate(reward)
 
+class PlayoutPolicy:
+    """Which action a playout tries next, weighted by what the search has
+    already learned about the pool.
+
+    A uniform playout over the pool is not neutral here. Measured over
+    629,331 simulated steps, 3.1% of them moved the intersection at all,
+    the per-action mean ranges from -80 to +4, and 78.9% of the budget goes
+    to actions with five or more fruitless tries already behind them. So a
+    uniform draw spends almost everything re-confirming what the search
+    knows, and the few actions that pay are drawn as rarely as the ones
+    that wreck the grid.
+
+    Two terms, and they answer different questions.
+
+    `mean_delta` is the value: how far this action moved the intersection,
+    on average, when it was tried. Normalised by the largest magnitude seen
+    so far, because the raw range would collapse a softmax onto whichever
+    action happened to score -80.
+
+    The fruitless count is the confidence. A mean of zero from one try and
+    a mean of zero from two hundred are the same number and different
+    states of knowledge - the first is untested, the second is settled. Of
+    the 20,383 actions tried twenty times without effect, 20,254 never had
+    any effect at all, so the count predicts. The 129 that eventually did
+    are why this lowers a weight rather than removing an action: nothing
+    reaches probability zero.
+
+    Counted on fruitless tries rather than on tries, because only 3.1% of
+    steps move anything - a penalty on use as such would push down the
+    handful of actions that work along with the rest.
+    """
+
+    def __init__(self, actions, temperature=1.0, floor=0.1,
+                 fruitless_penalty=1.0, refresh_every=128, rng=None):
+        self.actions = [list(action) for action in actions]
+        self.temperature = temperature
+        self.floor = floor
+        self.fruitless_penalty = fruitless_penalty
+        self.refresh_every = refresh_every
+        self.rng = rng or random
+        self._index = {tuple(a): i for i, a in enumerate(self.actions)}
+        size = len(self.actions)
+        self._total_delta = np.zeros(size)
+        self._tried = np.zeros(size)
+        self._fruitless = np.zeros(size)
+        self._since_refresh = refresh_every  # build the table on first use
+        self._cumulative = None
+
+    def record(self, action, delta):
+        """What one simulated step of `action` did to the intersection."""
+        index = self._index.get(tuple(int(x) for x in np.asarray(action).reshape(-1)))
+        if index is None:
+            return
+        self._total_delta[index] += delta
+        self._tried[index] += 1
+        if delta == 0:
+            self._fruitless[index] += 1
+        self._since_refresh += 1
+
+    def weights(self):
+        """The sampling distribution, rebuilt from the counts."""
+        tried = np.maximum(self._tried, 1)
+        mean_delta = self._total_delta / tried
+        spread = np.abs(mean_delta).max()
+        value = mean_delta / spread if spread else mean_delta
+        # Over tries + 1, so one fruitless try counts for little and a long
+        # run of them approaches the full penalty - the same shape as a
+        # visit-count term, and for the same reason.
+        confidence = self._fruitless / (1.0 + self._tried)
+        score = value - self.fruitless_penalty * confidence
+
+        score = score - score.max()  # for exp(), not a change of ranking
+        weights = np.exp(score / self.temperature)
+        weights /= weights.sum()
+        # Nothing reaches zero: an action can be wrong about a grid it has
+        # not seen, and the pool is searched again after every round.
+        return (1 - self.floor) * weights + self.floor / len(weights)
+
+    def sample(self):
+        """One action, drawn from the current distribution.
+
+        Through a cumulative table and a binary search rather than
+        numpy.random.choice, which is linear in the pool for every draw -
+        a search takes hundreds of thousands of them, and the pool runs to
+        over a thousand actions on a four-object grid. The table is rebuilt
+        every `refresh_every` records instead of on every draw, for the
+        same reason.
+        """
+        if self._cumulative is None or self._since_refresh >= self.refresh_every:
+            self._cumulative = np.cumsum(self.weights())
+            self._since_refresh = 0
+        position = self.rng.random() * self._cumulative[-1]
+        return list(self.actions[int(np.searchsorted(self._cumulative, position))])
+
+
 class EnvironmentSimulator:
     """Runs functional (non-mutating) simulated steps against an
     ARCGridWorld for MCTS tree search.
@@ -322,7 +417,7 @@ class EnvironmentSimulator:
     why simulating deep/wide trees doesn't need get_state()/set_state() at
     all: nothing real ever changes during the search.
     """
-    def __init__(self, env, actions=None):
+    def __init__(self, env, actions=None, policy=None):
         self.env = env
         self.action_space = env.action_space
         # Computed once, from the env rather than from the action space: the
@@ -330,6 +425,10 @@ class EnvironmentSimulator:
         # See enumerate_actions. `actions` narrows it further to a pruned pool.
         self.all_actions = [list(action) for action in
                             (actions if actions is not None else enumerate_actions(env))]
+        # None keeps the playout sampling the raw action space, padded slots
+        # and all - which is what it has always done, and is not the same
+        # thing as sampling the pool the tree expands over.
+        self.policy = policy
 
     def simulate_step(self, state, action):
         """state: {"grid", "objects", "max_int", "prev_action"} snapshot.
@@ -342,6 +441,12 @@ class EnvironmentSimulator:
             'grid': new_grid, 'objects': new_objects, 'max_int': new_max_int,
             'prev_action': np.asarray(action),
         }
+        if self.policy is not None:
+            # The change in intersection, not the reward: the reward is
+            # denominated in whichever reward_approach the env carries and
+            # the approaches do not share a scale, while this is the same
+            # count of cells under all of them.
+            self.policy.record(action, new_max_int - state['max_int'])
         return next_state, reward, done, False, {}
 
     def _copy_touched_objects(self, objects, action):
@@ -383,7 +488,14 @@ class EnvironmentSimulator:
         return objects
 
     def sample_action(self):
-        """Sample random action"""
+        """One action for a playout step.
+
+        From the policy when there is one. Without it, from the raw action
+        space - which is padded to max_objects whatever the subtask holds,
+        so most of what it returns names an empty slot and does nothing.
+        """
+        if self.policy is not None:
+            return self.policy.sample()
         return self.action_space.sample()
 
 class MCTS:

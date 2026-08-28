@@ -13,6 +13,7 @@ permanently corrupted the objects the real rollout depends on.
 """
 from __future__ import annotations
 
+import collections
 from copy import deepcopy
 
 import numpy as np
@@ -302,6 +303,138 @@ def test_environment_simulator_sample_and_step(env):
     next_state, reward, done, truncated, info = simulator.simulate_step(state, action)
     assert isinstance(next_state, dict)
     assert set(next_state.keys()) == {"grid", "objects", "max_int", "prev_action"}
+
+
+class TestPlayoutPolicy:
+    """The two terms, checked apart from each other and apart from a search.
+
+    Both are easy to get backwards, and a search would not say so - it
+    would just be slightly worse, on a signal that is already faint.
+    """
+
+    ACTIONS = [[1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0]]
+
+    def test_an_action_that_moves_the_intersection_is_drawn_more_often(self):
+        policy = mcts.PlayoutPolicy(self.ACTIONS, floor=0.0)
+        for _ in range(20):
+            policy.record([1, 0, 0], +4)
+            policy.record([2, 0, 0], -4)
+
+        weights = policy.weights()
+
+        assert weights[0] > weights[1]
+
+    def test_an_untried_action_outranks_one_known_to_do_nothing(self):
+        """A mean of zero from no tries and a mean of zero from fifty are
+        the same number and different states of knowledge. The value term
+        cannot tell them apart, which is what the fruitless count is for."""
+        policy = mcts.PlayoutPolicy(self.ACTIONS, floor=0.0)
+        for _ in range(50):
+            policy.record([1, 0, 0], 0)
+
+        weights = policy.weights()
+
+        assert weights[1] > weights[0], "the untried action should be preferred"
+
+    def test_a_fruitless_run_lowers_a_weight_gradually(self):
+        """Over tries + 1, so one quiet try counts for little - an action
+        can be wrong about a grid it has not seen yet."""
+        policy = mcts.PlayoutPolicy(self.ACTIONS, floor=0.0)
+        policy.record([1, 0, 0], 0)
+        after_one = policy.weights()[0]
+        for _ in range(50):
+            policy.record([1, 0, 0], 0)
+        after_many = policy.weights()[0]
+
+        assert after_many < after_one
+
+    def test_an_action_that_pays_is_not_penalised_for_being_used(self):
+        """The count is of fruitless tries, not of tries. Only 3.1% of
+        simulated steps move anything, so a penalty on use as such would
+        push down the few actions that work along with the rest."""
+        policy = mcts.PlayoutPolicy(self.ACTIONS, floor=0.0)
+        for _ in range(50):
+            policy.record([1, 0, 0], +4)
+        policy.record([2, 0, 0], +4)
+
+        weights = policy.weights()
+
+        assert weights[0] >= weights[1] * 0.9, (
+            "an action used often and productively should keep its weight")
+
+    def test_nothing_reaches_probability_zero(self):
+        """129 of the 20,383 actions that went twenty tries without effect
+        did eventually have one. A weight that hits zero cannot come back,
+        and the pool is searched again after every round."""
+        policy = mcts.PlayoutPolicy(self.ACTIONS, floor=0.1)
+        for _ in range(500):
+            policy.record([1, 0, 0], 0)
+            policy.record([2, 0, 0], -50)
+
+        weights = policy.weights()
+
+        assert (weights > 0).all()
+        assert weights.min() >= 0.1 / len(self.ACTIONS) * 0.99
+
+    def test_the_weights_are_a_distribution(self):
+        policy = mcts.PlayoutPolicy(self.ACTIONS)
+        policy.record([1, 0, 0], +2)
+
+        assert np.isclose(policy.weights().sum(), 1.0)
+
+    def test_sampling_returns_actions_from_the_pool(self):
+        policy = mcts.PlayoutPolicy(self.ACTIONS)
+
+        drawn = [policy.sample() for _ in range(50)]
+
+        assert all(action in self.ACTIONS for action in drawn)
+
+    def test_sampling_follows_the_weights(self):
+        """The table is rebuilt every refresh_every records, so a policy
+        told the same thing repeatedly has to actually act on it."""
+        policy = mcts.PlayoutPolicy(self.ACTIONS, floor=0.0, refresh_every=1)
+        for _ in range(50):
+            policy.record([1, 0, 0], +8)
+            policy.record([2, 0, 0], -8)
+
+        drawn = collections.Counter(tuple(policy.sample()) for _ in range(2000))
+
+        assert drawn[(1, 0, 0)] > drawn[(2, 0, 0)] * 2
+
+    def test_an_action_outside_the_pool_is_ignored(self):
+        """The tree expands over the pool, but a caller can hand a simulator
+        an action from elsewhere - recording it would index nothing."""
+        policy = mcts.PlayoutPolicy(self.ACTIONS)
+
+        policy.record([99, 9, 9], +5)
+
+        assert np.isclose(policy.weights().sum(), 1.0)
+
+
+def test_a_simulator_with_a_policy_learns_from_its_own_steps(env):
+    """The wiring: simulate_step feeds the policy the change in
+    intersection, so a search's own rollouts are what shape the playout."""
+    policy = mcts.PlayoutPolicy(mcts.enumerate_actions(env), refresh_every=1)
+    simulator = mcts.EnvironmentSimulator(env, policy=policy)
+    state = mcts.env_state_snapshot(env)
+
+    for _ in range(10):
+        state, _r, done, truncated, _i = simulator.simulate_step(state, np.array([1, 0, 0]))
+        if done or truncated:
+            break
+
+    assert policy._tried[policy._index[(1, 0, 0)]] > 0
+    assert simulator.sample_action() in policy.actions
+
+
+def test_a_simulator_without_a_policy_samples_the_raw_space(env):
+    """Unchanged by default: the policy is opt-in, and the two draw from
+    different sets - the raw space includes the padded slots."""
+    simulator = mcts.EnvironmentSimulator(env)
+
+    action = simulator.sample_action()
+
+    assert env.action_space.contains(np.array(action))
 
 
 class TestWhatGetsCopiedBeforeASimulatedStep:

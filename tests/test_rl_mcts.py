@@ -305,6 +305,115 @@ def test_environment_simulator_sample_and_step(env):
     assert set(next_state.keys()) == {"grid", "objects", "max_int", "prev_action"}
 
 
+class TestCapturingASolutionAPlayoutFound:
+    """A playout that matches the target exactly used to return a number and
+    drop the actions that got it there. The rollouts a search returns are
+    built from the tree's chosen action at each real step and never see
+    inside a playout, so the find had nowhere to go.
+
+    Rare - twice over eight tasks - but twice was the whole of what the
+    search had to show, and a trace corpus that starts empty stays empty.
+    """
+
+    def _solving_env(self):
+        """A task one action finishes, so a playout reaches the target
+        quickly enough for a small search to find it."""
+        from rl.arc_task import ARCSubtask
+
+        grid = np.zeros((4, 4), dtype=int)
+        grid[1, 1] = 3
+        out = grid.copy()
+        out[1, 1] = 5
+        env = ARCGridWorld(max_episode_len=6,
+                           feasible_actions={0: "submit", 1: "gray_recolor"},
+                           repr_level=1, input_pattern="start",
+                           observation_space_elements=["objects_emb"])
+        env.set_subtask(ARCSubtask("one_step", grid, out))
+        env.reset()
+        return env
+
+    def test_the_actions_that_reached_the_target_are_kept(self):
+        env = self._solving_env()
+        search = mcts.MCTS(env, max_iterations=20, max_depth=4)
+
+        search.search(mcts.env_state_snapshot(env))
+
+        assert search.env_simulator.solutions, "the playout solved it and said nothing"
+
+    def test_a_kept_solution_replays_into_a_solved_rollout(self):
+        env = self._solving_env()
+        search = mcts.MCTS(env, max_iterations=20, max_depth=4)
+        search.search(mcts.env_state_snapshot(env))
+
+        rollout = mcts.replay_solution(env, search.env_simulator.solutions[0])
+
+        assert rollout is not None
+        assert rollout["solved"] is True
+        assert rollout["max_int"] == rollout["target_int"]
+        assert len(rollout["observations"]) == len(rollout["actions"]) - 1
+
+    def test_the_trace_ends_on_submit(self):
+        """Appended, not found. The env ends the episode the moment the
+        intersection reaches the target, so no search would ever reach the
+        action - and a trace meant to be imitated needs an episode that
+        ends the way the agent should end one."""
+        env = self._solving_env()
+        search = mcts.MCTS(env, max_iterations=20, max_depth=4)
+        search.search(mcts.env_state_snapshot(env))
+
+        rollout = mcts.replay_solution(env, search.env_simulator.solutions[0])
+
+        assert rollout["actions"][-1][0] == 0
+        assert rollout["dones"][-1] is True
+        assert rollout["infos"][-1].get("appended_submit") is True
+
+    def test_a_candidate_that_does_not_solve_is_refused(self):
+        """The simulator is not the env, which is why it exists. A sequence
+        that only solves there is a bug to fail on, not an answer to keep."""
+        env = self._solving_env()
+
+        assert mcts.replay_solution(env, [[1, 0, 0]] * 3) is None or \
+               env.max_int == env.target_int
+
+        env2 = self._solving_env()
+        assert mcts.replay_solution(env2, [[0, 0, 0]]) is None
+
+    def test_shorter_solutions_win_and_duplicates_are_dropped(self):
+        simulator = mcts.EnvironmentSimulator(self._solving_env())
+
+        simulator.record_solution([[1, 0, 0], [1, 0, 0], [1, 0, 0]])
+        simulator.record_solution([[1, 0, 0]])
+        simulator.record_solution([[1, 0, 0]])
+
+        assert len(simulator.solutions) == 2
+        assert simulator.solutions[0] == [[1, 0, 0]]
+
+    def test_the_search_returns_the_solution_it_found(self):
+        """End to end, and the half that matters: a solution captured but
+        never handed back is as lost as one never captured. The search's own
+        rollouts follow the tree's chosen action at each real step, so they
+        cannot contain it - it has to be put there."""
+        env = self._solving_env()
+
+        rollouts = mcts.collect_mcts_rollouts(env, n_rollouts=1, mcts_iterations=20,
+                                               max_episode_len=4)
+
+        solved = [r for r in rollouts if r["solved"]]
+        assert solved, "the search solved it and returned nothing that says so"
+        assert solved[0]["actions"][-1][0] == 0, "the trace should end on submit"
+
+    def test_an_action_path_walks_back_to_the_root(self):
+        env = self._solving_env()
+        simulator = mcts.EnvironmentSimulator(env)
+        root = mcts.MCTSNode(mcts.env_state_snapshot(env),
+                             untried_actions=list(simulator.all_actions))
+        child = root.expand(simulator)
+        grandchild = child.expand(simulator)
+
+        assert root.action_path() == []
+        assert grandchild.action_path() == [list(child.action), list(grandchild.action)]
+
+
 class TestPlayoutPolicy:
     """The two terms, checked apart from each other and apart from a search.
 

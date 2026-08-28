@@ -286,18 +286,43 @@ class MCTSNode:
 
         return child
 
+    def action_path(self):
+        """The actions from the root down to this node, in order."""
+        path = []
+        node = self
+        while node.parent is not None:
+            path.append(list(node.action))
+            node = node.parent
+        path.reverse()
+        return path
+
     def simulate(self, env_simulator, max_depth=10):
         """Random rollout from this node's own state snapshot - stays on
-        copies throughout, never touches the live environment."""
+        copies throughout, never touches the live environment.
+
+        A playout that reaches the target hands the whole sequence that got
+        there to the simulator before returning. Only the reward used to
+        travel back up the tree, so a playout could match the target exactly
+        and the actions that did it went nowhere - the rollouts a search
+        returns are built separately, from the tree's chosen action at each
+        real step, and never see inside a playout. Measured over 8 tasks
+        that happens twice, on one of them; twice is not many, and it was
+        the whole of what the search had to show.
+        """
         state = self.state
         total_reward = 0
         depth = 0
         done = False
+        played = []
         while not done and depth < max_depth:
             action = env_simulator.sample_action()
             state, reward, done, truncated, _info = env_simulator.simulate_step(state, action)
+            played.append(list(action))
             total_reward += reward
             depth += 1
+            if state['max_int'] == env_simulator.env.target_int:
+                env_simulator.record_solution(self.action_path() + played)
+                break
             done = done or truncated
         return total_reward
 
@@ -441,6 +466,27 @@ class EnvironmentSimulator:
         # and all - which is what it has always done, and is not the same
         # thing as sampling the pool the tree expands over.
         self.policy = policy
+        #: Action sequences that reached the target, shortest first.
+        #: Candidates rather than results - they come off the simulator, and
+        #: replay_solution has to confirm one against the real env before
+        #: anything treats it as an answer.
+        self.solutions = []
+
+    def record_solution(self, actions, keep=8):
+        """One sequence that reached the target, from wherever it was found.
+
+        Shorter is better and duplicates are dropped: the same solution
+        turns up again every time the tree revisits the branch holding it,
+        and a long sequence with the answer somewhere in the middle is a
+        worse trace to learn from than the short one that stops there.
+        """
+        candidate = [list(a) for a in actions]
+        key = tuple(tuple(a) for a in candidate)
+        if any(key == tuple(tuple(a) for a in known) for known in self.solutions):
+            return
+        self.solutions.append(candidate)
+        self.solutions.sort(key=len)
+        del self.solutions[keep:]
 
     def simulate_step(self, state, action):
         """state: {"grid", "objects", "max_int", "prev_action"} snapshot.
@@ -543,6 +589,13 @@ class MCTS:
                 if child:
                     node = child
 
+            # A node can already be sitting on the answer - selection and
+            # expansion reach states in their own right, and a task solved
+            # in one action is solved before any playout begins. The
+            # playout's own check only sees what the playout itself does.
+            if node.state['max_int'] == self.env_simulator.env.target_int:
+                self.env_simulator.record_solution(node.action_path())
+
             # Simulation - random rollout from current node
             if not node.is_terminal:
                 simulation_reward = node.simulate(self.env_simulator, self.max_depth)
@@ -583,6 +636,62 @@ class MCTS:
             node = best_child
 
         return sequence
+
+def replay_solution(env, actions, submit_index=None) -> Dict[str, Any]:
+    """Run a candidate solution on the real env and return it as a rollout,
+    or None if it does not in fact solve the task.
+
+    Replayed rather than trusted. A sequence found in a playout is a claim
+    made by the simulator, and the simulator exists precisely because it is
+    not the env - a candidate that only solves there is a bug to fail on
+    rather than an answer to keep. The replay also produces the
+    observations, which a playout never builds.
+
+    The trace ends on submit, appended rather than searched for. The episode
+    is over by then: the env ends it the moment the intersection reaches the
+    target, so nothing in a search ever needs to decide to submit and no
+    playout would have found the action. A trace meant to be imitated needs
+    it anyway - an agent that never sees an episode end on submit has no
+    reason to learn to end one.
+
+    `env` is reset first and left holding the state the replay reached.
+    """
+    if submit_index is None:
+        submit_index = next((i for i, name in env.actions_dict.items()
+                             if name == 'submit'), None)
+    env.reset()
+    rollout = {'observations': [], 'actions': [], 'rewards': [],
+               'dones': [], 'infos': []}
+    total_reward = 0.0
+    for action in actions:
+        observation, reward, done, truncated, info = env.step(np.asarray(action))
+        rollout['observations'].append(observation)
+        rollout['actions'].append(list(action))
+        rollout['rewards'].append(reward)
+        rollout['dones'].append(done)
+        rollout['infos'].append(info)
+        total_reward += reward
+        if env.max_int == env.target_int or done or truncated:
+            break
+
+    if env.max_int != env.target_int:
+        return None
+
+    if submit_index is not None:
+        rollout['actions'].append([submit_index, 0, 0])
+        rollout['rewards'].append(env._submit_reward(env.max_int))
+        rollout['dones'].append(True)
+        rollout['infos'].append({'appended_submit': True})
+        total_reward += rollout['rewards'][-1]
+
+    rollout['total_reward'] = total_reward
+    rollout['length'] = len(rollout['actions'])
+    rollout['solved'] = True
+    rollout['max_int'] = int(env.max_int)
+    rollout['base_int'] = int(env.base_int)
+    rollout['target_int'] = int(env.target_int)
+    return rollout
+
 
 def env_state_snapshot(env) -> Dict[str, Any]:
     """Build a {"grid", "objects", "max_int", "prev_action"} snapshot of an
@@ -677,6 +786,16 @@ def collect_mcts_rollouts(env,
         # intersection by more than the steps around it cost. Ranking needs
         # something to rank.
         rollouts.append(rollout)
+
+    # Anything a playout solved, verified and turned into a trace. The
+    # search's own rollouts cannot contain these: they follow the tree's
+    # chosen action at each real step, and a playout is explored and then
+    # discarded. Verified after the loop rather than as they arrive, so the
+    # replay does not disturb the env in the middle of a rollout.
+    for candidate in mcts.env_simulator.solutions:
+        solved = replay_solution(env, candidate)
+        if solved is not None:
+            rollouts.insert(0, solved)
 
     return rollouts
 

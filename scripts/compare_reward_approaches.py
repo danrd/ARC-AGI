@@ -12,14 +12,19 @@ approach, reported as the fraction of the distance closed:
 
 0.0 is the grid as it started, 1.0 is solved.
 
-Scored by the best intersection reached at ANY point in the search, not by
-where rollouts ended. A search looks for a path and keeps the best prefix
-of one, so a rollout that touched the target at step seven and wandered off
-by step twenty-five is not a failure - and the endpoint metric records it
-as one. The endpoint is still reported, second, because the gap between the
-two says how much the search finds and then loses. Measured over 12 tasks
-the gap is large: peak +0.186 against endpoint +0.033 for the default
-playout.
+Scored by the best intersection reached at ANY point in the search - every
+simulated step, including the playouts a rollout never walks. A search
+looks for a path and keeps the best prefix of one, so a rollout that
+touched the target at step seven and wandered off by step twenty-five is
+not a failure, and scoring by where it ended records it as one.
+
+The second figure used to be that endpoint. It no longer is: rollouts are
+now cut at their own peak, so a returned trace ends at its best state by
+construction. What is reported instead is the best a *returned* rollout
+reached, and the gap to the figure above is what the tree touched inside a
+playout and never committed to - 0.264 against 0.080 on a 20-task pilot,
+so most of what the search finds is found in playouts. That gap is what
+record_solution exists to recover.
 
 Usage:
     python scripts/compare_reward_approaches.py                 # 36 tasks, ~30 min
@@ -255,6 +260,13 @@ def evaluate(approach, tasks, actions, args):
                 elif on_submit:
                     endings["submitted, unsolved"] += 1
                     submit_progress.append(closed)
+                elif rollout.get("truncated_at_peak"):
+                    # A short rollout no longer means the episode stopped
+                    # early: collect_mcts_rollouts cuts the trace at the best
+                    # state it passed through and throws the walk back
+                    # downhill away. Reading that as "ended early" counted
+                    # the cut as a behaviour of the search.
+                    endings["cut back to its peak"] += 1
                 elif rollout["length"] < args.episode_len:
                     endings["ended early, neither"] += 1
                 else:
@@ -297,12 +309,18 @@ def report(approach, result, elapsed):
     print(f"    tasks that moved at all: {len(moved)}/{len(progress)}")
     ends = list(result.get("endpoints", {}).values())
     if ends:
-        print(f"  where rollouts ended, for contrast: mean "
+        # Not "where rollouts ended" any more: the trace is cut at its peak,
+        # so a returned rollout ends at its own best state by construction.
+        # What this contrasts is the two peaks - the best any simulated step
+        # touched, above, against the best a returned rollout reached. The
+        # gap is what the tree found inside a playout and never walked to
+        # for real, which is the whole reason record_solution exists.
+        print(f"  best a returned rollout reached: mean "
               f"{statistics.mean(ends):+.3f} - the gap to the peak above is "
-              f"what the search found and did not keep")
+              f"what the search touched in a playout and did not commit to")
     print("  how episodes ended:")
-    for kind in ("solved", "submitted, unsolved", "ended early, neither",
-                 "ran to the cap"):
+    for kind in ("solved", "submitted, unsolved", "cut back to its peak",
+                 "ended early, neither", "ran to the cap"):
         n = result["endings"].get(kind, 0)
         print(f"    {kind:22s} {n:5d}  ({100 * n / total:.1f}%)")
     if result["submit_progress"]:

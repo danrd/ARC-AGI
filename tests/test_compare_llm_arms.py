@@ -101,8 +101,9 @@ class TestReadingACheckpoint:
 
 
 class _FakeRun:
-    def __init__(self, name, run_id):
+    def __init__(self, name, run_id, model="Qwen3-30B", description="with summary"):
         self.name, self.id = name, run_id
+        self.config = {"model": model, "run_description": description}
 
 
 class _FakeApi:
@@ -126,12 +127,12 @@ class TestFindingAnArm:
         assert set(found) == {"easy", "medium"}
         assert found["easy"].id == "a1"
 
-    def test_the_arm_is_looked_up_in_the_config(self):
-        api = _FakeApi([])
-
-        script.find_runs(api, "e/p", "with summary")
-
-        assert api.filters == {"config.run_description": "with summary"}
+    def test_the_arm_is_matched_as_a_substring_not_for_equality(self):
+        """Descriptions are free text typed per run and they drift - "with
+        summary" against "with summary, without knowledge injection". An
+        exact match is a query that returns nothing and says nothing."""
+        assert script.arm_filters("with summary") == {
+            "config.run_description": {"$regex": "with summary"}}
 
     def test_a_rerun_does_not_replace_the_newer_run(self):
         """api.runs returns newest first; a shard run twice should report
@@ -141,8 +142,22 @@ class TestFindingAnArm:
         assert script.find_runs(api, "e/p", "x")["easy"].id == "new"
 
     def test_a_model_filter_is_a_substring_match(self):
-        api = _FakeApi([])
+        assert script.arm_filters("x", model="Qwen3-30B")["config.model"] == {
+            "$regex": "Qwen3-30B"}
 
-        script.find_runs(api, "e/p", "x", model="Qwen3-30B")
+    def test_one_description_spanning_two_models_is_refused(self):
+        """The failure this exists for: quietly keeping the first run would
+        compare one model's baseline against another model's summary arm,
+        and the result would look entirely ordinary."""
+        api = _FakeApi([_FakeRun("easy", "q", model="Qwen3-30B"),
+                        _FakeRun("easy", "g", model="gemma-4-31B")])
 
-        assert api.filters["config.model"] == {"$regex": "Qwen3-30B"}
+        with pytest.raises(SystemExit) as raised:
+            script.find_runs(api, "e/p", "with summary")
+
+        assert "--model" in str(raised.value)
+
+    def test_narrowing_by_model_resolves_it(self):
+        api = _FakeApi([_FakeRun("easy", "q", model="Qwen3-30B")])
+
+        assert script.find_runs(api, "e/p", "with summary", model="Qwen")["easy"].id == "q"

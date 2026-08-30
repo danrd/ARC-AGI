@@ -54,21 +54,70 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 
+def arm_filters(description: str, model: str | None = None) -> dict:
+    """What identifies one arm in wandb.
+
+    The description is matched as a substring, not for equality. Stored
+    descriptions are free text typed per run and they drift - "with
+    summary" against "with summary, without knowledge injection" - so an
+    exact match is a query that returns nothing and says nothing about why.
+
+    `display_name` is the run's name; `name` in a filter means the run id
+    instead, which is the usual way one of these comes back empty.
+    """
+    filters = {"config.run_description": {"$regex": description}}
+    if model:
+        filters["config.model"] = {"$regex": model}
+    return filters
+
+
 def find_runs(api, path: str, description: str, model: str | None = None) -> dict:
     """Every run of one arm, keyed by the shard it covered.
 
-    `display_name` is the run's name; `name` in a filter means the run id
-    instead, which is the usual way this query comes back empty.
+    Ambiguity is refused rather than resolved. One description can cover
+    several models, and quietly keeping whichever run the iterator happened
+    to yield first would compare one model's baseline against another
+    model's summary arm - a result that looks ordinary and means nothing.
+    A shard run twice by the same model is different: that is a re-run, and
+    the newer one wins.
     """
-    filters = {"config.run_description": description}
-    if model:
-        filters["config.model"] = {"$regex": model}
+    candidates = collections.defaultdict(list)
+    for run in api.runs(path, filters=arm_filters(description, model)):
+        candidates[run.name].append(run)
+
     found = {}
-    for run in api.runs(path, filters=filters):
-        # First wins: api.runs returns newest first, and a re-run of one
-        # shard should not be silently mixed with the run it replaced.
-        found.setdefault(run.name, run)
+    for shard, runs in candidates.items():
+        models = {str(r.config.get("model", "")) for r in runs}
+        if len(models) > 1:
+            raise SystemExit(
+                f"'{description}' matches {len(runs)} runs of shard '{shard}' "
+                f"across {len(models)} models:\n  " + "\n  ".join(sorted(models)) +
+                "\nNarrow it with --model, or run --list to see what is stored.")
+        # api.runs returns newest first, so a re-run of one shard reports
+        # the newer result rather than whichever came last.
+        found[shard] = runs[0]
     return found
+
+
+def describe_project(api, path: str, model: str | None = None) -> None:
+    """What is actually stored, so an arm can be named rather than guessed.
+
+    The two strings this script takes are typed by hand into a run months
+    apart, and a filter that matches nothing is indistinguishable from a
+    project that holds nothing.
+    """
+    filters = {"config.model": {"$regex": model}} if model else None
+    grouped = collections.defaultdict(list)
+    for run in api.runs(path, filters=filters):
+        grouped[(str(run.config.get("model", "?")),
+                 str(run.config.get("run_description", "?")))].append(run)
+
+    if not grouped:
+        raise SystemExit(f"{path} holds no runs matching that")
+    print(f"{'model':46s} {'run_description':44s} {'n':>3s}  shards")
+    for (model_name, description), runs in sorted(grouped.items()):
+        shards = ", ".join(sorted(r.name for r in runs))
+        print(f"{model_name[-46:]:46s} {description[:44]:44s} {len(runs):3d}  {shards}")
 
 
 def load_checkpoint(api, path: str, run) -> dict | None:
@@ -184,18 +233,33 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("path", help="entity/project")
-    parser.add_argument("arm_a", help="config.run_description of the baseline arm")
-    parser.add_argument("arm_b", help="config.run_description of the arm under test")
+    parser.add_argument("arm_a", nargs="?",
+                        help="substring of the baseline arm's config.run_description")
+    parser.add_argument("arm_b", nargs="?",
+                        help="substring of the run_description of the arm under test")
     parser.add_argument("--model", help="substring of config.model, when several were run")
+    parser.add_argument("--list", action="store_true",
+                        help="print the model/run_description combinations the "
+                             "project holds and exit - descriptions are free text "
+                             "and drift, so name them from this rather than memory")
     parser.add_argument("--detail", action="store_true",
                         help="print each flipped task: what the prompts differ by "
                              "and what each arm answered")
-    parser.add_argument("--detail-dir", type=Path,
-                        help="also write one PNG per flipped task here")
+    parser.add_argument("--detail-dir", type=Path, metavar="DIR",
+                        help="directory to write one PNG per flipped task into, "
+                             "showing that task's train pairs and answer; created "
+                             "if missing. Saved rather than shown because these "
+                             "scripts run under !python, where a figure has "
+                             "nowhere to appear")
     args = parser.parse_args()
 
     import wandb
     api = wandb.Api()
+    if args.list:
+        describe_project(api, args.path, args.model)
+        return
+    if not args.arm_a or not args.arm_b:
+        parser.error("two arms are required unless --list is given")
     a_runs = find_runs(api, args.path, args.arm_a, args.model)
     b_runs = find_runs(api, args.path, args.arm_b, args.model)
     shards = sorted(set(a_runs) & set(b_runs))
@@ -203,11 +267,8 @@ def main() -> None:
     print(f"B ({args.arm_b}): {sorted(b_runs)}")
     print(f"paired shards: {shards}\n")
     if not shards:
-        raise SystemExit(
-            "nothing paired. Check the descriptions against what is stored:\n"
-            "  api.runs(path)[0].config['run_description']\n"
-            "and remember that display_name is the run's name - `name` in a "
-            "filter means its id.")
+        raise SystemExit("nothing paired - run with --list to see the "
+                         "model/run_description combinations that exist")
 
     gained_all, lost_all, flips = [], [], []
     totals = collections.Counter()

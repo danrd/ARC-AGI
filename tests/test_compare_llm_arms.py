@@ -161,3 +161,66 @@ class TestFindingAnArm:
         api = _FakeApi([_FakeRun("easy", "q", model="Qwen3-30B")])
 
         assert script.find_runs(api, "e/p", "with summary", model="Qwen")["easy"].id == "q"
+
+
+class TestTheReportIsOneFile:
+    """Written because the grids are otherwise never seen: a figure drawn
+    under !python has nowhere to appear, and a directory of PNGs beside a
+    terminal dump is three things to send instead of one."""
+
+    @staticmethod
+    def _side(text="0 1", prompt="a\nb", score=0.5):
+        return {"score": score, "prompt_text": prompt, "prompt": len(prompt),
+                "generated": text, "minutes": 0.3}
+
+    def _write(self, tmp_path, flips, **kwargs):
+        import collections
+
+        path = tmp_path / "report.html"
+        script.write_report(
+            path, "arm A", "arm B",
+            per_shard=[("easy", 95, 4, 3, 0, 1, 31, 27)],
+            cost=[("easy", 2592, 3086, 187, 187, 2.8, 1.9)],
+            totals=collections.Counter(tasks=95, solved_a=4, solved_b=3),
+            gained=["x"], lost=["y"], p_value=0.45, flips=flips,
+            with_images=False, **kwargs)
+        return path.read_text(encoding="utf-8")
+
+    def test_it_holds_the_numbers_and_the_flips(self, tmp_path):
+        page = self._write(tmp_path, [("2c0b0aff", "gained by B",
+                                       self._side(), self._side())])
+
+        assert "2c0b0aff" in page and "gained by B" in page
+        assert "not significant" in page
+        assert "easy" in page
+
+    def test_a_generation_that_looks_like_markup_is_escaped(self, tmp_path):
+        """Answers are model output and prompts carry <SUMMARY> tags - one
+        unescaped bracket silently eats the rest of the report."""
+        page = self._write(tmp_path, [("t", "gained by B",
+                                       self._side(text="<script>bad()</script>"),
+                                       self._side(prompt="<SUMMARY>\nfindings"))])
+
+        assert "<script>bad()</script>" not in page
+        assert "&lt;script&gt;" in page
+        assert "&lt;SUMMARY&gt;" in page
+
+    def test_the_prompt_difference_is_marked_up_by_direction(self, tmp_path):
+        page = self._write(tmp_path, [("t", "gained by B",
+                                       self._side(prompt="a"),
+                                       self._side(prompt="a\nb"))])
+
+        assert "class=add" in page
+
+    def test_identical_prompts_say_so_rather_than_showing_an_empty_block(self, tmp_path):
+        page = self._write(tmp_path, [("t", "lost by B",
+                                       self._side(prompt="same"),
+                                       self._side(prompt="same"))])
+
+        assert "the prompts are identical" in page
+
+    def test_no_flips_still_produces_a_readable_report(self, tmp_path):
+        page = self._write(tmp_path, [])
+
+        assert "0 tasks that flipped" in page
+        assert "Cost" in page

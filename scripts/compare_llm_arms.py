@@ -28,21 +28,26 @@ and quietly continues on the next tier). The same comparison looked like a
 6x slowdown from adding a summary and was 1.17x on prompt and 1.00x on
 generation.
 
+    python scripts/compare_llm_arms.py danrd/llm_run --list
     python scripts/compare_llm_arms.py danrd/llm_run \\
-        "without knowledge injection" "with summary"
-    python scripts/compare_llm_arms.py ... --detail --detail-dir flips/
+        "without knowledge injection" "with summary" --report arms.html
 
---detail is the part worth running. Seven flipped tasks out of 370 will
+--report is the part worth running. Seven flipped tasks out of 370 will
 never reach significance, but seven tasks can be read: what the symbolic
 summary actually said about each, how the two answers differed, and
 whether the gains share anything. That is the only conclusion a sample this
-size can support, and it is not a number.
+size can support, and it is not a number. It writes one self-contained
+file - grids inlined as data URIs - because a figure drawn under !python
+has nowhere to appear, and because a report is something to send to
+someone rather than to scroll past in a cell's output.
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import collections
 import difflib
+import html
 import json
 import math
 import sys
@@ -182,10 +187,16 @@ def prompt_difference(before: str, after: str, context: int = 0) -> list:
             if line[:1] in "+-" and not line.startswith(("+++", "---"))]
 
 
-def save_task_image(task_id: str, directory: Path):
-    """The task's train pairs and answer as a PNG. Saved rather than shown:
-    these scripts are run with !python from a notebook, where a figure has
-    nowhere to appear."""
+def task_image(task_id: str) -> bytes:
+    """The task's train pairs and answer as PNG bytes.
+
+    Rendered to memory rather than to a window: these scripts run under
+    !python from a notebook, where a figure has nowhere to appear. The
+    bytes go into the HTML report as a data URI so the report is one file
+    that can be sent to someone.
+    """
+    import io
+
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -193,14 +204,114 @@ def save_task_image(task_id: str, directory: Path):
     from data.datasets.ARC.arc_dataset import ARCDataset
     from utils.plotting import plot_task
 
-    if not hasattr(save_task_image, "_dataset"):
-        save_task_image._dataset = ARCDataset()
-    figure = plot_task(task_id, save_task_image._dataset)
+    if not hasattr(task_image, "_dataset"):
+        task_image._dataset = ARCDataset()
+    figure = plot_task(task_id, task_image._dataset)
+    buffer = io.BytesIO()
+    figure.savefig(buffer, format="png", bbox_inches="tight", dpi=110)
+    plt.close(figure)
+    return buffer.getvalue()
+
+
+def save_task_image(task_id: str, directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{task_id}.png"
-    figure.savefig(path, bbox_inches="tight", dpi=110)
-    plt.close(figure)
+    path.write_bytes(task_image(task_id))
     return path
+
+
+REPORT_STYLE = """
+:root { color-scheme: light dark; }
+body { font: 14px/1.5 system-ui, sans-serif; margin: 0 auto; padding: 2rem;
+       max-width: 1100px; }
+h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2.5rem; }
+h3 { font-size: 1rem; margin: 2rem 0 .5rem; }
+table { border-collapse: collapse; margin: .5rem 0; }
+th, td { padding: .25rem .75rem; text-align: right; border-bottom: 1px solid #8884; }
+th:first-child, td:first-child { text-align: left; }
+pre { overflow-x: auto; padding: .6rem .8rem; background: #8881; border-radius: 4px;
+      font-size: 12px; margin: .4rem 0; }
+.add { color: #1a7f37; } .del { color: #cf222e; }
+img { max-width: 100%; border: 1px solid #8884; border-radius: 4px; }
+.note { color: #8889; font-size: 13px; }
+.flip { border-left: 3px solid #8884; padding-left: 1rem; margin: 2rem 0; }
+"""
+
+
+def _table(headers, rows) -> str:
+    head = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
+    body = "".join("<tr>" + "".join(f"<td>{html.escape(str(c))}</td>" for c in row)
+                   + "</tr>" for row in rows)
+    return f"<table><tr>{head}</tr>{body}</table>"
+
+
+def _diff_html(lines) -> str:
+    if not lines:
+        return "<p class=note>the prompts are identical</p>"
+    out = []
+    for line in lines:
+        css = "add" if line.startswith("+") else "del"
+        out.append(f"<span class={css}>{html.escape(line)}</span>")
+    return "<pre>" + "\n".join(out) + "</pre>"
+
+
+def write_report(path: Path, arm_a: str, arm_b: str, per_shard, cost,
+                 totals, gained, lost, p_value, flips, with_images: bool) -> None:
+    """One self-contained file: tables, per-task grids and prompt diffs.
+
+    Images are inlined as data URIs rather than written alongside, so the
+    report is a single thing to open or send. It is also the only way the
+    grids get seen at all - a figure drawn under !python has nowhere to go.
+    """
+    parts = [f"<style>{REPORT_STYLE}</style>",
+             "<h1>Prompt arms compared</h1>",
+             f"<p class=note>A: {html.escape(arm_a)}<br>B: {html.escape(arm_b)}</p>",
+             "<h2>By shard</h2>",
+             _table(["shard", "tasks", "solved A", "solved B", "gained", "lost",
+                     "score up", "score down"], per_shard),
+             "<h2>Solved, pooled</h2>",
+             f"<p>A {totals['solved_a']}, B {totals['solved_b']} of {totals['tasks']}. "
+             f"Gained {len(gained)}, lost {len(lost)}. Exact two-sided "
+             f"p = {p_value:.3f} on {len(gained) + len(lost)} discordant pairs "
+             f"&mdash; {'significant' if p_value < 0.05 else 'not significant'}.</p>",
+             "<p class=note>A binary outcome at this base rate yields a handful of "
+             "discordant pairs however many tasks are run, so the flipped tasks "
+             "below are the usable output, not the p-value.</p>",
+             "<h2>Cost</h2>",
+             _table(["shard", "prompt A", "prompt B", "generated A", "generated B",
+                     "min/task A", "min/task B"],
+                    [(s, f"{pa:.0f}", f"{pb:.0f}", f"{ga:.0f}", f"{gb:.0f}",
+                      f"{ma:.2f}", f"{mb:.2f}") for s, pa, pb, ga, gb, ma, mb in cost]),
+             "<p class=note>Read the prompt and generation columns before reading "
+             "anything into time: a per-task time that swings between shards of the "
+             "same arm is the backend changing under the run, not the prompt.</p>"]
+
+    parts.append(f"<h2>The {len(flips)} tasks that flipped</h2>")
+    for task_id, verdict, a, b in flips:
+        parts.append(f"<div class=flip><h3>{html.escape(task_id)} &mdash; "
+                     f"{html.escape(verdict)}</h3>")
+        if with_images:
+            try:
+                encoded = base64.b64encode(task_image(task_id)).decode()
+                parts.append(f'<img src="data:image/png;base64,{encoded}" '
+                             f'alt="{html.escape(task_id)}">')
+            except Exception as exc:
+                parts.append(f"<p class=note>could not plot: "
+                             f"{html.escape(type(exc).__name__)}</p>")
+        parts.append(f"<p class=note>prompt {a['prompt']} chars in A, "
+                     f"{b['prompt']} in B</p>")
+        parts.append(_diff_html(prompt_difference(a["prompt_text"], b["prompt_text"])))
+        for label, side in ((arm_a, a), (arm_b, b)):
+            parts.append(f"<p class=note>[{html.escape(label)}] scored "
+                         f"{side['score']:.3f}</p>"
+                         f"<pre>{html.escape(side['generated'].strip())}</pre>")
+        parts.append("</div>")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("<!doctype html><meta charset=utf-8>"
+                    "<title>Prompt arms compared</title>" + "".join(parts),
+                    encoding="utf-8")
+    print(f"\nwrote {path}")
 
 
 def report_flip(task_id: str, verdict: str, a: dict, b: dict,
@@ -245,6 +356,13 @@ def main() -> None:
     parser.add_argument("--detail", action="store_true",
                         help="print each flipped task: what the prompts differ by "
                              "and what each arm answered")
+    parser.add_argument("--report", type=Path, metavar="FILE.html",
+                        help="write one self-contained HTML file with the tables, "
+                             "each flipped task's grids, the prompt difference and "
+                             "both answers. Images are inlined, so the file is the "
+                             "whole report and can be sent as it is - which is also "
+                             "the only way the grids get seen, since a figure drawn "
+                             "under !python has nowhere to appear")
     parser.add_argument("--detail-dir", type=Path, metavar="DIR",
                         help="directory to write one PNG per flipped task into, "
                              "showing that task's train pairs and answer; created "
@@ -345,6 +463,10 @@ def main() -> None:
         for task_id, verdict, a, b in flips:
             report_flip(task_id, verdict, a, b, args.arm_a, args.arm_b,
                         args.detail_dir)
+
+    if args.report:
+        write_report(args.report, args.arm_a, args.arm_b, per_shard, cost,
+                     totals, gained_all, lost_all, p, flips, with_images=True)
 
 
 if __name__ == "__main__":

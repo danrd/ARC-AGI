@@ -156,6 +156,12 @@ def load_tasks(dataset, span):
 
 
 _PEAK = {"value": None}
+#: index -> transform name, so a recorded action reads as something an agent
+#: roster can be intersected with rather than as a number. Filled by main.
+_ACTION_NAMES = {}
+#: action name -> the largest single-step gain in intersection it produced on
+#: the task being searched. Reset per task by run_one.
+_EFFECTIVE = {}
 _ORIGINAL_STEP = mcts.EnvironmentSimulator.simulate_step
 _ORIGINAL_INIT = mcts.EnvironmentSimulator.__init__
 
@@ -163,11 +169,24 @@ _ORIGINAL_INIT = mcts.EnvironmentSimulator.__init__
 def _watch_peak(self, state, action):
     """Every simulated step, not only the ones a rollout kept - the tree
     explores far more than it returns, and the best state it touched is
-    what the search actually found."""
+    what the search actually found.
+
+    Which action produced each gain is recorded too. It costs one dict
+    write on the steps that improve anything and it is the whole of what
+    the analyst wants out of a search: the set of transforms that moved
+    this task, to intersect against the set an agent owns. The first
+    full scan measured the search and kept none of it - 16 CPU-hours for
+    one number per task.
+    """
     result = _ORIGINAL_STEP(self, state, action)
     reached = result[0]["max_int"]
     if _PEAK["value"] is None or reached > _PEAK["value"]:
         _PEAK["value"] = reached
+    gain = reached - state["max_int"]
+    if gain > 0:
+        name = _ACTION_NAMES.get(int(np.asarray(action).reshape(-1)[0]))
+        if name is not None:
+            _EFFECTIVE[name] = max(_EFFECTIVE.get(name, 0), int(gain))
     return result
 
 
@@ -210,6 +229,7 @@ def run_one(task, actions, approach, args):
     env.set_subtask(ARCSubtask(f"{task_id}_0", inp, out))
     base, target = env.max_int, env.target_int
     _PEAK["value"] = base
+    _EFFECTIVE.clear()
     signal.alarm(args.timeout)
     try:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -236,6 +256,13 @@ def evaluate(approach, tasks, actions, args):
     lengths = []
     dropped = 0
     drop_reasons = collections.Counter()
+    #: task -> {action name: best gain}, pooled over the task's repeats. What
+    #: the analyst intersects against an agent's roster.
+    effective = {}
+    #: task -> action sequences that reached the target, shortest first. Cut
+    #: at their peak and ending on an appended submit (see mcts.replay_solution),
+    #: so they are behavioural-cloning traces as they stand.
+    solutions = {}
     for task in tasks:
         best = best_peak = None
         for _ in range(args.repeats):
@@ -245,6 +272,9 @@ def evaluate(approach, tasks, actions, args):
                 drop_reasons[why] += 1
                 continue
             best_peak = peak if best_peak is None else max(best_peak, peak)
+            for name, gain in _EFFECTIVE.items():
+                found = effective.setdefault(task[0], {})
+                found[name] = max(found.get(name, 0), gain)
             for rollout in rollouts:
                 span = rollout["target_int"] - rollout["base_int"]
                 closed = ((rollout["max_int"] - rollout["base_int"]) / span
@@ -257,6 +287,14 @@ def evaluate(approach, tasks, actions, args):
                              and int(np.asarray(last).ravel()[0]) == 0)
                 if rollout["solved"]:
                     endings["solved"] += 1
+                    # The trace, not just the tally. These are what the first
+                    # full scan produced and discarded - 26 solved tasks whose
+                    # sequences existed in memory and went nowhere.
+                    trace = [[int(x) for x in np.asarray(a).reshape(-1)]
+                             for a in rollout["actions"]]
+                    kept = solutions.setdefault(task[0], [])
+                    if trace and trace not in kept:
+                        kept.append(trace)
                 elif on_submit:
                     endings["submitted, unsolved"] += 1
                     submit_progress.append(closed)
@@ -275,8 +313,12 @@ def evaluate(approach, tasks, actions, args):
             per_task[task[0]] = best_peak
         if best is not None:
             endpoints[task[0]] = best
+    for task_id in solutions:
+        solutions[task_id].sort(key=len)
     return {
         "per_task": per_task,
+        "effective_actions": effective,
+        "solutions": solutions,
         "endpoints": endpoints,
         "endings": dict(endings),
         "submit_progress": submit_progress,
@@ -328,6 +370,35 @@ def report(approach, result, elapsed):
               f"mean {np.mean(result['submit_progress']):.3f} "
               f"max {max(result['submit_progress']):.3f}")
     print(f"  mean length {statistics.mean(result['lengths']):.1f}")
+
+    effective = result.get("effective_actions") or {}
+    if effective:
+        pooled = collections.Counter()
+        for found in effective.values():
+            pooled.update(found.keys())
+        moved = [t for t, found in effective.items() if found]
+        per_task = [len(f) for f in effective.values()]
+        print(f"  actions that moved something: {len(pooled)} distinct over "
+              f"{len(moved)} tasks, median {statistics.median(per_task):.0f} per task")
+        # Any gain at all is a low bar - a single cell counts - and on a
+        # 14-task pilot it admitted 29 of 89 actions on the median task,
+        # which is too broad to intersect an agent's roster against. The
+        # gain is recorded per action so a consumer can raise the bar; this
+        # says what raising it buys before anyone reads the flat list.
+        for threshold in (5, 10, 25):
+            narrowed = [sum(1 for g in f.values() if g >= threshold)
+                        for f in effective.values()]
+            print(f"    at >= {threshold:2d} cells gained: "
+                  f"median {statistics.median(narrowed):.0f} per task, "
+                  f"{sum(1 for n in narrowed if n)} tasks keep any")
+        top = ", ".join(f"{name} ({n})" for name, n in pooled.most_common(6))
+        print(f"    most often effective: {top}")
+    solutions = result.get("solutions") or {}
+    if solutions:
+        lengths = [len(t[0]) for t in solutions.values() if t]
+        print(f"  solving traces kept: {sum(len(t) for t in solutions.values())} "
+              f"over {len(solutions)} tasks, shortest {min(lengths)} actions, "
+              f"median {statistics.median(lengths):.0f}")
 
 
 def compare(first, second, results):
@@ -406,6 +477,8 @@ def main() -> None:
 
     install_playout(args.playout)
     actions = build_actions(args.colours, args.directions)
+    _ACTION_NAMES.clear()
+    _ACTION_NAMES.update(actions)
     tasks, total = load_tasks(args.dataset, args.tasks)
     if not tasks:
         raise SystemExit(f"--tasks {args.tasks[0]}-{args.tasks[1]} selects nothing; "
@@ -438,7 +511,11 @@ def main() -> None:
             {"span": [args.tasks[0], args.tasks[0] + len(tasks)],
              "total_available": total,
              "approaches": {
-                 str(k): {"per_task": v["per_task"], "endings": v["endings"],
+                 str(k): {"per_task": v["per_task"],
+                          "effective_actions": v["effective_actions"],
+                          "solutions": v["solutions"],
+                          "action_names": {str(i): n for i, n in _ACTION_NAMES.items()},
+                          "endings": v["endings"],
                           "submit_progress": v["submit_progress"],
                           "dropped": v["dropped"],
                           "drop_reasons": v.get("drop_reasons", {})}

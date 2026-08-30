@@ -170,7 +170,8 @@ def run_one(task, actions, approach, args):
             rollouts = mcts.rollout_preparation(
                 env, method="mcts", n_initial_rollouts=args.rollouts,
                 mcts_iterations=args.iterations, top_k=args.top_k,
-                n_rounds=args.rounds, keep_fraction=args.keep, min_pool=4)
+                n_rounds=args.rounds, keep_fraction=args.keep, min_pool=4,
+                c=args.c)
     except TimedOut:
         return None, None
     except Exception:
@@ -307,6 +308,12 @@ def main() -> None:
     parser.add_argument("--keep", type=float, default=0.5,
                         help="fraction of the action pool kept between rounds")
     parser.add_argument("--iterations", type=int, default=40, help="MCTS iterations")
+    parser.add_argument("--c", type=float, default=1.414,
+                        help="UCB1 exploration constant. The honest knob for how "
+                             "widely the tree looks - reward_approach used to move "
+                             "it as a side effect, since it divides every step "
+                             "reward by a different max_reward (5M under approach "
+                             "1, 11M under 2) against this same fixed constant")
     parser.add_argument("--episode-len", type=int, default=25)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--timeout", type=int, default=120,

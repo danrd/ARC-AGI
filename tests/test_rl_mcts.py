@@ -46,12 +46,54 @@ def test_the_search_does_not_enumerate_empty_object_slots(env):
     visible = env.visible_object_count()
     assert visible < env.max_objects, "fixture task should not fill every slot"
 
-    actions = mcts.enumerate_actions(env)
+    actions = mcts.enumerate_actions(env, include_submit=True)
 
     assert len(actions) == len(env.actions_dict) * visible * visible
     assert all(a[1] < visible and a[2] < visible for a in actions)
     # Still real actions, not a narrower space of their own.
     assert all(env.action_space.contains(np.array(a)) for a in actions)
+
+
+class TestSubmitIsNotSearched:
+    """A search knows when it has reached the target, so it never needs to
+    decide to submit - and the action can only end an episode early. Over
+    four measured configurations it ended 19-26% of them, each cut short of
+    the cap by an action that cannot improve the grid, while also putting a
+    terminal child under every node whose negative value dragged the
+    branch's UCB down.
+    """
+
+    def test_submit_is_absent_from_the_pool(self, env):
+        actions = mcts.enumerate_actions(env)
+        index = mcts.submit_index(env)
+
+        assert index is not None, "fixture vocabulary should contain submit"
+        assert all(a[0] != index for a in actions)
+
+    def test_dropping_it_removes_exactly_one_action_per_object_pair(self, env):
+        visible = env.visible_object_count()
+
+        assert len(mcts.enumerate_actions(env)) == (
+            len(env.actions_dict) - 1) * visible * visible
+
+    def test_it_can_be_asked_for_when_the_submit_reward_is_the_subject(self, env):
+        """Measuring the submit reward needs submit in the tree: that is the
+        only route by which it reaches a node value at all."""
+        index = mcts.submit_index(env)
+
+        assert any(a[0] == index
+                   for a in mcts.enumerate_actions(env, include_submit=True))
+
+    def test_a_vocabulary_without_submit_is_left_alone(self, arc_task):
+        """Nothing to drop is not an error - and must not silently drop
+        index 0, which in such a vocabulary names a real transform."""
+        e = ARCGridWorld(max_episode_len=4, feasible_actions={0: "rotate90"})
+        e.set_subtask(arc_task.subtasks[0])
+        e.reset()
+
+        assert mcts.submit_index(e) is None
+        assert mcts.enumerate_actions(e) == mcts.enumerate_actions(e, include_submit=True)
+        assert any(a[0] == 0 for a in mcts.enumerate_actions(e))
 
 
 def test_the_tree_expands_over_the_same_actions_it_tests(env):
@@ -402,8 +444,14 @@ class TestCapturingASolutionAPlayoutFound:
         assert solved, "the search solved it and returned nothing that says so"
         assert solved[0]["actions"][-1][0] == 0, "the trace should end on submit"
 
-    def test_an_action_path_walks_back_to_the_root(self):
-        env = self._solving_env()
+    def test_an_action_path_walks_back_to_the_root(self, arc_task):
+        # Two transforms, not _solving_env's one: a child inherits the
+        # actions left after its parent popped one, so a single-action pool
+        # leaves nothing to expand a grandchild from.
+        env = ARCGridWorld(max_episode_len=4,
+                           feasible_actions={0: "submit", 1: "rotate90", 2: "rotate180"})
+        env.set_subtask(arc_task.subtasks[0])
+        env.reset()
         simulator = mcts.EnvironmentSimulator(env)
         root = mcts.MCTSNode(mcts.env_state_snapshot(env),
                              untried_actions=list(simulator.all_actions))
@@ -740,3 +788,108 @@ def test_mcts_search_does_not_crash(env):
 
     best_action = search.get_best_action(root)
     assert env.action_space.contains(np.array(best_action))
+
+
+class TestTracesAreCutAtTheirPeak:
+    """A rollout is kept for imitation, so what it ends on is what it
+    teaches. Measured over four configurations the searches ended a mean
+    0.04-0.21 of the gap *below* where they started while their peaks stood
+    at +0.25 - the whole of that spread is the search walking back downhill
+    after its best state, and cloning the trace whole teaches both the half
+    that found something and the half that undid it.
+    """
+
+    @staticmethod
+    def _env_with_walk(walk):
+        """An env whose real steps trace `walk` as the intersection, so the
+        shape of the rollout can be checked against a known peak rather
+        than against whatever a real search happens to find."""
+        from rl.arc_task import ARCSubtask
+
+        grid = np.zeros((4, 4), dtype=int)
+        grid[1, 1] = 3
+        out = grid.copy()
+        out[1, 1] = 5
+        env = ARCGridWorld(max_episode_len=len(walk),
+                           feasible_actions={0: "submit", 1: "gray_recolor"},
+                           repr_level=1, input_pattern="start",
+                           observation_space_elements=["objects_emb"])
+        env.set_subtask(ARCSubtask("walk", grid, out))
+        env.reset()
+
+        steps = iter(walk)
+        real_step, real_reset = env.step, env.reset
+
+        def resetting(*args, **kwargs):
+            result = real_reset(*args, **kwargs)
+            # After reset, not before: reset recomputes both from the grid.
+            env.base_int, env.target_int = 0, 10
+            return result
+
+        env.reset = resetting
+        env.reset()
+
+        def stepping(action):
+            observation, reward, _done, _truncated, info = real_step(action)
+            env.max_int = next(steps, env.max_int)
+            # done/truncated forced off: this fixture is about where the
+            # trace is cut, and letting the real env end the episode early
+            # would decide that instead.
+            return observation, reward, False, False, info
+
+        env.step = stepping
+        return env
+
+    def _collect(self, walk, monkeypatch):
+        env = self._env_with_walk(walk)
+        monkeypatch.setattr(mcts.MCTS, "search", lambda self, state: None)
+        monkeypatch.setattr(mcts.MCTS, "get_best_action",
+                            lambda self, root: np.array([1, 0, 0]))
+        return mcts.collect_mcts_rollouts(env, n_rollouts=1,
+                                          mcts_iterations=1,
+                                          max_episode_len=len(walk))[0]
+
+    def test_the_trace_stops_where_the_grid_was_best(self, monkeypatch):
+        rollout = self._collect([2, 5, 3, 1], monkeypatch)
+
+        assert rollout["length"] == 2, "should stop on the step that reached 5"
+        assert len(rollout["actions"]) == 2
+        assert rollout["max_int"] == 5
+        assert rollout["truncated_at_peak"] is True
+
+    def test_every_parallel_list_is_cut_to_the_same_length(self, monkeypatch):
+        rollout = self._collect([2, 5, 3, 1], monkeypatch)
+
+        for key in ("observations", "actions", "rewards", "dones", "infos"):
+            assert len(rollout[key]) == 2, key
+
+    def test_a_rollout_that_only_improves_is_left_whole(self, monkeypatch):
+        rollout = self._collect([1, 2, 3, 4], monkeypatch)
+
+        assert rollout["length"] == 4
+        assert rollout["truncated_at_peak"] is False
+        assert rollout["max_int"] == 4
+
+    def test_a_rollout_that_never_improves_is_left_whole(self, monkeypatch):
+        """Nothing to cut to. Such a trace is not a demonstration at all and
+        the caller drops it on max_int == base_int - truncating it to one
+        arbitrary step would disguise that."""
+        rollout = self._collect([0, 0, 0, 0], monkeypatch)
+
+        assert rollout["length"] == 4
+        assert rollout["truncated_at_peak"] is False
+
+    def test_reaching_the_target_and_moving_off_it_still_counts_as_solved(self, monkeypatch):
+        """The regression: `solved` read env.max_int after the loop, which
+        is the final state, so a rollout that passed through the answer and
+        then walked away from it was recorded as a failure."""
+        rollout = self._collect([4, 10, 6], monkeypatch)
+
+        assert rollout["solved"] is True
+        assert rollout["max_int"] == rollout["target_int"] == 10
+        assert rollout["length"] == 2
+
+    def test_the_reward_total_is_recomputed_for_the_kept_steps(self, monkeypatch):
+        rollout = self._collect([2, 5, 3, 1], monkeypatch)
+
+        assert rollout["total_reward"] == sum(rollout["rewards"])

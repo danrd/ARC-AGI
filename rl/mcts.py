@@ -4,7 +4,7 @@ import collections
 import itertools
 import random
 import math
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from copy import copy, deepcopy
 from tqdm import tqdm
 
@@ -53,7 +53,16 @@ def process_observations(observations, device, pad_inp=True, multi_env=False):
         print(f"Warning: Unknown observation type: {type(observations)}")
         return observations
 
-def enumerate_actions(env) -> List[List[int]]:
+def submit_index(env) -> Optional[int]:
+    """Which action index means submit, or None if this env has no such
+    action. Read from actions_dict rather than assumed to be 0: the mapping
+    is caller-supplied (see ARCGridWorld's feasible_actions) and nothing
+    guarantees the order."""
+    actions = getattr(env, "actions_dict", None) or {}
+    return next((int(i) for i, name in actions.items() if name == 'submit'), None)
+
+
+def enumerate_actions(env, include_submit: bool = False) -> List[List[int]]:
     """Every action worth trying on `env`, as [action, obj_1, obj_2] lists.
 
     Not the whole action space: that has ARCGridWorld.MAX_OBJECTS slots
@@ -64,13 +73,28 @@ def enumerate_actions(env) -> List[List[int]]:
     two-object grid at max_objects=16 is 64 identical no-ops for every real
     action. A search that enumerates them spends almost all of its budget
     rediscovering that they do nothing.
+
+    Submit is excluded for the same reason, and it is the more expensive of
+    the two. A search never needs to decide to submit - it knows when it has
+    reached the target, and replay_solution appends the submit that a
+    behavioural-cloning trace needs - so the action can only end an episode
+    early. Measured over four configurations it ended 19-26% of them, each
+    one cut short of the cap by an action that cannot improve the grid, and
+    it put a terminal child under every node of the tree whose value (the
+    submit reward, negative while unsolved) then dragged that branch's UCB
+    down. `include_submit` is for measuring the submit reward itself, which
+    only reaches the tree through those children.
     """
     visible = env.visible_object_count() if hasattr(env, "visible_object_count") else None
     dims = list(env.action_space.nvec)
     if visible:
         dims[1] = min(dims[1], visible)
         dims[2] = min(dims[2], visible)
-    return [list(action) for action in itertools.product(*[range(int(d)) for d in dims])]
+    actions = [list(action) for action in itertools.product(*[range(int(d)) for d in dims])]
+    if include_submit:
+        return actions
+    index = submit_index(env)
+    return actions if index is None else [a for a in actions if a[0] != index]
 
 
 def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str, Any]]:
@@ -711,17 +735,24 @@ def collect_mcts_rollouts(env,
                           n_rollouts: int = 50,
                           mcts_iterations: int = 500,
                           max_episode_len: int = 50,
-                          actions=None) -> List[Dict[str, Any]]:
+                          actions=None,
+                          c: float = 1.414) -> List[Dict[str, Any]]:
     """Collect rollouts using MCTS for action selection. MCTS search itself
     runs entirely on a snapshot of the env's state (see
     EnvironmentSimulator) - only the action it settles on for each real
     step is ever applied to `env` for real, via a normal env.step().
 
     `actions` restricts the tree to a pruned pool; None searches everything
-    the env offers.
+    the env offers. `c` is UCB1's exploration constant - worth naming here
+    because it is the honest knob for how widely the tree looks. It used to
+    be reachable only by changing reward_approach, which divides every step
+    reward by a different max_reward (5M under approach 1, 11M under 2, so
+    approach 2's rewards are 2.2x smaller against the same fixed c) and so
+    moved exploration as a side effect of a setting that says nothing about
+    exploration.
     """
     rollouts = []
-    mcts = MCTS(env, max_iterations=mcts_iterations, actions=actions)
+    mcts = MCTS(env, max_iterations=mcts_iterations, actions=actions, c=c)
 
     print(f"Collecting {n_rollouts} MCTS-guided rollouts...")
 
@@ -740,6 +771,11 @@ def collect_mcts_rollouts(env,
 
         total_reward = 0
         step_count = 0
+        #: env.max_int after each step. Despite the name it is the current
+        #: intersection, not a running maximum (arc_env assigns it from
+        #: maximal_intersection every step), so it falls as well as rises -
+        #: which is the whole reason the trace needs cutting.
+        reached = []
 
         while not (done or truncated) and step_count < max_episode_len:
             # MCTS explores on a snapshot of the current real state.
@@ -753,26 +789,49 @@ def collect_mcts_rollouts(env,
             rollout['rewards'].append(reward)
             rollout['dones'].append(done)
             rollout['infos'].append(info)
+            reached.append(int(env.max_int))
 
             total_reward += reward
             step_count += 1
             observation = next_observation
 
+        # Cut at the best state the rollout passed through. What follows the
+        # peak is the search walking back downhill, and measured over four
+        # configurations that walk is large: rollouts ended a mean 0.04-0.21
+        # of the gap *below* where they started while their peaks stood at
+        # +0.25. Cloning the whole trace teaches both halves - the prefix
+        # that found something and the suffix that undid it - so a
+        # behavioural-cloning trace has to stop where the grid was best.
+        #
+        # It also stops a solved rollout from being recorded as unsolved:
+        # `solved` used to read env.max_int after the loop, which is the
+        # final state, so a rollout that reached the target and then moved
+        # off it scored as a failure.
+        peak = max(reached) if reached else int(env.max_int)
+        cut = len(reached)
+        if reached and peak > int(env.base_int):
+            cut = reached.index(peak) + 1
+            for key in ('observations', 'actions', 'rewards', 'dones', 'infos'):
+                rollout[key] = rollout[key][:cut]
+            total_reward = sum(rollout['rewards'])
+        rollout['truncated_at_peak'] = cut < step_count
         rollout['total_reward'] = total_reward
-        rollout['length'] = step_count
+        rollout['length'] = cut
         # Not any(dones): submit_grid ends the episode with done=True
         # whatever it submitted, so "the episode finished" and "the answer
         # was right" are different questions and only step_intersection's
-        # done answers the second. The env's own counters answer it directly.
-        rollout['solved'] = bool(env.max_int == env.target_int)
+        # done answers the second. Read off the peak rather than the env,
+        # because the trace now ends at the peak - see the cut above.
+        rollout['solved'] = bool(peak == env.target_int)
         # Progress, alongside the reward. total_reward is denominated in
         # whichever reward_approach the env was built with, and the
         # approaches do not share a scale - approach 1 runs -4..+4 over the
         # milestones where approach 2 runs -4..+10 - so rewards from two of
         # them cannot be compared, and a search that is doing better can
         # score lower. The intersection is the same count of cells whatever
-        # the approach, which makes these three the comparable record.
-        rollout['max_int'] = int(env.max_int)
+        # the approach, which makes these three the comparable record. The
+        # peak, not env.max_int, since the trace was cut to end there.
+        rollout['max_int'] = int(peak)
         rollout['base_int'] = int(env.base_int)
         rollout['target_int'] = int(env.target_int)
 
@@ -810,6 +869,7 @@ def rollout_preparation(env,
                         n_rounds: int = 1,
                         keep_fraction: float = 0.5,
                         min_pool: int = 4,
+                        c: float = 1.414,
                        ) -> List[Dict[str, Any]]:
     """Search a task's action space and return the rollouts worth reading.
 
@@ -862,7 +922,7 @@ def rollout_preparation(env,
                                                n_initial_rollouts)
         elif method == "mcts":
             rollouts = collect_mcts_rollouts(env, n_initial_rollouts, mcts_iterations,
-                                             actions=pool)
+                                             actions=pool, c=c)
         else:
             raise ValueError(f"Unknown method: {method}")
         collected.extend(rollouts)

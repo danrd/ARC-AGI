@@ -255,6 +255,63 @@ def _diff_html(lines) -> str:
     return "<pre>" + "\n".join(out) + "</pre>"
 
 
+def _markdown_report(arm_a: str, arm_b: str, per_shard, cost, totals,
+                     gained, lost, p_value, flips, with_images: bool) -> str:
+    """The same report as Markdown, for reading in an editor.
+
+    VS Code opens .html as source - it has no built-in HTML preview the way
+    it has one for Markdown (ctrl+shift+V) - so a report meant to be looked
+    at where the code is has to be .md. Images stay inlined as data URIs,
+    which that preview renders; GitHub strips them, so --detail-dir is the
+    way to get PNGs it will show.
+    """
+    def table(headers, rows):
+        out = ["| " + " | ".join(str(h) for h in headers) + " |",
+               "|" + "|".join("---" for _ in headers) + "|"]
+        out += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
+        return "\n".join(out)
+
+    lines = [f"# Prompt arms compared\n",
+             f"- **A**: {arm_a}", f"- **B**: {arm_b}\n",
+             "## By shard\n",
+             table(["shard", "tasks", "solved A", "solved B", "gained", "lost",
+                    "score up", "score down"], per_shard),
+             "\n## Solved, pooled\n",
+             f"A {totals['solved_a']}, B {totals['solved_b']} of {totals['tasks']}. "
+             f"Gained {len(gained)}, lost {len(lost)}. Exact two-sided "
+             f"p = {p_value:.3f} on {len(gained) + len(lost)} discordant pairs — "
+             f"**{'significant' if p_value < 0.05 else 'not significant'}**.\n",
+             "> A binary outcome at this base rate yields a handful of discordant "
+             "pairs however many tasks are run, so the flipped tasks below are the "
+             "usable output, not the p-value.\n",
+             "## Cost\n",
+             table(["shard", "prompt A", "prompt B", "generated A", "generated B",
+                    "min/task A", "min/task B"],
+                   [(s, f"{pa:.0f}", f"{pb:.0f}", f"{ga:.0f}", f"{gb:.0f}",
+                     f"{ma:.2f}", f"{mb:.2f}") for s, pa, pb, ga, gb, ma, mb in cost]),
+             "\n> Read the prompt and generation columns before reading anything "
+             "into time: a per-task time that swings between shards of the same arm "
+             "is the backend changing under the run, not the prompt.\n",
+             f"## The {len(flips)} tasks that flipped\n"]
+
+    for task_id, verdict, a, b in flips:
+        lines.append(f"### {task_id} — {verdict}\n")
+        if with_images:
+            try:
+                encoded = base64.b64encode(task_image(task_id)).decode()
+                lines.append(f"![{task_id}](data:image/png;base64,{encoded})\n")
+            except Exception as exc:
+                lines.append(f"*could not plot: {type(exc).__name__}*\n")
+        lines.append(f"prompt {a['prompt']} chars in A, {b['prompt']} in B\n")
+        difference = prompt_difference(a["prompt_text"], b["prompt_text"])
+        lines.append("```diff\n" + ("\n".join(difference) if difference
+                                    else "  (the prompts are identical)") + "\n```\n")
+        for label, side in ((arm_a, a), (arm_b, b)):
+            lines.append(f"**[{label}]** scored {side['score']:.3f}\n")
+            lines.append("```\n" + side["generated"].strip() + "\n```\n")
+    return "\n".join(lines)
+
+
 def write_report(path: Path, arm_a: str, arm_b: str, per_shard, cost,
                  totals, gained, lost, p_value, flips, with_images: bool) -> None:
     """One self-contained file: tables, per-task grids and prompt diffs.
@@ -262,7 +319,18 @@ def write_report(path: Path, arm_a: str, arm_b: str, per_shard, cost,
     Images are inlined as data URIs rather than written alongside, so the
     report is a single thing to open or send. It is also the only way the
     grids get seen at all - a figure drawn under !python has nowhere to go.
+
+    Markdown when the path says .md, HTML otherwise. Which one is wanted
+    depends only on where it will be read: an editor previews Markdown and
+    shows HTML as source, a browser does the reverse.
     """
+    if path.suffix.lower() in (".md", ".markdown"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_markdown_report(arm_a, arm_b, per_shard, cost, totals,
+                                          gained, lost, p_value, flips, with_images),
+                        encoding="utf-8")
+        print(f"\nwrote {path}")
+        return
     parts = [f"<style>{REPORT_STYLE}</style>",
              "<h1>Prompt arms compared</h1>",
              f"<p class=note>A: {html.escape(arm_a)}<br>B: {html.escape(arm_b)}</p>",
@@ -356,13 +424,16 @@ def main() -> None:
     parser.add_argument("--detail", action="store_true",
                         help="print each flipped task: what the prompts differ by "
                              "and what each arm answered")
-    parser.add_argument("--report", type=Path, metavar="FILE.html",
-                        help="write one self-contained HTML file with the tables, "
+    parser.add_argument("--report", type=Path, metavar="FILE",
+                        help="write one self-contained report with the tables, "
                              "each flipped task's grids, the prompt difference and "
                              "both answers. Images are inlined, so the file is the "
                              "whole report and can be sent as it is - which is also "
                              "the only way the grids get seen, since a figure drawn "
-                             "under !python has nowhere to appear")
+                             "under !python has nowhere to appear. Markdown if "
+                             "the name ends .md, HTML otherwise - an editor "
+                             "previews Markdown and shows HTML as source, a "
+                             "browser does the reverse")
     parser.add_argument("--detail-dir", type=Path, metavar="DIR",
                         help="directory to write one PNG per flipped task into, "
                              "showing that task's train pairs and answer; created "

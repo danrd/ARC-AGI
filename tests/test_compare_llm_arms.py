@@ -173,10 +173,10 @@ class TestTheReportIsOneFile:
         return {"score": score, "prompt_text": prompt, "prompt": len(prompt),
                 "generated": text, "minutes": 0.3}
 
-    def _write(self, tmp_path, flips, **kwargs):
+    def _write(self, tmp_path, flips, name="report.html", **kwargs):
         import collections
 
-        path = tmp_path / "report.html"
+        path = tmp_path / name
         script.write_report(
             path, "arm A", "arm B",
             per_shard=[("easy", 95, 4, 3, 0, 1, 31, 27)],
@@ -224,3 +224,61 @@ class TestTheReportIsOneFile:
 
         assert "0 tasks that flipped" in page
         assert "Cost" in page
+
+
+class TestTheSameReportAsMarkdown:
+    """VS Code opens .html as source - it has no built-in HTML preview the
+    way it has one for Markdown - so a report meant to be read where the
+    code is has to be .md. Chosen by the file's suffix rather than a flag,
+    because which one is wanted depends only on where it will be read."""
+
+    @staticmethod
+    def _side(text="0 1", prompt="a\nb", score=0.5):
+        return {"score": score, "prompt_text": prompt, "prompt": len(prompt),
+                "generated": text, "minutes": 0.3}
+
+    @staticmethod
+    def _write(tmp_path, flips, name):
+        import collections
+
+        path = tmp_path / name
+        script.write_report(
+            path, "arm A", "arm B",
+            per_shard=[("easy", 95, 4, 3, 0, 1, 31, 27)],
+            cost=[("easy", 2592, 3086, 187, 187, 2.8, 1.9)],
+            totals=collections.Counter(tasks=95, solved_a=4, solved_b=3),
+            gained=["x"], lost=["y"], p_value=0.45, flips=flips,
+            with_images=False)
+        return path.read_text(encoding="utf-8")
+
+    def test_the_suffix_picks_the_format(self, tmp_path):
+        markdown = self._write(tmp_path, [], "report.md")
+        page = self._write(tmp_path, [], "report.html")
+
+        assert markdown.lstrip().startswith("# ")
+        assert "<style>" not in markdown
+        assert "<style>" in page
+
+    def test_tables_survive_the_translation(self, tmp_path):
+        markdown = self._write(tmp_path, [], "report.md")
+
+        assert "| shard | tasks |" in markdown
+        assert "|---|" in markdown
+
+    def test_a_prompt_difference_becomes_a_diff_block(self, tmp_path):
+        """```diff is what makes an editor colour the two directions - the
+        leading +/- alone is invisible in a proportional font."""
+        markdown = self._write(tmp_path, [("t", "gained by B",
+                                            self._side(prompt="a"),
+                                            self._side(prompt="a\nb"))], "report.md")
+
+        assert "```diff" in markdown
+        assert "+b" in markdown
+
+    def test_generations_are_fenced_so_a_grid_keeps_its_rows(self, tmp_path):
+        """Markdown folds consecutive lines into one paragraph, which turns
+        a grid into a sentence."""
+        markdown = self._write(tmp_path, [("t", "gained by B", self._side(),
+                                            self._side(text="0 1\n1 0"))], "report.md")
+
+        assert "```\n0 1\n1 0\n```" in markdown

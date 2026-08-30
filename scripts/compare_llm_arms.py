@@ -54,6 +54,7 @@ import difflib
 import html
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -203,6 +204,43 @@ def index_tasks(data: dict) -> dict:
             "minutes": row.get("processing_time_min") or 0.0,
         }
     return out
+
+
+#: <NAME> ... </NAME>, the shape PromptBuilder's xml join gives a block.
+_SECTION = "<{name}>(.*?)</{name}>"
+
+
+def extract_section(prompt_text: str, name: str) -> str | None:
+    """One block out of a prompt, or None when it is not there.
+
+    Blocks are joined as <UPPERCASE_NAME>...</UPPERCASE_NAME>, so the name
+    is matched however it is typed. Returning None rather than "" keeps
+    "the block was empty" apart from "the block was not built for this
+    task" - the summary resolver omits itself when it found nothing, and
+    those are different facts about a run.
+    """
+    match = re.search(_SECTION.format(name=re.escape(name.upper())),
+                      prompt_text, re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def section_names(prompt_text: str) -> list:
+    """Every block tag a prompt carries, in order - what to offer when the
+    one that was asked for is in none of them."""
+    return list(dict.fromkeys(re.findall(r"<([A-Z_]+)>", prompt_text)))
+
+
+def collect_section(rows: dict, name: str) -> tuple:
+    """(task -> block, tasks that had no such block, tags that do exist)."""
+    found, missing, tags = {}, [], collections.Counter()
+    for task_id, row in rows.items():
+        tags.update(section_names(row["prompt_text"]))
+        block = extract_section(row["prompt_text"], name)
+        if block is None:
+            missing.append(task_id)
+        else:
+            found[task_id] = block
+    return found, missing, tags
 
 
 def two_sided_binomial(gained: int, lost: int) -> float:
@@ -470,6 +508,95 @@ def report_flip(task_id: str, verdict: str, a: dict, b: dict,
             print(f"    ... {len(answer.splitlines()) - 12} more lines")
 
 
+def dump_sections(api, args, downloaded) -> None:
+    """One prompt block, from every task of every shard, in one place.
+
+    The block is built per task and stored inside that task's prompt, so
+    checking whether it says the right thing means opening one artifact per
+    task and reading past everything else in it. Gathered here instead,
+    which is what makes "are the summaries any good" a question with an
+    answer rather than an afternoon of clicking.
+    """
+    arms = [a for a in (args.arm_a, args.arm_b) if a]
+    blocks = collections.OrderedDict()
+    for arm in arms:
+        runs = find_runs(api, args.path, arm, args.model)
+        if not runs:
+            raise SystemExit(f"no runs match {arm!r} - try --list")
+        found, missing, tags = {}, [], collections.Counter()
+        for shard in sorted(runs):
+            data = load_checkpoint(api, args.path, runs[shard], downloaded)
+            if data is None:
+                continue
+            shard_found, shard_missing, shard_tags = collect_section(
+                index_tasks(data), args.section)
+            found.update({(shard, t): b for t, b in shard_found.items()})
+            missing += [(shard, t) for t in shard_missing]
+            tags.update(shard_tags)
+        if not found:
+            raise SystemExit(
+                f"no <{args.section.upper()}> in any prompt of {arm!r}. "
+                f"Blocks that are there: {', '.join(sorted(tags)) or 'none'}")
+        blocks[arm] = (found, missing, tags)
+
+    for arm, (found, missing, _tags) in blocks.items():
+        sizes = [len(b) for b in found.values()]
+        print(f"\n=== <{args.section.upper()}> in {arm} ===")
+        print(f"  present on {len(found)} tasks, absent on {len(missing)}; "
+              f"{min(sizes)}-{max(sizes)} chars, median "
+              f"{int(np.median(sizes))}")
+        distinct = len({b for b in found.values()})
+        print(f"  {distinct} distinct texts "
+              f"({100 * distinct / len(found):.0f}% of them unique)")
+        if missing:
+            print(f"  absent on: {', '.join(t for _s, t in missing[:12])}"
+                  f"{' ...' if len(missing) > 12 else ''}")
+
+    if args.report:
+        write_section_report(args.report, args.section, blocks)
+    else:
+        for arm, (found, _m, _t) in blocks.items():
+            for (shard, task_id), block in sorted(found.items()):
+                print(f"\n--- {task_id} [{shard}] {arm} ---\n{block}")
+
+
+def write_section_report(path: Path, section: str, blocks) -> None:
+    """The gathered blocks as a file, in the format the suffix names."""
+    markdown = path.suffix.lower() in (".md", ".markdown")
+    parts = []
+    for arm, (found, missing, _tags) in blocks.items():
+        sizes = [len(b) for b in found.values()]
+        distinct = len({b for b in found.values()})
+        if markdown:
+            parts.append(f"# &lt;{section.upper()}&gt; in {arm}\n"
+                         .replace("&lt;", "<").replace("&gt;", ">"))
+            parts.append(f"Present on {len(found)} tasks, absent on {len(missing)}. "
+                         f"{min(sizes)}-{max(sizes)} chars, median "
+                         f"{int(np.median(sizes))}. {distinct} distinct texts.\n")
+            for (shard, task_id), block in sorted(found.items()):
+                parts.append(f"### {task_id} · {shard}\n")
+                parts.append("```\n" + block + "\n```\n")
+        else:
+            parts.append(f"<h1>&lt;{html.escape(section.upper())}&gt; in "
+                         f"{html.escape(arm)}</h1>")
+            parts.append(f"<p class=note>Present on {len(found)} tasks, absent on "
+                         f"{len(missing)}. {min(sizes)}-{max(sizes)} chars, median "
+                         f"{int(np.median(sizes))}. {distinct} distinct texts.</p>")
+            for (shard, task_id), block in sorted(found.items()):
+                parts.append(f"<h3>{html.escape(task_id)} &middot; "
+                             f"{html.escape(shard)}</h3>"
+                             f"<pre>{html.escape(block)}</pre>")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if markdown:
+        path.write_text("\n".join(parts), encoding="utf-8")
+    else:
+        path.write_text("<!doctype html><meta charset=utf-8>"
+                        f"<title>{html.escape(section.upper())}</title>"
+                        f"<style>{REPORT_STYLE}</style>" + "".join(parts),
+                        encoding="utf-8")
+    print(f"\nwrote {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -479,6 +606,13 @@ def main() -> None:
     parser.add_argument("arm_b", nargs="?",
                         help="substring of the run_description of the arm under test")
     parser.add_argument("--model", help="substring of config.model, when several were run")
+    parser.add_argument("--section", metavar="NAME",
+                        help="instead of comparing, gather one prompt block "
+                             "(SUMMARY, EXAMPLES, ...) from every task of every "
+                             "shard into one place. The block is stored inside "
+                             "each task's own prompt, so checking whether it says "
+                             "the right thing otherwise means opening one artifact "
+                             "per task. Needs one arm; two dumps both")
     parser.add_argument("--keep-downloads", action="store_true",
                         help="keep the checkpoint artifacts wandb unpacks into "
                              "./artifacts/. They are deleted when the script "
@@ -515,8 +649,18 @@ def main() -> None:
     if args.list:
         describe_project(api, args.path, args.model)
         return
+    if args.section:
+        if not args.arm_a:
+            parser.error("--section needs an arm to read the block from")
+        downloaded = []
+        try:
+            dump_sections(api, args, downloaded)
+        finally:
+            if not args.keep_downloads:
+                remove_downloads(downloaded)
+        return
     if not args.arm_a or not args.arm_b:
-        parser.error("two arms are required unless --list is given")
+        parser.error("two arms are required unless --list or --section is given")
     a_runs = find_runs(api, args.path, args.arm_a, args.model)
     b_runs = find_runs(api, args.path, args.arm_b, args.model)
     shards = sorted(set(a_runs) & set(b_runs))

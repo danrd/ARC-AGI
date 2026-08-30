@@ -377,3 +377,78 @@ class TestCleaningUpTheDownloads:
 
     def test_a_directory_that_was_never_created_is_not_an_error(self, tmp_path):
         script.remove_downloads([tmp_path / "artifacts" / "checkpoint-gone:v0"])
+
+
+class TestGatheringOnePromptBlock:
+    """A block is built per task and stored inside that task's prompt, so
+    checking whether it says the right thing means opening one artifact per
+    task and reading past everything else. --section gathers them, which is
+    what turns "are the summaries any good" into a question with an answer.
+    """
+
+    PROMPT = ("<GENERAL_INSTRUCTION>\nSolve it.\n</GENERAL_INSTRUCTION>\n"
+              "<EXAMPLES>\n0 1\n</EXAMPLES>\n"
+              "<SUMMARY>\nWhat changes:\n  - shapes are duplicated\n</SUMMARY>\n"
+              "<OUTPUT_FORMAT>\nGrid only\n</OUTPUT_FORMAT>")
+
+    def test_a_block_is_read_out_whole(self):
+        block = script.extract_section(self.PROMPT, "SUMMARY")
+
+        assert block == "What changes:\n  - shapes are duplicated"
+
+    def test_the_name_is_matched_however_it_is_typed(self):
+        assert script.extract_section(self.PROMPT, "summary") is not None
+        assert script.extract_section(self.PROMPT, "Summary") is not None
+
+    def test_a_block_that_is_not_there_is_None_not_empty(self):
+        """The summary resolver omits itself when it found nothing, so "the
+        block was empty" and "the block was not built for this task" are
+        different facts about a run and must not collapse."""
+        assert script.extract_section(self.PROMPT, "HINTS") is None
+        assert script.extract_section("<SUMMARY>\n</SUMMARY>", "SUMMARY") == ""
+
+    def test_only_the_named_block_comes_back(self):
+        block = script.extract_section(self.PROMPT, "EXAMPLES")
+
+        assert block == "0 1"
+        assert "SUMMARY" not in block
+
+    def test_the_tags_a_prompt_carries_can_be_listed(self):
+        """What to offer when the block that was asked for is in none of
+        them - a filter that matches nothing otherwise says nothing."""
+        assert script.section_names(self.PROMPT) == [
+            "GENERAL_INSTRUCTION", "EXAMPLES", "SUMMARY", "OUTPUT_FORMAT"]
+
+    def test_collecting_separates_the_tasks_that_have_it_from_those_that_do_not(self):
+        rows = {"a": {"prompt_text": self.PROMPT},
+                "b": {"prompt_text": "<EXAMPLES>\n0\n</EXAMPLES>"}}
+
+        found, missing, tags = script.collect_section(rows, "SUMMARY")
+
+        assert set(found) == {"a"}
+        assert missing == ["b"]
+        assert tags["EXAMPLES"] == 2
+
+    def test_a_report_of_the_gathered_blocks_names_every_task(self, tmp_path):
+        path = tmp_path / "summaries.md"
+        blocks = {"with summary": ({("easy", "2c0b0aff"): "findings here",
+                                     ("medium", "59341089"): "other findings"},
+                                    ["009d5c81"], {})}
+
+        script.write_section_report(path, "SUMMARY", blocks)
+        text = path.read_text(encoding="utf-8")
+
+        assert "<SUMMARY> in with summary" in text
+        assert "2c0b0aff" in text and "59341089" in text
+        assert "findings here" in text
+        assert "absent on 1" in text
+
+    def test_the_html_form_escapes_what_it_prints(self, tmp_path):
+        path = tmp_path / "summaries.html"
+        blocks = {"arm": ({("easy", "t"): "<script>bad()</script>"}, [], {})}
+
+        script.write_section_report(path, "SUMMARY", blocks)
+        text = path.read_text(encoding="utf-8")
+
+        assert "<script>bad()</script>" not in text
+        assert "&lt;script&gt;" in text

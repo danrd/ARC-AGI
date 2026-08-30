@@ -755,3 +755,68 @@ class TestInvertingATwoColourObjectWhoseGridMoved:
         inverse_obj_color(grid, obj, font_color=0)
 
         assert (grid[1, 1], grid[1, 2], grid[1, 3]) == (1, 2, 7)
+
+
+class TestRotatingAnObjectWhoseStructureLostAnIndex:
+    """obj_structure numbers cells by their position in coords, so the two
+    describe the same object only while coords holds no repeats. A duplicate
+    overwrites the earlier index: one measured object had 11 coords, 10 of
+    them distinct, and no cell left carrying index 3.
+
+    Every lookup of that index then indexed an empty argwhere result, and
+    the search counts a raised action as a dropped run rather than a refused
+    one - 3 of 150 runs in a 50-task scan, all of them here.
+    """
+
+    @staticmethod
+    def _object(coords, grid_shape=(6, 6)):
+        from symbolic.objects_analysis import GridObject
+
+        grid = np.zeros(grid_shape, dtype=int)
+        for i, j in coords:
+            grid[i, j] = 1
+        return GridObject("complex", coords, [1], "complex_0", grid_shape, 0, grid), grid
+
+    def test_a_consistent_object_still_rotates(self):
+        from rl.arc_transformators import symmetry_transformation
+
+        obj, grid = self._object([(1, 1), (1, 2), (2, 1)])
+        before = grid.copy()
+
+        result = symmetry_transformation(grid, obj, font_color=0, transf_type="fliplr")
+
+        assert not np.array_equal(result, before), "an L should move under a mirror"
+
+    def test_define_coords_refuses_when_an_index_is_unnumbered(self):
+        from rl.arc_transformators import define_coords
+
+        obj, _grid = self._object([(1, 1), (1, 2), (2, 1)])
+        # What a duplicate coordinate leaves behind: an index no cell carries.
+        obj.obj_structure[obj.obj_structure == 2] = 3
+
+        assert define_coords(obj, obj.obj_structure) == (None, None)
+
+    def test_the_transform_is_refused_rather_than_raising(self):
+        from rl.arc_transformators import symmetry_transformation
+
+        obj, grid = self._object([(1, 1), (1, 2), (2, 1)])
+        obj.obj_structure[obj.obj_structure == 2] = 3
+        before = grid.copy()
+
+        result = symmetry_transformation(grid, obj, font_color=0, transf_type="fliplr")
+
+        assert np.array_equal(result, before)
+
+    def test_the_object_is_left_alone_too(self):
+        """The refusal happens before the clearing loop, which mutates both
+        the grid and the object - a half-applied rotation leaves an object
+        whose size, contour and holes describe something not on the grid."""
+        from rl.arc_transformators import symmetry_transformation
+
+        coords = [(1, 1), (1, 2), (2, 1)]
+        obj, grid = self._object(coords)
+        obj.obj_structure[obj.obj_structure == 2] = 3
+
+        symmetry_transformation(grid, obj, font_color=0, transf_type="fliplr")
+
+        assert sorted(obj.coords) == sorted(coords)

@@ -1308,7 +1308,28 @@ def upscale(grid:np.array, obj1:GridObject, font_color:int):
     return grid
 
 def define_coords(obj:GridObject, new_obj_structure:np.array):
+    """Where each of the object's cells lands under `new_obj_structure`, or
+    (None, None) when the object cannot answer that.
+
+    obj_structure numbers cells by their position in coords, so the two only
+    describe the same object while coords holds no repeats. A duplicate
+    silently overwrites the earlier index - one measured object had 11
+    coords, 10 of them distinct, and no cell left carrying index 3 - and
+    every lookup of a missing index below then indexes an empty argwhere
+    result. That was 3 dropped runs in a 50-task scan, all of them here.
+
+    Refused rather than patched around: the caller's own rule is that a
+    transform which cannot place every cell does not happen at all (see
+    symmetry_transformation's all_on_grid check), and skipping the cells
+    that cannot be located would place the rest - the half-application that
+    rule exists to prevent. This treats the symptom; the duplicate itself
+    comes from whichever transform appended a coordinate the object already
+    had, which is worth finding separately.
+    """
     old_coords = obj.coords
+    numbered = {int(v) for v in np.unique(obj.obj_structure) if v > 0}
+    if numbered != set(range(1, len(old_coords) + 1)):
+        return None, None
     new_coords = []
     coords_mapping = {}
     max_size = max(obj.vert_size, obj.hor_size)
@@ -1366,11 +1387,17 @@ def object_rotation(obj:GridObject, transf_type:str):
     new_coords, coords_mapping = define_coords(obj, new_obj_structure)
     return (new_mask, new_obj_structure, new_coords_offsets, new_coords, coords_mapping)
 
+
 def symmetry_transformation(grid:np.array, obj1:GridObject, font_color:int, transf_type:str):
     """Symmetry transform of object on grid with corresponding grid changes."""
     coords = obj1.coords
     new_mask, new_obj_structure, new_coords_offsets, new_coords, coords_mapping = object_rotation(obj1, transf_type)
     old_center = obj1.center
+
+    # The object's structure does not number its coords - see define_coords.
+    # Same refusal as the out-of-grid case below, and for the same reason.
+    if new_coords is None:
+        return grid
 
     # A rotation that would leave the grid does not happen. Rotating a
     # non-square object about its own centre can put cells outside, and the

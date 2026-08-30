@@ -30,16 +30,20 @@ generation.
 
     python scripts/compare_llm_arms.py danrd/llm_run --list
     python scripts/compare_llm_arms.py danrd/llm_run \\
-        "without knowledge injection" "with summary" --report arms.html
+        "without knowledge injection" "with summary" --report arms.md
 
 --report is the part worth running. Seven flipped tasks out of 370 will
 never reach significance, but seven tasks can be read: what the symbolic
 summary actually said about each, how the two answers differed, and
 whether the gains share anything. That is the only conclusion a sample this
-size can support, and it is not a number. It writes one self-contained
-file - grids inlined as data URIs - because a figure drawn under !python
-has nowhere to appear, and because a report is something to send to
-someone rather than to scroll past in a cell's output.
+size can support, and it is not a number. The grids have to be written
+somewhere at all: a figure drawn under !python has nowhere to appear.
+
+Which format follows the file's suffix. .html is one self-contained file
+with the images inlined, for sending to someone; .md writes them into
+<name>_images/ beside itself, because an editor previews Markdown and
+shows HTML as source, and a relative link renders in that preview and on
+GitHub where an inlined data URI renders in neither.
 """
 from __future__ import annotations
 
@@ -125,17 +129,56 @@ def describe_project(api, path: str, model: str | None = None) -> None:
         print(f"{model_name[-46:]:46s} {description[:44]:44s} {len(runs):3d}  {shards}")
 
 
-def load_checkpoint(api, path: str, run) -> dict | None:
+def load_checkpoint(api, path: str, run, downloaded: list | None = None) -> dict | None:
     """The run's checkpoint artifact, which carries solved_tasks
     (authoritative, not inferred from a score threshold) and prompts_data,
-    with each task's prompt, generation and time."""
+    with each task's prompt, generation and time.
+
+    `downloaded` collects the directories wandb unpacked into, so they can
+    be removed afterwards. They are not small - prompts_data holds every
+    prompt and every generation - and comparing five shards leaves ten of
+    them behind under ./artifacts/.
+    """
     try:
         artifact = api.artifact(f"{path}/checkpoint-{run.id}:latest")
-        with open(Path(artifact.download()) / "checkpoint.json") as f:
+        directory = Path(artifact.download())
+        if downloaded is not None:
+            downloaded.append(directory)
+        with open(directory / "checkpoint.json") as f:
             return json.load(f)
     except Exception as exc:
         print(f"  ! {run.name} ({run.id}): no checkpoint - {type(exc).__name__}")
         return None
+
+
+def remove_downloads(directories) -> None:
+    """Delete the artifact directories this run unpacked, and nothing else.
+
+    Each path came back from artifact.download(), so it names one
+    checkpoint's own directory - but it is still a recursive delete driven
+    by a value from outside, so the name is checked before the tree goes.
+    A directory that does not look like a checkpoint is left alone and
+    said so, rather than removed on the assumption that it must be ours.
+    """
+    import shutil
+
+    removed = 0
+    for directory in dict.fromkeys(directories):
+        if not directory.is_dir():
+            continue
+        if "checkpoint-" not in directory.name:
+            print(f"  left {directory} alone: not a checkpoint directory")
+            continue
+        shutil.rmtree(directory, ignore_errors=True)
+        removed += not directory.exists()
+        parent = directory.parent
+        # wandb makes ./artifacts/ for these; take it too once it is empty,
+        # but only if nothing else was using it.
+        if parent.name == "artifacts" and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+    if removed:
+        print(f"removed {removed} downloaded checkpoint "
+              f"{'directory' if removed == 1 else 'directories'}")
 
 
 def generation_text(row: dict) -> str:
@@ -256,14 +299,21 @@ def _diff_html(lines) -> str:
 
 
 def _markdown_report(arm_a: str, arm_b: str, per_shard, cost, totals,
-                     gained, lost, p_value, flips, with_images: bool) -> str:
+                     gained, lost, p_value, flips, image_dir: Path | None) -> str:
     """The same report as Markdown, for reading in an editor.
 
     VS Code opens .html as source - it has no built-in HTML preview the way
     it has one for Markdown (ctrl+shift+V) - so a report meant to be looked
-    at where the code is has to be .md. Images stay inlined as data URIs,
-    which that preview renders; GitHub strips them, so --detail-dir is the
-    way to get PNGs it will show.
+    at where the code is has to be .md.
+
+    Images are written beside it and linked, not inlined. A data URI put
+    the whole PNG on one 74,715-character line, and it did not appear in
+    the editor's preview - which runs in a webview under a content policy
+    that can refuse data: sources. Rather than establish which of those it
+    was, this drops the dependency on both: a relative link to a file
+    renders in that preview, on GitHub (which strips data URIs outright),
+    and in anything else. HTML keeps the data URIs, where being one file to
+    send is worth more and a browser always shows them.
     """
     def table(headers, rows):
         out = ["| " + " | ".join(str(h) for h in headers) + " |",
@@ -296,10 +346,10 @@ def _markdown_report(arm_a: str, arm_b: str, per_shard, cost, totals,
 
     for task_id, verdict, a, b in flips:
         lines.append(f"### {task_id} — {verdict}\n")
-        if with_images:
+        if image_dir is not None:
             try:
-                encoded = base64.b64encode(task_image(task_id)).decode()
-                lines.append(f"![{task_id}](data:image/png;base64,{encoded})\n")
+                saved = save_task_image(task_id, image_dir)
+                lines.append(f"![{task_id}]({image_dir.name}/{saved.name})\n")
             except Exception as exc:
                 lines.append(f"*could not plot: {type(exc).__name__}*\n")
         lines.append(f"prompt {a['prompt']} chars in A, {b['prompt']} in B\n")
@@ -322,14 +372,18 @@ def write_report(path: Path, arm_a: str, arm_b: str, per_shard, cost,
 
     Markdown when the path says .md, HTML otherwise. Which one is wanted
     depends only on where it will be read: an editor previews Markdown and
-    shows HTML as source, a browser does the reverse.
+    shows HTML as source, a browser does the reverse. The Markdown form
+    writes its images into <name>_images/ beside itself rather than
+    inlining them - see _markdown_report.
     """
     if path.suffix.lower() in (".md", ".markdown"):
         path.parent.mkdir(parents=True, exist_ok=True)
+        image_dir = path.parent / f"{path.stem}_images" if with_images else None
         path.write_text(_markdown_report(arm_a, arm_b, per_shard, cost, totals,
-                                          gained, lost, p_value, flips, with_images),
+                                          gained, lost, p_value, flips, image_dir),
                         encoding="utf-8")
-        print(f"\nwrote {path}")
+        extra = f" and {image_dir}/" if image_dir and image_dir.exists() else ""
+        print(f"\nwrote {path}{extra}")
         return
     parts = [f"<style>{REPORT_STYLE}</style>",
              "<h1>Prompt arms compared</h1>",
@@ -417,6 +471,12 @@ def main() -> None:
     parser.add_argument("arm_b", nargs="?",
                         help="substring of the run_description of the arm under test")
     parser.add_argument("--model", help="substring of config.model, when several were run")
+    parser.add_argument("--keep-downloads", action="store_true",
+                        help="keep the checkpoint artifacts wandb unpacks into "
+                             "./artifacts/. They are deleted when the script "
+                             "finishes otherwise - comparing five shards downloads "
+                             "ten of them, each holding every prompt and generation "
+                             "of its run")
     parser.add_argument("--list", action="store_true",
                         help="print the model/run_description combinations the "
                              "project holds and exit - descriptions are free text "
@@ -459,12 +519,23 @@ def main() -> None:
         raise SystemExit("nothing paired - run with --list to see the "
                          "model/run_description combinations that exist")
 
+    downloaded = []
+    try:
+        run_comparison(api, args, shards, a_runs, b_runs, downloaded)
+    finally:
+        # In a finally: a run that failed halfway still downloaded whatever
+        # it got to, and leaving those behind is the case that accumulates.
+        if not args.keep_downloads:
+            remove_downloads(downloaded)
+
+
+def run_comparison(api, args, shards, a_runs, b_runs, downloaded) -> None:
     gained_all, lost_all, flips = [], [], []
     totals = collections.Counter()
     per_shard, cost = [], []
     for shard in shards:
-        a_data = load_checkpoint(api, args.path, a_runs[shard])
-        b_data = load_checkpoint(api, args.path, b_runs[shard])
+        a_data = load_checkpoint(api, args.path, a_runs[shard], downloaded)
+        b_data = load_checkpoint(api, args.path, b_runs[shard], downloaded)
         if a_data is None or b_data is None:
             continue
         a, b = index_tasks(a_data), index_tasks(b_data)

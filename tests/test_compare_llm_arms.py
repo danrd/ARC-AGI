@@ -251,6 +251,28 @@ class TestTheSameReportAsMarkdown:
             with_images=False)
         return path.read_text(encoding="utf-8")
 
+    def test_images_go_beside_the_report_rather_than_into_it(self, tmp_path):
+        """A data URI put the whole PNG on one 74,715-character line and did
+        not appear in the editor's preview, which runs in a webview under a
+        content policy that can refuse data: sources. A relative link to a
+        file renders there, on GitHub, and anywhere else."""
+        import collections
+
+        path = tmp_path / "arms.md"
+        script.write_report(
+            path, "A", "B", per_shard=[("easy", 95, 4, 3, 0, 1, 31, 27)],
+            cost=[("easy", 2592, 3086, 187, 187, 2.8, 1.9)],
+            totals=collections.Counter(tasks=95, solved_a=4, solved_b=3),
+            gained=["x"], lost=[], p_value=0.45,
+            flips=[("2c0b0aff", "gained by B", self._side(), self._side())],
+            with_images=True)
+        text = path.read_text(encoding="utf-8")
+
+        assert "![2c0b0aff](arms_images/2c0b0aff.png)" in text
+        assert "data:image" not in text
+        assert (tmp_path / "arms_images" / "2c0b0aff.png").exists()
+        assert max(len(line) for line in text.splitlines()) < 1000
+
     def test_the_suffix_picks_the_format(self, tmp_path):
         markdown = self._write(tmp_path, [], "report.md")
         page = self._write(tmp_path, [], "report.html")
@@ -282,3 +304,62 @@ class TestTheSameReportAsMarkdown:
                                             self._side(text="0 1\n1 0"))], "report.md")
 
         assert "```\n0 1\n1 0\n```" in markdown
+
+
+class TestCleaningUpTheDownloads:
+    """Comparing five shards downloads ten checkpoints, each holding every
+    prompt and every generation of its run, and wandb unpacks them under
+    ./artifacts/ where they stay. Removed when the script finishes - but it
+    is a recursive delete driven by a path that came from outside, so what
+    it will remove is checked first."""
+
+    @staticmethod
+    def _checkpoint_dir(root, name="checkpoint-abc123:v0"):
+        directory = root / "artifacts" / name
+        directory.mkdir(parents=True)
+        (directory / "checkpoint.json").write_text("{}")
+        return directory
+
+    def test_a_checkpoint_directory_is_removed(self, tmp_path):
+        directory = self._checkpoint_dir(tmp_path)
+
+        script.remove_downloads([directory])
+
+        assert not directory.exists()
+
+    def test_the_empty_artifacts_folder_goes_with_it(self, tmp_path):
+        directory = self._checkpoint_dir(tmp_path)
+
+        script.remove_downloads([directory])
+
+        assert not (tmp_path / "artifacts").exists()
+
+    def test_an_artifacts_folder_still_holding_something_stays(self, tmp_path):
+        directory = self._checkpoint_dir(tmp_path)
+        (tmp_path / "artifacts" / "something-else").mkdir()
+
+        script.remove_downloads([directory])
+
+        assert (tmp_path / "artifacts" / "something-else").exists()
+
+    def test_a_directory_that_is_not_a_checkpoint_is_left_alone(self, tmp_path):
+        """The guard that matters: these paths come back from wandb, and a
+        recursive delete should not act on one that does not look like what
+        it was told to clean up."""
+        directory = tmp_path / "artifacts" / "somebody-elses-data"
+        directory.mkdir(parents=True)
+        (directory / "keep.txt").write_text("x")
+
+        script.remove_downloads([directory])
+
+        assert (directory / "keep.txt").exists()
+
+    def test_the_same_directory_twice_is_removed_once(self, tmp_path):
+        directory = self._checkpoint_dir(tmp_path)
+
+        script.remove_downloads([directory, directory])
+
+        assert not directory.exists()
+
+    def test_a_directory_that_was_never_created_is_not_an_error(self, tmp_path):
+        script.remove_downloads([tmp_path / "artifacts" / "checkpoint-gone:v0"])

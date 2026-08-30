@@ -618,7 +618,11 @@ class TestPaletteFindings:
         finding = next(f for f in self._changes(examples) if f.subject == "palette_added")
 
         assert finding.parameters == {"added_colors": (3,)}
-        assert "green" in finding.statement
+        # The digit, not "green": the grid beside this is rendered as rows of
+        # digits and nothing in the prompt maps a name onto one. Measured over
+        # 60 tasks, 85% of summaries carried at least one such name.
+        assert "colour 3" in finding.statement
+        assert "green" not in finding.statement
 
     def test_a_colour_dropped_in_every_example_is_reported(self):
         examples = [_example([[1, 3]], [[1, 1]]) for _ in range(2)]
@@ -662,7 +666,8 @@ class TestBackgroundFindings:
                        if f.subject == "background_color")
 
         assert finding.parameters == {"background_color": 7}
-        assert "orange" in finding.statement
+        assert "colour 7" in finding.statement
+        assert "orange" not in finding.statement
 
     def test_disagreeing_examples_are_reported_as_disagreeing(self):
         examples = [_example([[7]], [[7]]) for _ in range(2)]
@@ -695,3 +700,45 @@ class TestBackgroundFindings:
         findings = build_task_findings(_stub_analysis([], examples))
 
         assert not any(f.subject.startswith("background") for f in findings.grid_observations)
+
+
+class TestFindingsNameColoursTheWayTheGridDoes:
+    """A finding is read next to the grid it describes, and the grid is
+    rendered as rows of digits (arc_grid_formatting's "concise"). A name
+    like "yellow" refers to something the prompt never defines - the reader
+    has to already know yellow is 4, which is a convention of the dataset's
+    pictures rather than anything in the task.
+    """
+
+    #: Every name the repository maps a digit to, in any of its three copies
+    #: of that mapping.
+    NAMES = ("black", "blue", "red", "green", "yellow",
+             "gray", "magenta", "orange", "sky", "brown")
+
+    def test_no_finding_statement_carries_a_colour_name(self):
+        import inspect
+        import re
+
+        import symbolic.findings as findings
+
+        source = inspect.getsource(findings)
+        statements = re.findall(r'statement=f?"([^"]*)"', source)
+
+        assert statements, "no statements found - the pattern needs updating"
+        for statement in statements:
+            for name in self.NAMES:
+                assert not re.search(rf"\b{name}\b", statement), \
+                    f"{name!r} in {statement!r}"
+
+    def test_the_module_no_longer_reaches_for_the_name_table(self):
+        """The import going away is what stops a name creeping back in."""
+        import symbolic.findings as findings
+
+        assert not hasattr(findings, "COLORS_MAPPING")
+
+    def test_several_colours_are_listed_as_digits(self):
+        from symbolic.findings import _color_phrase
+
+        assert _color_phrase([1]) == "colour 1"
+        assert _color_phrase([1, 3]) == "colour 1 and colour 3"
+        assert _color_phrase([1, 3, 4]) == "colour 1, colour 3 and colour 4"

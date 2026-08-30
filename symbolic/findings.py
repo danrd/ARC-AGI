@@ -29,7 +29,6 @@ import numpy as np
 #: Colour names, so a finding reads "a black background" rather than "0".
 #: Mirrors analyzer.colors_mapping - imported from there rather than
 #: restated, so the two can't drift into naming the same number differently.
-from symbolic.color_names import COLORS_MAPPING
 
 
 # ---------------------------------------------------------------------------
@@ -424,10 +423,24 @@ def _palette_findings(task_analysis) -> Tuple[Finding, ...]:
 
 
 def _color_phrase(colors: Sequence[int]) -> str:
-    names = [f"{COLORS_MAPPING.get(c, c)}" for c in colors]
-    if len(names) == 1:
-        return names[0]
-    return ", ".join(names[:-1]) + f" and {names[-1]}"
+    """Colours as the digits the grid is written in, not as names.
+
+    The prompt renders grids with arc_grid_formatting's "concise"
+    representation - rows of digits - and a finding that says "yellow" next
+    to them names something the prompt never defines. The reader has to
+    already know that yellow is 4, which is a convention of the dataset's
+    visualisations rather than anything in the task. Measured over 60
+    tasks, 85% of summaries carried at least one such name, so this was
+    most of the summary block referring to something not on the page.
+
+    Names would be right if the grid were rendered as "color_text", which
+    format_grid can do; nothing configures it, and the digit stays
+    unambiguous either way because it is what the task data holds.
+    """
+    labels = [f"colour {int(c)}" for c in colors]
+    if len(labels) == 1:
+        return labels[0]
+    return ", ".join(labels[:-1]) + f" and {labels[-1]}"
 
 
 def _background_findings(task_analysis) -> Tuple[Finding, ...]:
@@ -458,10 +471,11 @@ def _background_findings(task_analysis) -> Tuple[Finding, ...]:
         return ()
 
     color = background.consistent_color
-    name = COLORS_MAPPING.get(color, color)
     findings = [Finding(
         subject="background_color",
-        statement=f"every example sits on a {name} background",
+        # The digit, for the reason in _color_phrase: the grid beside this
+        # is written in digits and nothing in the prompt maps a name onto one.
+        statement=f"every example sits on a background of colour {int(color)}",
         evidence=everywhere,
         confidence=1.0,
         parameters={"background_color": color},

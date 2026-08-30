@@ -99,22 +99,55 @@ def build_actions(colours, directions):
     return {0: "submit", **{i + 1: n for i, n in enumerate(names)}}
 
 
-def load_tasks(dataset, limit):
-    """Shape-preserving training pairs. The env's intersection metric
-    compares grids cell by cell, so a pair whose output is a different size
-    has no meaningful progress fraction."""
+def parse_span(text: str):
+    """"N" for the first N tasks, "A-B" for the half-open range [A, B).
+
+    A range is what makes the scan divisible. One search over the whole set
+    takes hours, and the work splits perfectly - tasks share nothing - so
+    the useful unit is "cover 100-200 on this machine while another covers
+    200-300", not "always start from the beginning and stop earlier".
+    """
+    text = str(text).strip()
+    try:
+        if "-" in text:
+            first, _, last = text.partition("-")
+            start, stop = int(first), int(last)
+        else:
+            start, stop = 0, int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--tasks {text}: expected a count or a range A-B with B > A >= 0")
+    if start < 0 or stop <= start:
+        raise argparse.ArgumentTypeError(
+            f"--tasks {text}: expected a count or a range A-B with B > A >= 0")
+    return start, stop
+
+
+def load_tasks(dataset, span):
+    """Shape-preserving training pairs in `span`, and how many exist in all.
+
+    The env's intersection metric compares grids cell by cell, so a pair
+    whose output is a different size has no meaningful progress fraction.
+
+    Positions index the shape-preserving list, not the raw file, and the
+    file is walked in sorted key order - so a given span names the same
+    tasks on every machine and on every run, which is what lets separately
+    scanned ranges be pooled afterwards.
+    """
     path = REPO_ROOT / "data" / "datasets" / dataset / "training_challenges.json"
     with open(path) as f:
         challenges = json.load(f)
-    tasks = []
+    start, stop = span
+    tasks, total = [], 0
     for task_id in sorted(challenges):
         pair = challenges[task_id]["train"][0]
         inp, out = np.array(pair["input"]), np.array(pair["output"])
-        if inp.shape == out.shape:
+        if inp.shape != out.shape:
+            continue
+        if start <= total < stop:
             tasks.append((task_id, inp, out))
-        if len(tasks) == limit:
-            break
-    return tasks
+        total += 1
+    return tasks, total
 
 
 _PEAK = {"value": None}
@@ -298,8 +331,12 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--approaches", type=int, nargs="+", default=[1, 2],
                         help="reward_approach values to compare (default: 1 2)")
-    parser.add_argument("--tasks", type=int, default=52,
-                        help="training tasks to scan; shape-preserving ones are kept")
+    parser.add_argument("--tasks", type=parse_span, default="52",
+                        help="how much of the shape-preserving task list to scan: "
+                             "a count (\"100\" = the first 100) or a half-open "
+                             "range (\"100-200\"). Positions are stable across "
+                             "machines and runs, so ranges scanned separately can "
+                             "be pooled")
     parser.add_argument("--repeats", type=int, default=2,
                         help="runs per task - the search is stochastic enough "
                              "that one run of each reports noise")
@@ -333,7 +370,12 @@ def main() -> None:
 
     install_playout(args.playout)
     actions = build_actions(args.colours, args.directions)
-    tasks = load_tasks(args.dataset, args.tasks)
+    tasks, total = load_tasks(args.dataset, args.tasks)
+    if not tasks:
+        raise SystemExit(f"--tasks {args.tasks[0]}-{args.tasks[1]} selects nothing; "
+                         f"{total} shape-preserving tasks exist in {args.dataset}")
+    print(f"tasks {args.tasks[0]}-{args.tasks[0] + len(tasks)} of {total} "
+          f"shape-preserving in {args.dataset}")
     print(f"{len(tasks)} shape-preserving tasks, {len(actions)} actions, "
           f"{args.repeats} repeats, {args.rounds} rounds x {args.rollouts} "
           f"rollouts at keep={args.keep}, {args.playout} playout")
@@ -353,11 +395,17 @@ def main() -> None:
             compare(first, second, results)
 
     if args.out:
+        # The span travels with the results: pooling separately scanned
+        # ranges needs to know which each file covered, and per_task alone
+        # cannot say - a task missing from it was dropped, not unscanned.
         args.out.write_text(json.dumps(
-            {str(k): {"per_task": v["per_task"], "endings": v["endings"],
-                      "submit_progress": v["submit_progress"],
-                      "dropped": v["dropped"]}
-             for k, v in results.items()}, indent=2))
+            {"span": [args.tasks[0], args.tasks[0] + len(tasks)],
+             "total_available": total,
+             "approaches": {
+                 str(k): {"per_task": v["per_task"], "endings": v["endings"],
+                          "submit_progress": v["submit_progress"],
+                          "dropped": v["dropped"]}
+                 for k, v in results.items()}}, indent=2))
         print(f"\nwrote {args.out}")
 
 

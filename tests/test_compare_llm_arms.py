@@ -194,16 +194,15 @@ class TestTheReportIsOneFile:
         assert "not significant" in page
         assert "easy" in page
 
-    def test_a_generation_that_looks_like_markup_is_escaped(self, tmp_path):
-        """Answers are model output and prompts carry <SUMMARY> tags - one
-        unescaped bracket silently eats the rest of the report."""
+    def test_prompt_text_that_looks_like_markup_is_escaped(self, tmp_path):
+        """Prompts carry <SUMMARY> tags and the diff prints them verbatim -
+        one unescaped bracket silently eats the rest of the report."""
         page = self._write(tmp_path, [("t", "gained by B",
-                                       self._side(text="<script>bad()</script>"),
-                                       self._side(prompt="<SUMMARY>\nfindings"))])
+                                       self._side(prompt="plain"),
+                                       self._side(prompt="plain\n<SUMMARY>"))])
 
-        assert "<script>bad()</script>" not in page
-        assert "&lt;script&gt;" in page
         assert "&lt;SUMMARY&gt;" in page
+        assert "<SUMMARY>" not in page
 
     def test_the_prompt_difference_is_marked_up_by_direction(self, tmp_path):
         page = self._write(tmp_path, [("t", "gained by B",
@@ -297,13 +296,28 @@ class TestTheSameReportAsMarkdown:
         assert "```diff" in markdown
         assert "+b" in markdown
 
-    def test_generations_are_fenced_so_a_grid_keeps_its_rows(self, tmp_path):
-        """Markdown folds consecutive lines into one paragraph, which turns
-        a grid into a sentence."""
+    def test_the_answers_are_scored_not_reprinted_as_digits(self, tmp_path):
+        """The picture above shows the task and its answer; a second copy as
+        digits is the same thing in the form that is harder to read. The
+        terminal's --detail still prints them - it has no picture to defer
+        to."""
         markdown = self._write(tmp_path, [("t", "gained by B", self._side(),
                                             self._side(text="0 1\n1 0"))], "report.md")
 
-        assert "```\n0 1\n1 0\n```" in markdown
+        assert "**Answer A**" in markdown and "**Answer B**" in markdown
+        assert "scored 0.500" in markdown
+        assert "0 1\n1 0" not in markdown
+
+    def test_the_diff_says_which_arm_each_side_is(self, tmp_path):
+        """`+` and `-` are readable from context and that is exactly the
+        problem - nothing marks which arm is which, so the eye has to
+        reconstruct it every time."""
+        markdown = self._write(tmp_path, [("t", "gained by B",
+                                            self._side(prompt="a"),
+                                            self._side(prompt="a\nb"))], "report.md")
+
+        assert "`-` is A only (arm A)" in markdown
+        assert "`+` is B only (arm B)" in markdown
 
 
 class TestCleaningUpTheDownloads:

@@ -352,13 +352,18 @@ def _markdown_report(arm_a: str, arm_b: str, per_shard, cost, totals,
                 lines.append(f"![{task_id}]({image_dir.name}/{saved.name})\n")
             except Exception as exc:
                 lines.append(f"*could not plot: {type(exc).__name__}*\n")
-        lines.append(f"prompt {a['prompt']} chars in A, {b['prompt']} in B\n")
+        lines.append(f"**Prompt** — {a['prompt']} chars in A, {b['prompt']} in B. "
+                     f"`-` is A only ({arm_a}), `+` is B only ({arm_b}).\n")
         difference = prompt_difference(a["prompt_text"], b["prompt_text"])
         lines.append("```diff\n" + ("\n".join(difference) if difference
                                     else "  (the prompts are identical)") + "\n```\n")
-        for label, side in ((arm_a, a), (arm_b, b)):
-            lines.append(f"**[{label}]** scored {side['score']:.3f}\n")
-            lines.append("```\n" + side["generated"].strip() + "\n```\n")
+        # Scores, not the grids themselves: the picture above already shows
+        # the task and its answer, and a second copy as digits is the same
+        # thing in the form that is harder to read. --detail still prints
+        # them, because a terminal has no picture to defer to.
+        for tag, label, side in (("A", arm_a, a), ("B", arm_b, b)):
+            lines.append(f"**Answer {tag}** — {label} — scored "
+                         f"{side['score']:.3f}, {len(side['generated'].strip())} chars\n")
     return "\n".join(lines)
 
 
@@ -420,13 +425,15 @@ def write_report(path: Path, arm_a: str, arm_b: str, per_shard, cost,
             except Exception as exc:
                 parts.append(f"<p class=note>could not plot: "
                              f"{html.escape(type(exc).__name__)}</p>")
-        parts.append(f"<p class=note>prompt {a['prompt']} chars in A, "
-                     f"{b['prompt']} in B</p>")
+        parts.append(f"<p class=note><b>Prompt</b> &mdash; {a['prompt']} chars in A, "
+                     f"{b['prompt']} in B. <span class=del>&minus;</span> is A only "
+                     f"({html.escape(arm_a)}), <span class=add>+</span> is B only "
+                     f"({html.escape(arm_b)}).</p>")
         parts.append(_diff_html(prompt_difference(a["prompt_text"], b["prompt_text"])))
-        for label, side in ((arm_a, a), (arm_b, b)):
-            parts.append(f"<p class=note>[{html.escape(label)}] scored "
-                         f"{side['score']:.3f}</p>"
-                         f"<pre>{html.escape(side['generated'].strip())}</pre>")
+        for tag, label, side in (("A", arm_a, a), ("B", arm_b, b)):
+            parts.append(f"<p class=note><b>Answer {tag}</b> &mdash; "
+                         f"{html.escape(label)} &mdash; scored {side['score']:.3f}, "
+                         f"{len(side['generated'].strip())} chars</p>")
         parts.append("</div>")
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -447,15 +454,16 @@ def report_flip(task_id: str, verdict: str, a: dict, b: dict,
 
     added = prompt_difference(a["prompt_text"], b["prompt_text"])
     print(f"  prompt: {a['prompt']} chars in A, {b['prompt']} in B; "
-          f"{len(added)} lines differ")
+          f"{len(added)} lines differ  (- = A only, + = B only)")
     for line in added[:40]:
         print(f"    {line}")
     if len(added) > 40:
         print(f"    ... {len(added) - 40} more")
 
-    for label, side in ((arm_a, a), (arm_b, b)):
+    for tag, label, side in (("A", arm_a, a), ("B", arm_b, b)):
         answer = side["generated"].strip()
-        print(f"  [{label}] scored {side['score']:.3f}, {len(answer)} chars:")
+        print(f"  answer {tag} [{label}] scored {side['score']:.3f}, "
+              f"{len(answer)} chars:")
         for line in answer.splitlines()[:12]:
             print(f"    {line}")
         if len(answer.splitlines()) > 12:

@@ -185,10 +185,18 @@ def install_playout(mode):
 
 
 def run_one(task, actions, approach, args):
-    """One search over one task, as (rollouts, peak) - or (None, None) if it
-    did not finish. A task that times out or raises is dropped rather than
-    scored zero: a zero is a search that found nothing, which is a different
-    statement."""
+    """One search over one task, as (rollouts, peak, why) - or
+    (None, None, reason) if it did not finish. A task that times out or
+    raises is dropped rather than scored zero: a zero is a search that
+    found nothing, which is a different statement.
+
+    `why` names which of the two it was, because they call for opposite
+    fixes and one run counted them together. Reading a scan of 300 runs
+    that dropped 124 of them in 9233s as a budget problem is arithmetically
+    impossible - 124 timeouts at --timeout 240 is 29760s on their own - so
+    those drops were exceptions, and raising the budget would have changed
+    nothing.
+    """
     task_id, inp, out = task
     env = ARCGridWorld(max_episode_len=args.episode_len, feasible_actions=actions,
                        reward_approach=approach, repr_level=1,
@@ -206,13 +214,13 @@ def run_one(task, actions, approach, args):
                 n_rounds=args.rounds, keep_fraction=args.keep, min_pool=4,
                 c=args.c)
     except TimedOut:
-        return None, None
-    except Exception:
-        return None, None
+        return None, None, "timed out"
+    except Exception as exc:
+        return None, None, type(exc).__name__
     finally:
         signal.alarm(0)
     span = target - base
-    return rollouts, ((_PEAK["value"] - base) / span if span else 0.0)
+    return rollouts, ((_PEAK["value"] - base) / span if span else 0.0), None
 
 
 def evaluate(approach, tasks, actions, args):
@@ -222,12 +230,14 @@ def evaluate(approach, tasks, actions, args):
     submit_progress = []
     lengths = []
     dropped = 0
+    drop_reasons = collections.Counter()
     for task in tasks:
         best = best_peak = None
         for _ in range(args.repeats):
-            rollouts, peak = run_one(task, actions, approach, args)
+            rollouts, peak, why = run_one(task, actions, approach, args)
             if rollouts is None:
                 dropped += 1
+                drop_reasons[why] += 1
                 continue
             best_peak = peak if best_peak is None else max(best_peak, peak)
             for rollout in rollouts:
@@ -260,6 +270,7 @@ def evaluate(approach, tasks, actions, args):
         "submit_progress": submit_progress,
         "lengths": lengths,
         "dropped": dropped,
+        "drop_reasons": dict(drop_reasons),
     }
 
 
@@ -273,6 +284,13 @@ def report(approach, result, elapsed):
     print(f"\nreward_approach={approach}  "
           f"({len(progress)} tasks scored, {total} rollouts, "
           f"{result['dropped']} runs dropped, {elapsed:.0f}s)")
+    reasons = result.get("drop_reasons") or {}
+    if reasons:
+        # Broken out because the two call for opposite fixes and reading
+        # them together sent one investigation after the timeout when 41%
+        # of runs were raising.
+        print("  why runs were dropped: " + ", ".join(
+            f"{why} {n}" for why, n in sorted(reasons.items(), key=lambda kv: -kv[1])))
     print("  PEAK progress closed toward the target, best per task:")
     print(f"    mean {statistics.mean(progress):.3f}  "
           f"median {statistics.median(progress):.3f}  max {max(progress):.3f}")
@@ -404,7 +422,8 @@ def main() -> None:
              "approaches": {
                  str(k): {"per_task": v["per_task"], "endings": v["endings"],
                           "submit_progress": v["submit_progress"],
-                          "dropped": v["dropped"]}
+                          "dropped": v["dropped"],
+                          "drop_reasons": v.get("drop_reasons", {})}
                  for k, v in results.items()}}, indent=2))
         print(f"\nwrote {args.out}")
 

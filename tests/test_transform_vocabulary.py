@@ -690,3 +690,68 @@ def test_the_stubs_are_still_stubs():
         before = env.grid.copy()
         env.step(np.array([index, 0, 0]))
         assert np.array_equal(env.grid, before), f"{name} now does something"
+
+
+class TestInvertingATwoColourObjectWhoseGridMoved:
+    """color_numbers is what the object held when it was built; the grid is
+    what its cells hold now, and an earlier transform in the same simulated
+    path can recolour one of them without the object being rebuilt.
+
+    The lookup used to be direct, so such a cell raised KeyError - and a
+    search counts a raised action as a dropped run, not a refused one.
+    Measured over 300 runs of scripts/compare_reward_approaches.py, 124 were
+    lost this way: 41% of the scan, and not at random, since it is whichever
+    tasks the playout happened to walk into this state on.
+    """
+
+    @staticmethod
+    def _two_colour_object(grid, coords):
+        from symbolic.objects_analysis import GridObject
+
+        # shape="complex" triggers classify_shape, which reads the label as
+        # "prefix_id" - the form real construction always supplies.
+        return GridObject(shape="complex", coords=coords, color=[1, 2],
+                           label="complex_0", grid_shape=grid.shape, grid=grid)
+
+    def test_a_stale_colour_refuses_instead_of_raising(self):
+        from rl.arc_transformators import inverse_obj_color
+
+        grid = np.zeros((4, 4), dtype=int)
+        coords = [(1, 1), (1, 2)]
+        grid[1, 1], grid[1, 2] = 1, 2
+        obj = self._two_colour_object(grid, coords)
+        grid[1, 2] = 3  # something else recoloured it since
+
+        before = grid.copy()
+        result = inverse_obj_color(grid, obj, font_color=0)
+
+        assert np.array_equal(result, before)
+
+    def test_a_matching_object_still_inverts(self):
+        """The refusal must not cost the transform its actual job."""
+        from rl.arc_transformators import inverse_obj_color
+
+        grid = np.zeros((4, 4), dtype=int)
+        coords = [(1, 1), (1, 2)]
+        grid[1, 1], grid[1, 2] = 1, 2
+        obj = self._two_colour_object(grid, coords)
+
+        inverse_obj_color(grid, obj, font_color=0)
+
+        assert grid[1, 1] == 2 and grid[1, 2] == 1
+
+    def test_it_is_refused_whole_rather_than_applied_to_the_cells_that_match(self):
+        """A half-inverted object is neither the original nor the inverse,
+        and every other transform here that cannot apply leaves the grid
+        alone."""
+        from rl.arc_transformators import inverse_obj_color
+
+        grid = np.zeros((4, 4), dtype=int)
+        coords = [(1, 1), (1, 2), (1, 3)]
+        grid[1, 1], grid[1, 2], grid[1, 3] = 1, 2, 1
+        obj = self._two_colour_object(grid, coords)
+        grid[1, 3] = 7  # only the third cell went stale
+
+        inverse_obj_color(grid, obj, font_color=0)
+
+        assert (grid[1, 1], grid[1, 2], grid[1, 3]) == (1, 2, 7)

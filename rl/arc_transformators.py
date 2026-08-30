@@ -337,6 +337,19 @@ def inverse_obj_color(grid:np.array, obj:GridObject, font_color:int):
         color_1 = obj.color_numbers[0]
         color_2 = obj.color_numbers[1]
         inversion_dict = {color_1:color_2, color_2:color_1}
+        # color_numbers is what the object held when it was built; the grid
+        # is what its cells hold now, and an earlier transform in the same
+        # path can have recoloured one of them without the object being
+        # rebuilt. Looking the cell up directly then raised KeyError, and a
+        # search treats a raised action as a dropped run rather than a
+        # refused one - measured over 300 runs of the comparison script, 124
+        # were lost this way, 41% of the scan.
+        #
+        # Refused whole rather than applied to the cells that do match: a
+        # half-inverted object is neither the original nor the inverse, and
+        # every other transform here that cannot apply leaves the grid alone.
+        if any(grid[i, j] not in inversion_dict for i, j in obj.coords):
+            return grid
         for i, j in obj.coords:
             grid[i, j] = inversion_dict[grid[i, j]]
     return grid

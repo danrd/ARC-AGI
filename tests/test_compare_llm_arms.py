@@ -1,0 +1,148 @@
+"""Tests for scripts/compare_llm_arms.py - the parts that decide what the
+comparison says, kept apart from wandb.
+
+The script exists because five per-shard tests answered nothing: with 1, 4,
+1, 1 and 0 discordant pairs there was no shard on which a test could speak.
+So the pooling and the exactness of the test it pools into are the load-
+bearing pieces, along with the run lookup, whose one failure mode is silent
+- a filter on the wrong field returns an empty set rather than an error.
+"""
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+_SPEC = importlib.util.spec_from_file_location(
+    "compare_llm_arms", REPO_ROOT / "scripts" / "compare_llm_arms.py")
+script = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(script)
+
+
+class TestTheExactTest:
+    """Chi-square is what McNemar is usually written with and it reads
+    optimistic on a handful of pairs - which is all a binary outcome at a 7%
+    base rate ever produces, however many tasks are run."""
+
+    def test_no_discordant_pairs_is_no_evidence(self):
+        assert script.two_sided_binomial(0, 0) == 1.0
+
+    def test_the_measured_case_does_not_reach_significance(self):
+        """5 gained against 2 lost, pooled over five shards - the result the
+        script was written to state plainly rather than imply."""
+        assert script.two_sided_binomial(5, 2) == pytest.approx(0.453, abs=0.001)
+
+    def test_a_clean_sweep_of_seven_does(self):
+        assert script.two_sided_binomial(7, 0) == pytest.approx(0.0156, abs=0.001)
+
+    def test_it_is_symmetric(self):
+        assert script.two_sided_binomial(2, 5) == script.two_sided_binomial(5, 2)
+
+    def test_chi_square_would_have_called_the_sweep_of_five_significant(self):
+        """Why exact: the continuity-corrected chi-square puts 5-0 at 3.2
+        and 6-0 at 4.17, crossing 3.84 between them, while the exact test
+        puts 6-0 at 0.031 - close, but they disagree about 5-0, which is
+        the size of result this comparison actually produces."""
+        exact = script.two_sided_binomial(5, 0)
+
+        assert exact > 0.05
+        assert (abs(5 - 0) - 1) ** 2 / 5 == pytest.approx(3.2)
+
+
+class TestReadingWhatTheArmsDifferBy:
+    def test_an_added_block_is_reported(self):
+        before = "instruction\nexamples\noutput"
+        after = "instruction\nexamples\n<SUMMARY>\nwhat changes\n</SUMMARY>\noutput"
+
+        added = script.prompt_difference(before, after)
+
+        assert [line[1:] for line in added] == ["<SUMMARY>", "what changes", "</SUMMARY>"]
+        assert all(line.startswith("+") for line in added)
+
+    def test_identical_prompts_differ_by_nothing(self):
+        assert script.prompt_difference("same\ntext", "same\ntext") == []
+
+    def test_a_difference_the_arms_were_not_supposed_to_have_still_shows(self):
+        """The reason to diff rather than assume: if the arms differ
+        anywhere beyond the block under test, the comparison is not
+        measuring what it says, and this is where that surfaces."""
+        added = script.prompt_difference("temperature 0.2\nexamples",
+                                          "temperature 0.9\nexamples")
+
+        assert any(line.startswith("-") for line in added)
+        assert any(line.startswith("+") for line in added)
+
+
+class TestReadingACheckpoint:
+    def test_a_wrapped_generation_is_unwrapped(self):
+        """SubsymbolicModule.solve returns a dict; older records hold the
+        string itself, and both turn up in checkpoints."""
+        assert script.generation_text({"generation_result": {"solution": "grid"}}) == "grid"
+        assert script.generation_text({"generation_result": "grid"}) == "grid"
+        assert script.generation_text({}) == ""
+
+    def test_tasks_are_keyed_by_string_id(self):
+        """solved_tasks and prompts_data do not agree on the type of a task
+        id, and an int key silently intersects with nothing."""
+        indexed = script.index_tasks({"prompts_data": [
+            {"task_id": 12345, "primary_score": 0.5, "prompt_length": 10,
+             "generation_result": {"solution": "x"}, "processing_time_min": 1.0}]})
+
+        assert set(indexed) == {"12345"}
+        assert indexed["12345"]["score"] == 0.5
+
+    def test_a_missing_field_does_not_become_None_arithmetic(self):
+        indexed = script.index_tasks({"prompts_data": [{"task_id": "a"}]})
+
+        assert indexed["a"] == {"score": 0.0, "prompt_text": "", "prompt": 0,
+                                 "generated": "", "minutes": 0.0}
+
+
+class _FakeRun:
+    def __init__(self, name, run_id):
+        self.name, self.id = name, run_id
+
+
+class _FakeApi:
+    """Records the filter it was given, so the field names can be checked -
+    the one failure mode of this lookup is silent."""
+
+    def __init__(self, runs):
+        self._runs, self.filters = runs, None
+
+    def runs(self, path, filters=None):
+        self.filters = filters
+        return self._runs
+
+
+class TestFindingAnArm:
+    def test_runs_are_keyed_by_shard(self):
+        api = _FakeApi([_FakeRun("easy", "a1"), _FakeRun("medium", "a2")])
+
+        found = script.find_runs(api, "e/p", "with summary")
+
+        assert set(found) == {"easy", "medium"}
+        assert found["easy"].id == "a1"
+
+    def test_the_arm_is_looked_up_in_the_config(self):
+        api = _FakeApi([])
+
+        script.find_runs(api, "e/p", "with summary")
+
+        assert api.filters == {"config.run_description": "with summary"}
+
+    def test_a_rerun_does_not_replace_the_newer_run(self):
+        """api.runs returns newest first; a shard run twice should report
+        the newer result, not whichever came last out of the iterator."""
+        api = _FakeApi([_FakeRun("easy", "new"), _FakeRun("easy", "old")])
+
+        assert script.find_runs(api, "e/p", "x")["easy"].id == "new"
+
+    def test_a_model_filter_is_a_substring_match(self):
+        api = _FakeApi([])
+
+        script.find_runs(api, "e/p", "x", model="Qwen3-30B")
+
+        assert api.filters["config.model"] == {"$regex": "Qwen3-30B"}

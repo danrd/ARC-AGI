@@ -289,3 +289,41 @@ class TestReplayingAgainstTheRealEnv:
         actions, index, task = setup
 
         assert not script.replays(task, [(index["rotate90"], 0, 0)], actions)
+
+
+class TestLeavingTheAnswerOut:
+    """On a task the search solved, the trace in the block is the answer.
+    An arm that keeps it measures recipe-following on those tasks and
+    hint-following on the rest, and reports one number for both."""
+
+    @pytest.fixture(autouse=True)
+    def no_env(self, monkeypatch):
+        monkeypatch.setattr(script, "render_steps",
+                            lambda task, seq, names, actions, episode_len=25:
+                            [f"step {names[str(s[0])]}" for s in seq])
+        monkeypatch.setattr(script, "minimise",
+                            lambda task, seq, actions, episode_len=25, goal=None:
+                            tuple(seq))
+
+    @staticmethod
+    def pooled():
+        return {"per_task": {"aaa": 1.0}, "effective": {"aaa": {"fliplr": 40}},
+                "solutions": {"aaa": [[[1, 0, 0], [0, 0, 0]]]}, "partials": {},
+                "names": NAMES, "span": (0, 1)}
+
+    def test_the_solving_sequence_is_dropped(self):
+        text = script.render_block(("aaa", None, None), self.pooled(), {},
+                                   skip_solved=True)
+
+        assert "reproduced the output exactly" not in text
+
+    def test_the_moves_list_survives(self):
+        text = script.render_block(("aaa", None, None), self.pooled(), {},
+                                   skip_solved=True)
+
+        assert "fliplr" in text and "up to 20 cells" in text
+
+    def test_by_default_the_sequence_is_still_there(self):
+        text = script.render_block(("aaa", None, None), self.pooled(), {})
+
+        assert "reproduced the output exactly" in text

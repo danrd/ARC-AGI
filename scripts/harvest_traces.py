@@ -283,12 +283,19 @@ def render_steps(task, sequence, names, actions, episode_len=25):
     return lines
 
 
-def render_block(task, pooled, actions, moves=6, min_gain=5, episode_len=25):
+def render_block(task, pooled, actions, moves=6, min_gain=5, episode_len=25,
+                 skip_solved=False):
     """The hint block for one task, or None when the search found nothing.
 
     Nothing is rendered rather than "the search found nothing" on purpose:
     a block that is sometimes empty teaches the reader to expect one, and
     an absent block is the honest form of having nothing to say.
+
+    `skip_solved` drops the verified solving sequence, keeping the moves
+    list. On a task the search solved, that sequence is the answer, and an
+    arm measuring whether a hint helps would be measuring whether the model
+    can follow a recipe on those tasks and something else on the rest -
+    two experiments averaged into one number.
     """
     task_id = task[0]
     names = pooled["names"]
@@ -296,7 +303,7 @@ def render_block(task, pooled, actions, moves=6, min_gain=5, episode_len=25):
     solved = pooled["solutions"].get(task_id) or []
     partial = pooled["partials"].get(task_id) or []
     effective = pooled["effective"].get(task_id) or {}
-    if solved:
+    if solved and not skip_solved:
         best = min(distinct(solved), key=len)
         body = [step for step in best if names[str(step[0])] != "submit"]
         body = minimise(task, body, actions, episode_len)
@@ -437,6 +444,10 @@ def main() -> None:
                         help="how many single moves a hint block lists")
     parser.add_argument("--min-gain", type=int, default=5,
                         help="cells a single move must have recovered to be listed")
+    parser.add_argument("--skip-solved", action="store_true",
+                        help="leave the verified solving sequence out of the "
+                             "blocks, keeping the moves list - on a solved task "
+                             "that sequence is the answer")
     parser.add_argument("--agents", action="store_true",
                         help="also score the effective actions against the agent rosters")
     args = parser.parse_args()
@@ -493,20 +504,26 @@ def main() -> None:
         blocks = {}
         for task in tasks:
             text = render_block(task, pooled, actions, args.moves,
-                                args.min_gain, args.episode_len)
+                                args.min_gain, args.episode_len,
+                                args.skip_solved)
             if text:
                 blocks[task[0]] = text
         args.prompt_block.write_text(json.dumps(blocks, indent=1, ensure_ascii=False))
         covered = 100 * len(blocks) / max(len(tasks), 1)
         print("\n=== prompt blocks ===")
+        giving = sum(1 for text in blocks.values()
+                     if "reproduced the output exactly" in text)
         print(f"  {len(blocks)} of {len(tasks)} tasks carry one ({covered:.0f}%) - "
               f"the rest get no block at all rather than an empty one")
+        print(f"  {giving} of them hand over a verified solution; read those "
+              f"apart from the rest, or rebuild with --skip-solved")
         # What the floor buys, since it is the one knob that decides whether
         # a task is spoken about at all.
         for floor in (1, 5, 10, 20):
             with_block = sum(1 for task in tasks
                              if render_block(task, pooled, actions, args.moves,
-                                             floor, args.episode_len))
+                                             floor, args.episode_len,
+                                             args.skip_solved))
             print(f"    at >= {floor:2d} cells: {with_block} tasks")
         sizes = [len(text) for text in blocks.values()]
         if sizes:

@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import signal
+import threading
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -73,6 +75,12 @@ class SearchSettings:
     min_gain: int = 5
     skip_solved: bool = False
     partials: int = 3
+    #: Seconds one search may take before it is cut short, 0 for no cap.
+    #: Measured over 20 tasks, the median search is 2.4s and the slowest is
+    #: 165s - so without a cap one task in twenty stalls a run for minutes.
+    #: What the search found up to the cut is kept; only the rollouts it
+    #: had not returned yet are lost.
+    timeout: int = 120
 
 
 def build_vocabulary(colours, directions):
@@ -282,6 +290,34 @@ def keep_partial(kept, closed, trace, limit):
     return kept
 
 
+class SearchTimedOut(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def time_limit(seconds):
+    """Cut the block below short after `seconds`, where that is possible.
+
+    SIGALRM only arrives on the main thread, so a search running in a
+    worker thread is left uncapped rather than silently unprotected in a
+    way that looks capped.
+    """
+    if seconds <= 0 or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def ring(*_):
+        raise SearchTimedOut()
+
+    previous = signal.signal(signal.SIGALRM, ring)
+    signal.alarm(int(seconds))
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 def search_once(task, actions, settings):
     """One search, reported as the material a block is rendered from.
 
@@ -309,16 +345,23 @@ def search_once(task, actions, settings):
         return result
 
     mcts.EnvironmentSimulator.simulate_step = watching
+    rollouts = []
     try:
         # stderr as well as stdout: the search draws tqdm bars, and a run
         # that builds one prompt per task would fill a notebook with them.
         with contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
-            rollouts = mcts.rollout_preparation(
-                env, method="mcts", n_initial_rollouts=settings.rollouts,
-                mcts_iterations=settings.iterations, top_k=settings.top_k,
-                n_rounds=settings.rounds, keep_fraction=settings.keep,
-                min_pool=4, c=settings.c)
+            with time_limit(settings.timeout):
+                rollouts = mcts.rollout_preparation(
+                    env, method="mcts", n_initial_rollouts=settings.rollouts,
+                    mcts_iterations=settings.iterations, top_k=settings.top_k,
+                    n_rounds=settings.rounds, keep_fraction=settings.keep,
+                    min_pool=4, c=settings.c)
+    except SearchTimedOut:
+        # The peak and the per-action gains were recorded as the search ran,
+        # so a cut search still has something to say - it loses only the
+        # rollouts it had not returned yet.
+        pass
     finally:
         mcts.EnvironmentSimulator.simulate_step = original
 

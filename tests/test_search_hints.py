@@ -325,3 +325,44 @@ class TestCaching:
         assert cache(("aaa", None, None)) == "text"
         assert cache(("aaa", None, None)) == "text"
         assert len(calls) == 1
+
+
+class TestTheTimeCap:
+    """Median search is seconds, the slowest measured was 165s. Online that
+    is one task in twenty stalling a run, so a search is cut short - and
+    what it had already found is kept, since the peak and the per-action
+    gains are recorded as it goes."""
+
+    def test_a_search_that_runs_long_still_reports_what_it_saw(self, monkeypatch):
+        def slow(*args, **kwargs):
+            raise hints.SearchTimedOut()
+
+        monkeypatch.setattr(hints.mcts, "rollout_preparation", slow)
+        actions = {0: "submit", 1: "fliplr"}
+        task = ("aaa", __import__("numpy").zeros((3, 3), dtype=int),
+                __import__("numpy").ones((3, 3), dtype=int))
+
+        found = hints.search_once(task, actions, hints.SearchSettings(timeout=1))
+
+        assert found["solutions"] == [] and found["partials"] == []
+        assert "peak" in found and "effective" in found
+
+    def test_no_cap_is_asked_for_when_the_timeout_is_zero(self):
+        with hints.time_limit(0):
+            pass  # nothing to assert but that it does not arm or raise
+
+    def test_the_cap_fires(self):
+        import time
+
+        with pytest.raises(hints.SearchTimedOut):
+            with hints.time_limit(1):
+                time.sleep(3)
+
+    def test_the_previous_handler_is_put_back(self):
+        import signal
+
+        before = signal.getsignal(signal.SIGALRM)
+        with hints.time_limit(5):
+            pass
+
+        assert signal.getsignal(signal.SIGALRM) is before

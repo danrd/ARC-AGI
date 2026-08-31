@@ -57,7 +57,6 @@ import contextlib
 import io
 import json
 import multiprocessing
-import os
 import signal
 import statistics
 import sys
@@ -585,15 +584,6 @@ def main() -> None:
 
     signal.signal(signal.SIGALRM,
                   lambda *a: (_ for _ in ()).throw(TimedOut()))
-
-    if args.workers > 1:
-        # Set before any worker is spawned, since a child reads these when
-        # it imports numpy. Without it every worker starts a thread pool of
-        # its own and the machine spends its time context-switching -
-        # the arrays here are 30x30 at most and gain nothing from threads.
-        for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-                         "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-            os.environ.setdefault(variable, "1")
 
     install_playout(args.playout)
     actions = build_actions(args.colours, args.directions)

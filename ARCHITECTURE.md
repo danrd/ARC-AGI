@@ -158,58 +158,58 @@ graph TD
   utils -->|1| symbolic
 ```
 
-| module | kB | imported by |
-| --- | ---: | ---: |
-| `data.configs.agents_config` | 6 | 2 |
-| `data.configs.env_configs` | 4 | 6 |
-| `data.configs.rl_configs` | 1 | 4 |
-| `data.datasets.ARC.arc_dataset` | 12 | 3 |
-| `orchestration.__main__` | 2 | 0 |
-| `orchestration.configs` | 5 | 5 |
-| `orchestration.graph` | 22 | 2 |
-| `rl.arc_env` | 26 | 7 |
-| `rl.arc_hp_search` | 4 | 1 |
-| `rl.arc_task` | 1 | 15 |
-| `rl.arc_transformators` | 71 | 4 |
-| `rl.arc_world` | 16 | 3 |
-| `rl.callbacks` | 7 | 1 |
-| `rl.evaluation` | 3 | 2 |
-| `rl.features` | 28 | 2 |
-| `rl.mcts` | 47 | 3 |
-| `rl.optimization` | 4 | 2 |
-| `rl.plotting` | 8 | 1 |
-| `rl.policy` | 9 | 2 |
-| `rl.rl_job` | 4 | 1 |
-| `rl.rl_module` | 2 | 2 |
-| `rl.training` | 11 | 4 |
-| `rl.utils` | 9 | 6 |
-| `scripts.compare_llm_arms` | 36 | 0 |
-| `scripts.compare_reward_approaches` | 26 | 1 |
-| `scripts.harvest_traces` | 23 | 0 |
-| `scripts.module_map` | 6 | 0 |
-| `scripts.sync_llm_kit` | 2 | 0 |
-| `subsymbolic.analyst` | 9 | 1 |
-| `subsymbolic.arc_evaluators` | 2 | 1 |
-| `subsymbolic.arc_grid_formatting` | 2 | 2 |
-| `subsymbolic.arc_resolvers` | 4 | 2 |
-| `subsymbolic.llm_run` | 16 | 3 |
-| `subsymbolic.llm_runtime` | 21 | 5 |
-| `subsymbolic.llm_setup` | 22 | 5 |
-| `subsymbolic.logging` | 2 | 1 |
-| `subsymbolic.prompt_builder` | 12 | 9 |
-| `subsymbolic.registry` | 0 | 3 |
-| `subsymbolic.subsymbolic_module` | 2 | 2 |
-| `subsymbolic.utils` | 7 | 3 |
-| `symbolic.analyzer` | 44 | 3 |
-| `symbolic.color_names` | 0 | 1 |
-| `symbolic.findings` | 29 | 4 |
-| `symbolic.objects_analysis` | 51 | 14 |
-| `symbolic.patterns` | 28 | 4 |
-| `symbolic.summaries` | 79 | 8 |
-| `symbolic.symbolic_module` | 55 | 2 |
-| `symbolic.utils` | 12 | 10 |
-| `utils.plotting` | 19 | 6 |
-| `utils.utils` | 2 | 2 |
+| module | imported by |
+| --- | ---: |
+| `data.configs.agents_config` | 2 |
+| `data.configs.env_configs` | 6 |
+| `data.configs.rl_configs` | 4 |
+| `data.datasets.ARC.arc_dataset` | 3 |
+| `orchestration.__main__` | 0 |
+| `orchestration.configs` | 5 |
+| `orchestration.graph` | 2 |
+| `rl.arc_env` | 7 |
+| `rl.arc_hp_search` | 1 |
+| `rl.arc_task` | 15 |
+| `rl.arc_transformators` | 4 |
+| `rl.arc_world` | 3 |
+| `rl.callbacks` | 1 |
+| `rl.evaluation` | 2 |
+| `rl.features` | 2 |
+| `rl.mcts` | 3 |
+| `rl.optimization` | 2 |
+| `rl.plotting` | 1 |
+| `rl.policy` | 2 |
+| `rl.rl_job` | 1 |
+| `rl.rl_module` | 2 |
+| `rl.training` | 4 |
+| `rl.utils` | 6 |
+| `scripts.compare_llm_arms` | 0 |
+| `scripts.compare_reward_approaches` | 1 |
+| `scripts.harvest_traces` | 0 |
+| `scripts.module_map` | 0 |
+| `scripts.sync_llm_kit` | 0 |
+| `subsymbolic.analyst` | 1 |
+| `subsymbolic.arc_evaluators` | 1 |
+| `subsymbolic.arc_grid_formatting` | 2 |
+| `subsymbolic.arc_resolvers` | 2 |
+| `subsymbolic.llm_run` | 3 |
+| `subsymbolic.llm_runtime` | 5 |
+| `subsymbolic.llm_setup` | 5 |
+| `subsymbolic.logging` | 1 |
+| `subsymbolic.prompt_builder` | 9 |
+| `subsymbolic.registry` | 3 |
+| `subsymbolic.subsymbolic_module` | 2 |
+| `subsymbolic.utils` | 3 |
+| `symbolic.analyzer` | 3 |
+| `symbolic.color_names` | 1 |
+| `symbolic.findings` | 4 |
+| `symbolic.objects_analysis` | 14 |
+| `symbolic.patterns` | 4 |
+| `symbolic.summaries` | 8 |
+| `symbolic.symbolic_module` | 2 |
+| `symbolic.utils` | 10 |
+| `utils.plotting` | 6 |
+| `utils.utils` | 2 |
 
 Packages that import each other:
 

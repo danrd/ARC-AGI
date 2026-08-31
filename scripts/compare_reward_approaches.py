@@ -56,10 +56,13 @@ import collections
 import contextlib
 import io
 import json
+import multiprocessing
+import os
 import signal
 import statistics
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -263,97 +266,160 @@ def keep_partial(kept, closed, trace, limit):
     return kept
 
 
-def evaluate(approach, tasks, actions, args):
-    per_task = {}
-    endpoints = {}
-    endings = collections.Counter()
-    submit_progress = []
-    lengths = []
-    dropped = 0
-    drop_reasons = collections.Counter()
-    #: task -> {action name: best gain}, pooled over the task's repeats. What
-    #: the analyst intersects against an agent's roster.
-    effective = {}
-    #: task -> action sequences that reached the target, shortest first. Cut
-    #: at their peak and ending on an appended submit (see mcts.replay_solution),
-    #: so they are behavioural-cloning traces as they stand.
-    solutions = {}
-    #: task -> [[progress, sequence]] for the furthest rollouts that did NOT
-    #: solve, best first. A solved task needs no hint - the search already
-    #: has the answer - so on everything a prompt would want help with, this
-    #: is the only sequence there is. Rollouts are already cut at their peak,
-    #: so a partial path ends at the best state it reached rather than
-    #: wherever the episode ran out.
-    partials = {}
-    for task in tasks:
-        best = best_peak = None
-        for _ in range(args.repeats):
-            rollouts, peak, why = run_one(task, actions, approach, args)
-            if rollouts is None:
-                dropped += 1
-                drop_reasons[why] += 1
-                continue
-            best_peak = peak if best_peak is None else max(best_peak, peak)
-            for name, gain in _EFFECTIVE.items():
-                found = effective.setdefault(task[0], {})
-                found[name] = max(found.get(name, 0), gain)
-            for rollout in rollouts:
-                span = rollout["target_int"] - rollout["base_int"]
-                closed = ((rollout["max_int"] - rollout["base_int"]) / span
-                          if span else 0.0)
-                best = closed if best is None else max(best, closed)
-                lengths.append(rollout["length"])
+def summarise_run(task_id, rollouts, peak, effective, args):
+    """One finished search reduced to the facts the scan keeps.
 
-                last = rollout["actions"][-1] if rollout["actions"] else None
-                on_submit = (last is not None
-                             and int(np.asarray(last).ravel()[0]) == 0)
-                if not rollout["solved"] and closed > 0 and rollout["actions"]:
-                    trace = [[int(x) for x in np.asarray(a).reshape(-1)]
-                             for a in rollout["actions"]]
-                    keep_partial(partials.setdefault(task[0], []), closed, trace,
-                                 args.partials)
-                if rollout["solved"]:
-                    endings["solved"] += 1
-                    # The trace, not just the tally. These are what the first
-                    # full scan produced and discarded - 26 solved tasks whose
-                    # sequences existed in memory and went nowhere.
-                    trace = [[int(x) for x in np.asarray(a).reshape(-1)]
-                             for a in rollout["actions"]]
-                    kept = solutions.setdefault(task[0], [])
-                    if trace and trace not in kept:
-                        kept.append(trace)
-                elif on_submit:
-                    endings["submitted, unsolved"] += 1
-                    submit_progress.append(closed)
-                elif rollout.get("truncated_at_peak"):
-                    # A short rollout no longer means the episode stopped
-                    # early: collect_mcts_rollouts cuts the trace at the best
-                    # state it passed through and throws the walk back
-                    # downhill away. Reading that as "ended early" counted
-                    # the cut as a behaviour of the search.
-                    endings["cut back to its peak"] += 1
-                elif rollout["length"] < args.episode_len:
-                    endings["ended early, neither"] += 1
-                else:
-                    endings["ran to the cap"] += 1
-        if best_peak is not None:
-            per_task[task[0]] = best_peak
-        if best is not None:
-            endpoints[task[0]] = best
-    for task_id in solutions:
-        solutions[task_id].sort(key=len)
-    return {
-        "per_task": per_task,
-        "effective_actions": effective,
-        "solutions": solutions,
-        "partial_paths": partials,
-        "endpoints": endpoints,
-        "endings": dict(endings),
-        "submit_progress": submit_progress,
-        "lengths": lengths,
-        "dropped": dropped,
-        "drop_reasons": dict(drop_reasons),
-    }
+    Separated from the merging so that it can run in another process: a
+    search returns rollouts holding grids and object graphs, and shipping
+    those back would cost more than the search saved. What crosses the
+    process boundary is this - counters, a peak, a handful of action
+    sequences.
+    """
+    out = {"task": task_id, "peak": peak, "endpoint": None,
+           "effective": dict(effective), "solutions": [], "partials": [],
+           "endings": collections.Counter(), "lengths": [],
+           "submit_progress": [], "why": None}
+    for rollout in rollouts:
+        span = rollout["target_int"] - rollout["base_int"]
+        closed = ((rollout["max_int"] - rollout["base_int"]) / span
+                  if span else 0.0)
+        out["endpoint"] = (closed if out["endpoint"] is None
+                           else max(out["endpoint"], closed))
+        out["lengths"].append(rollout["length"])
+
+        last = rollout["actions"][-1] if rollout["actions"] else None
+        on_submit = (last is not None
+                     and int(np.asarray(last).ravel()[0]) == 0)
+        trace = [[int(x) for x in np.asarray(a).reshape(-1)]
+                 for a in rollout["actions"]]
+        if not rollout["solved"] and closed > 0 and trace:
+            keep_partial(out["partials"], closed, trace, args.partials)
+        if rollout["solved"]:
+            out["endings"]["solved"] += 1
+            # The trace, not just the tally. These are what the first
+            # full scan produced and discarded - 26 solved tasks whose
+            # sequences existed in memory and went nowhere.
+            if trace and trace not in out["solutions"]:
+                out["solutions"].append(trace)
+        elif on_submit:
+            out["endings"]["submitted, unsolved"] += 1
+            out["submit_progress"].append(closed)
+        elif rollout.get("truncated_at_peak"):
+            # A short rollout no longer means the episode stopped early:
+            # collect_mcts_rollouts cuts the trace at the best state it
+            # passed through and throws the walk back downhill away.
+            # Reading that as "ended early" counted the cut as a behaviour
+            # of the search.
+            out["endings"]["cut back to its peak"] += 1
+        elif rollout["length"] < args.episode_len:
+            out["endings"]["ended early, neither"] += 1
+        else:
+            out["endings"]["ran to the cap"] += 1
+    return out
+
+
+#: What a worker process needs and cannot be handed per call: the built
+#: vocabulary and the settings. Filled by _init_worker, or by evaluate when
+#: the run is sequential.
+_WORKER = {}
+
+
+def _init_worker(colours, directions, playout, approach, args):
+    """Rebuild in this process what main() set up in the parent.
+
+    A spawned worker starts from a fresh import: the playout patch is not
+    installed, and _ACTION_NAMES - which is how a recorded action becomes a
+    name rather than a number - is empty. A worker that skipped this would
+    run a different search and report nameless actions, both silently.
+    """
+    install_playout(playout)
+    actions = build_actions(colours, directions)
+    _ACTION_NAMES.clear()
+    _ACTION_NAMES.update(actions)
+    _WORKER.update(actions=actions, approach=approach, args=args)
+
+
+def _search_one(task):
+    rollouts, peak, why = run_one(task, _WORKER["actions"], _WORKER["approach"],
+                                  _WORKER["args"])
+    if rollouts is None:
+        return {"task": task[0], "why": why}
+    return summarise_run(task[0], rollouts, peak, _EFFECTIVE, _WORKER["args"])
+
+
+def merge(summary, into, partials_limit=3):
+    """Fold one search's summary into the totals."""
+    task_id = summary["task"]
+    if summary["why"] is not None:
+        into["dropped"] += 1
+        into["drop_reasons"][summary["why"]] += 1
+        return into
+    if summary["peak"] is not None:
+        into["per_task"][task_id] = max(into["per_task"].get(task_id, 0.0),
+                                        summary["peak"])
+    if summary["endpoint"] is not None:
+        into["endpoints"][task_id] = max(into["endpoints"].get(task_id, 0.0),
+                                         summary["endpoint"])
+    found = into["effective_actions"].setdefault(task_id, {})
+    for name, gain in summary["effective"].items():
+        found[name] = max(found.get(name, 0), gain)
+    if not found:
+        del into["effective_actions"][task_id]
+    kept = into["solutions"].setdefault(task_id, [])
+    for trace in summary["solutions"]:
+        if trace not in kept:
+            kept.append(trace)
+    if not kept:
+        del into["solutions"][task_id]
+    for closed, trace in summary["partials"]:
+        keep_partial(into["partial_paths"].setdefault(task_id, []), closed,
+                     trace, partials_limit)
+    if not into["partial_paths"].get(task_id, None):
+        into["partial_paths"].pop(task_id, None)
+    into["endings"].update(summary["endings"])
+    into["lengths"] += summary["lengths"]
+    into["submit_progress"] += summary["submit_progress"]
+    return into
+
+
+def evaluate(approach, tasks, actions, args):
+    """Every task, `--repeats` times each, merged into one result.
+
+    The searches share nothing - not the task, not the tree, not a random
+    seed - so `--workers` is the whole of the parallelism available here,
+    and it is worth taking: a search is pure Python holding the GIL, so
+    threads would buy nothing and processes buy a core each. Repeats are
+    jobs of their own rather than a loop inside one, since a task that
+    takes four minutes should not hold a core for twelve while others
+    idle.
+    """
+    totals = {"per_task": {}, "endpoints": {}, "effective_actions": {},
+              "solutions": {}, "partial_paths": {},
+              "endings": collections.Counter(), "lengths": [],
+              "submit_progress": [], "dropped": 0,
+              "drop_reasons": collections.Counter()}
+    jobs = [task for task in tasks for _ in range(args.repeats)]
+    _init_worker(args.colours, args.directions, args.playout, approach, args)
+    if args.workers > 1:
+        # spawn, not fork: rl.mcts imports torch, and forking a process
+        # that has torch loaded is a documented way to get a deadlock that
+        # only shows up on some machines.
+        context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(
+                max_workers=args.workers, mp_context=context,
+                initializer=_init_worker,
+                initargs=(args.colours, args.directions, args.playout,
+                          approach, args)) as pool:
+            for summary in pool.map(_search_one, jobs):
+                merge(summary, totals, args.partials)
+    else:
+        for task in jobs:
+            merge(_search_one(task), totals, args.partials)
+    for task_id in totals["solutions"]:
+        totals["solutions"][task_id].sort(key=len)
+    totals["endings"] = dict(totals["endings"])
+    totals["drop_reasons"] = dict(totals["drop_reasons"])
+    return totals
 
 
 def report(approach, result, elapsed):
@@ -498,6 +564,9 @@ def main() -> None:
                              "reward by a different max_reward (5M under approach "
                              "1, 11M under 2) against this same fixed constant")
     parser.add_argument("--episode-len", type=int, default=25)
+    parser.add_argument("--workers", type=int, default=1,
+                        help="searches to run at once; tasks and repeats share "
+                             "nothing, so this is a core each")
     parser.add_argument("--partials", type=int, default=3,
                         help="how many of the furthest non-solving rollouts to "
                              "keep per task, as material for a prompt hint")
@@ -517,6 +586,15 @@ def main() -> None:
     signal.signal(signal.SIGALRM,
                   lambda *a: (_ for _ in ()).throw(TimedOut()))
 
+    if args.workers > 1:
+        # Set before any worker is spawned, since a child reads these when
+        # it imports numpy. Without it every worker starts a thread pool of
+        # its own and the machine spends its time context-switching -
+        # the arrays here are 30x30 at most and gain nothing from threads.
+        for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                         "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+            os.environ.setdefault(variable, "1")
+
     install_playout(args.playout)
     actions = build_actions(args.colours, args.directions)
     _ACTION_NAMES.clear()
@@ -529,7 +607,8 @@ def main() -> None:
           f"shape-preserving in {args.dataset}")
     print(f"{len(tasks)} shape-preserving tasks, {len(actions)} actions, "
           f"{args.repeats} repeats, {args.rounds} rounds x {args.rollouts} "
-          f"rollouts at keep={args.keep}, {args.playout} playout")
+          f"rollouts at keep={args.keep}, {args.playout} playout, "
+          f"{args.workers} worker{'s' if args.workers > 1 else ''}")
     if args.playout == "weighted" and args.rounds > 1:
         print("  note: measured over 6 tasks the two work against each other - "
               "weighted scored +0.324 at --rounds 1 and +0.243 at --rounds 3, "

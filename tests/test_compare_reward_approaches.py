@@ -9,6 +9,7 @@ with no task scanned twice and none skipped between them.
 from __future__ import annotations
 
 import argparse
+import collections
 import importlib.util
 from pathlib import Path
 
@@ -112,3 +113,131 @@ class TestKeepingPartialPaths:
             script.keep_partial(kept, i / 10, [[i, 0, 0]], 3)
 
         assert [pair[0] for pair in kept] == [0.9, 0.8, 0.7]
+
+
+def _rollout(**kwargs):
+    row = {"base_int": 0, "target_int": 10, "max_int": 0, "length": 25,
+           "actions": [[1, 0, 0]], "solved": False}
+    row.update(kwargs)
+    return row
+
+
+def _args(partials=3, episode_len=25):
+    return argparse.Namespace(partials=partials, episode_len=episode_len)
+
+
+class TestSummarisingOneSearch:
+    """What crosses a process boundary. A search returns rollouts holding
+    grids and object graphs; shipping those back would cost more than the
+    parallelism saves, so the worker reduces them first - and the reduction
+    is where an ending can be miscounted."""
+
+    def test_a_solved_rollout_keeps_its_trace(self):
+        out = script.summarise_run("aaa", [_rollout(max_int=10, solved=True)],
+                                   1.0, {}, _args())
+
+        assert out["endings"]["solved"] == 1
+        assert out["solutions"] == [[[1, 0, 0]]]
+
+    def test_the_same_trace_twice_is_kept_once(self):
+        rollouts = [_rollout(max_int=10, solved=True) for _ in range(2)]
+
+        out = script.summarise_run("aaa", rollouts, 1.0, {}, _args())
+
+        assert len(out["solutions"]) == 1
+
+    def test_a_voluntary_submit_is_not_an_early_ending(self):
+        """An episode ends early both when something submits and when it
+        solves, so length alone cannot tell them apart."""
+        out = script.summarise_run(
+            "aaa", [_rollout(length=4, actions=[[1, 0, 0], [0, 0, 0]])],
+            0.0, {}, _args())
+
+        assert out["endings"]["submitted, unsolved"] == 1
+        assert "ended early, neither" not in out["endings"]
+
+    def test_a_rollout_cut_at_its_peak_is_not_an_early_ending(self):
+        out = script.summarise_run(
+            "aaa", [_rollout(length=4, max_int=5, truncated_at_peak=True)],
+            0.5, {}, _args())
+
+        assert out["endings"]["cut back to its peak"] == 1
+
+    def test_an_unsolved_rollout_that_moved_becomes_a_partial_path(self):
+        out = script.summarise_run("aaa", [_rollout(max_int=5)], 0.5, {}, _args())
+
+        assert out["partials"] == [[0.5, [[1, 0, 0]]]]
+
+    def test_an_unsolved_rollout_that_moved_nothing_does_not(self):
+        out = script.summarise_run("aaa", [_rollout(max_int=0)], 0.0, {}, _args())
+
+        assert out["partials"] == []
+
+
+class TestMergingSummaries:
+    @staticmethod
+    def totals():
+        return {"per_task": {}, "endpoints": {}, "effective_actions": {},
+                "solutions": {}, "partial_paths": {},
+                "endings": collections.Counter(), "lengths": [],
+                "submit_progress": [], "dropped": 0,
+                "drop_reasons": collections.Counter()}
+
+    def test_a_task_keeps_the_best_of_its_repeats(self):
+        totals = self.totals()
+
+        script.merge(script.summarise_run("aaa", [_rollout(max_int=7)], 0.7, {}, _args()),
+                     totals)
+        script.merge(script.summarise_run("aaa", [_rollout(max_int=3)], 0.3, {}, _args()),
+                     totals)
+
+        assert totals["per_task"] == {"aaa": 0.7}, \
+            "the best repeat, not the last one"
+
+    def test_an_effective_action_keeps_its_largest_gain(self):
+        totals = self.totals()
+
+        script.merge(script.summarise_run("aaa", [], 0.0, {"fliplr": 9}, _args()), totals)
+        script.merge(script.summarise_run("aaa", [], 0.0, {"fliplr": 4}, _args()), totals)
+
+        assert totals["effective_actions"] == {"aaa": {"fliplr": 9}}, \
+            "the largest gain, not the last one"
+
+    def test_a_task_nothing_worked_on_is_absent_rather_than_empty(self):
+        totals = self.totals()
+
+        script.merge(script.summarise_run("aaa", [], 0.0, {}, _args()), totals)
+
+        assert totals["effective_actions"] == {}
+        assert totals["solutions"] == {}
+
+    def test_a_dropped_search_is_counted_with_its_reason(self):
+        totals = self.totals()
+
+        script.merge({"task": "aaa", "why": "timed out"}, totals)
+
+        assert totals["dropped"] == 1
+        assert totals["drop_reasons"]["timed out"] == 1
+
+    def test_endings_add_up_across_searches(self):
+        totals = self.totals()
+
+        for _ in range(3):
+            script.merge(script.summarise_run("aaa", [_rollout()], 0.0, {}, _args()),
+                         totals)
+
+        assert totals["endings"]["ran to the cap"] == 3
+
+
+class TestWorkerSetup:
+    def test_a_worker_rebuilds_the_action_names(self):
+        """A spawned worker starts from a fresh import, so _ACTION_NAMES is
+        empty until it is filled - and a search that skipped this would
+        report gains against nameless actions."""
+        script._ACTION_NAMES.clear()
+
+        script._init_worker(["red", "blue"], ["N", "E"], "default", 2,
+                            _args())
+
+        assert script._ACTION_NAMES[0] == "submit"
+        assert "red_recolor" in script._ACTION_NAMES.values()

@@ -119,12 +119,14 @@ def render(root: Path) -> str:
         lines.append(f"  {a} -->|{n}| {b}")
     lines += ["```", ""]
 
-    lines += ["| module | kB | imported by |", "| --- | ---: | ---: |"]
+    # No file sizes here, tempting as they are: they change on every edit,
+    # so the generated block would need regenerating after every commit and
+    # the diff would say nothing.
+    lines += ["| module | imported by |", "| --- | ---: |"]
     for name in sorted(modules):
         if package_of(name) == "tests" or name.endswith("__init__"):
             continue
-        size = modules[name].stat().st_size // 1024
-        lines.append(f"| `{name}` | {size} | {fan_in.get(name, 0)} |")
+        lines.append(f"| `{name}` | {fan_in.get(name, 0)} |")
     lines.append("")
 
     cycles = back_edges(edges)

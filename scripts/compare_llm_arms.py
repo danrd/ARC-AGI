@@ -359,7 +359,7 @@ def _markdown_report(arm_a: str, arm_b: str, per_shard, cost, totals,
         out += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
         return "\n".join(out)
 
-    lines = [f"# Prompt arms compared\n",
+    lines = ["# Prompt arms compared\n",
              f"- **A**: {arm_a}", f"- **B**: {arm_b}\n",
              "## By shard\n",
              table(["shard", "tasks", "solved A", "solved B", "gained", "lost",

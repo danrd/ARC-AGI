@@ -33,9 +33,24 @@ tasks with the same agent resemble each other exactly as much as two
 tasks picked at random. The flag is here so that stays measurable when the
 rosters change.
 
+Nothing here is checked in. The traces of one scan are 69 sequences over 24
+tasks, most of them one or two actions on a task simple enough that a scan
+finds it again; the shard files are the thing worth keeping, and this runs
+over them in seconds whenever the traces are wanted.
+
 Usage:
+    # what produces the shards, ~15 hours over five machines, one span each
+    python scripts/compare_reward_approaches.py --approaches 2 --tasks 0-53 \
+        --repeats 3 --rounds 1 --out shard_0.json
+    # this, seconds
     python scripts/harvest_traces.py shard_*.json --out traces.json
     python scripts/harvest_traces.py shard_*.json --agents
+
+Note the vocabulary a trace is written in. `build_actions(["red", "blue"],
+["N", "E"])` is what the scan uses - two colours and two directions reach
+every branch of every transform, where all ten and all eight give 2926
+names - so an index re-read against a differently built vocabulary means
+something else entirely. The table travels with the traces in `--out`.
 """
 from __future__ import annotations
 

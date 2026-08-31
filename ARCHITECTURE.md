@@ -12,6 +12,35 @@ nobody's inference, what depends on what is nobody's memory.
 
     python scripts/module_map.py --check    # fails when the map is stale
     python scripts/module_map.py --write    # regenerates it
+    lint-imports                            # fails when a layer is crossed
+
+## The layering
+
+Read downwards; a module may import anything below it and nothing above.
+The contract is in `pyproject.toml` under `[tool.importlinter]`, so this is
+checked, not claimed.
+
+    scripts | orchestration
+    rl | subsymbolic
+    utils.plotting
+    data.datasets
+    symbolic
+    data.configs | utils.utils
+
+`data` is split because its halves sit at opposite ends: `configs` are
+leaves everything reads, `datasets` is a loader that legitimately needs the
+analysis layer. `rl` and `subsymbolic` are held independent of each other -
+they are alternative answers to the same question, joined by
+`orchestration`, and an import either way would make one unrunnable without
+the other's dependencies (`rl` alone pulls torch, stable-baselines3 and
+gymnasium).
+
+Four imports are exempted in the contract, listed there with the reason.
+Two of them are the same cause: `rl/arc_task.py` holds the task container
+with the highest fan-in in the repository (15) and is not an RL module.
+Moving it below the layers would close both, and would also remove the two
+indirect chains by which `subsymbolic` currently reaches `rl` without ever
+mentioning it.
 
 ## Where to look
 
@@ -101,7 +130,7 @@ graph TD
   scripts["scripts (5)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (40)"]
+  tests["tests (41)"]
   utils["utils (3)"]
   tests -->|27| rl
   tests -->|23| subsymbolic

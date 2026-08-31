@@ -6,6 +6,8 @@ rendering a `.j2` template for a block whose name matches.
 from collections import OrderedDict
 from typing import Optional
 
+from subsymbolic.prompt_builder import OMIT
+
 
 def build_examples_resolver(task, budget: int, context: dict, builder) -> Optional[str]:
     """Default resolver for the "examples" block: loops task.subtasks,
@@ -63,21 +65,29 @@ def _search_hints(path: str) -> dict:
 def search_hints_resolver(task, budget: int, context: dict, builder) -> Optional[str]:
     """What an automated search found on this task, if anything.
 
-    Written offline by scripts/harvest_traces.py --prompt-block, since the
-    search costs hours per shard and the prompt is built in milliseconds.
-    Path comes from `project.search_hints` in the prompting config.
+    Two ways in, and the context wins. `context["search_hints"]` is a hint
+    computed for this task now - rl.search_hints.hints_for run by the
+    caller's context_builder - and the file named by
+    `project.search_hints` is the same text harvested from a scan
+    beforehand. The search is minutes of CPU where the rest of prompt
+    building is milliseconds, and it belongs to the rl layer, so this
+    resolver never starts one itself: it renders whichever the caller
+    arranged.
 
-    Returns None for a task the file does not mention, and for one whose
-    hint does not fit the budget. Both are the same statement: this block
-    speaks only when it has something measured to say, and a block that is
-    sometimes empty teaches the model to expect one.
+    Omits itself for a task neither knows about, and for a hint that does
+    not fit the budget. Both are the same statement: this block speaks only
+    when it has something measured to say, and a block that is sometimes
+    empty teaches the model to expect one. OMIT rather than None, or the
+    task would be dropped from the run instead of asked without the block.
     """
-    path = (builder.config.project or {}).get("search_hints",
-                                              "data/search_hints.json")
-    text = _search_hints(path).get(str(getattr(task, "label", "") or task.id))
+    text = (context or {}).get("search_hints")
     if not text:
-        return None
-    return text if builder.count_tokens(text) <= budget else None
+        path = (builder.config.project or {}).get("search_hints",
+                                                  "data/search_hints.json")
+        text = _search_hints(path).get(str(getattr(task, "label", "") or task.id))
+    if not text:
+        return OMIT
+    return text if builder.count_tokens(text) <= budget else OMIT
 
 
 _findings_cache: "OrderedDict[str, object]" = OrderedDict()
@@ -111,11 +121,15 @@ def _task_findings(task):
 def transformation_summary_resolver(task, budget: int, context: dict, builder) -> Optional[str]:
     """Whole-task transformation summary from the symbolic analyzer.
 
-    Returns None - omitting the block entirely - when the analyzer found
-    nothing to claim, or when not even its best finding fits the budget. An
-    empty-but-present block would spend tokens on a header introducing
-    nothing.
+    Omits the block when the analyzer found nothing to claim, or when not
+    even its best finding fits the budget. An empty-but-present block would
+    spend tokens on a header introducing nothing.
+
+    OMIT, not None: None is build()'s "this prompt cannot be made", which
+    llm_run turns into a skipped task. A task the analyzer had nothing to
+    say about should still be asked - without the block.
     """
     from symbolic.findings import render_findings
 
-    return render_findings(_task_findings(task), budget, builder.count_tokens)
+    rendered = render_findings(_task_findings(task), budget, builder.count_tokens)
+    return OMIT if rendered is None else rendered

@@ -126,18 +126,18 @@ being read.
 graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
-  rl["rl (17)"]
+  rl["rl (18)"]
   scripts["scripts (5)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (41)"]
+  tests["tests (42)"]
   utils["utils (3)"]
-  tests -->|27| rl
-  tests -->|23| subsymbolic
+  tests -->|29| rl
+  tests -->|24| subsymbolic
   tests -->|21| symbolic
   rl -->|8| symbolic
-  scripts -->|7| rl
-  rl -->|5| data
+  rl -->|6| data
+  scripts -->|6| rl
   tests -->|5| data
   tests -->|5| orchestration
   orchestration -->|4| subsymbolic
@@ -161,7 +161,7 @@ graph TD
 | module | imported by |
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
-| `data.configs.env_configs` | 6 |
+| `data.configs.env_configs` | 7 |
 | `data.configs.rl_configs` | 4 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |
@@ -175,14 +175,15 @@ graph TD
 | `rl.callbacks` | 1 |
 | `rl.evaluation` | 2 |
 | `rl.features` | 2 |
-| `rl.mcts` | 3 |
+| `rl.mcts` | 4 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 1 |
 | `rl.policy` | 2 |
 | `rl.rl_job` | 1 |
 | `rl.rl_module` | 2 |
+| `rl.search_hints` | 3 |
 | `rl.training` | 4 |
-| `rl.utils` | 6 |
+| `rl.utils` | 7 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 1 |
 | `scripts.harvest_traces` | 0 |
@@ -196,7 +197,7 @@ graph TD
 | `subsymbolic.llm_runtime` | 5 |
 | `subsymbolic.llm_setup` | 5 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 9 |
+| `subsymbolic.prompt_builder` | 11 |
 | `subsymbolic.registry` | 3 |
 | `subsymbolic.subsymbolic_module` | 2 |
 | `subsymbolic.utils` | 3 |
@@ -213,7 +214,7 @@ graph TD
 
 Packages that import each other:
 
-- `data` -> `rl` (3) against `rl` -> `data` (5):
+- `data` -> `rl` (3) against `rl` -> `data` (6):
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`

@@ -16,7 +16,8 @@ import inspect
 import pytest
 from jinja2.exceptions import TemplateAssertionError, UndefinedError
 
-from subsymbolic.prompt_builder import BlockSpec, PromptBuilder, PromptingConfig
+from subsymbolic.prompt_builder import (OMIT, BlockSpec, PromptBuilder,
+                                        PromptingConfig)
 
 
 class _FakeTokenizer:
@@ -308,3 +309,31 @@ def test_assistant_prefix_reaches_the_assistant_turn_under_chat_template(tmp_pat
     # with "|" - the assistant turn carrying assistant_prefix has to be
     # the last message.
     assert result == "Hello!|1,1:\n"
+
+
+def test_a_resolver_that_omits_its_block_leaves_the_rest_of_the_prompt(tmp_path):
+    """OMIT and None are different answers. None means the prompt cannot be
+    made, and llm_run drops the task saying it did not fit the token limit;
+    a block with nothing to say is not that, and conflating them loses
+    tasks silently."""
+    _write_block(tmp_path, "static", "v1", "always here")
+    config = PromptingConfig(blocks_dir=str(tmp_path), blocks=["quiet", "static"],
+                             token_limit=100, resolvers=["quiet"])
+    builder = PromptBuilder(config, _FakeTokenizer(),
+                            resolver_registry={"quiet": lambda *a, **k: OMIT})
+
+    out = builder.build(task=None)
+
+    assert out is not None
+    assert "QUIET" not in out
+    assert "always here" in out
+
+
+def test_a_resolver_that_cannot_fit_still_fails_the_prompt(tmp_path):
+    _write_block(tmp_path, "static", "v1", "always here")
+    config = PromptingConfig(blocks_dir=str(tmp_path), blocks=["quiet", "static"],
+                             token_limit=100, resolvers=["quiet"])
+    builder = PromptBuilder(config, _FakeTokenizer(),
+                            resolver_registry={"quiet": lambda *a, **k: None})
+
+    assert builder.build(task=None) is None

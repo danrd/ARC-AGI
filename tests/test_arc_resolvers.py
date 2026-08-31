@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 import subsymbolic.arc_resolvers as arc_resolvers
+from subsymbolic.prompt_builder import OMIT
 from symbolic.findings import Evidence, Finding, TaskFindings
 
 
@@ -81,14 +82,14 @@ def test_resolver_omits_the_block_when_there_is_nothing_to_claim(fake_analysis):
     result = arc_resolvers.transformation_summary_resolver(_task(), budget=10_000,
                                                             context={}, builder=_builder())
 
-    assert result is None
+    assert result is OMIT
 
 
 def test_resolver_omits_the_block_when_nothing_fits_the_budget(fake_analysis):
     result = arc_resolvers.transformation_summary_resolver(_task(), budget=1,
                                                             context={}, builder=_builder())
 
-    assert result is None
+    assert result is OMIT
 
 
 def test_analysis_runs_once_per_task_across_repeated_prompt_builds(fake_analysis):
@@ -161,13 +162,13 @@ class TestSearchHints:
         path = self._file(tmp_path, {"task-2": "Y"})
 
         assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                  self._builder(path)) is None
+                                                  self._builder(path)) is OMIT
 
     def test_a_hint_that_does_not_fit_the_budget_omits_the_block(self, tmp_path):
         path = self._file(tmp_path, {"task-1": "a" * 50})
 
         assert arc_resolvers.search_hints_resolver(_task("task-1"), 10, {},
-                                                   self._builder(path)) is None
+                                                   self._builder(path)) is OMIT
 
     def test_a_missing_file_loses_the_block_rather_than_the_run(self, tmp_path):
         """A run configured with hints on a machine that has not scanned yet
@@ -175,7 +176,7 @@ class TestSearchHints:
         missing = tmp_path / "nothing.json"
 
         assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                   self._builder(missing)) is None
+                                                   self._builder(missing)) is OMIT
 
     def test_the_file_is_read_once_however_many_tasks_ask(self, tmp_path):
         path = self._file(tmp_path, {"task-1": "X"})
@@ -196,3 +197,31 @@ class TestSearchHints:
                                             self._builder(missing))
 
         assert str(missing) in arc_resolvers._hints_cache
+
+    def test_a_hint_computed_now_is_preferred_to_the_file(self, tmp_path):
+        """The online path: a context_builder ran the search for this task
+        and put the text in the context. Nothing should then depend on a
+        file existing, or on it being up to date."""
+        path = self._file(tmp_path, {"task-1": "stale text from a scan"})
+
+        out = arc_resolvers.search_hints_resolver(
+            _task("task-1"), 1000, {"search_hints": "fresh text"},
+            self._builder(path))
+
+        assert out == "fresh text"
+
+    def test_the_file_still_answers_when_the_context_is_silent(self, tmp_path):
+        path = self._file(tmp_path, {"task-1": "from the scan"})
+
+        out = arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
+                                                  self._builder(path))
+
+        assert out == "from the scan"
+
+    def test_a_computed_hint_is_budgeted_like_any_other(self, tmp_path):
+        path = self._file(tmp_path, {})
+
+        out = arc_resolvers.search_hints_resolver(
+            _task("task-1"), 10, {"search_hints": "a" * 50}, self._builder(path))
+
+        assert out is OMIT

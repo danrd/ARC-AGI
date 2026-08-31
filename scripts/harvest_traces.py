@@ -56,8 +56,6 @@ from __future__ import annotations
 
 import argparse
 import collections
-import contextlib
-import io
 import json
 import pickle
 import sys
@@ -68,13 +66,17 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from rl.arc_env import ARCGridWorld  # noqa: E402
-from rl.arc_task import ARCSubtask  # noqa: E402
-from data.configs.env_configs import (AGENT2ACTIONS, ALL_DIRECTIONS,  # noqa: E402
-                                      COLOR_DEPENDENT_ACTIONS, COLORS_MAPPING,
+from data.configs.env_configs import (AGENT2ACTIONS,  # noqa: E402
+                                      COLOR_DEPENDENT_ACTIONS,
                                       DIRECTION_DEPENDENT_ACTIONS,
                                       DOUBLE_COLOR_DEPENDENT_ACTIONS)
 from rl.utils import define_feasible_actions  # noqa: E402
+# The renderer lives beside the search it describes, so the file this
+# writes and a hint computed online say the same thing about a task.
+from rl.search_hints import (POINTS_PER_CELL, build_vocabulary,  # noqa: E402,F401
+                             describe_object, distinct, make_env, minimise,
+                             readable, reached, render_block, render_steps,
+                             replays)
 from scripts.compare_reward_approaches import build_actions, load_tasks  # noqa: E402
 
 
@@ -116,75 +118,6 @@ def pool(paths, approach="2"):
             "names": names or {}, "span": tuple(span or (0, 0))}
 
 
-def distinct(sequences):
-    """The recorded sequences as hashable tuples, shortest first."""
-    return sorted({tuple(tuple(step) for step in seq) for seq in sequences},
-                  key=len)
-
-
-def make_env(task, actions, episode_len):
-    task_id, inp, out = task
-    env = ARCGridWorld(max_episode_len=episode_len, feasible_actions=actions,
-                       reward_approach=2, repr_level=1, input_pattern="start",
-                       observation_space_elements=["objects_emb"])
-    env.set_subtask(ARCSubtask(f"{task_id}_0", inp, out))
-    return env
-
-
-def replays(task, sequence, actions, episode_len=25):
-    """Does this sequence still reach the target in an env of its own."""
-    env = make_env(task, actions, episode_len)
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            for step in sequence:
-                env.step(np.asarray(step))
-    except Exception:
-        return False
-    return int(env.max_int) == int(env.target_int)
-
-
-def reached(task, sequence, actions, episode_len=25):
-    """The intersection this sequence ends on, or None if it raised."""
-    env = make_env(task, actions, episode_len)
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            for step in sequence:
-                env.step(np.asarray(step))
-    except Exception:
-        return None
-    return int(env.max_int)
-
-
-def minimise(task, sequence, actions, episode_len=25, goal=None):
-    """The sequence with every removable step removed.
-
-    Greedy and left to right: one pass is enough to reach a sequence no
-    single removal shortens, which is the property that matters. It is not
-    the globally shortest solution and does not claim to be.
-
-    `goal` is what a shortened sequence has to still reach. Left out, that
-    is the target: a solving trace stays a solving trace. A path that never
-    solved has no target to hold to and needs the intersection it did reach
-    named instead - otherwise every step is removable and the whole path
-    disappears. Twenty-five wandering steps come back as the two or three
-    that did the work either way.
-    """
-    body = list(sequence)
-    index = 0
-    while index < len(body):
-        trial = body[:index] + body[index + 1:]
-        if goal is None:
-            good = replays(task, trial, actions, episode_len)
-        else:
-            landed = reached(task, trial, actions, episode_len)
-            good = landed is not None and landed >= goal
-        if good:
-            body = trial
-        else:
-            index += 1
-    return tuple(body)
-
-
 def harvest(solutions, names, tasks, actions, episode_len=25):
     """Verified, minimal traces per task, plus what happened on the way."""
     by_id = {task[0]: task for task in tasks}
@@ -215,132 +148,6 @@ def harvest(solutions, names, tasks, actions, episode_len=25):
     stats["tasks"] = len(kept)
     stats["minimal"] = sum(len(v) for v in kept.values())
     return kept, stats
-
-
-#: colour word -> the digit that word means in a grid. The vocabulary spells
-#: colours as names because that is how the transforms are declared; a grid
-#: holds digits, and a prompt that mixes the two asks the model to resolve a
-#: reference it has no way to resolve.
-_DIGIT = {name: digit for digit, name in COLORS_MAPPING.items()}
-_DIRECTIONS = set(ALL_DIRECTIONS)
-
-#: One cell fixed moves maximal_intersection by two - it counts
-#: 2 * matches - valid - so a gain of 34 is 17 cells.
-POINTS_PER_CELL = 2
-
-
-def readable(name):
-    """`blue_emission_with_red_object_recolor_E` as something a reader can
-    hold: the verb, then the arguments it was given.
-
-    Arguments are listed, not woven into a sentence. Which colour plays
-    which role differs per transform, and a rendering that guesses reads
-    fluently while saying the wrong thing.
-    """
-    verb, colours, directions = [], [], []
-    for token in name.split("_"):
-        if token in _DIGIT:
-            colours.append(str(_DIGIT[token]))
-        elif token in _DIRECTIONS:
-            directions.append(token)
-        else:
-            verb.append(token)
-    arguments = []
-    if colours:
-        arguments.append(f"colour{'s' if len(colours) > 1 else ''} "
-                         + ", ".join(colours))
-    if directions:
-        arguments.append("direction " + ", ".join(directions))
-    text = " ".join(verb)
-    return f"{text} ({'; '.join(arguments)})" if arguments else text
-
-
-def describe_object(obj):
-    """Which object a step was applied to, in the grid's own terms."""
-    colours = "/".join(str(int(c)) for c in obj.color_numbers)
-    return (f"colour {colours}, {obj.size} cells, rows {obj.min_i}-{obj.max_i}, "
-            f"cols {obj.min_j}-{obj.max_j}")
-
-
-def render_steps(task, sequence, names, actions, episode_len=25):
-    """A sequence as lines, each naming the object its step touched.
-
-    The heads after the transform are object indices, and objects are
-    recomputed after every step - index 2 at step three is not the object
-    index 2 named at step one - so the only way to say what a step was
-    applied to is to walk the sequence and look.
-    """
-    env = make_env(task, actions, episode_len)
-    lines = []
-    with contextlib.redirect_stdout(io.StringIO()):
-        for step in sequence:
-            objects = env.objects
-            index = int(step[1])
-            target = (describe_object(objects[index]) if index < len(objects)
-                      else "an empty object slot")
-            lines.append(f"{readable(names[str(step[0])])} on {target}")
-            env.step(np.asarray(step))
-    return lines
-
-
-def render_block(task, pooled, actions, moves=6, min_gain=5, episode_len=25,
-                 skip_solved=False):
-    """The hint block for one task, or None when the search found nothing.
-
-    Nothing is rendered rather than "the search found nothing" on purpose:
-    a block that is sometimes empty teaches the reader to expect one, and
-    an absent block is the honest form of having nothing to say.
-
-    `skip_solved` drops the verified solving sequence, keeping the moves
-    list. On a task the search solved, that sequence is the answer, and an
-    arm measuring whether a hint helps would be measuring whether the model
-    can follow a recipe on those tasks and something else on the rest -
-    two experiments averaged into one number.
-    """
-    task_id = task[0]
-    names = pooled["names"]
-    lines = []
-    solved = pooled["solutions"].get(task_id) or []
-    partial = pooled["partials"].get(task_id) or []
-    effective = pooled["effective"].get(task_id) or {}
-    if solved and not skip_solved:
-        best = min(distinct(solved), key=len)
-        body = [step for step in best if names[str(step[0])] != "submit"]
-        body = minimise(task, body, actions, episode_len)
-        lines.append("An automated search over the first training pair "
-                     "reproduced the output exactly with:")
-        lines += [f"  {i + 1}. {line}" for i, line in
-                  enumerate(render_steps(task, body, names, actions, episode_len))]
-    elif partial:
-        progress, sequence = partial[0][0], partial[0][1]
-        body = [step for step in sequence if names[str(step[0])] != "submit"]
-        peak = reached(task, body, actions, episode_len)
-        if peak is not None:
-            body = minimise(task, body, actions, episode_len, goal=peak)
-        lines.append(f"An automated search over the first training pair did not "
-                     f"reproduce the output. Its best attempt reached "
-                     f"{progress:.0%} of the target cells with:")
-        lines += [f"  {i + 1}. {line}" for i, line in
-                  enumerate(render_steps(task, body, names, actions, episode_len))]
-    # A gain is measured against whatever state the search was standing in,
-    # not against the input grid, so it says "this move fixed cells
-    # somewhere in the search" and not "this move gets you N cells closer
-    # than doing nothing". Small gains are noise at that reading - on the
-    # 262-task scan a floor of one cell admitted 96% of tasks and a median
-    # of 38 moves each - so the block carries only moves worth naming.
-    ranked = [(name, gain) for name, gain in
-              sorted(effective.items(), key=lambda kv: (-kv[1], kv[0]))
-              if gain >= min_gain * POINTS_PER_CELL][:moves]
-    if ranked:
-        opening = ("Single moves that recovered cells at some point in that "
-                   "search:" if lines else
-                   "An automated search over the first training pair did not "
-                   "reproduce the output. Single moves that recovered cells at "
-                   "some point in it:")
-        lines.append(opening)
-        lines += [f"  {readable(name)} (up to {gain // POINTS_PER_CELL} cells)"
-                  for name, gain in ranked]
-    return "\n".join(lines) if lines else None
 
 
 def agent_names(colours, directions):

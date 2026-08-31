@@ -78,3 +78,37 @@ class TestSpansTile:
         _middle, from_middle = script.load_tasks("ARC", (50, 55))
 
         assert from_start == from_middle
+
+
+class TestKeepingPartialPaths:
+    """What a prompt hint is built from on the tasks that matter. A solved
+    task needs no hint - the search has the answer - so on everything else
+    the furthest non-solving path is the only sequence there is."""
+
+    def test_the_furthest_path_comes_first(self):
+        kept = []
+        script.keep_partial(kept, 0.2, [[1, 0, 0]], 3)
+        script.keep_partial(kept, 0.7, [[2, 0, 0]], 3)
+
+        assert [pair[0] for pair in kept] == [0.7, 0.2]
+
+    def test_the_shorter_of_two_equally_far_paths_wins(self):
+        kept = []
+        script.keep_partial(kept, 0.5, [[1, 0, 0], [2, 0, 0], [3, 0, 0]], 3)
+        script.keep_partial(kept, 0.5, [[4, 0, 0]], 3)
+
+        assert kept[0][1] == [[4, 0, 0]]
+
+    def test_the_same_path_recorded_twice_is_held_once(self):
+        kept = []
+        script.keep_partial(kept, 0.5, [[1, 0, 0]], 3)
+        script.keep_partial(kept, 0.5, [[1, 0, 0]], 3)
+
+        assert len(kept) == 1
+
+    def test_nothing_beyond_the_limit_is_held(self):
+        kept = []
+        for i in range(10):
+            script.keep_partial(kept, i / 10, [[i, 0, 0]], 3)
+
+        assert [pair[0] for pair in kept] == [0.9, 0.8, 0.7]

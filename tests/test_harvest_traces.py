@@ -33,14 +33,17 @@ def setup():
     return actions, index, {t[0]: t for t in tasks}["6d75e8bb"]
 
 
-def shard(tmp_path, name, span, per_task, solutions, names=NAMES, effective=None):
+def shard(tmp_path, name, span, per_task, solutions, names=NAMES, effective=None,
+          partials=None):
     path = tmp_path / name
-    path.write_text(json.dumps({
-        "span": list(span),
-        "approaches": {"2": {"per_task": per_task,
-                             "effective_actions": effective or {},
-                             "solutions": solutions,
-                             "action_names": names}}}))
+    section = {"per_task": per_task,
+               "effective_actions": effective or {},
+               "solutions": solutions,
+               "action_names": names}
+    if partials is not None:
+        section["partial_paths"] = partials
+    path.write_text(json.dumps({"span": list(span),
+                                "approaches": {"2": section}}))
     return path
 
 
@@ -49,17 +52,17 @@ class TestPoolingShards:
         first = shard(tmp_path, "a.json", (0, 2), {"aaa": 1.0}, {"aaa": [[[1, 0, 0]]]})
         second = shard(tmp_path, "b.json", (2, 4), {"bbb": 0.5}, {"bbb": []})
 
-        per_task, _, solutions, names, span = script.pool([first, second])
+        pooled = script.pool([first, second])
 
-        assert per_task == {"aaa": 1.0, "bbb": 0.5}
-        assert set(solutions) == {"aaa", "bbb"}
-        assert names == NAMES
+        assert pooled["per_task"] == {"aaa": 1.0, "bbb": 0.5}
+        assert set(pooled["solutions"]) == {"aaa", "bbb"}
+        assert pooled["names"] == NAMES
 
     def test_the_span_covers_every_shard(self, tmp_path):
         first = shard(tmp_path, "a.json", (0, 2), {"aaa": 1.0}, {})
         second = shard(tmp_path, "b.json", (5, 9), {"bbb": 0.5}, {})
 
-        assert script.pool([first, second])[4] == (0, 9)
+        assert script.pool([first, second])["span"] == (0, 9)
 
     def test_shards_of_different_vocabularies_are_refused(self, tmp_path):
         """The failure this exists for is silent otherwise: action 2 means
@@ -78,7 +81,7 @@ class TestPoolingShards:
         first = shard(tmp_path, "a.json", (0, 2), {"aaa": 1.0}, {})
         second = shard(tmp_path, "b.json", (2, 4), {"bbb": 0.5}, {})
 
-        assert script.pool([first, second])[3] == NAMES
+        assert script.pool([first, second])["names"] == NAMES
 
 
 class TestDistinct:
@@ -154,6 +157,122 @@ class TestHarvest:
 
         assert kept == {}
         assert stats["outside the span"] == 1
+
+
+class TestReadableNames:
+    """The vocabulary spells colours as words because the transforms are
+    declared that way; the grid holds digits. A prompt carrying both asks
+    the model to resolve a reference nothing in it defines."""
+
+    def test_a_colour_word_becomes_the_digit_it_means(self):
+        assert script.readable("red_recolor") == "recolor (colour 2)"
+
+    def test_both_colours_of_a_two_colour_action_are_named(self):
+        assert script.readable("blue_contour_connection_red") == \
+               "contour connection (colours 1, 2)"
+
+    def test_a_direction_is_an_argument_not_a_word_in_the_verb(self):
+        assert script.readable("shift_object_N") == "shift object (direction N)"
+
+    def test_a_plain_name_is_left_alone(self):
+        assert script.readable("symmetric_restoration") == "symmetric restoration"
+
+    def test_a_word_that_only_looks_like_a_direction_stays_in_the_verb(self):
+        assert script.readable("red_background_shortest_path_left") == \
+               "background shortest path left (colour 2)"
+
+
+class TestMinimisingTowardsWhatWasReached:
+    def test_a_path_that_never_solved_keeps_the_steps_that_got_it_there(
+            self, monkeypatch):
+        """Without a goal every step of a non-solving path is removable and
+        the path vanishes; with one, 25 wandering steps come back as the
+        few that did the work."""
+        monkeypatch.setattr(script, "reached",
+                            lambda task, seq, actions, episode_len=25:
+                            10 if (7, 0, 0) in list(seq) else 0)
+
+        out = script.minimise(None, [(1, 0, 0), (7, 0, 0), (2, 0, 0)], None, goal=10)
+
+        assert out == ((7, 0, 0),)
+
+    def test_the_goal_is_a_floor_not_an_equality(self, monkeypatch):
+        monkeypatch.setattr(script, "reached",
+                            lambda task, seq, actions, episode_len=25: 12)
+
+        assert script.minimise(None, [(1, 0, 0)], None, goal=10) == ()
+
+
+class TestRenderingABlock:
+    @staticmethod
+    def pooled(**kwargs):
+        base = {"per_task": {}, "effective": {}, "solutions": {},
+                "partials": {}, "names": NAMES, "span": (0, 1)}
+        base.update(kwargs)
+        return base
+
+    @pytest.fixture(autouse=True)
+    def no_env(self, monkeypatch):
+        monkeypatch.setattr(script, "render_steps",
+                            lambda task, seq, names, actions, episode_len=25:
+                            [f"step {names[str(s[0])]}" for s in seq])
+        monkeypatch.setattr(script, "minimise",
+                            lambda task, seq, actions, episode_len=25, goal=None:
+                            tuple(seq))
+        monkeypatch.setattr(script, "reached",
+                            lambda task, seq, actions, episode_len=25: 4)
+
+    def test_a_task_the_search_found_nothing_on_gets_no_block(self):
+        """Not "the search found nothing" - a block that is sometimes empty
+        teaches the reader to expect one."""
+        assert script.render_block(("aaa", None, None), self.pooled(), {}) is None
+
+    def test_a_solved_task_carries_the_trace(self):
+        pooled = self.pooled(solutions={"aaa": [[[1, 0, 0], [0, 0, 0]]]})
+
+        text = script.render_block(("aaa", None, None), pooled, {})
+
+        assert "reproduced the output exactly" in text
+        assert "1. step fliplr" in text
+        assert "submit" not in text
+
+    def test_an_unsolved_task_carries_its_furthest_attempt(self):
+        pooled = self.pooled(partials={"aaa": [[0.42, [[1, 0, 0], [2, 0, 0]]]]})
+
+        text = script.render_block(("aaa", None, None), pooled, {})
+
+        assert "reached 42% of the target cells" in text
+        assert "1. step fliplr" in text and "2. step flipud" in text
+
+    def test_gains_are_reported_in_cells_not_in_intersection_points(self):
+        """maximal_intersection counts 2 * matches - valid, so one cell
+        fixed moves it by two and a gain of 34 is 17 cells."""
+        pooled = self.pooled(effective={"aaa": {"fliplr": 34}})
+
+        text = script.render_block(("aaa", None, None), pooled, {}, min_gain=1)
+
+        assert "up to 17 cells" in text
+
+    def test_moves_below_the_floor_are_not_listed(self):
+        pooled = self.pooled(effective={"aaa": {"fliplr": 4, "flipud": 40}})
+
+        text = script.render_block(("aaa", None, None), pooled, {}, min_gain=5)
+
+        assert "flipud" in text and "fliplr" not in text
+
+    def test_a_task_whose_moves_are_all_below_the_floor_gets_no_block(self):
+        pooled = self.pooled(effective={"aaa": {"fliplr": 4}})
+
+        assert script.render_block(("aaa", None, None), pooled, {},
+                                   min_gain=5) is None
+
+    def test_only_the_asked_for_number_of_moves_is_listed(self):
+        pooled = self.pooled(effective={"aaa": {f"a{i}": 100 - i for i in range(10)}})
+
+        text = script.render_block(("aaa", None, None), pooled, {}, moves=3,
+                                   min_gain=1)
+
+        assert len([line for line in text.splitlines() if "up to" in line]) == 3
 
 
 class TestReplayingAgainstTheRealEnv:

@@ -248,6 +248,21 @@ def run_one(task, actions, approach, args):
     return rollouts, ((_PEAK["value"] - base) / span if span else 0.0), None
 
 
+def keep_partial(kept, closed, trace, limit):
+    """Hold the `limit` furthest non-solving paths for one task, best first.
+
+    Ties go to the shorter path. A search that wandered for twenty-five
+    steps and one that arrived in three reached the same place, and the
+    short one is the one worth showing anybody.
+    """
+    if any(trace == held for _, held in kept):
+        return kept
+    kept.append([closed, trace])
+    kept.sort(key=lambda pair: (-pair[0], len(pair[1])))
+    del kept[limit:]
+    return kept
+
+
 def evaluate(approach, tasks, actions, args):
     per_task = {}
     endpoints = {}
@@ -263,6 +278,13 @@ def evaluate(approach, tasks, actions, args):
     #: at their peak and ending on an appended submit (see mcts.replay_solution),
     #: so they are behavioural-cloning traces as they stand.
     solutions = {}
+    #: task -> [[progress, sequence]] for the furthest rollouts that did NOT
+    #: solve, best first. A solved task needs no hint - the search already
+    #: has the answer - so on everything a prompt would want help with, this
+    #: is the only sequence there is. Rollouts are already cut at their peak,
+    #: so a partial path ends at the best state it reached rather than
+    #: wherever the episode ran out.
+    partials = {}
     for task in tasks:
         best = best_peak = None
         for _ in range(args.repeats):
@@ -285,6 +307,11 @@ def evaluate(approach, tasks, actions, args):
                 last = rollout["actions"][-1] if rollout["actions"] else None
                 on_submit = (last is not None
                              and int(np.asarray(last).ravel()[0]) == 0)
+                if not rollout["solved"] and closed > 0 and rollout["actions"]:
+                    trace = [[int(x) for x in np.asarray(a).reshape(-1)]
+                             for a in rollout["actions"]]
+                    keep_partial(partials.setdefault(task[0], []), closed, trace,
+                                 args.partials)
                 if rollout["solved"]:
                     endings["solved"] += 1
                     # The trace, not just the tally. These are what the first
@@ -319,6 +346,7 @@ def evaluate(approach, tasks, actions, args):
         "per_task": per_task,
         "effective_actions": effective,
         "solutions": solutions,
+        "partial_paths": partials,
         "endpoints": endpoints,
         "endings": dict(endings),
         "submit_progress": submit_progress,
@@ -385,8 +413,13 @@ def report(approach, result, elapsed):
         # which is too broad to intersect an agent's roster against. The
         # gain is recorded per action so a consumer can raise the bar; this
         # says what raising it buys before anyone reads the flat list.
-        for threshold in (5, 10, 25):
-            narrowed = [sum(1 for g in f.values() if g >= threshold)
+        #
+        # Gains are in the env's own units, and maximal_intersection counts
+        # 2 * matches - valid: fixing one cell moves it by two. Thresholds
+        # are named in cells and doubled here, since a run of this is read
+        # against a grid whose cells someone can count.
+        for threshold in (2, 5, 12):
+            narrowed = [sum(1 for g in f.values() if g >= 2 * threshold)
                         for f in effective.values()]
             print(f"    at >= {threshold:2d} cells gained: "
                   f"median {statistics.median(narrowed):.0f} per task, "
@@ -399,6 +432,12 @@ def report(approach, result, elapsed):
         print(f"  solving traces kept: {sum(len(t) for t in solutions.values())} "
               f"over {len(solutions)} tasks, shortest {min(lengths)} actions, "
               f"median {statistics.median(lengths):.0f}")
+    partials = result.get("partial_paths") or {}
+    if partials:
+        best = [held[0][0] for held in partials.values() if held]
+        print(f"  partial paths kept: {sum(len(t) for t in partials.values())} "
+              f"over {len(partials)} unsolved tasks, best one closing "
+              f"{statistics.median(best):.0%} of the distance on the median task")
 
 
 def compare(first, second, results):
@@ -459,6 +498,9 @@ def main() -> None:
                              "reward by a different max_reward (5M under approach "
                              "1, 11M under 2) against this same fixed constant")
     parser.add_argument("--episode-len", type=int, default=25)
+    parser.add_argument("--partials", type=int, default=3,
+                        help="how many of the furthest non-solving rollouts to "
+                             "keep per task, as material for a prompt hint")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--timeout", type=int, default=120,
                         help="per-run cap in seconds; a run that exceeds it is dropped")
@@ -514,6 +556,7 @@ def main() -> None:
                  str(k): {"per_task": v["per_task"],
                           "effective_actions": v["effective_actions"],
                           "solutions": v["solutions"],
+                          "partial_paths": v["partial_paths"],
                           "action_names": {str(i): n for i, n in _ACTION_NAMES.items()},
                           "endings": v["endings"],
                           "submit_progress": v["submit_progress"],

@@ -36,6 +36,50 @@ def build_examples_resolver(task, budget: int, context: dict, builder) -> Option
     return accumulated
 
 
+_hints_cache: "dict[str, dict]" = {}
+
+
+def _search_hints(path: str) -> dict:
+    """The hint file, read once per path.
+
+    A missing file is an empty mapping rather than an error: the block is
+    optional by design, and a run configured with it on a machine that has
+    not scanned yet should lose the block, not fail at the first task.
+    """
+    if path not in _hints_cache:
+        import json
+        import os
+
+        try:
+            with open(path) as handle:
+                _hints_cache[path] = json.load(handle)
+        except (OSError, ValueError):
+            _hints_cache[path] = {}
+        if not _hints_cache[path]:
+            print(f"search hints: nothing loaded from {os.path.abspath(path)}")
+    return _hints_cache[path]
+
+
+def search_hints_resolver(task, budget: int, context: dict, builder) -> Optional[str]:
+    """What an automated search found on this task, if anything.
+
+    Written offline by scripts/harvest_traces.py --prompt-block, since the
+    search costs hours per shard and the prompt is built in milliseconds.
+    Path comes from `project.search_hints` in the prompting config.
+
+    Returns None for a task the file does not mention, and for one whose
+    hint does not fit the budget. Both are the same statement: this block
+    speaks only when it has something measured to say, and a block that is
+    sometimes empty teaches the model to expect one.
+    """
+    path = (builder.config.project or {}).get("search_hints",
+                                              "data/search_hints.json")
+    text = _search_hints(path).get(str(getattr(task, "label", "") or task.id))
+    if not text:
+        return None
+    return text if builder.count_tokens(text) <= budget else None
+
+
 _findings_cache: "OrderedDict[str, object]" = OrderedDict()
 _FINDINGS_CACHE_SIZE = 64
 

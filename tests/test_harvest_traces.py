@@ -126,3 +126,50 @@ class TestHarvest:
         assert stats["outside the span"] == 1
 
 
+
+
+class TestPerTaskVocabularies:
+    """A scan run with --colours auto gives each task the palette of its own
+    output grid, so one table for the file would name the wrong actions.
+    The shard carries a table per task and pooling has to read it that way."""
+
+    @staticmethod
+    def per_task_shard(tmp_path, name, span, tables, per_task):
+        path = tmp_path / name
+        path.write_text(json.dumps({
+            "span": list(span),
+            "approaches": {"2": {"per_task": per_task, "effective_actions": {},
+                                 "solutions": {}, "partial_paths": {},
+                                 "action_names_by_task": tables}}}))
+        return path
+
+    def test_a_table_per_task_is_pooled(self, tmp_path):
+        first = self.per_task_shard(
+            tmp_path, "a.json", (0, 1), {"aaa": {"1": "green_recolor"}}, {"aaa": 0.5})
+        second = self.per_task_shard(
+            tmp_path, "b.json", (1, 2), {"bbb": {"1": "sky_recolor"}}, {"bbb": 0.5})
+
+        pooled = script.pool([first, second])
+
+        assert script.names_for(pooled, "aaa") == {"1": "green_recolor"}
+        assert script.names_for(pooled, "bbb") == {"1": "sky_recolor"}
+
+    def test_shards_without_one_shared_table_are_not_refused(self, tmp_path):
+        """The vocabulary guard exists for files that claim one table each
+        and disagree. Files that carry a table per task claim nothing to
+        disagree about."""
+        first = self.per_task_shard(
+            tmp_path, "a.json", (0, 1), {"aaa": {"1": "green_recolor"}}, {"aaa": 0.5})
+        second = self.per_task_shard(
+            tmp_path, "b.json", (1, 2), {"bbb": {"1": "red_recolor"}}, {"bbb": 0.5})
+
+        pooled = script.pool([first, second])
+
+        assert set(pooled["per_task"]) == {"aaa", "bbb"}
+
+    def test_the_shared_table_still_answers_for_a_fixed_vocabulary(self, tmp_path):
+        path = shard(tmp_path, "a.json", (0, 1), {"aaa": 0.5}, {})
+
+        pooled = script.pool([path])
+
+        assert script.names_for(pooled, "aaa") == NAMES

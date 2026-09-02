@@ -144,7 +144,7 @@ graph TD
   rl -->|4| utils
   data -->|3| rl
   orchestration -->|3| rl
-  scripts -->|3| data
+  scripts -->|2| data
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
@@ -161,7 +161,7 @@ graph TD
 | module | imported by |
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
-| `data.configs.env_configs` | 7 |
+| `data.configs.env_configs` | 6 |
 | `data.configs.rl_configs` | 4 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |
@@ -181,9 +181,9 @@ graph TD
 | `rl.policy` | 2 |
 | `rl.rl_job` | 1 |
 | `rl.rl_module` | 2 |
-| `rl.search_hints` | 3 |
+| `rl.search_hints` | 4 |
 | `rl.training` | 4 |
-| `rl.utils` | 7 |
+| `rl.utils` | 6 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 1 |
 | `scripts.harvest_traces` | 0 |

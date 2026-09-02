@@ -1,3 +1,10 @@
+#: Declared, dispatched, and doing nothing: World.apply_transform returns the
+#: grid untouched for each of these (verified over 43 applications apiece on
+#: real tasks). They are kept in ACTION_TYPES so the dispatch-coverage tests
+#: still account for them, and excluded from the vocabulary a search is given
+#: - four of 89 action slots that the search would otherwise keep trying.
+UNIMPLEMENTED_ACTIONS = {"copy", "copy_input", "paste", "cut"}
+
 ACTION_TYPES = {
                 "color": ["recolor", "color_inversion", "color_inner_part", "color_inner_holes", "color_outer_holes", "dense_outer_contour"],
                 "modification": ["upscale_4"],

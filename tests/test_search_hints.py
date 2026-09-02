@@ -254,7 +254,10 @@ class TestTheOnlinePath:
 
     @staticmethod
     def _triple():
-        return ("aaa", None, None)
+        """A real output grid: the vocabulary is now derived from its
+        palette, so None no longer stands in for one."""
+        import numpy as np
+        return ("aaa", np.zeros((3, 3), dtype=int), np.array([[0, 1, 2]] * 3))
 
     def test_repeats_keep_the_largest_gain_per_action(self, monkeypatch):
         results = iter([{"peak": 0.2, "effective": {"fliplr": 40}, "solutions": [],
@@ -366,3 +369,103 @@ class TestTheTimeCap:
             pass
 
         assert signal.getsignal(signal.SIGALRM) is before
+
+
+class TestTheVocabularyASearchGets:
+    def test_the_stub_actions_are_not_in_it(self):
+        """copy, copy_input, paste and cut are dispatched and return the grid
+        untouched - verified over 43 applications apiece - so a search given
+        them spends draws on four actions that cannot do anything."""
+        names = set(hints.build_vocabulary(("red", "blue"), ("N", "E")).values())
+
+        assert not names & {"copy", "copy_input", "paste", "cut"}
+
+    def test_colours_come_from_the_output_grid(self):
+        import numpy as np
+
+        assert hints.output_colours(np.array([[0, 3], [8, 3]])) == \
+               ("black", "green", "sky")
+
+    def test_a_colour_the_answer_needs_gets_actions_of_its_own(self):
+        """The measured gap this closes: with a fixed red/blue vocabulary,
+        81 of 260 scanned tasks needed a colour outside {1, 2} and not one
+        was solved, because nothing in the action space could paint it."""
+        import numpy as np
+
+        derived = hints.build_vocabulary(
+            hints.output_colours(np.array([[0, 3], [3, 3]])), ("N", "E"))
+
+        assert any(name.startswith("green_") for name in derived.values())
+        assert not any(name.startswith("red_") for name in derived.values())
+
+
+class TestTheVocabularyOneTaskGets:
+    def test_hints_for_derives_the_palette_from_this_task(self, monkeypatch):
+        """Not just build_vocabulary in isolation - the wiring, since a
+        fixed pair here is exactly the bug being closed."""
+        import numpy as np
+        seen = {}
+
+        def capture(task, actions, settings):
+            seen.update(actions)
+            return {"peak": 0.0, "effective": {}, "solutions": [], "partials": []}
+
+        monkeypatch.setattr(hints, "search_once", capture)
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+        task = ("aaa", np.zeros((3, 3), dtype=int), np.full((3, 3), 3))
+
+        hints.hints_for(task, hints.SearchSettings())
+
+        assert any(name.startswith("green_") for name in seen.values())
+        assert not any(name.startswith("blue_") for name in seen.values())
+
+
+class TestTheBudget:
+    @staticmethod
+    def _triple():
+        import numpy as np
+        return ("aaa", np.zeros((3, 3), dtype=int), np.array([[0, 1, 2]] * 3))
+
+    def test_repeats_stop_once_the_budget_is_spent(self, monkeypatch):
+        import time as clock
+        calls = []
+
+        def slow(task, actions, settings):
+            calls.append(settings.timeout)
+            clock.sleep(1.2)
+            return {"peak": 0.0, "effective": {}, "solutions": [], "partials": []}
+
+        monkeypatch.setattr(hints, "search_once", slow)
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        hints.hints_for(self._triple(),
+                        hints.SearchSettings(repeats=5, budget=2, timeout=60))
+
+        assert len(calls) < 5, "the budget bounds the task, not each search"
+
+    def test_a_solved_task_does_not_pay_for_more_repeats(self, monkeypatch):
+        calls = []
+
+        def solving(task, actions, settings):
+            calls.append(1)
+            return {"peak": 1.0, "effective": {}, "solutions": [[[1, 0, 0]]],
+                    "partials": []}
+
+        monkeypatch.setattr(hints, "search_once", solving)
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        hints.hints_for(self._triple(), hints.SearchSettings(repeats=4))
+
+        assert len(calls) == 1
+
+    def test_without_a_budget_every_repeat_runs(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(hints, "search_once",
+                            lambda task, actions, settings: calls.append(1) or
+                            {"peak": 0.0, "effective": {}, "solutions": [],
+                             "partials": []})
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        hints.hints_for(self._triple(), hints.SearchSettings(repeats=3))
+
+        assert len(calls) == 3

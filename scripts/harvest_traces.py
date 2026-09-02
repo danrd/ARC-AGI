@@ -75,8 +75,8 @@ from rl.utils import define_feasible_actions  # noqa: E402
 # writes and a hint computed online say the same thing about a task.
 from rl.search_hints import (POINTS_PER_CELL, build_vocabulary,  # noqa: E402,F401
                              describe_object, distinct, make_env, minimise,
-                             readable, reached, render_block, render_steps,
-                             replays)
+                             names_for, readable, reached, render_block,
+                             render_steps, replays)
 from scripts.compare_reward_approaches import build_actions, load_tasks  # noqa: E402
 
 
@@ -89,6 +89,10 @@ def pool(paths, approach="2"):
     it is wrong, and nothing about the merged file looks unusual.
     """
     per_task, effective, solutions, partials = {}, {}, {}, {}
+    #: task -> its own table, written by a scan run with --colours auto,
+    #: where the vocabulary depends on the task's palette and one table for
+    #: the file would be a lie.
+    names_by_task = {}
     names, source, span = None, None, None
     for path in paths:
         with open(path) as handle:
@@ -98,7 +102,14 @@ def pool(paths, approach="2"):
         if covered:
             span = covered if span is None else [min(span[0], covered[0]),
                                                  max(span[1], covered[1])]
-        table = section["action_names"]
+        names_by_task.update(section.get("action_names_by_task") or {})
+        table = section.get("action_names")
+        if table is None:
+            per_task.update(section["per_task"])
+            effective.update(section["effective_actions"])
+            solutions.update(section["solutions"])
+            partials.update(section.get("partial_paths") or {})
+            continue
         if names is None:
             names, source = table, path
         elif table != names:
@@ -115,7 +126,8 @@ def pool(paths, approach="2"):
         partials.update(section.get("partial_paths") or {})
     return {"per_task": per_task, "effective": effective,
             "solutions": solutions, "partials": partials,
-            "names": names or {}, "span": tuple(span or (0, 0))}
+            "names": names or {}, "names_by_task": names_by_task,
+            "span": tuple(span or (0, 0))}
 
 
 def harvest(solutions, names, tasks, actions, episode_len=25):

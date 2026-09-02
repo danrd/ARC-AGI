@@ -27,7 +27,8 @@ import contextlib
 import io
 import signal
 import threading
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -35,7 +36,8 @@ import rl.mcts as mcts
 from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS, ALL_DIRECTIONS,
                                       COLOR_DEPENDENT_ACTIONS, COLORS_MAPPING,
                                       DIRECTION_DEPENDENT_ACTIONS,
-                                      DOUBLE_COLOR_DEPENDENT_ACTIONS)
+                                      DOUBLE_COLOR_DEPENDENT_ACTIONS,
+                                      UNIMPLEMENTED_ACTIONS)
 from rl.arc_env import ARCGridWorld
 from rl.arc_task import ARCSubtask
 from rl.utils import define_feasible_actions
@@ -69,12 +71,21 @@ class SearchSettings:
     episode_len: int = 25
     c: float = 1.414
     repeats: int = 1
-    colours: tuple = ("red", "blue")
+    #: None derives the colours from the task's own output grid, which is
+    #: the only palette worth painting in. A fixed pair reaches every branch
+    #: of every transform - what the scans were built for - but on a task
+    #: whose answer needs colour 3 no colour-dependent action can ever help:
+    #: 81 of 260 scanned tasks needed a colour outside {1, 2}, and not one
+    #: of them was solved.
+    colours: tuple | None = None
     directions: tuple = ("N", "E")
     moves: int = 6
     min_gain: int = 5
     skip_solved: bool = False
     partials: int = 3
+    #: Seconds the whole task may take, 0 for no cap. Bounds repeats
+    #: together rather than each on its own.
+    budget: int = 0
     #: Seconds one search may take before it is cut short, 0 for no cap.
     #: Measured over 20 tasks, the median search is 2.4s and the slowest is
     #: 165s - so without a cap one task in twenty stalls a run for minutes.
@@ -83,13 +94,25 @@ class SearchSettings:
     timeout: int = 120
 
 
+def output_colours(grid):
+    """The colour words a grid contains, in digit order.
+
+    The output's palette, not the input's: painting is only ever useful in a
+    colour the answer contains, so this is the exact set worth generating
+    colour-dependent actions for - not a heuristic.
+    """
+    digits = sorted({int(value) for value in np.asarray(grid).ravel()})
+    return tuple(COLORS_MAPPING[d] for d in digits if d in COLORS_MAPPING)
+
+
 def build_vocabulary(colours, directions):
     """The action names an env is configured with, generated rather than
     written out: a hand-written name that misses its branch returns the grid
     untouched, which is indistinguishable from a transform that had nothing
     to do."""
     bases = ({a for roster in AGENT2ACTIONS.values() for a in roster}
-             | {a for group in ACTION_TYPES.values() for a in group})
+             | {a for group in ACTION_TYPES.values() for a in group}) \
+        - UNIMPLEMENTED_ACTIONS
     names = []
     for base in sorted(bases):
         if base == "submit":
@@ -216,6 +239,17 @@ def render_steps(task, sequence, names, actions, episode_len=25):
     return lines
 
 
+def names_for(found, task_id):
+    """The action table this task's indices are written in.
+
+    Per task where the search derived a vocabulary from the task's own
+    palette, otherwise the one table a whole scan shares. Reading a trace
+    against the wrong table renames every action in it, and the result looks
+    perfectly plausible.
+    """
+    return (found.get("names_by_task") or {}).get(task_id) or found["names"]
+
+
 def render_block(task, found, actions, moves=6, min_gain=5, episode_len=25,
                  skip_solved=False):
     """The hint block for one task, or None when the search found nothing.
@@ -233,7 +267,7 @@ def render_block(task, found, actions, moves=6, min_gain=5, episode_len=25,
     can follow a recipe on those tasks and something else on the rest.
     """
     task_id = task[0]
-    names = found["names"]
+    names = names_for(found, task_id)
     lines = []
     solved = found["solutions"].get(task_id) or []
     partial = found["partials"].get(task_id) or []
@@ -408,12 +442,31 @@ def hints_for(task, settings=None):
     largest gain per action, every distinct solution, the furthest partial
     paths. Independent searches over one task are root parallelisation done
     serially, and this is its merge.
+
+    Three things bound the work, because a per-prompt search cannot be given
+    a measurement budget:
+
+    - `budget` caps the whole task, not each search. Repeats stop being
+      started once it is spent, and the last one gets whatever is left, so
+      `repeats=3, budget=60` is at most a minute rather than at most three.
+    - a solved task stops the loop. Another search cannot improve on a
+      sequence that already reaches the target.
+    - `timeout` still caps a single search, and a cut one keeps what it
+      found.
     """
     settings = settings or SearchSettings()
     triple = as_triple(task)
-    actions = build_vocabulary(settings.colours, settings.directions)
+    colours = settings.colours or output_colours(triple[2])
+    actions = build_vocabulary(colours, settings.directions)
     merged = {"effective": {}, "solutions": [], "partials": [], "peak": 0.0}
-    for _ in range(max(1, settings.repeats)):
+    started = time.perf_counter()
+    for attempt in range(max(1, settings.repeats)):
+        if attempt and settings.budget:
+            left = settings.budget - (time.perf_counter() - started)
+            if left <= 1:
+                break
+            settings = replace(settings, timeout=int(min(settings.timeout or left,
+                                                         left)))
         found = search_once(triple, actions, settings)
         merged["peak"] = max(merged["peak"], found["peak"])
         for name, gain in found["effective"].items():
@@ -423,6 +476,8 @@ def hints_for(task, settings=None):
                 merged["solutions"].append(trace)
         for closed, trace in found["partials"]:
             keep_partial(merged["partials"], closed, trace, settings.partials)
+        if merged["solutions"]:
+            break
     merged["solutions"].sort(key=len)
     task_id = triple[0]
     shaped = {"names": {str(i): n for i, n in actions.items()},

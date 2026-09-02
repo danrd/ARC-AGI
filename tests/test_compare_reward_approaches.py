@@ -230,14 +230,48 @@ class TestMergingSummaries:
 
 
 class TestWorkerSetup:
-    def test_a_worker_rebuilds_the_action_names(self):
-        """A spawned worker starts from a fresh import, so _ACTION_NAMES is
-        empty until it is filled - and a search that skipped this would
-        report gains against nameless actions."""
+    def test_the_names_are_filled_before_each_search(self, monkeypatch):
+        """A spawned worker starts from a fresh import with _ACTION_NAMES
+        empty, and under --colours auto the table belongs to one task, not
+        to the run - so it is filled per search. A search that skipped this
+        would record gains against another task's labels."""
+        import numpy as np
         script._ACTION_NAMES.clear()
+        monkeypatch.setattr(script, "run_one",
+                            lambda *a, **k: (None, None, "stubbed"))
+        args = argparse.Namespace(colours=["auto"], directions=["N", "E"],
+                                  partials=3, episode_len=25)
+        script._WORKER.update(approach=2, args=args)
 
-        script._init_worker(["red", "blue"], ["N", "E"], "default", 2,
-                            _args())
+        script._search_one(("aaa", np.zeros((3, 3), dtype=int),
+                            np.full((3, 3), 3)))
 
         assert script._ACTION_NAMES[0] == "submit"
-        assert "red_recolor" in script._ACTION_NAMES.values()
+        assert any(n.startswith("green_") for n in script._ACTION_NAMES.values())
+
+
+class TestTheVocabularyATaskIsSearchedWith:
+    """--colours auto is the difference between 81 of 260 tasks having a
+    chance and not: they need a colour outside {1, 2} in the answer, and a
+    fixed red/blue vocabulary has no action that can paint one."""
+
+    @staticmethod
+    def _task():
+        import numpy as np
+        return ("aaa", np.zeros((3, 3), dtype=int), np.full((3, 3), 3))
+
+    def test_auto_takes_the_palette_from_the_task(self):
+        args = argparse.Namespace(colours=["auto"], directions=["N", "E"])
+
+        names = set(script.actions_for(self._task(), args).values())
+
+        assert any(n.startswith("green_") for n in names)
+        assert not any(n.startswith("blue_") for n in names)
+
+    def test_a_named_pair_is_used_as_given(self):
+        args = argparse.Namespace(colours=["red", "blue"], directions=["N", "E"])
+
+        names = set(script.actions_for(self._task(), args).values())
+
+        assert any(n.startswith("red_") for n in names)
+        assert not any(n.startswith("green_") for n in names)

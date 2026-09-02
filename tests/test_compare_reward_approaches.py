@@ -304,3 +304,16 @@ class TestSplits:
 
         assert [t[0] for t in first] + [t[0] for t in second] == \
                [t[0] for t in both]
+
+
+class TestTheDefaultPlayout:
+    def test_a_scan_runs_weighted_unless_told_otherwise(self):
+        """Every shard and every reference figure came from a weighted run.
+        A scan that quietly used the other playout would pool with them and
+        look fine - measured on one task, the default playout found 1
+        effective action where weighted found 47."""
+        assert script.build_parser().parse_args([]).playout == "weighted"
+
+    def test_the_other_playout_is_still_reachable(self):
+        assert script.build_parser().parse_args(
+            ["--playout", "default"]).playout == "default"

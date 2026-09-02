@@ -554,7 +554,9 @@ def compare(first, second, results):
               "reversed before at this sample size. Raise --tasks.")
 
 
-def main() -> None:
+def build_parser():
+    """The command line, separately from running it, so a default can be
+    read in a test rather than asserted about the source text."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--approaches", type=int, nargs="+", default=[1, 2],
@@ -596,10 +598,15 @@ def main() -> None:
                              "difference between 81 tasks having a chance and "
                              "not")
     parser.add_argument("--directions", nargs="+", default=["N", "E"])
-    parser.add_argument("--playout", default="default", choices=["default", "weighted"],
+    parser.add_argument("--playout", default="weighted",
+                        choices=["default", "weighted"],
                         help="how playouts pick actions; 'weighted' draws from the "
                              "tree's pool by measured effect, 'default' from the raw "
-                             "padded action space")
+                             "padded action space, where ~91%% of draws name no "
+                             "object. Weighted by default because every shard and "
+                             "every reference figure came from a weighted run, and "
+                             "a scan that quietly used the other one would pool "
+                             "with them and look fine")
     parser.add_argument("--dataset", default="ARC", help="ARC or ARC2")
     parser.add_argument("--split", default="training",
                         choices=sorted(SPLIT_FILES),
@@ -607,7 +614,11 @@ def main() -> None:
                              "within one split, so 0-53 names different tasks "
                              "in each and shards of the two cannot be pooled")
     parser.add_argument("--out", type=Path, help="write the raw per-task results as JSON")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     signal.signal(signal.SIGALRM,
                   lambda *a: (_ for _ in ()).throw(TimedOut()))

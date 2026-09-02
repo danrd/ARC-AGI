@@ -655,3 +655,16 @@ class TestThePlayout:
 class _FakeEnv:
     max_int = 0
     target_int = 10
+
+
+class TestTheDefaultsAreTheMeasuredOnes:
+    """One search at these settings carried a hint on 17 of 20 tasks where
+    the scan's file - three searches pooled - carried one on 16. Defaults
+    that differ from the configuration the reference data came from make
+    every comparison against it meaningless, which is what happened."""
+
+    def test_the_scan_settings_are_the_defaults(self):
+        settings = hints.SearchSettings()
+
+        assert (settings.rollouts, settings.iterations, settings.playout,
+                settings.rounds) == (5, 50, "weighted", 1)

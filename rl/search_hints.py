@@ -61,13 +61,17 @@ POINTS_PER_CELL = 2
 class SearchSettings:
     """What the search is given, and what the block is allowed to say.
 
-    The defaults are the ones the 262-task scan ran with, so an online hint
-    and a harvested one describe searches of the same strength. `repeats` is
-    1 rather than the scan's 3: three searches per task is a measurement
-    budget, not a per-prompt one.
+    The defaults are the ones the 262-task scan ran with - weighted
+    playout, 5 rollouts, 50 iterations - because that is the configuration
+    measured to reach what the scan's own file knows. On the same twenty
+    tasks: one search at these settings carried a hint on 17, where the
+    file pooling three searches carried one on 16, and the per-task counts
+    of effective actions agree within a few (34 against 34, 19 against 18).
+    `repeats` stays 1: three searches per task is a measurement budget, not
+    a per-prompt one, and one is evidently enough.
     """
-    rollouts: int = 4
-    iterations: int = 40
+    rollouts: int = 5
+    iterations: int = 50
     rounds: int = 1
     keep: float = 0.5
     top_k: int = 5

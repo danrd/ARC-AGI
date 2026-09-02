@@ -469,3 +469,126 @@ class TestTheBudget:
         hints.hints_for(self._triple(), hints.SearchSettings(repeats=3))
 
         assert len(calls) == 3
+
+
+class TestSearchingInParallel:
+    """Repeats share nothing - not a tree, not a seed, not a task - so they
+    are the whole of the parallelism a solve-time budget can spend. What is
+    pinned here is the plumbing, not the speedup: that every repeat is
+    submitted at once, that a pool is reused rather than rebuilt per task
+    (a spawned worker re-imports torch), and that a process which cannot
+    have a pool searches in line instead of failing."""
+
+    @staticmethod
+    def _triple():
+        import numpy as np
+        return ("aaa", np.zeros((3, 3), dtype=int), np.array([[0, 1, 2]] * 3))
+
+    def test_every_repeat_is_submitted_at_once(self, monkeypatch):
+        submitted = []
+
+        class FakePool:
+            def submit(self, fn, payload):
+                submitted.append(payload)
+                from concurrent.futures import Future
+                future = Future()
+                future.set_result({"peak": 0.0, "effective": {}, "solutions": [],
+                                   "partials": []})
+                return future
+
+        monkeypatch.setattr(hints, "_pool", lambda workers: FakePool())
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        hints.hints_for(self._triple(),
+                        hints.SearchSettings(repeats=4, workers=4))
+
+        assert len(submitted) == 4
+
+    def test_one_worker_stays_in_this_process(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(hints, "search_once",
+                            lambda *a, **k: calls.append(1) or
+                            {"peak": 0.0, "effective": {}, "solutions": [],
+                             "partials": []})
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        hints.hints_for(self._triple(), hints.SearchSettings(repeats=2, workers=1))
+
+        assert len(calls) == 2, "workers=1 searches here, without a pool"
+
+    def test_a_process_that_cannot_have_a_pool_searches_in_line(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(hints, "_pool", lambda workers: None)
+        monkeypatch.setattr(hints, "search_once",
+                            lambda *a, **k: calls.append(1) or
+                            {"peak": 0.0, "effective": {}, "solutions": [],
+                             "partials": []})
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        hints.hints_for(self._triple(),
+                        hints.SearchSettings(repeats=3, workers=4))
+
+        assert len(calls) == 3
+
+    def test_the_pool_is_kept_between_tasks(self, monkeypatch):
+        built = []
+
+        class FakeExecutor:
+            def __init__(self, *args, **kwargs):
+                built.append(1)
+
+            def shutdown(self, **kwargs):
+                pass
+
+        monkeypatch.setattr(hints, "ProcessPoolExecutor", FakeExecutor)
+        hints.shutdown_pool()
+
+        hints._pool(4)
+        hints._pool(4)
+
+        assert len(built) == 1
+        hints.shutdown_pool()
+
+    def test_asking_for_a_different_width_rebuilds_it(self, monkeypatch):
+        built = []
+
+        class FakeExecutor:
+            def __init__(self, *args, **kwargs):
+                built.append(kwargs.get("max_workers"))
+
+            def shutdown(self, **kwargs):
+                pass
+
+        monkeypatch.setattr(hints, "ProcessPoolExecutor", FakeExecutor)
+        hints.shutdown_pool()
+
+        hints._pool(2)
+        hints._pool(4)
+
+        assert built == [2, 4]
+        hints.shutdown_pool()
+
+    def test_a_pool_that_dies_does_not_take_the_run_with_it(self, monkeypatch):
+        """Measured, not imagined: four spawned workers beside a loaded model
+        exhausted memory and the pool came back BrokenProcessPool. A hint is
+        worth less than the run it would otherwise kill thirteen hours in,
+        so the searches fall back into this process."""
+        from concurrent.futures.process import BrokenProcessPool
+        calls = []
+
+        class DeadPool:
+            def submit(self, fn, payload):
+                raise BrokenProcessPool("child died")
+
+        monkeypatch.setattr(hints, "_pool", lambda workers: DeadPool())
+        monkeypatch.setattr(hints, "search_once",
+                            lambda *a, **k: calls.append(1) or
+                            {"peak": 0.0, "effective": {}, "solutions": [],
+                             "partials": []})
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
+
+        out = hints.hints_for(self._triple(),
+                              hints.SearchSettings(repeats=3, workers=4))
+
+        assert out == "x"
+        assert len(calls) == 3

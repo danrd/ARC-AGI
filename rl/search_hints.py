@@ -25,9 +25,12 @@ from __future__ import annotations
 
 import contextlib
 import io
+import multiprocessing
 import signal
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor, wait
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field, replace
 
 import numpy as np
@@ -83,6 +86,12 @@ class SearchSettings:
     min_gain: int = 5
     skip_solved: bool = False
     partials: int = 3
+    #: Searches to run at once. Repeats share nothing, so on four cores a
+    #: 60s budget buys four minutes of search. 1 by default: the workers
+    #: are separate interpreters with torch imported, and how many a
+    #: machine can hold beside a loaded model is a property of that
+    #: machine, not of this code.
+    workers: int = 1
     #: Seconds the whole task may take, 0 for no cap. Bounds repeats
     #: together rather than each on its own.
     budget: int = 0
@@ -435,6 +444,60 @@ def as_triple(task):
     return (str(getattr(task, "label", "task")), task.train_inp, task.train_out)
 
 
+#: One pool for the process, not one per task. A spawned worker re-imports
+#: torch, which costs a second or two - paid once here, paid per task if the
+#: pool were built inside hints_for, where the searches themselves take
+#: about as long.
+_POOL = {"workers": 0, "pool": None}
+
+
+def _pool(workers):
+    """The shared process pool, or None when this process cannot have one.
+
+    A daemonic worker cannot start children of its own, so a run that is
+    already inside a pool falls back to searching in line rather than
+    failing.
+    """
+    if workers <= 1:
+        return None
+    if _POOL["pool"] is None or _POOL["workers"] != workers:
+        shutdown_pool()
+        try:
+            _POOL["pool"] = ProcessPoolExecutor(
+                max_workers=workers, mp_context=multiprocessing.get_context("spawn"))
+            _POOL["workers"] = workers
+        except (AssertionError, ValueError, OSError):
+            return None
+    return _POOL["pool"]
+
+
+def shutdown_pool():
+    """Let go of the workers. Worth calling at the end of a run; each one
+    holds an interpreter with torch imported."""
+    if _POOL["pool"] is not None:
+        _POOL["pool"].shutdown(wait=False, cancel_futures=True)
+    _POOL["pool"], _POOL["workers"] = None, 0
+
+
+def _search_in_worker(payload):
+    """One search, addressed by value so it can cross a process boundary."""
+    triple, colours, directions, settings = payload
+    return search_once(triple, build_vocabulary(colours, directions), settings)
+
+
+def merge_found(merged, found, partials_limit):
+    """Fold one search into the running answer for this task."""
+    merged["peak"] = max(merged["peak"], found["peak"])
+    for name, gain in found["effective"].items():
+        merged["effective"][name] = max(merged["effective"].get(name, 0), gain)
+    for trace in found["solutions"]:
+        if trace not in merged["solutions"]:
+            merged["solutions"].append(trace)
+    for closed, trace in found["partials"]:
+        keep_partial(merged["partials"], closed, trace, partials_limit)
+    return merged
+
+
 def hints_for(task, settings=None):
     """The hint block for one task, computed now, or None.
 
@@ -460,24 +523,46 @@ def hints_for(task, settings=None):
     actions = build_vocabulary(colours, settings.directions)
     merged = {"effective": {}, "solutions": [], "partials": [], "peak": 0.0}
     started = time.perf_counter()
-    for attempt in range(max(1, settings.repeats)):
-        if attempt and settings.budget:
-            left = settings.budget - (time.perf_counter() - started)
-            if left <= 1:
+    repeats = max(1, settings.repeats)
+    pool = _pool(settings.workers) if repeats > 1 else None
+    if pool is not None:
+        # All the repeats at once: they share nothing, so a budget of 60s on
+        # four cores buys four minutes of search rather than one. Whatever
+        # has not finished when the budget runs out is dropped - the
+        # searches that did finish are a smaller sample, not a wrong one.
+        payload = (triple, tuple(colours), tuple(settings.directions), settings)
+        try:
+            futures = [pool.submit(_search_in_worker, payload)
+                       for _ in range(repeats)]
+            done, pending = wait(futures, timeout=settings.budget or None)
+            for future in pending:
+                future.cancel()
+            for future in done:
+                try:
+                    merge_found(merged, future.result(), settings.partials)
+                except Exception:
+                    continue
+        except BrokenProcessPool:
+            # A worker died - out of memory is the usual reason, four
+            # interpreters with torch beside a loaded model. The pool is
+            # unusable from here on, so drop it and search in this process:
+            # a hint is worth less than the run it would otherwise kill,
+            # thirteen hours in.
+            print("search hints: the worker pool broke, searching in line")
+            shutdown_pool()
+            pool = None
+    if pool is None:
+        for attempt in range(repeats):
+            if attempt and settings.budget:
+                left = settings.budget - (time.perf_counter() - started)
+                if left <= 1:
+                    break
+                settings = replace(settings,
+                                   timeout=int(min(settings.timeout or left, left)))
+            merge_found(merged, search_once(triple, actions, settings),
+                        settings.partials)
+            if merged["solutions"]:
                 break
-            settings = replace(settings, timeout=int(min(settings.timeout or left,
-                                                         left)))
-        found = search_once(triple, actions, settings)
-        merged["peak"] = max(merged["peak"], found["peak"])
-        for name, gain in found["effective"].items():
-            merged["effective"][name] = max(merged["effective"].get(name, 0), gain)
-        for trace in found["solutions"]:
-            if trace not in merged["solutions"]:
-                merged["solutions"].append(trace)
-        for closed, trace in found["partials"]:
-            keep_partial(merged["partials"], closed, trace, settings.partials)
-        if merged["solutions"]:
-            break
     merged["solutions"].sort(key=len)
     task_id = triple[0]
     shaped = {"names": {str(i): n for i, n in actions.items()},

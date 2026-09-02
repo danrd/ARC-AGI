@@ -101,11 +101,15 @@ layers = [
     "symbolic",
     "data.configs | utils.utils",
 ]
-# Three debts, listed rather than hidden: every one of them is a lower layer
-# reaching up into rl, and two of the three are the same cause - arc_task is
-# the task container with fan-in 15, and it is not an RL module. Moving it
-# below the layers would close both. Removing a line here must be a
-# refactor, never a way to make the run pass.
+# Debts, listed rather than hidden: every one is a lower layer reaching up
+# into rl. Removing a line here must be a refactor, never a way to make the
+# run pass.
+#
+# The arc_task ones are cosmetic, and measured to be so: importing
+# rl.arc_task pulls in `rl` and `rl.arc_task` and nothing else - no torch,
+# no gymnasium - so the layers it crosses cost nothing at runtime. Moving
+# the file would tidy the graph, break every notebook that imports it from
+# its current home, and buy nothing. Left where it is on purpose.
 ignore_imports = [
     "symbolic.summaries -> rl.arc_task",
     "data.datasets.ARC.arc_dataset -> rl.arc_task",

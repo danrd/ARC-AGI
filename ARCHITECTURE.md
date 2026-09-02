@@ -36,11 +36,13 @@ the other's dependencies (`rl` alone pulls torch, stable-baselines3 and
 gymnasium).
 
 Four imports are exempted in the contract, listed there with the reason.
-Two of them are the same cause: `rl/arc_task.py` holds the task container
-with the highest fan-in in the repository (15) and is not an RL module.
-Moving it below the layers would close both, and would also remove the two
-indirect chains by which `subsymbolic` currently reaches `rl` without ever
-mentioning it.
+Two of them are `rl/arc_task.py`, the task container with the highest fan-in
+in the repository (15), which is not an RL module - and those two are
+cosmetic. Importing it pulls in `rl` and `rl.arc_task` and nothing else: no
+torch, no gymnasium. So the two indirect chains by which `subsymbolic`
+reaches `rl` cost nothing at runtime, and moving the file would tidy the
+graph, break every notebook that imports it from its current home, and buy
+nothing.
 
 ## Where to look
 

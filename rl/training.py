@@ -97,7 +97,12 @@ def train_on_subtask(subtask, rl_config:dict, PPO_config:dict=None, agent_init=N
     agent = create_agent(rl_config=rl_config, vec_env=vec_env, model_config=PPO_config,
                      path_to_pretrained=path_to_pretrained, agent_init=agent_init)
     metrics_list = ['train/loss', 'train/value_loss', 'train/clip_fraction', 'train/approx_kl', 'train/explained_variance', 'rollout/ep_rew_mean']
-    logger = ARCLogger('/data/logs/rl', ["stdout", "csv"], metrics_list, load_PPO_config()['verbose'])
+    # rl_config's own log_path, not a hardcoded one: '/data/logs/rl' is an
+    # absolute path at the filesystem root, which is not writable anywhere
+    # this runs. And three arguments, not four - ARCLogger takes
+    # (folder, output_formats, metrics_list), and the fourth killed every
+    # training run before the first step.
+    logger = ARCLogger(rl_config['log_path'], ["stdout", "csv"], metrics_list)
     agent.set_logger(logger)
     agent.learn(rl_config['total_steps'], callback=callback)
     acc, mean_len, grid_pred = evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'])
@@ -123,7 +128,7 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
                              feasible_actions=rl_config['feasible_actions'], observation_space_elements=rl_config['observation_space_elements'])
     agent = create_agent(rl_config=rl_config, vec_env=vec_env, model_config=PPO_config, agent_init=agent_init)
     for idx, subtask in enumerate(subtasks):
-        acc, mean_len, agent, callback = train_on_subtask(subtask=subtask, rl_config=rl_config, agent_init=agent, verbose=verbose, plot_grid_pred=plot_grid_pred)
+        acc, mean_len, agent, callback, _vec_env = train_on_subtask(subtask=subtask, rl_config=rl_config, agent_init=agent, verbose=verbose, plot_grid_pred=plot_grid_pred)
         accs_for_subtasks[idx] = acc
         lens_for_subtasks[idx] = mean_len
         expl_vars[idx] = round(callback.explained_variances[-1], 3)

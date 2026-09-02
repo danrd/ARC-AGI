@@ -1,7 +1,53 @@
+"""Scoring a trained policy on the environments it was trained in.
+
+Rewritten because the previous version could not have run: it read
+`vec_env.test_env`, which `create_vec_env` never sets; it called `.append`
+on the numpy array of dones; it iterated `range(n_envs + 1)` over arrays of
+length `n_envs`; and it returned three lists of lists where every caller
+unpacks three scalars and formats them with `:.2f`. The callers are the
+specification here - `train_on_subtask` prints "Accuracy for X: {acc}" and
+MonitorCallback stores one number per evaluation - so that is what this
+returns.
+
+Accuracy is the fraction of the distance closed, the same figure the search
+is measured by:
+
+    (max_int - base_int) / (target_int - base_int)
+
+0.0 is the grid as it started and 1.0 is solved, which makes a trained
+policy and a search comparable without either of them being scored in the
+other's units.
+"""
+from typing import Any, Callable, Dict, Optional, Tuple
+
 import numpy as np
 from stable_baselines3.common import base_class
 from stable_baselines3.common.vec_env import VecEnv
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+
+def closed_fraction(env, grid=None) -> float:
+    """How much of the distance to the target a grid has closed.
+
+    Scored from `grid` rather than from the env's own max_int, because by
+    the time a done is visible the vector has already reset that slot and
+    its counters describe the next episode. The grid comes from the info's
+    terminal_observation, which is the whole reason that key exists.
+
+    Unwrapped first: what a vector holds is gymnasium's OrderEnforcing
+    around the env, and the counters live on the env itself. base_int and
+    target_int survive the reset - same env, same subtask - so only the
+    intersection has to be recomputed.
+
+    A subtask whose input already matches the target has no distance to
+    close; it is scored 1.0 rather than dividing by zero.
+    """
+    env = getattr(env, "unwrapped", env)
+    span = env.target_int - env.base_int
+    if span <= 0:
+        return 1.0
+    reached = env.max_int if grid is None else env.maximal_intersection(grid)
+    return float((reached - env.base_int) / span)
+
 
 def evaluate_ARC_policy(
     model: "base_class.BaseAlgorithm",
@@ -9,73 +55,45 @@ def evaluate_ARC_policy(
     n_eval_episodes: int = 10,
     deterministic: bool = True,
     callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
-) -> Union[Tuple[float, float], Tuple[List[float], List[int]]]:
-    """Runs the policy for `n_eval_episodes` episodes on both the training
-    and test environments.
+) -> Tuple[float, float, Any]:
+    """Run the policy until `n_eval_episodes` episodes have finished.
 
-    Args:
-        model: The RL agent to evaluate.
-        vec_env: The vectorized environment, exposing a `test_env` attribute
-            for the held-out test environment.
-        n_eval_episodes: Number of episodes to evaluate the agent for.
-        deterministic: Whether to use deterministic or stochastic actions.
-        callback: Callback for additional checks, called after each step.
-            Reads its state from the local variables in this function's
-            scope (`reward`, `done`, `info`), not from arguments.
+    Returns the mean accuracy over those episodes, their mean length, and
+    the grid the last finished episode produced - what the caller prints
+    and plots.
 
-    Returns:
-        Per-episode accuracies, per-episode lengths, and the predicted grid
-        for each environment.
+    `callback` is invoked after each step with the local scope, which is
+    how MonitorCallback's success logging reads `reward`, `done` and
+    `info`. Kept because that contract is used, odd as it is.
     """
-    n_envs = vec_env.num_envs + 1 if hasattr(vec_env, 'envs') else 1 # 1 for train + 1 for test
-    test_env = vec_env.test_env
-    episode_rewards = [[] for _ in range(n_envs)]
-    episode_lengths = [[] for _ in range(n_envs)]
-    episode_accs = [[] for _ in range(n_envs)]
-    predicted_grids = [[] for _ in range(n_envs)]
-    episode_counts = np.zeros(n_envs, dtype="int")
-    # Divides episodes among different sub environments in the vector as evenly as possible
-    episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
-    current_rewards = np.zeros(n_envs)
-    current_lengths = np.zeros(n_envs, dtype="int")
+    n_envs = vec_env.num_envs
+    accuracies, lengths = [], []
+    last_grid = None
+    current_lengths = np.zeros(n_envs, dtype=int)
     observations = vec_env.reset()
-    test_observation = test_env.reset()
     states = None
-    test_states = None
-    test_done = False
-    while (episode_counts < episode_count_targets).any() and not test_done:
-        actions, states = model.predict(
-            observations,  # type: ignore[arg-type]
-            state=states,
-            deterministic=deterministic,
-        )
-        test_action, test_states = model.predict(
-            test_observation,  # type: ignore[arg-type]
-            state=test_states,
-            deterministic=deterministic,
-        )
-        new_observations, rewards, dones, infos = vec_env.step(actions)
-        new_test_observation, test_reward, test_done, test_info = test_env.step(test_action)
-        current_rewards[:-1] += rewards
-        dones.append(test_done) # for unification
-        infos.append(test_info) # for unification
-        current_rewards[-1] = test_reward
+
+    while len(accuracies) < n_eval_episodes:
+        actions, states = model.predict(observations, state=states,
+                                        deterministic=deterministic)
+        observations, rewards, dones, infos = vec_env.step(actions)
         current_lengths += 1
-        for i in range(n_envs+1):
-            if episode_counts[i] < episode_count_targets[i]:
-                # unpack values so that the callback can access the local variables
-                reward = rewards[i]
-                done = dones[i]
-                info = infos[i]
-                if dones[i]:
-                    predicted_grids[i].append(info['terminal_observation']['grid'])
-                    episode_rewards[i].append(current_rewards[i])
-                    episode_lengths[i].append(current_lengths[i])
-                    env = vec_env.envs[i] if i < n_envs-1 else test_env
-                    acc = (env.max_int - env.base_int) / (env.target_int - env.base_int)
-                    episode_accs[i].append(acc)
-                    episode_counts[i] += 1
-                    current_rewards[i] = 0
-                    current_lengths[i] = 0
-        observations = new_observations
-    return episode_accs, episode_lengths, predicted_grids
+        for index in range(n_envs):
+            reward, done, info = rewards[index], dones[index], infos[index]
+            if callback is not None:
+                callback(locals(), globals())
+            if not done:
+                continue
+            terminal = info.get("terminal_observation") or {}
+            grid = terminal.get("grid")
+            if grid is not None:
+                last_grid = grid
+            accuracies.append(closed_fraction(vec_env.envs[index], grid))
+            lengths.append(int(current_lengths[index]))
+            current_lengths[index] = 0
+            if len(accuracies) >= n_eval_episodes:
+                break
+
+    return (float(np.mean(accuracies)) if accuracies else 0.0,
+            float(np.mean(lengths)) if lengths else 0.0,
+            last_grid)

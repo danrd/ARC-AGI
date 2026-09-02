@@ -127,8 +127,15 @@ def parse_span(text: str):
     return start, stop
 
 
-def load_tasks(dataset, span):
-    """Shape-preserving training pairs in `span`, and how many exist in all.
+#: The file each split lives in. Named here rather than spelled into
+#: load_tasks, because a span means a position in one of these lists and
+#: nothing outside it: "0-53" is a different 53 tasks in each.
+SPLIT_FILES = {"training": "training_challenges.json",
+               "evaluation": "evaluation_challenges.json"}
+
+
+def load_tasks(dataset, span, split="training"):
+    """Shape-preserving pairs of one split in `span`, and how many exist.
 
     The env's intersection metric compares grids cell by cell, so a pair
     whose output is a different size has no meaningful progress fraction.
@@ -138,7 +145,10 @@ def load_tasks(dataset, span):
     tasks on every machine and on every run, which is what lets separately
     scanned ranges be pooled afterwards.
     """
-    path = REPO_ROOT / "data" / "datasets" / dataset / "training_challenges.json"
+    if split not in SPLIT_FILES:
+        raise SystemExit(f"--split {split}: expected one of "
+                         f"{', '.join(sorted(SPLIT_FILES))}")
+    path = REPO_ROOT / "data" / "datasets" / dataset / SPLIT_FILES[split]
     with open(path) as f:
         challenges = json.load(f)
     start, stop = span
@@ -591,6 +601,11 @@ def main() -> None:
                              "tree's pool by measured effect, 'default' from the raw "
                              "padded action space")
     parser.add_argument("--dataset", default="ARC", help="ARC or ARC2")
+    parser.add_argument("--split", default="training",
+                        choices=sorted(SPLIT_FILES),
+                        help="which half to scan; a span numbers positions "
+                             "within one split, so 0-53 names different tasks "
+                             "in each and shards of the two cannot be pooled")
     parser.add_argument("--out", type=Path, help="write the raw per-task results as JSON")
     args = parser.parse_args()
 
@@ -602,12 +617,12 @@ def main() -> None:
                else build_actions(args.colours, args.directions))
     _ACTION_NAMES.clear()
     _ACTION_NAMES.update(actions)
-    tasks, total = load_tasks(args.dataset, args.tasks)
+    tasks, total = load_tasks(args.dataset, args.tasks, args.split)
     if not tasks:
         raise SystemExit(f"--tasks {args.tasks[0]}-{args.tasks[1]} selects nothing; "
                          f"{total} shape-preserving tasks exist in {args.dataset}")
     print(f"tasks {args.tasks[0]}-{args.tasks[0] + len(tasks)} of {total} "
-          f"shape-preserving in {args.dataset}")
+          f"shape-preserving in {args.dataset} {args.split}")
     vocabulary = (f"{len(actions)} actions" if actions
                   else "a vocabulary per task from its own palette")
     print(f"{len(tasks)} shape-preserving tasks, {vocabulary}, "
@@ -635,6 +650,7 @@ def main() -> None:
         # cannot say - a task missing from it was dropped, not unscanned.
         args.out.write_text(json.dumps(
             {"span": [args.tasks[0], args.tasks[0] + len(tasks)],
+             "split": args.split,
              "total_available": total,
              "approaches": {
                  str(k): {"per_task": v["per_task"],

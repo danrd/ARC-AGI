@@ -173,3 +173,36 @@ class TestPerTaskVocabularies:
         pooled = script.pool([path])
 
         assert script.names_for(pooled, "aaa") == NAMES
+
+
+class TestSplitsDoNotPool:
+    @staticmethod
+    def split_shard(tmp_path, name, split, span, per_task):
+        path = tmp_path / name
+        path.write_text(json.dumps({
+            "span": list(span), "split": split,
+            "approaches": {"2": {"per_task": per_task, "effective_actions": {},
+                                 "solutions": {}, "action_names": NAMES}}}))
+        return path
+
+    def test_shards_of_two_splits_are_refused(self, tmp_path):
+        """0-53 is a different 53 tasks in each split, so pooling them
+        produces a file whose spans overlap and whose task ids come from
+        two universes - and nothing about it looks wrong."""
+        first = self.split_shard(tmp_path, "a.json", "training", (0, 2), {"aaa": 1.0})
+        second = self.split_shard(tmp_path, "b.json", "evaluation", (0, 2), {"bbb": 1.0})
+
+        with pytest.raises(SystemExit) as excinfo:
+            script.pool([first, second])
+
+        assert "split" in str(excinfo.value)
+
+    def test_the_split_travels_with_the_pool(self, tmp_path):
+        path = self.split_shard(tmp_path, "a.json", "evaluation", (0, 2), {"aaa": 1.0})
+
+        assert script.pool([path])["split"] == "evaluation"
+
+    def test_a_shard_written_before_splits_existed_reads_as_training(self, tmp_path):
+        path = shard(tmp_path, "a.json", (0, 2), {"aaa": 1.0}, {})
+
+        assert script.pool([path])["split"] == "training"

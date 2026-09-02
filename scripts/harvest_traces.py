@@ -89,6 +89,7 @@ def pool(paths, approach="2"):
     it is wrong, and nothing about the merged file looks unusual.
     """
     per_task, effective, solutions, partials = {}, {}, {}, {}
+    splits = set()
     #: task -> its own table, written by a scan run with --colours auto,
     #: where the vocabulary depends on the task's palette and one table for
     #: the file would be a lie.
@@ -98,6 +99,13 @@ def pool(paths, approach="2"):
         with open(path) as handle:
             data = json.load(handle)
         section = data["approaches"][approach]
+        splits.add(data.get("split", "training"))
+        if len(splits) > 1:
+            raise SystemExit(
+                f"{path} covers the {data.get('split')} split and an earlier "
+                f"file covers {', '.join(sorted(splits - {data.get('split')}))} "
+                f"- a span numbers positions within one split, so 0-53 is a "
+                f"different 53 tasks in each and the two cannot be pooled")
         covered = data.get("span")
         if covered:
             span = covered if span is None else [min(span[0], covered[0]),
@@ -127,6 +135,7 @@ def pool(paths, approach="2"):
     return {"per_task": per_task, "effective": effective,
             "solutions": solutions, "partials": partials,
             "names": names or {}, "names_by_task": names_by_task,
+            "split": splits.pop() if splits else "training",
             "span": tuple(span or (0, 0))}
 
 
@@ -286,8 +295,9 @@ def main() -> None:
     if args.tasks:
         first, _, last = args.tasks.partition("-")
         span = (int(first), int(last))
-    tasks, _ = load_tasks(args.dataset, span)
-    print(f"  span {span[0]}-{span[1]}, {len(tasks)} tasks in it")
+    tasks, _ = load_tasks(args.dataset, span, pooled["split"])
+    print(f"  span {span[0]}-{span[1]} of {pooled['split']}, "
+          f"{len(tasks)} tasks in it")
     actions = build_actions(args.colours, args.directions)
     if set(names.values()) - set(actions.values()):
         raise SystemExit("the shards name actions this vocabulary does not "

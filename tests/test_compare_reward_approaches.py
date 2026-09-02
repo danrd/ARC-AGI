@@ -275,3 +275,32 @@ class TestTheVocabularyATaskIsSearchedWith:
 
         assert any(n.startswith("red_") for n in names)
         assert not any(n.startswith("green_") for n in names)
+
+
+class TestSplits:
+    """A span numbers positions within one split, so the same range names a
+    different set of tasks in each - which is why the split travels in the
+    shard and pooling refuses to mix them."""
+
+    def test_the_two_splits_are_different_tasks(self):
+        train, train_total = script.load_tasks("ARC", (0, 5), "training")
+        evaluation, eval_total = script.load_tasks("ARC", (0, 5), "evaluation")
+
+        assert [t[0] for t in train] != [t[0] for t in evaluation]
+        assert (train_total, eval_total) == (262, 270)
+
+    def test_training_is_the_default(self):
+        assert [t[0] for t in script.load_tasks("ARC", (0, 5))[0]] == \
+               [t[0] for t in script.load_tasks("ARC", (0, 5), "training")[0]]
+
+    def test_a_split_that_does_not_exist_is_refused(self):
+        with pytest.raises(SystemExit):
+            script.load_tasks("ARC", (0, 5), "test")
+
+    def test_spans_tile_within_the_evaluation_split_too(self):
+        first, _ = script.load_tasks("ARC", (0, 10), "evaluation")
+        second, _ = script.load_tasks("ARC", (10, 20), "evaluation")
+        both, _ = script.load_tasks("ARC", (0, 20), "evaluation")
+
+        assert [t[0] for t in first] + [t[0] for t in second] == \
+               [t[0] for t in both]

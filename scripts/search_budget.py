@@ -7,19 +7,25 @@ question is how to spend the seconds that task gets. This sweeps the one
 setting that decides that - how many iterations a single search runs -
 and reports what each buys.
 
-Measured on 20 tasks before this existed, at one search each:
+Measured on 20 tasks before this existed, at one search each - and on the
+DEFAULT playout, which turned out to be the wrong thing to measure:
 
     1 x 40 iterations,  4 rollouts   8/20 carried a hint, 9.7s mean
     4 x 40 iterations,  4 rollouts  10/20                37.7s
     1 x 160 iterations, 4 rollouts  10/20                16.8s
     1 x 40 iterations, 16 rollouts   9/20                15.7s
 
-Four searches and one search four times as long reached the same
-coverage, at twice the cost - a new search rebuilds the tree, more
-iterations continue the one already built. Which is why this sweeps
-depth. Two of twenty is well inside noise, though, so the point of a
-bigger run is to say whether the ordering is real and where depth stops
-paying.
+Four searches and one search four times as long reached the same coverage
+at twice the cost - a new search rebuilds the tree, more iterations
+continue the one already built. That is why this sweeps depth.
+
+But the playout matters more than any of it. On 3eda0437 at identical
+settings, the default playout found 1 effective action in 3.2s and the
+weighted one found 47 in 31s - the default samples the raw padded action
+space, where about 91% of draws name no object at all. The scan that
+produced every reference figure ran weighted; the table above did not.
+So the numbers above are a floor, and --playout is swept alongside depth
+rather than assumed.
 
 Reported per setting: how many tasks carried a hint at all, how far the
 search got, how many it solved outright, and what it cost. Coverage is
@@ -128,6 +134,11 @@ def main() -> None:
                         help="seconds one search may take; what it found up to "
                              "the cut is kept")
     parser.add_argument("--min-gain", type=int, default=5)
+    parser.add_argument("--playout", nargs="+", default=["weighted"],
+                        choices=["weighted", "default"],
+                        help="how a playout picks its next action; 'weighted' "
+                             "draws from the tree's pool by measured effect and "
+                             "found 47 effective actions where 'default' found 1")
     parser.add_argument("--workers", type=int, default=1,
                         help="tasks in flight at once, a core each")
     parser.add_argument("--out", type=Path)
@@ -141,16 +152,17 @@ def main() -> None:
           f"{args.repeats} search(es) each, {args.workers} worker(s)\n")
 
     results = {}
-    for iterations in args.iterations:
-        settings = SearchSettings(iterations=iterations, repeats=args.repeats,
-                                  rollouts=args.rollouts, timeout=args.timeout,
-                                  min_gain=args.min_gain)
-        started = time.perf_counter()
-        rows = sweep(tasks, settings, args.workers)
-        label = f"{args.repeats} x {iterations} iters"
-        summary = report(label, rows)
-        summary["wall_seconds"] = time.perf_counter() - started
-        results[str(iterations)] = {"summary": summary, "rows": rows}
+    for playout in args.playout:
+        for iterations in args.iterations:
+            settings = SearchSettings(iterations=iterations, repeats=args.repeats,
+                                      rollouts=args.rollouts, timeout=args.timeout,
+                                      min_gain=args.min_gain, playout=playout)
+            started = time.perf_counter()
+            rows = sweep(tasks, settings, args.workers)
+            label = f"{playout} {args.repeats} x {iterations}"
+            summary = report(label, rows)
+            summary["wall_seconds"] = time.perf_counter() - started
+            results[f"{playout}:{iterations}"] = {"summary": summary, "rows": rows}
 
     print("\n  coverage is what a prompt sees: a task with no hint gets no block.")
     print("  compare the cost columns before reading anything into two tasks "

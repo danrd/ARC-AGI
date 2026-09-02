@@ -86,6 +86,13 @@ class SearchSettings:
     min_gain: int = 5
     skip_solved: bool = False
     partials: int = 3
+    #: Which action a playout tries next. 'weighted' draws from the pool
+    #: the tree expands over by measured effect; 'default' samples the raw
+    #: padded action space, where ~91% of draws name no object at all. The
+    #: 262-task scan ran weighted, this ran default until it was measured,
+    #: and that alone accounted for most of the gap between what a scan
+    #: found and what an online search found on the same task.
+    playout: str = "weighted"
     #: Searches to run at once. Repeats share nothing, so in principle a
     #: 60s budget on four cores buys four minutes of search - but measured,
     #: this is the weakest way to spend a budget: two workers took 146s over
@@ -377,6 +384,7 @@ def search_once(task, actions, settings):
     base, target = int(env.max_int), int(env.target_int)
     state = {"peak": base, "effective": {}}
     original = mcts.EnvironmentSimulator.simulate_step
+    original_init = mcts.EnvironmentSimulator.__init__
 
     def watching(self, simulated, action):
         result = original(self, simulated, action)
@@ -391,7 +399,14 @@ def search_once(task, actions, settings):
                                                int(gain))
         return result
 
+    def weighted_init(self, env, actions=None, policy=None):
+        original_init(self, env, actions=actions, policy=policy)
+        self.policy = mcts.PlayoutPolicy(self.all_actions, temperature=0.2,
+                                         floor=0.02)
+
     mcts.EnvironmentSimulator.simulate_step = watching
+    if settings.playout == "weighted":
+        mcts.EnvironmentSimulator.__init__ = weighted_init
     rollouts = []
     try:
         # stderr as well as stdout: the search draws tqdm bars, and a run
@@ -411,6 +426,7 @@ def search_once(task, actions, settings):
         pass
     finally:
         mcts.EnvironmentSimulator.simulate_step = original
+        mcts.EnvironmentSimulator.__init__ = original_init
 
     solutions, partials = [], []
     for rollout in rollouts:

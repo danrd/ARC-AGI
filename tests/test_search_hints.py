@@ -592,3 +592,66 @@ class TestSearchingInParallel:
 
         assert out == "x"
         assert len(calls) == 3
+
+
+class TestThePlayout:
+    """Which action a playout tries next is the single biggest difference
+    between a search that finds something and one that does not. Measured on
+    3eda0437 at identical settings: 1 effective action on the default
+    playout against 47 on the weighted one, at 3.2s against 31s. The scan
+    that produced every reference figure ran weighted; this ran default
+    until that was found, which is most of why an online hint looked thin."""
+
+    @staticmethod
+    def _triple():
+        import numpy as np
+        return ("aaa", np.zeros((3, 3), dtype=int), np.array([[0, 1, 2]] * 3))
+
+    def test_weighted_is_the_default(self):
+        assert hints.SearchSettings().playout == "weighted"
+
+    @staticmethod
+    def _during_the_search(monkeypatch, playout):
+        """What the simulator class looked like while the search ran."""
+        seen = {}
+        monkeypatch.setattr(hints, "make_env",
+                            lambda task, actions, episode_len: _FakeEnv())
+        monkeypatch.setattr(
+            hints.mcts, "rollout_preparation",
+            lambda env, **kwargs: seen.setdefault(
+                "init", hints.mcts.EnvironmentSimulator.__init__) and [])
+        hints.search_once(("aaa", None, None), {0: "submit"},
+                          hints.SearchSettings(playout=playout))
+        return seen["init"]
+
+    def test_weighted_replaces_what_a_simulator_is_built_with(self, monkeypatch):
+        original = hints.mcts.EnvironmentSimulator.__init__
+
+        assert self._during_the_search(monkeypatch, "weighted") is not original
+
+    def test_the_default_playout_leaves_the_simulator_alone(self, monkeypatch):
+        original = hints.mcts.EnvironmentSimulator.__init__
+
+        assert self._during_the_search(monkeypatch, "default") is original
+
+    def test_the_class_is_left_as_it_was_found(self, monkeypatch):
+        """The patch is global to the class, so a search that did not put it
+        back would change every later search in the process - including one
+        a caller asked for on the default playout."""
+        before_init = hints.mcts.EnvironmentSimulator.__init__
+        before_step = hints.mcts.EnvironmentSimulator.simulate_step
+        monkeypatch.setattr(hints, "make_env",
+                            lambda task, actions, episode_len: _FakeEnv())
+        monkeypatch.setattr(hints.mcts, "rollout_preparation",
+                            lambda env, **kwargs: [])
+
+        hints.search_once(self._triple(), {0: "submit"},
+                          hints.SearchSettings(playout="weighted"))
+
+        assert hints.mcts.EnvironmentSimulator.__init__ is before_init
+        assert hints.mcts.EnvironmentSimulator.simulate_step is before_step
+
+
+class _FakeEnv:
+    max_int = 0
+    target_int = 10

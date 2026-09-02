@@ -502,8 +502,13 @@ def merge_found(merged, found, partials_limit):
     return merged
 
 
-def hints_for(task, settings=None):
-    """The hint block for one task, computed now, or None.
+def search_task(task, settings=None):
+    """Everything the searches found for one task, merged.
+
+    Split out of hints_for because what a search found and how it is worded
+    are different questions, and a measurement wants the first without the
+    second: peak, solutions, partial paths, effective actions - plus the
+    vocabulary they are named in.
 
     Repeats are merged the way the scan merged them: the best peak, the
     largest gain per action, every distinct solution, the furthest partial
@@ -574,6 +579,17 @@ def hints_for(task, settings=None):
             if merged["solutions"]:
                 break
     merged["solutions"].sort(key=len)
+    merged["actions"] = actions
+    merged["triple"] = triple
+    merged["seconds"] = time.perf_counter() - started
+    return merged
+
+
+def hints_for(task, settings=None):
+    """The hint block for one task, computed now, or None."""
+    settings = settings or SearchSettings()
+    merged = search_task(task, settings)
+    triple, actions = merged["triple"], merged["actions"]
     task_id = triple[0]
     shaped = {"names": {str(i): n for i, n in actions.items()},
               "solutions": {task_id: merged["solutions"]},

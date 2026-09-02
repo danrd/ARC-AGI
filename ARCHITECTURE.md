@@ -127,17 +127,17 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
   rl["rl (18)"]
-  scripts["scripts (5)"]
+  scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (42)"]
+  tests["tests (43)"]
   utils["utils (3)"]
   tests -->|29| rl
   tests -->|24| subsymbolic
   tests -->|21| symbolic
   rl -->|8| symbolic
+  scripts -->|7| rl
   rl -->|6| data
-  scripts -->|6| rl
   tests -->|5| data
   tests -->|5| orchestration
   orchestration -->|4| subsymbolic
@@ -181,13 +181,14 @@ graph TD
 | `rl.policy` | 2 |
 | `rl.rl_job` | 1 |
 | `rl.rl_module` | 2 |
-| `rl.search_hints` | 4 |
+| `rl.search_hints` | 5 |
 | `rl.training` | 4 |
 | `rl.utils` | 6 |
 | `scripts.compare_llm_arms` | 0 |
-| `scripts.compare_reward_approaches` | 1 |
+| `scripts.compare_reward_approaches` | 2 |
 | `scripts.harvest_traces` | 0 |
 | `scripts.module_map` | 0 |
+| `scripts.search_budget` | 0 |
 | `scripts.sync_llm_kit` | 0 |
 | `subsymbolic.analyst` | 1 |
 | `subsymbolic.arc_evaluators` | 1 |

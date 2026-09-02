@@ -86,11 +86,15 @@ class SearchSettings:
     min_gain: int = 5
     skip_solved: bool = False
     partials: int = 3
-    #: Searches to run at once. Repeats share nothing, so on four cores a
-    #: 60s budget buys four minutes of search. 1 by default: the workers
-    #: are separate interpreters with torch imported, and how many a
-    #: machine can hold beside a loaded model is a property of that
-    #: machine, not of this code.
+    #: Searches to run at once. Repeats share nothing, so in principle a
+    #: 60s budget on four cores buys four minutes of search - but measured,
+    #: this is the weakest way to spend a budget: two workers took 146s over
+    #: six tasks where the same work in line took a fifth of that, and each
+    #: worker reached 2 GB during a search (544 MB of that is the imports).
+    #: Four searches and four times the iterations reached the same
+    #: coverage on 20 tasks, at 37.7s against 16.8s. Spend the budget on
+    #: `iterations` first; this is here for a machine with cores and memory
+    #: to spare, and defaults to off.
     workers: int = 1
     #: Seconds the whole task may take, 0 for no cap. Bounds repeats
     #: together rather than each on its own.
@@ -543,12 +547,18 @@ def hints_for(task, settings=None):
                 except Exception:
                     continue
         except BrokenProcessPool:
-            # A worker died - out of memory is the usual reason, four
-            # interpreters with torch beside a loaded model. The pool is
-            # unusable from here on, so drop it and search in this process:
-            # a hint is worth less than the run it would otherwise kill,
+            # Two causes, both seen here. A caller running as a script
+            # without an `if __name__ == "__main__"` guard: spawn re-imports
+            # the main module in the child, which re-runs it, which spawns
+            # again. Or memory - a worker reached 2 GB during a search
+            # against 544 MB of imports, so four of them beside a loaded
+            # model is 8 GB of search alone. Either way the pool is
+            # unusable from here, so drop it and search in this process: a
+            # hint is worth less than the run it would otherwise kill
             # thirteen hours in.
-            print("search hints: the worker pool broke, searching in line")
+            print("search hints: the worker pool broke, searching in line "
+                  "(a script calling this needs an "
+                  "`if __name__ == \"__main__\"` guard)")
             shutdown_pool()
             pool = None
     if pool is None:

@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+import re
+
 import pytest
 
 from subsymbolic.arc_evaluators import arc_grid_evaluator, arc_result_plotter
@@ -522,6 +524,25 @@ def test_show_progress_prints_the_score_line(fake_wandb, capsys):
 
     out = capsys.readouterr().out
     assert "task t1: score=1.000 solved=True" in out
+
+
+def test_show_progress_prints_how_long_the_task_took(fake_wandb, capsys):
+    """The one number that says a backend swapped under a run: per-task time
+    in one measured pair swung 14x between shards of the same arm. Without
+    it on the progress line, reading it means opening the checkpoint after
+    the fact."""
+    prompts = {"t1": "prompt-1"}
+    generations = {"prompt-1": "CORRECT"}
+    module = _fake_module(prompts, generations)
+
+    run_llm_over_tasks(
+        tasks=[_FakeTask("t1")], subsymbolic_module=module, evaluator=_exact_match_evaluator,
+        log_config=WandbLogConfig(project="test-proj"),
+        show_progress=True,
+    )
+
+    out = capsys.readouterr().out
+    assert re.search(r"task t1: .*time=\d+\.\d\dmin", out)
 
 
 def test_show_progress_leads_with_index_when_the_task_carries_one(fake_wandb, capsys):

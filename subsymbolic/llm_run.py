@@ -292,7 +292,12 @@ def run_llm_over_tasks(
         elif show_progress:
             task_index = getattr(task, "index", None)
             task_label = f"task {task_index} ({task_id})" if task_index is not None else f"task {task_id}"
-            print(f"{task_label}: score={eval_result.primary_score:.3f} solved={eval_result.solved}")
+            # Time per task belongs on the progress line as much as the
+            # score: it is the number that says a backend swapped under a
+            # run, and reading it afterwards means opening the checkpoint.
+            print(f"{task_label}: score={eval_result.primary_score:.3f} "
+                  f"solved={eval_result.solved} "
+                  f"time={processing_time_min:.2f}min")
 
         if (debug or show_progress) and fig is not None:
             import matplotlib.pyplot as plt  # lazy: opt-in, plotting shouldn't be a hard dependency otherwise

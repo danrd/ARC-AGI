@@ -1,0 +1,72 @@
+import json
+import os
+import random
+import numpy as np
+import pickle
+
+def check_module_devices(model):
+    for name, param in model.named_parameters():
+        print(f"Parameter: {name}, Device: {param.device}")
+
+def load_json(file_path):
+    """Load JSON data from a file."""
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+    return data
+
+def load_pickle(file_path):
+    """Load pickle data from a file."""
+    with open(file_path, 'r') as file:
+        data = pickle.load(file)
+    return data
+
+def seed_everything(seed=42):
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch  # lazy: the only torch-dependent line in this module - importing it
+                       # unconditionally forced torch on every caller of load_json/load_pickle/etc too
+    except ImportError:
+        return
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    return
+
+def create_saving_path(model:str)->str:
+    dest_dir = os.getcwd() + '/data/pretrained_models/'
+    model_name = model.split('/')[1]
+    dest_dir = os.getcwd() + '/data/pretrained_models/'
+    existed_filed_names = os.listdir(dest_dir)
+    max_version = 0
+    for file_name in existed_filed_names:
+        if model_name in file_name:
+            prev_version = int(file_name.split('arc_v')[1])
+            if prev_version > max_version:
+                max_version = prev_version
+    path = dest_dir + model_name + f'_arc_v{max_version+1}'
+    return path
+
+class TaskIterator:
+    def __init__(self, start=0, end=0, tasks_keys=False):
+        self.current = start
+        self.end = end
+        self.tasks_keys = tasks_keys
+        if tasks_keys:
+            self.end = len(tasks_keys)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.current < self.end:
+            if self.tasks_keys:
+                value = self.tasks_keys[self.current]
+            else:
+                value = self.current
+            self.current += 1
+            return value
+        else:
+            raise StopIteration

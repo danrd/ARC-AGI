@@ -1,0 +1,722 @@
+"""Tests for subsymbolic/llm_setup.py's BaseConfig/LlmConfig."""
+from __future__ import annotations
+
+import json
+import sys
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from subsymbolic.llm_setup import (
+    BaseConfig,
+    LlmConfig,
+    _build_cpu_runner,
+    _build_gpu_runner,
+    _report_runner_started,
+    _scan_log_for_errors,
+    _start_llama_cpp_server,
+    _start_vllm_server,
+    resolve_local_model_path,
+    setup_llama_cpp_model,
+)
+
+
+def test_tokenizer_model_defaults_to_none():
+    config = LlmConfig()
+    assert config.tokenizer_model is None
+
+
+def test_openrouter_settings_have_sane_defaults():
+    """These live on LlmConfig rather than a separate OpenRouterConfig -
+    OpenRouterRunner is a deliberately separate, opt-in path (see
+    llm_runtime.build_openrouter_runner), not something build_runner ever
+    constructs on its own, but its settings still belong with the rest of
+    "which model(s) this experiment can use" rather than a config type of
+    their own."""
+    config = LlmConfig()
+    assert config.openrouter_models
+    assert config.openrouter_max_retries == 2
+    assert config.openrouter_request_timeout == 30.0
+
+
+def test_tokenizer_model_can_be_set_separately_from_model():
+    config = LlmConfig(model="unsloth/Qwen3.6-27B-GGUF", tokenizer_model="Qwen/Qwen3.6-27B")
+
+    assert config.model == "unsloth/Qwen3.6-27B-GGUF"
+    assert config.tokenizer_model == "Qwen/Qwen3.6-27B"
+
+
+def test_the_model_cache_defaults_somewhere_writable():
+    """The default was '/data/pretrained_models' - /data at the filesystem
+    root, which an ordinary machine has no write access to. Every CPU
+    backend then failed at once with a bare `PermissionError: '/data'`,
+    naming a path that appears nowhere the caller configured.
+
+    Every test around this one mocks hf_hub_download, so none of them ever
+    touched the path; this one asks about the path itself.
+    """
+    import os
+    from pathlib import Path
+
+    default = LlmConfig().pretrained_models_dir
+
+    assert not os.path.isabs(default), (
+        f"{default!r} is absolute, so it does not follow the checkout - "
+        "every other data path here (blocks_dir, ARCDataset's) is relative"
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    assert (repo_root / default).is_dir(), f"{default!r} is not a directory in the repo"
+
+
+def test_resolve_local_model_path_downloads_the_quant_file():
+    config = SimpleNamespace(llm=LlmConfig())
+    with patch("huggingface_hub.hf_hub_download") as mock_download:
+        mock_download.return_value = "data/pretrained_models/Qwen3.6-27B-Q4_K_M.gguf"
+        path = resolve_local_model_path(config)
+
+    mock_download.assert_called_once_with(
+        repo_id="unsloth/Qwen3.6-27B-GGUF",
+        filename="Qwen3.6-27B-Q4_K_M.gguf",
+        local_dir="data/pretrained_models",
+    )
+    assert path == "data/pretrained_models/Qwen3.6-27B-Q4_K_M.gguf"
+
+
+def test_resolve_local_model_path_honors_pretrained_models_dir_override():
+    config = SimpleNamespace(llm=LlmConfig(pretrained_models_dir="/custom/dir"))
+    with patch("huggingface_hub.hf_hub_download") as mock_download:
+        mock_download.return_value = "/custom/dir/Qwen3.6-27B-Q4_K_M.gguf"
+        resolve_local_model_path(config)
+
+    assert mock_download.call_args.kwargs["local_dir"] == "/custom/dir"
+
+
+def test_resolve_local_model_path_returns_model_as_is_without_quant_file():
+    config = SimpleNamespace(llm=LlmConfig(quant_file=""))
+    assert resolve_local_model_path(config) == "unsloth/Qwen3.6-27B-GGUF"
+
+
+def test_resolve_local_model_path_passes_through_an_existing_local_file(tmp_path):
+    gguf = tmp_path / "tiny.gguf"
+    gguf.write_bytes(b"")
+    config = SimpleNamespace(llm=LlmConfig(model=str(gguf)))
+
+    with patch("huggingface_hub.hf_hub_download") as mock_download:
+        path = resolve_local_model_path(config)
+
+    mock_download.assert_not_called()
+    assert path == str(gguf)
+
+
+def _fake_server_config(tmp_path, chat_template_kwargs=None):
+    gguf = tmp_path / "tiny.gguf"
+    gguf.write_bytes(b"")
+    llm = LlmConfig(model=str(gguf), quant_file="")
+    generation = SimpleNamespace(chat_template_kwargs=chat_template_kwargs or {}, max_tokens=64)
+    return SimpleNamespace(base=BaseConfig(), llm=llm, generation=generation)
+
+
+def test_start_llama_cpp_server_passes_chat_template_kwargs_when_set(tmp_path, monkeypatch):
+    """llama-cpp-python's server doesn't read chat_template_kwargs from the
+    request body (unlike vLLM) - it's a model-load-time CLI flag instead,
+    so it has to be on the spawn command, not just in generation_kwargs."""
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path, chat_template_kwargs={"enable_thinking": False})
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--chat_template_kwargs" in args
+    value = args[args.index("--chat_template_kwargs") + 1]
+    assert json.loads(value) == {"enable_thinking": False}
+
+
+def test_start_llama_cpp_server_omits_chat_template_kwargs_when_unset(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--chat_template_kwargs" not in args
+
+
+def test_start_llama_cpp_server_uses_explicit_n_ctx_when_set(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+    config.llm.n_ctx = 4096
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert args[args.index("--n_ctx") + 1] == "4096"
+
+
+def test_start_llama_cpp_server_falls_back_to_max_context_when_n_ctx_unset(tmp_path, monkeypatch):
+    """max_context - not generation.max_tokens - is the knob meant to size
+    the context window; generation.max_tokens caps how much a single
+    response generates, not how much context the model can hold, and
+    falling back to it directly silently starves real prompts of context
+    room unless n_ctx is set by hand."""
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+    config.llm.max_context = 9000
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert args[args.index("--n_ctx") + 1] == "9000"
+
+
+def test_start_llama_cpp_server_falls_back_to_generation_max_tokens_as_last_resort(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+    config.llm.max_context = 0
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert args[args.index("--n_ctx") + 1] == "64"
+
+
+def test_setup_llama_cpp_model_falls_back_to_max_context_when_n_ctx_unset(monkeypatch):
+    captured = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    config = SimpleNamespace(llm=LlmConfig(max_context=9000), base=BaseConfig(),
+                              generation=SimpleNamespace(max_tokens=64))
+
+    setup_llama_cpp_model("fake/path.gguf", config=config)
+
+    assert captured["n_ctx"] == 9000
+
+
+def test_setup_llama_cpp_model_prefers_explicit_n_ctx_over_max_context(monkeypatch):
+    captured = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    config = SimpleNamespace(llm=LlmConfig(n_ctx=4096, max_context=9000), base=BaseConfig(),
+                              generation=SimpleNamespace(max_tokens=64))
+
+    setup_llama_cpp_model("fake/path.gguf", config=config)
+
+    assert captured["n_ctx"] == 4096
+
+
+def test_start_llama_cpp_server_passes_the_load_settings_from_the_config(tmp_path, monkeypatch):
+    """Every LlmConfig field the server understands reaches the process.
+
+    The spawn command carried "--use_mlock True" and nothing else, so
+    n_gpu_layers was set in the config, printed back by
+    _report_runner_started, and then dropped on the way to the server. The
+    model loads entirely on the CPU whatever the setting says, and nothing
+    in the log distinguishes a setting that went missing from one the
+    backend could not honour - which on a CUDA-less build is the other
+    reason for the same symptom.
+    """
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+    config.llm.n_gpu_layers = 40
+    config.llm.n_tokens_batch = 256
+    config.llm.use_mlock = False
+    config.llm.flash_attn = True
+    config.llm.type_k = "q8_0"
+    config.llm.type_v = "q8_0"
+    config.llm.split_mode = 1
+    config.llm.tensor_split = [0.5, 0.5]
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert args[args.index("--n_gpu_layers") + 1] == "40"
+    assert args[args.index("--n_batch") + 1] == "256"
+    assert args[args.index("--use_mlock") + 1] == "False"
+    assert args[args.index("--flash_attn") + 1] == "True"
+    assert args[args.index("--type_k") + 1] == "q8_0"
+    assert args[args.index("--split_mode") + 1] == "1"
+    # One flag per share, which is how the server's CLI takes a list.
+    assert [args[i + 1] for i, a in enumerate(args) if a == "--tensor_split"] == ["0.5", "0.5"]
+
+
+def test_start_llama_cpp_server_omits_the_settings_left_unset(tmp_path, monkeypatch):
+    """A config naming none of the optional knobs spawns the command it
+    always did, so llama.cpp's own defaults stand rather than this repo's
+    idea of them."""
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    for flag in ("--flash_attn", "--type_k", "--type_v", "--split_mode",
+                 "--main_gpu", "--n_threads", "--tensor_split"):
+        assert flag not in args
+
+
+def test_start_llama_cpp_server_passes_n_gpu_layers_of_zero(tmp_path, monkeypatch):
+    """0 is a real value - "everything on the CPU" - and skipping the flag
+    when it is falsy would make an explicit 0 indistinguishable from an
+    unset field."""
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+    config.llm.n_gpu_layers = 0
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert args[args.index("--n_gpu_layers") + 1] == "0"
+
+
+def test_setup_llama_cpp_model_passes_the_optional_load_settings(monkeypatch):
+    """The in-process tier already forwarded n_gpu_layers; these are the
+    knobs that decide whether the offloaded layers fit."""
+    captured = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    config = SimpleNamespace(
+        llm=LlmConfig(max_context=9000, n_gpu_layers=40, flash_attn=True,
+                      type_k="q8_0", type_v="q8_0", split_mode=1),
+        base=BaseConfig(), generation=SimpleNamespace(max_tokens=64))
+
+    setup_llama_cpp_model("fake/path.gguf", config=config)
+
+    assert captured["n_gpu_layers"] == 40
+    assert captured["flash_attn"] is True
+    assert captured["type_k"] == "q8_0"
+    assert captured["split_mode"] == 1
+
+
+def test_setup_llama_cpp_model_omits_the_optional_settings_left_unset(monkeypatch):
+    """Not passed at all rather than passed as None - Llama reads None as a
+    value for some of these, so forwarding it would override its default
+    with nothing."""
+    captured = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    config = SimpleNamespace(llm=LlmConfig(max_context=9000), base=BaseConfig(),
+                              generation=SimpleNamespace(max_tokens=64))
+
+    setup_llama_cpp_model("fake/path.gguf", config=config)
+
+    for name in ("flash_attn", "type_k", "type_v", "split_mode", "main_gpu",
+                 "tensor_split", "n_threads"):
+        assert name not in captured
+
+
+def _fake_vllm_config(**llm_overrides):
+    return SimpleNamespace(base=BaseConfig(), llm=LlmConfig(**llm_overrides))
+
+
+def test_start_vllm_server_installs_and_does_not_stream_output_when_vllm_missing(tmp_path, monkeypatch):
+    """vllm isn't importable in this test env, so _start_vllm_server should
+    fall into its install branch - a routine success shouldn't flood the
+    notebook with pip's output."""
+    monkeypatch.chdir(tmp_path)
+    config = _fake_vllm_config()
+
+    with patch("subprocess.run") as mock_run, patch("subprocess.Popen") as mock_popen:
+        mock_run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+        _start_vllm_server(config)
+
+    assert mock_run.call_args.kwargs.get("capture_output") is True
+    assert "--upgrade" not in mock_run.call_args[0][0]
+    mock_popen.assert_called_once()
+
+
+def test_start_vllm_server_skips_install_when_vllm_already_importable(tmp_path, monkeypatch):
+    """A forced `--upgrade` on every call is its own hazard on a curated
+    environment (Kaggle/Colab) - it can silently pull a vllm release whose
+    CUDA wheels don't match the actual GPU/driver stack present. If vllm
+    already imports, it should be left alone entirely."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config()
+
+    with patch("subprocess.run") as mock_run, patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    mock_run.assert_not_called()
+    mock_popen.assert_called_once()
+
+
+def test_start_vllm_server_raises_with_full_output_when_pip_install_fails(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = _fake_vllm_config()
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = SimpleNamespace(returncode=1, stdout="resolving...", stderr="conflict")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _start_vllm_server(config)
+
+    message = str(exc_info.value)
+    assert "resolving..." in message
+    assert "conflict" in message
+
+
+def test_build_cpu_runner_health_check_failure_reports_timeout_and_log_file(tmp_path, monkeypatch):
+    """A health-check failure used to just say "failed health check" - no
+    pointer to the timeout that was actually used or to the log file that
+    has the real reason (e.g. a large model still loading, or a genuine
+    crash), forcing a manual hunt through the working directory to find it."""
+    monkeypatch.chdir(tmp_path)
+    config = SimpleNamespace(base=SimpleNamespace(device="cpu", server_ready_timeout=5.0),
+                              llm=SimpleNamespace(model="fake/model", quant_file=""),
+                              generation=SimpleNamespace())
+    fake_process = SimpleNamespace(log_file=SimpleNamespace(name="llama_cpp.log"))
+
+    with patch("subsymbolic.llm_setup._start_llama_cpp_server", return_value=fake_process), \
+         patch("subsymbolic.llm_setup._wait_for_server_ready", return_value=False) as mock_wait, \
+         patch("subsymbolic.llm_setup._terminate_process"), \
+         patch("subsymbolic.llm_setup.setup_llama_cpp_model", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError) as exc_info:
+            _build_cpu_runner(config)
+
+    assert mock_wait.call_args.kwargs["timeout"] == 5.0
+    message = str(exc_info.value)
+    assert "5.0" in message
+    assert "llama_cpp.log" in message
+
+
+def test_build_cpu_runner_uses_default_server_ready_timeout_when_unset(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = SimpleNamespace(base=SimpleNamespace(device="cpu"),
+                              llm=SimpleNamespace(model="fake/model", quant_file=""),
+                              generation=SimpleNamespace())
+    fake_process = SimpleNamespace(log_file=SimpleNamespace(name="llama_cpp.log"))
+
+    with patch("subsymbolic.llm_setup._start_llama_cpp_server", return_value=fake_process), \
+         patch("subsymbolic.llm_setup._wait_for_server_ready", return_value=False) as mock_wait, \
+         patch("subsymbolic.llm_setup._terminate_process"), \
+         patch("subsymbolic.llm_setup.setup_llama_cpp_model", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError):
+            _build_cpu_runner(config)
+
+    assert mock_wait.call_args.kwargs["timeout"] == 60.0
+
+
+def test_build_cpu_runner_passes_request_timeout_to_server_runner(tmp_path, monkeypatch):
+    """The openai client's own default request timeout (600s) is tuned for
+    a hosted API - CPU inference of a large local model can run past that
+    on a single generate() call well before anything is actually wrong, so
+    config.base.request_timeout has to make it all the way to ServerRunner."""
+    monkeypatch.chdir(tmp_path)
+    config = SimpleNamespace(base=BaseConfig(request_timeout=120.0),
+                              llm=SimpleNamespace(model="fake/model", quant_file=""),
+                              generation=SimpleNamespace(chat_template_kwargs={}),
+                              to_chat_completions=lambda grammar_backend="llama_cpp": {})
+    fake_process = SimpleNamespace(log_file=SimpleNamespace(name="llama_cpp.log"))
+
+    with patch("subsymbolic.llm_setup._start_llama_cpp_server", return_value=fake_process), \
+         patch("subsymbolic.llm_setup._wait_for_server_ready", return_value=True), \
+         patch("subsymbolic.llm_setup.ServerRunner") as mock_server_runner:
+        _build_cpu_runner(config)
+
+    assert mock_server_runner.call_args.kwargs["request_timeout"] == 120.0
+
+
+def test_build_cpu_runner_passes_llama_cpp_grammar_backend(tmp_path, monkeypatch):
+    """llm_setup knows which server flavor it just started - to_chat_completions
+    has to be told which one explicitly, not left to guess."""
+    monkeypatch.chdir(tmp_path)
+    grammar_backends = []
+    config = SimpleNamespace(base=BaseConfig(), llm=SimpleNamespace(model="fake/model", quant_file=""),
+                              generation=SimpleNamespace(chat_template_kwargs={}),
+                              to_chat_completions=lambda grammar_backend="llama_cpp": grammar_backends.append(grammar_backend) or {})
+    fake_process = SimpleNamespace(log_file=SimpleNamespace(name="llama_cpp.log"))
+
+    with patch("subsymbolic.llm_setup._start_llama_cpp_server", return_value=fake_process), \
+         patch("subsymbolic.llm_setup._wait_for_server_ready", return_value=True), \
+         patch("subsymbolic.llm_setup.ServerRunner"):
+        _build_cpu_runner(config)
+
+    assert grammar_backends == ["llama_cpp"]
+
+
+def test_build_gpu_runner_passes_vllm_grammar_backend(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    grammar_backends = []
+    config = SimpleNamespace(base=SimpleNamespace(device="gpu"), llm=SimpleNamespace(model="fake/model"),
+                              generation=SimpleNamespace(),
+                              to_chat_completions=lambda grammar_backend="llama_cpp": grammar_backends.append(grammar_backend) or {})
+    fake_process = SimpleNamespace(log_file=SimpleNamespace(name="vllm_server.log"))
+
+    with patch("subsymbolic.llm_setup._start_vllm_server", return_value=fake_process), \
+         patch("subsymbolic.llm_setup._wait_for_server_ready", return_value=True), \
+         patch("subsymbolic.llm_setup.ServerRunner"):
+        _build_gpu_runner(config)
+
+    assert grammar_backends == ["vllm"]
+
+
+def test_build_gpu_runner_health_check_failure_reports_timeout_and_log_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = SimpleNamespace(base=SimpleNamespace(device="gpu", server_ready_timeout=5.0),
+                              llm=SimpleNamespace(model="fake/model"),
+                              generation=SimpleNamespace())
+    fake_process = SimpleNamespace(log_file=SimpleNamespace(name="vllm_server.log"))
+
+    # vllm isn't installed in this test env - the in-process vLLM tier
+    # fails naturally with ImportError. setup_hf_model is mocked so the
+    # last-resort HF tier doesn't make a real network call for "fake/model".
+    with patch("subsymbolic.llm_setup._start_vllm_server", return_value=fake_process), \
+         patch("subsymbolic.llm_setup._wait_for_server_ready", return_value=False) as mock_wait, \
+         patch("subsymbolic.llm_setup._terminate_process"), \
+         patch("subsymbolic.llm_setup.setup_hf_model", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError) as exc_info:
+            _build_gpu_runner(config)
+
+    assert mock_wait.call_args.kwargs["timeout"] == 5.0
+    message = str(exc_info.value)
+    assert "5.0" in message
+    assert "vllm_server.log" in message
+
+
+def test_start_vllm_server_passes_tensor_parallel_size_when_set(tmp_path, monkeypatch):
+    """Without --tensor-parallel-size, vllm serve loads the whole model
+    onto a single GPU regardless of how many are visible - on a
+    multi-GPU box with a model too big for one card, that's an OOM, not
+    a slow-but-working load."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config(tensor_parallel_size=2)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--tensor-parallel-size" in args
+    assert args[args.index("--tensor-parallel-size") + 1] == "2"
+
+
+def test_start_vllm_server_omits_tensor_parallel_size_by_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config()
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--tensor-parallel-size" not in args
+
+
+def test_start_vllm_server_passes_max_model_len_from_max_context(tmp_path, monkeypatch):
+    """Without --max-model-len, vLLM sizes its memory-profiling pass (and
+    the KV cache it reserves) for the model's own native max context -
+    which can be far larger than the card actually has room for,
+    regardless of how the weights themselves fit."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config(max_context=32000)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--max-model-len" in args
+    assert args[args.index("--max-model-len") + 1] == "32000"
+
+
+def test_start_vllm_server_omits_max_model_len_when_falsy(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config(max_context=0)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--max-model-len" not in args
+
+
+def test_start_vllm_server_passes_gpu_memory_utilization_when_set(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config(gpu_memory_utilization=0.85)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--gpu-memory-utilization" in args
+    assert args[args.index("--gpu-memory-utilization") + 1] == "0.85"
+
+
+def test_start_vllm_server_omits_gpu_memory_utilization_by_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config()
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--gpu-memory-utilization" not in args
+
+
+def test_start_vllm_server_passes_enforce_eager_when_set(tmp_path, monkeypatch):
+    """CUDA graph capture reserves its own scratch memory independently of
+    max-model-len - on a card with little headroom past the weights, that
+    capture pass itself can be the thing that OOMs, not the KV cache it's
+    meant to speed up. --enforce-eager skips it entirely."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config(enforce_eager=True)
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--enforce-eager" in args
+
+
+def test_scan_log_for_errors_finds_error_looking_lines(tmp_path):
+    log_path = tmp_path / "server.log"
+    log_path.write_text(
+        "INFO: starting up\n"
+        "ERROR: worker crashed\n"
+        "INFO: retrying\n"
+        "Traceback (most recent call last):\n"
+    )
+
+    hits = _scan_log_for_errors(str(log_path))
+
+    assert hits == ["ERROR: worker crashed", "Traceback (most recent call last):"]
+
+
+def test_scan_log_for_errors_returns_empty_for_clean_log(tmp_path):
+    log_path = tmp_path / "server.log"
+    log_path.write_text("INFO: starting up\nINFO: ready\n")
+
+    assert _scan_log_for_errors(str(log_path)) == []
+
+
+def test_scan_log_for_errors_returns_empty_when_log_missing(tmp_path):
+    assert _scan_log_for_errors(str(tmp_path / "missing.log")) == []
+
+
+def test_scan_log_for_errors_ignores_raise_exception_in_chat_template_dumps(tmp_path):
+    """Qwen's chat template calls a Jinja raise_exception() helper on
+    malformed input - normal template source, not an actual error - and
+    llama.cpp/vLLM dump it verbatim into startup logs (metadata dumps,
+    template debug output). A plain substring search on "exception" lit up
+    on every one of those lines."""
+    log_path = tmp_path / "server.log"
+    log_path.write_text(
+        "INFO: starting up\n"
+        "        {{- raise_exception('System message cannot contain images.') }}\n"
+        "            {{- raise_exception('Unexpected item type in content.') }}\n"
+        "INFO: ready\n"
+    )
+
+    assert _scan_log_for_errors(str(log_path)) == []
+
+
+def test_scan_log_for_errors_ignores_long_lines(tmp_path):
+    """A many-KB single-line metadata/config dump can coincidentally
+    contain a matching word without being an actual error - real
+    error/traceback lines are short."""
+    log_path = tmp_path / "server.log"
+    long_line = "Model metadata: {" + "'k': 'v', " * 100 + "'note': 'a real error occurred here'}"
+    assert len(long_line) > 300
+    log_path.write_text(f"INFO: starting up\n{long_line}\nINFO: ready\n")
+
+    assert _scan_log_for_errors(str(log_path)) == []
+
+
+def test_report_runner_started_prints_key_params(capsys):
+    config = SimpleNamespace(
+        base=BaseConfig(device="gpu"),
+        llm=LlmConfig(tensor_parallel_size=2, max_context=9000),
+        generation=SimpleNamespace(chat_template_kwargs={}),
+    )
+
+    _report_runner_started("vLLM server", config)
+
+    out = capsys.readouterr().out
+    assert "vLLM server" in out
+    assert "tensor_parallel_size=2" in out
+    assert "max_context=9000" in out
+
+
+def test_report_runner_started_warns_when_chat_template_kwargs_unsupported_by_tier(capsys):
+    """chat_template_kwargs only takes effect on the server tiers - a
+    fallback to an in-process tier silently ignoring it (the reasoning
+    toggle staying on with no error anywhere) is exactly the kind of thing
+    this warning exists to surface."""
+    config = SimpleNamespace(
+        base=BaseConfig(device="cpu"),
+        llm=LlmConfig(),
+        generation=SimpleNamespace(chat_template_kwargs={"enable_thinking": False}),
+    )
+
+    _report_runner_started("llama.cpp in-process", config)
+
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "chat_template_kwargs" in out
+
+
+def test_report_runner_started_does_not_warn_for_server_tier(capsys):
+    config = SimpleNamespace(
+        base=BaseConfig(device="cpu"),
+        llm=LlmConfig(),
+        generation=SimpleNamespace(chat_template_kwargs={"enable_thinking": False}),
+    )
+
+    _report_runner_started("llama.cpp server", config)
+
+    out = capsys.readouterr().out
+    assert "WARNING" not in out
+
+
+def test_report_runner_started_surfaces_errors_already_in_the_log(tmp_path, capsys):
+    log_path = tmp_path / "vllm_server.log"
+    log_path.write_text("INFO: booting\nERROR: CUDA out of memory\n")
+    process = SimpleNamespace(log_file=SimpleNamespace(name=str(log_path)))
+    config = SimpleNamespace(base=BaseConfig(device="gpu"), llm=LlmConfig(),
+                              generation=SimpleNamespace(chat_template_kwargs={}))
+
+    _report_runner_started("vLLM server", config, process=process)
+
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "ERROR: CUDA out of memory" in out
+
+
+def test_start_vllm_server_omits_enforce_eager_by_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(sys.modules, "vllm", SimpleNamespace())
+    config = _fake_vllm_config()
+
+    with patch("subprocess.Popen") as mock_popen:
+        _start_vllm_server(config)
+
+    args = mock_popen.call_args[0][0]
+    assert "--enforce-eager" not in args

@@ -1,0 +1,10 @@
+arc-baseline.ipynb
+/pictures
+data/pretrained_models
+data/eval_predictions
+wandb
+__pycache__/
+.venv/
+*.log
+report.md
+*.html

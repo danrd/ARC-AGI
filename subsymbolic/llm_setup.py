@@ -1,0 +1,477 @@
+"""Everything involved in getting a runnable LLM backend into memory:
+config describing WHICH backend to load (BaseConfig - technical run
+parameters that aren't specific to being an LLM: seed, device, serving
+timeouts; LlmConfig - model identity, quantization, framework; generation-
+time sampling params live in subsymbolic.llm_runtime.GenerationConfig instead,
+since that's "how to sample", not "what to load"), plus the actual
+loading/starting logic (spawning a local server and waiting for it to
+come up, constructing an in-process model + tokenizer) and
+`build_runner(config)`, the public factory that ties it together with a
+fallback chain per config.base.device:
+    CPU:  llama.cpp server -> llama.cpp in-process
+    GPU:  vLLM server -> vLLM in-process -> HF in-process (4-bit)
+Every tier's error is collected; if all tiers fail, RuntimeError chains them.
+
+Hosted/proprietary models (OpenRouter, and in principle OpenAI/Anthropic/
+Gemini) are NOT part of this factory - subsymbolic.llm_runtime.OpenRouterRunner
+is a deliberately separate, explicit path the caller opts into directly.
+
+Heavy dependencies (torch, transformers, llama_cpp, vllm) are imported
+lazily inside whichever function actually needs them, so importing this
+module - or building a runner for one backend - never requires every other
+backend's library to be installed.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict
+
+from subsymbolic.llm_runtime import (
+    BaseRunner,
+    HFRunner,
+    LlamaCppRunner,
+    ServerRunner,
+    VLLMRunner,
+    _terminate_process,
+)
+
+
+class BaseConfig(BaseModel):
+    """Technical run parameters that aren't specific to running an LLM -
+    seed, which compute device/serving knobs to use, timeouts. Kept
+    separate from LlmConfig (model identity/loading) so the two can vary
+    independently."""
+    model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
+    seed: int = 42
+    checkpoint_interval: int = 1  # number of examples to process before printing relevant info
+    device: str = 'cpu'
+    port: int = 8001
+    server_ready_timeout: float = 60.0
+    request_timeout: float = 600.0  # per-generation-request HTTP timeout for ServerRunner (CPU inference of a large model can run long)
+    verbose: bool = False
+
+
+class LlmConfig(BaseModel):
+    """Which model to load and how - identity, quantization, and the
+    llama.cpp serving knobs specific to running it locally."""
+    model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
+    framework: str = 'llama_cpp'  # llama_cpp | vllm | hf
+    model: str = 'unsloth/Qwen3.6-27B-GGUF'
+    tokenizer_model: Optional[str] = None
+    quant_file: str = 'Qwen3.6-27B-Q4_K_M.gguf'
+    # Where quant_file GGUFs live once downloaded. Repo-relative, like every
+    # other data path here (prompt_builder's blocks_dir, ARCDataset's
+    # datasets) - a leading slash makes it /data at the filesystem root,
+    # which on an ordinary machine is not writable and takes down every CPU
+    # backend at once with a bare PermissionError.
+    pretrained_models_dir: str = 'data/pretrained_models'
+    max_context: int = 9000  # llm token limit for computational resources to control
+    openrouter_models: List[str] = ["google/gemma-4-26b-a4b-it",
+                                    "nvidia/nemotron-3-ultra-550b-a55b"]
+    openrouter_max_retries: int = 2
+    openrouter_request_timeout: float = 30.0
+    n_ctx: Optional[int] = None  # falls back to max_context, then generation.max_tokens, when unset
+    n_tokens_batch: int = 512
+    use_mlock: bool = True
+    n_gpu_layers: int = 0
+    # The rest of the llama.cpp load-time knobs. All optional and unset by
+    # default, so a config that names none of them spawns the same command
+    # as before. They matter together rather than separately: offloading a
+    # model that only just fits means finding VRAM for its layers, and
+    # these are where it comes from - flash attention shrinks the compute
+    # buffer, quantizing the KV cache halves it, and split_mode decides how
+    # the layers are spread when there is more than one card.
+    flash_attn: Optional[bool] = None
+    type_k: Optional[str] = None  # KV cache dtype, e.g. "q8_0" - halves the cache against f16
+    type_v: Optional[str] = None
+    split_mode: Optional[int] = None  # 0 none, 1 layer, 2 row (llama.cpp's LLAMA_SPLIT_MODE_*)
+    main_gpu: Optional[int] = None
+    tensor_split: Optional[List[float]] = None  # per-GPU share; defaults to an even split
+    n_threads: Optional[int] = None
+    tensor_parallel_size: int = 1  # vLLM: shard the model across this many GPUs
+    gpu_memory_utilization: Optional[float] = None  # vLLM: fraction of VRAM to reserve (default 0.9)
+    enforce_eager: bool = False  # vLLM: skip CUDA graph capture - trades latency for headroom on tight-VRAM cards
+
+
+# ---------------------------------------------------------------------------
+# Server startup + health check + cleanup
+# ---------------------------------------------------------------------------
+
+def _wait_for_server_ready(process: subprocess.Popen, port: int,
+                            timeout: float = 60.0, interval: float = 1.0) -> bool:
+    """Poll the OpenAI-compatible /v1/models endpoint until it answers, the
+    server process dies, or timeout is hit."""
+    deadline = time.time() + timeout
+    url = f"http://127.0.0.1:{port}/v1/models"
+    while time.time() < deadline:
+        if process.poll() is not None:
+            return False  # process already exited — no point polling further
+        try:
+            with urllib.request.urlopen(url, timeout=2) as resp:
+                if resp.status == 200:
+                    return True
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
+            pass
+        time.sleep(interval)
+    return False
+
+
+def resolve_local_model_path(config) -> str:
+    """Resolve config.llm.model into a real local file llama.cpp can load.
+    A GGUF-only repo id (e.g. 'unsloth/Qwen3.6-27B-GGUF') is not itself a
+    loadable path - the weights are one file within that repo, named by
+    quant_file, and need to be downloaded first. Uses huggingface_hub
+    directly (the same caching/resume logic as the `hf download` CLI, but
+    idempotent in-process - a no-op if the file is already present) rather
+    than shelling out. If `model` already names an existing local file
+    (e.g. a test fixture pointing straight at a tiny GGUF) it's returned
+    as-is - quant_file is irrelevant to that case. When quant_file isn't
+    set either, `model` is assumed to already be a loadable path or a
+    plain (non-GGUF) HF repo id, and is returned as-is."""
+    model = config.llm.model
+    if os.path.isfile(model):
+        return model
+    quant_file = getattr(config.llm, "quant_file", None)
+    if not quant_file:
+        return model
+    from huggingface_hub import hf_hub_download
+    local_dir = getattr(config.llm, "pretrained_models_dir", LlmConfig.model_fields["pretrained_models_dir"].default)
+    return hf_hub_download(repo_id=model, filename=quant_file, local_dir=local_dir)
+
+
+def _start_llama_cpp_server(config) -> subprocess.Popen:
+    port = getattr(config.base, "port", 8001)
+    n_ctx = str(getattr(config.llm, "n_ctx", None)
+                or getattr(config.llm, "max_context", None)
+                or getattr(config.generation, "max_tokens", 2048))
+    log_file = open("llama_cpp.log", "w", encoding="utf-8")
+
+    args = [sys.executable, "-m", "llama_cpp.server", "--model", resolve_local_model_path(config),
+            "--port", str(port), "--n_ctx", n_ctx]
+
+    # From the config, not hardcoded. This command carried "--use_mlock True"
+    # and nothing else, so every other LlmConfig field the server understands
+    # - n_gpu_layers above all - was set, reported by _report_runner_started,
+    # and silently dropped on the way to the process. A model loads entirely
+    # on the CPU no matter what n_gpu_layers says, and the log gives no hint
+    # that a setting went missing rather than being disobeyed.
+    for flag, value in (
+        ("--n_gpu_layers", getattr(config.llm, "n_gpu_layers", None)),
+        ("--n_batch", getattr(config.llm, "n_tokens_batch", None)),
+        ("--use_mlock", getattr(config.llm, "use_mlock", None)),
+        ("--flash_attn", getattr(config.llm, "flash_attn", None)),
+        ("--type_k", getattr(config.llm, "type_k", None)),
+        ("--type_v", getattr(config.llm, "type_v", None)),
+        ("--split_mode", getattr(config.llm, "split_mode", None)),
+        ("--main_gpu", getattr(config.llm, "main_gpu", None)),
+        ("--n_threads", getattr(config.llm, "n_threads", None)),
+    ):
+        # `is not None`, not truthiness: 0 is a meaningful value for every
+        # numeric one here, and False is the point of the boolean ones.
+        if value is not None:
+            args += [flag, str(value)]
+
+    # One flag per element, which is how the server's CLI takes a list.
+    for share in getattr(config.llm, "tensor_split", None) or []:
+        args += ["--tensor_split", str(share)]
+
+    chat_template_kwargs = getattr(config.generation, "chat_template_kwargs", None)
+    if chat_template_kwargs:
+        args += ["--chat_template_kwargs", json.dumps(chat_template_kwargs)]
+
+    process = subprocess.Popen(
+        args,
+        stdout=log_file, stderr=subprocess.STDOUT, env=os.environ.copy(),
+    )
+    process.log_file = log_file
+    return process
+
+
+def _start_vllm_server(config) -> subprocess.Popen:
+    try:
+        import vllm  # noqa: F401
+    except ImportError:
+        install = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "vllm"],
+            capture_output=True, text=True,
+        )
+        if install.returncode != 0:
+            raise RuntimeError(
+                f"pip install vllm failed (exit {install.returncode}):\n"
+                f"{install.stdout}\n{install.stderr}"
+            )
+
+    port = getattr(config.base, "port", 8001)
+    env = os.environ.copy()
+    env["VLLM_USE_FLASHINFER_SAMPLER"] = "0"
+    log_file = open("vllm_server.log", "w", encoding="utf-8")
+
+    args = ["vllm", "serve", config.llm.model, "--port", str(port)]
+    tensor_parallel_size = getattr(config.llm, "tensor_parallel_size", 1)
+    if tensor_parallel_size and tensor_parallel_size != 1:
+        args += ["--tensor-parallel-size", str(tensor_parallel_size)]
+    max_context = getattr(config.llm, "max_context", None)
+    if max_context:
+        args += ["--max-model-len", str(max_context)]
+    gpu_memory_utilization = getattr(config.llm, "gpu_memory_utilization", None)
+    if gpu_memory_utilization:
+        args += ["--gpu-memory-utilization", str(gpu_memory_utilization)]
+    if getattr(config.llm, "enforce_eager", False):
+        args += ["--enforce-eager"]
+
+    process = subprocess.Popen(
+        args,
+        stdout=log_file, stderr=subprocess.STDOUT, env=env,
+    )
+    process.log_file = log_file
+    return process
+
+
+# ---------------------------------------------------------------------------
+# In-process backend construction
+# ---------------------------------------------------------------------------
+
+def setup_hf_model(model_id: str):
+    """Initialize an HF causal LM in 4-bit (bitsandbytes) + its tokenizer."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, padding_side="right")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    compute_dtype = torch.float16
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True, bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=compute_dtype,
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, quantization_config=bnb_config, torch_dtype=compute_dtype,
+        use_cache=True, device_map="auto", trust_remote_code=True,
+    )
+    if torch.cuda.is_available():
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_flash_sdp(False)
+    return model, tokenizer
+
+
+def setup_llama_cpp_model(model_path: str, config=None, tokenizer_id: Optional[str] = None):
+    """In-process llama.cpp, using the same GGUF file the server tier would
+    have used — the CPU fallback tier when the server fails to come up."""
+    try:
+        from llama_cpp import Llama
+    except ImportError as e:
+        raise ImportError("llama-cpp-python not installed. Install with: pip install llama-cpp-python") from e
+
+    tokenizer = None
+    if tokenizer_id is not None:
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_id, trust_remote_code=True, padding_side="right")
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+    llm_cfg = getattr(config, "llm", config) if config is not None else object()
+    base_cfg = getattr(config, "base", config) if config is not None else object()
+    gen_cfg = getattr(config, "generation", config) if config is not None else object()
+
+    # The optional knobs are passed only when set, so Llama's own defaults
+    # stand otherwise - naming them explicitly here would pin this tier to
+    # whatever llama-cpp-python's defaults happen to be today.
+    optional = {
+        "flash_attn": getattr(llm_cfg, "flash_attn", None),
+        "type_k": getattr(llm_cfg, "type_k", None),
+        "type_v": getattr(llm_cfg, "type_v", None),
+        "split_mode": getattr(llm_cfg, "split_mode", None),
+        "main_gpu": getattr(llm_cfg, "main_gpu", None),
+        "tensor_split": getattr(llm_cfg, "tensor_split", None),
+        "n_threads": getattr(llm_cfg, "n_threads", None),
+    }
+    model = Llama(
+        model_path=model_path,
+        n_ctx=(getattr(llm_cfg, "n_ctx", None)
+               or getattr(llm_cfg, "max_context", None)
+               or getattr(gen_cfg, "max_tokens", 2048)),
+        n_batch=getattr(llm_cfg, "n_tokens_batch", 512),
+        use_mlock=getattr(llm_cfg, "use_mlock", True),
+        n_gpu_layers=getattr(llm_cfg, "n_gpu_layers", 0),
+        verbose=getattr(base_cfg, "verbose", False),
+        **{name: value for name, value in optional.items() if value is not None},
+    )
+    return model, tokenizer
+
+
+# ---------------------------------------------------------------------------
+# Startup reporting
+# ---------------------------------------------------------------------------
+
+_CHAT_TEMPLATE_KWARGS_TIERS = {"llama.cpp server", "vLLM server"}
+#: n_gpu_layers is llama.cpp's way of splitting a model between CPU and GPU.
+#: The vLLM and HF tiers place the model themselves and have no equivalent,
+#: so the setting is not disobeyed there so much as meaningless - worth
+#: saying, because the fallback chain can land on one of them without the
+#: caller choosing it.
+_N_GPU_LAYERS_TIERS = {"llama.cpp server", "llama.cpp in-process"}
+# parameters for parsing server erorrs excluding unrelevant warnings
+_LOG_ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|out of memory)\b", re.IGNORECASE)
+_LOG_ERROR_MAX_LINE_LENGTH = 300
+
+
+def _scan_log_for_errors(log_path: str, max_lines: int = 10) -> List[str]:
+    """Grep a tier's own log file for error-looking lines."""
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+    hits = [line.rstrip("\n") for line in lines
+            if len(line) <= _LOG_ERROR_MAX_LINE_LENGTH and _LOG_ERROR_PATTERN.search(line)]
+    return hits[:max_lines]
+
+
+def _report_runner_started(tier: str, config, process: Optional[subprocess.Popen] = None) -> None:
+    """Print which tier actually started and with what parameters.
+    build_runner's fallback chain can silently land on a simpler tier than
+    the one intended - a tier "succeeding" says nothing about whether it's
+    the one you meant to get, whether it honors settings only some tiers
+    support (e.g. chat_template_kwargs), or whether its own log already
+    has something worth reading."""
+    params = {
+        "framework": getattr(config.llm, "framework", None),
+        "model": getattr(config.llm, "model", None),
+        "device": getattr(config.base, "device", None),
+        "tensor_parallel_size": getattr(config.llm, "tensor_parallel_size", None),
+        "max_context": getattr(config.llm, "max_context", None),
+        "n_gpu_layers": getattr(config.llm, "n_gpu_layers", None) or None,
+        "gpu_memory_utilization": getattr(config.llm, "gpu_memory_utilization", None),
+        "enforce_eager": getattr(config.llm, "enforce_eager", None),
+    }
+    print(f"[llm_setup] Started via {tier}: " +
+          ", ".join(f"{k}={v}" for k, v in params.items() if v is not None))
+
+    generation = getattr(config, "generation", None)
+    chat_template_kwargs = getattr(generation, "chat_template_kwargs", None) if generation is not None else None
+    if chat_template_kwargs and tier not in _CHAT_TEMPLATE_KWARGS_TIERS:
+        print(f"[llm_setup] WARNING: generation.chat_template_kwargs={chat_template_kwargs} "
+              f"is only applied by the server tiers - {tier} ignores it silently.")
+
+    n_gpu_layers = getattr(config.llm, "n_gpu_layers", 0)
+    if n_gpu_layers and tier not in _N_GPU_LAYERS_TIERS:
+        print(f"[llm_setup] WARNING: llm.n_gpu_layers={n_gpu_layers} is a llama.cpp "
+              f"setting - {tier} places the model itself and ignores it.")
+
+    if process is not None and getattr(process, "log_file", None):
+        errors = _scan_log_for_errors(process.log_file.name)
+        if errors:
+            print(f"[llm_setup] WARNING: {process.log_file.name} contains "
+                  f"{len(errors)} error-looking line(s) despite starting successfully:")
+            for line in errors:
+                print(f"    {line}")
+
+
+# ---------------------------------------------------------------------------
+# Factory: local inference, with fallback chain
+#
+# Each tier passes `config` straight to ExperimentConfig.to_llama_cpp() /
+# .to_vllm() / .to_hf() / .to_chat_completions() - the config already knows
+# how to translate itself into that backend's kwargs shape (seed included),
+# so there's no separate per-tier kwargs-building step to keep in sync here.
+# ---------------------------------------------------------------------------
+
+def build_runner(config) -> BaseRunner:
+    """Build a local inference runner per config.base.device, falling back
+    through progressively simpler backends if a tier fails to start:
+        CPU:  llama.cpp server -> llama.cpp in-process
+        GPU:  vLLM server -> vLLM in-process -> HF in-process (4-bit)
+    Raises RuntimeError (chaining every tier's error) if all tiers fail.
+    """
+    device = config.base.device.lower()
+    if device == "cpu":
+        return _build_cpu_runner(config)
+    if device == "gpu":
+        return _build_gpu_runner(config)
+    raise ValueError(f"Unsupported device: {config.base.device}")
+
+
+def _build_cpu_runner(config) -> BaseRunner:
+    errors = []
+    port = getattr(config.base, "port", 8001)
+    server_ready_timeout = getattr(config.base, "server_ready_timeout", 60.0)
+
+    try:
+        process = _start_llama_cpp_server(config)
+        if _wait_for_server_ready(process, port, timeout=server_ready_timeout):
+            _report_runner_started("llama.cpp server", config, process=process)
+            return ServerRunner(process, port, config.llm.model,
+                                 config.to_chat_completions(grammar_backend="llama_cpp"),
+                                 request_timeout=getattr(config.base, "request_timeout", 600.0))
+        _terminate_process(process)
+        errors.append(
+            f"llama.cpp server: failed health check within {server_ready_timeout}s "
+            f"(set config.base.server_ready_timeout to wait longer for a large model) "
+            f"- see {process.log_file.name} for what the server actually logged"
+        )
+    except Exception as e:
+        errors.append(f"llama.cpp server: {type(e).__name__}: {e}")
+
+    try:
+        model, _ = setup_llama_cpp_model(resolve_local_model_path(config), config=config)
+        _report_runner_started("llama.cpp in-process", config)
+        return LlamaCppRunner(model, config.to_llama_cpp())
+    except Exception as e:
+        errors.append(f"llama.cpp in-process: {type(e).__name__}: {e}")
+
+    raise RuntimeError("All CPU backends failed:\n" + "\n".join(errors))
+
+
+def _build_gpu_runner(config) -> BaseRunner:
+    errors = []
+    port = getattr(config.base, "port", 8001)
+    server_ready_timeout = getattr(config.base, "server_ready_timeout", 60.0)
+
+    try:
+        process = _start_vllm_server(config)
+        if _wait_for_server_ready(process, port, timeout=server_ready_timeout):
+            _report_runner_started("vLLM server", config, process=process)
+            return ServerRunner(process, port, config.llm.model,
+                                 config.to_chat_completions(grammar_backend="vllm"),
+                                 request_timeout=getattr(config.base, "request_timeout", 600.0))
+        _terminate_process(process)
+        errors.append(
+            f"vLLM server: failed health check within {server_ready_timeout}s "
+            f"(set config.base.server_ready_timeout to wait longer for a large model) "
+            f"- see {process.log_file.name} for what the server actually logged"
+        )
+    except Exception as e:
+        errors.append(f"vLLM server: {type(e).__name__}: {e}")
+
+    try:
+        from vllm import LLM
+        llm = LLM(
+            model=config.llm.model,
+            tensor_parallel_size=getattr(config.llm, "tensor_parallel_size", 1),
+            max_model_len=getattr(config.llm, "max_context", None),
+            gpu_memory_utilization=getattr(config.llm, "gpu_memory_utilization", None) or 0.9,
+            enforce_eager=getattr(config.llm, "enforce_eager", False),
+        )
+        _report_runner_started("vLLM in-process", config)
+        return VLLMRunner(llm, config.to_vllm())
+    except Exception as e:
+        errors.append(f"vLLM in-process: {type(e).__name__}: {e}")
+
+    try:
+        model, tokenizer = setup_hf_model(config.llm.model)
+        _report_runner_started("HF in-process", config)
+        return HFRunner(model, tokenizer, config.to_hf())
+    except Exception as e:
+        errors.append(f"HF in-process: {type(e).__name__}: {e}")
+
+    raise RuntimeError("All GPU backends failed:\n" + "\n".join(errors))

@@ -1,0 +1,294 @@
+"""Universal domain-agnostic Jinja2-based prompt builder.
+A prompt is composed of ordered "blocks" (BlockSpec). Each block resolves to
+a `<name>/<version>.j2` template file under `config.blocks_dir` (default:
+`data/prompts/`), rendered with the shared `context` dict. Blocks are
+token-budgeted and joined according to `config.join_format`, or via
+`tokenizer.apply_chat_template` when `config.chat_template` is set.
+
+`resolvers`/`filters` named in PromptingConfig are looked up in whatever
+resolver_registry/filter_registry the caller passes into PromptBuilder's
+constructor - this module has no registry of its own and no project-
+specific imports, so it stays genuinely reusable as-is: define your own
+resolver/filter functions and pass them in as plain {name: callable} dicts.
+"""
+from __future__ import annotations
+
+from collections import OrderedDict
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, meta as jinja_meta
+from jinja2.exceptions import TemplateAssertionError, UndefinedError
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class _Omit:
+    """Sentinel a resolver returns when it has nothing to say for this task.
+
+    Distinct from None, which build() reads as "this prompt cannot be made"
+    and answers with None - and llm_run reads that as "skipped, prompt
+    didn't fit token_limit" and drops the task from the run. A block with
+    nothing to say is not a prompt that cannot be made, and conflating the
+    two loses tasks silently: every task whose analysis found nothing
+    disappeared from a run rather than being asked without that block.
+    """
+
+    def __repr__(self):
+        return "OMIT"
+
+    def __bool__(self):
+        return False
+
+
+OMIT = _Omit()
+
+
+class BlockSpec(BaseModel):
+    """Prompt block specification."""
+    name: str
+    version: str = "v1"
+    role: Literal["system", "user"] = "user"  # role for chat template
+    tag: Optional[str] = None  # specify tags for wrapping cusomization
+
+    @classmethod
+    def parse(cls, spec: "str | tuple | BlockSpec"):
+        if isinstance(spec, str):
+            return cls(name=spec)
+        if isinstance(spec, tuple):
+            return cls(name=spec[0], version=spec[1])
+        return spec
+
+
+class PromptingConfig(BaseModel):
+    """Config to guide prompt construction."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    blocks_dir: str = "data/prompts"
+    blocks: List[BlockSpec | str] = ["general_instruction", "examples", "output_format"]  # list of element types to compose prompt
+    block_overrides: Optional[Dict[str, str]] = Field(default_factory=dict)  # default block-text substitutions - build()'s own `overrides` param merges on top, per-call values winning
+    token_limit: int = 9000  # resources management
+    min_examples: int = 2    # examples block must fit at least this many
+    filters: Optional[List[str]] = Field(default_factory=list)  # project-specific data processing functions
+    resolvers: Optional[List[str]] = Field(default_factory=list)  # project-specific complex prompting methods
+    join_format: Literal["xml", "md", "plain"] = "xml"  # approach for blocks composing
+    chat_template: Optional[str] = None  # optionaly use specific chat template
+    chat_template_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    assistant_prefix: Optional[str] = None  # string to add before assistant response
+    project: Dict[str, Any] = {}  # other project specific prompting settings
+
+
+class ApproxTokenizer:
+    """Whitespace-split stand-in for a real tokenizer.
+
+    PromptBuilder only needs `.tokenize(text)` to return something with a
+    `len()` (see count_tokens), so budgeting a prompt doesn't have to mean
+    downloading a model's tokenizer to count approximately anyway. It
+    lives here rather than in each caller because that contract is defined
+    here.
+
+    Undercounts against real subword tokenization (one whitespace-
+    separated word is often several tokens), so a budget checked with this
+    is optimistic: use the real tokenizer wherever token_limit has to
+    hold exactly. `apply_chat_template` is deliberately not provided -
+    configs that set PromptingConfig.chat_template need a real tokenizer
+    regardless, and a stub would only fail further downstream.
+    """
+
+    def tokenize(self, text: str) -> List[str]:
+        return text.split()
+
+
+class PromptBuilder:
+    """Composes a prompt string (or chat message list) from configured blocks."""
+
+    def __init__(self, config: PromptingConfig, tokenizer,
+                 resolver_registry: Optional[Dict[str, Callable]] = None,
+                 filter_registry: Optional[Dict[str, Callable]] = None):
+        self.config = config
+        self.tokenizer = tokenizer
+        self.resolver_registry = resolver_registry or {}
+        self.filter_registry = filter_registry or {}
+        self.env = self._make_env()
+        self.resolvers: Dict[str, Callable] = {func_name: self.resolver_registry[func_name] for func_name in self.config.resolvers}
+
+    def _make_env(self) -> Environment:
+        env = Environment(
+            loader=FileSystemLoader(self.config.blocks_dir),
+            undefined=StrictUndefined,   # KeyError on unknown variables
+            trim_blocks=True,            # strip \n after {% block %} tags
+            lstrip_blocks=True,          # strip leading whitespace before {% %}
+            auto_reload=True,            # re-read .j2 files whose mtime changed
+        )
+        for filter_name in self.config.filters:
+            env.filters[filter_name] = self.filter_registry[filter_name]
+        return env
+
+    def reload_env(self) -> None:
+        """Force a brand new Environment (e.g. after changing blocks_dir).
+        Not required for ordinary template edits — those are picked up
+        automatically via auto_reload."""
+        self.env = self._make_env()
+
+    def list_blocks(self) -> List[str]:
+        """List '<name>/<version>' pairs found on disk under blocks_dir —
+        handy for discovering what's available while experimenting."""
+        root = Path(self.config.blocks_dir)
+        if not root.exists():
+            return []
+        return sorted(
+            f"{p.parent.name}/{p.stem}"
+            for p in root.glob("*/*.j2")
+        )
+
+    def render_block(self, name: str, version: str = "v1", **context) -> str:
+        """Render a single block template directly, bypassing the block list,
+        token budget, and join step. Useful for iterating on one .j2 file
+        (e.g. from a notebook) without building the whole prompt."""
+        return self._render_template(name, version, context)
+
+    def _template_variables(self, name: str, version: str) -> List[str]:
+        """Jinja variable names `<name>/<version>.j2` reads from context, via
+        static analysis (jinja2.meta) rather than actually rendering it.
+        Read literally, not exhaustively: a name only read inside
+        `{% if x is defined %}` (i.e. genuinely optional) still shows up
+        here the same as an unconditionally required one - Jinja's static
+        analysis can't tell the two apart."""
+        source, _, _ = self.env.loader.get_source(self.env, f"{name}/{version}.j2")
+        return sorted(jinja_meta.find_undeclared_variables(self.env.parse(source)))
+
+    def required_context_keys(self) -> Dict[str, List[str]]:
+        """Best-effort discovery aid for interactive use (e.g. from a
+        notebook, before calling build()): per configured block, the
+        variable names its template reads from `context`. Blocks dispatched
+        to a resolver (self.resolvers) are skipped - what context a
+        resolver function needs is opaque to static analysis of the block's
+        own template; check the resolver's source for those. See
+        _template_variables for the same caveat about optional variables."""
+        required: Dict[str, List[str]] = {}
+        for spec_raw in self.config.blocks:
+            spec = BlockSpec.parse(spec_raw)
+            if spec.name in self.resolvers:
+                continue
+            required[spec.name] = self._template_variables(spec.name, spec.version)
+        return required
+
+    def _render_template(self, name: str, version: str, context: dict) -> str:
+        template_name = f"{name}/{version}.j2"
+        try:
+            template = self.env.get_template(template_name)
+        except TemplateAssertionError as e:
+            raise TemplateAssertionError(
+                f"{e.message} (in {template_name}) - this is a missing filter, "
+                f"not a missing context value; check that config.filters "
+                f"includes it.",
+                e.lineno, e.name, e.filename,
+            ) from e
+
+        try:
+            return template.render(**context)
+        except UndefinedError as e:
+            required = self._template_variables(name, version)
+            missing = [key for key in required if key not in context]
+            raise UndefinedError(
+                f"{e.message} (in {template_name}) - this block reads {required} "
+                f"from context; missing: {missing}. Call "
+                f"required_context_keys() to check every configured block at once.",
+            ) from e
+
+    def build(self, task, context: Optional[dict] = None,
+              overrides: Optional[Dict[str, str]] = None,
+              assistant_prefix: Optional[str] = None) -> Optional[str]:
+        """Render and join all configured blocks.
+
+        Args:
+            context: feeds Jinja variables to every block template.
+            overrides: fully replaces a block's rendered text by name
+            assistant_prefix: per-call override for config.assistant_prefix
+                - e.g. a known target-shape header computed per task, so
+                  the model only has to continue the answer instead of
+                  producing its own header from scratch. None (the
+                  default) falls back to config.assistant_prefix; pass ""
+                  explicitly to suppress a configured prefix for one call.
+        """
+        context = context or {}
+        overrides = {**self.config.block_overrides, **(overrides or {})}
+        effective_prefix = assistant_prefix if assistant_prefix is not None else self.config.assistant_prefix
+        parts: "OrderedDict[str, Tuple[BlockSpec, str]]" = OrderedDict()
+        used_tokens = 0
+
+        for spec_raw in self.config.blocks:
+            spec = BlockSpec.parse(spec_raw)
+
+            if spec.name in overrides:
+                rendered = overrides[spec.name]
+            elif spec.name in self.resolvers:
+                resolver = self.resolvers[spec.name]
+                try:
+                    rendered = resolver(task, self.config.token_limit - used_tokens, context, self)
+                except UndefinedError as e:
+                    raise UndefinedError(
+                        f"{e.message} (raised inside the '{spec.name}' resolver) - "
+                        f"required_context_keys() can't see into resolver-driven "
+                        f"blocks; check {resolver.__module__}.{resolver.__qualname__} "
+                        f"for what context it expects.",
+                    ) from e
+                if rendered is OMIT:
+                    continue  # nothing to say here; the rest of the prompt stands
+                if rendered is None:
+                    return None  # this resolver couldn't fit even its minimum
+            else:
+                rendered = self._render_template(spec.name, spec.version, context)
+
+            cost = self.count_tokens(rendered)
+            if used_tokens + cost > self.config.token_limit:
+                return None
+            parts[spec.name] = (spec, rendered)
+            used_tokens += cost
+
+        return self._join(parts, effective_prefix)
+
+    def count_tokens(self, text: str) -> int:
+        return len(self.tokenizer.tokenize(text))
+
+    def _join(self, parts: "OrderedDict[str, Tuple[BlockSpec, str]]", assistant_prefix: Optional[str] = None) -> str:
+        if self.config.chat_template is None:
+            sections = [
+                self._wrap(spec.tag or spec.name.upper(), content)
+                for spec, content in parts.values()
+            ]
+            joined = "\n".join(sections)
+            # No chat structure to attach an assistant turn to here - the
+            # old pipeline this replaced primed the model the same way
+            # (str concatenation onto the plain prompt), so this isn't
+            # chat_template-exclusive: a plain completion model can be
+            # primed by literally ending the prompt with the desired
+            # continuation's start.
+            if assistant_prefix:
+                joined = f"{joined}\n{assistant_prefix}"
+            return joined
+
+        role_buckets: Dict[str, list] = {"system": [], "user": []}
+        for spec, content in parts.values():
+            wrapped = self._wrap(spec.tag or spec.name.upper(), content)
+            role_buckets[spec.role].append(wrapped)
+
+        messages = []
+        if role_buckets["system"]:
+            messages.append({"role": "system", "content": "\n".join(role_buckets["system"])})
+        messages.append({"role": "user", "content": "\n".join(role_buckets["user"])})
+
+        if assistant_prefix:
+            messages.append({"role": "assistant", "content": assistant_prefix})
+            return self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False, **self.config.chat_template_kwargs,
+            )
+
+        return self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True, **self.config.chat_template_kwargs,
+        )
+
+    def _wrap(self, tag: str, content: str) -> str:
+        if self.config.join_format == "xml":
+            return f"<{tag}>\n{content}\n</{tag}>"
+        if self.config.join_format == "md":
+            return f"## {tag}\n\n{content}\n\n---"
+        return content  # "plain"

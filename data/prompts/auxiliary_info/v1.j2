@@ -1,0 +1,5 @@
+{% if auxiliary_info is defined and auxiliary_info %}## Auxiliary Information
+{% for key, value in auxiliary_info.items() %}
+### {{ key }}
+{{ value }}
+{% endfor %}{% endif %}

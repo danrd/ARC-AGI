@@ -22,6 +22,40 @@ from symbolic.summaries import (
     relation_group_indices,
 )
 
+def unpadded_grid_features(extractor, grids, shapes=None, prepare=None):
+    """Run `extractor` over the real grids, with observation padding off.
+
+    stable-baselines3 needs one array shape per observation key across a
+    whole vector of envs, so a task showing its rule at several grid sizes
+    has to hand over padded grids (see ARCGridWorld.observed_grid). The
+    padding is an artefact of that buffer and nothing the policy should
+    see: fed through as-is it is a block of a colour that does not exist,
+    covering more of the array than the grid does on the small examples.
+
+    So it is cropped back off here. Samples are grouped by their true
+    shape - `shapes` is the observation's grid_shape entry - and each group
+    goes through the extractor at its own size, which is exact rather than
+    approximately right, and works whatever `extractor` is. A vector holds
+    one shape per env, so the loop runs a handful of times at most.
+
+    `shapes=None` means the observation was never padded: one call, as
+    before.
+    """
+    prepare = prepare or (lambda grid: grid.unsqueeze(1))
+    if shapes is None:
+        return extractor(prepare(grids))
+    sizes = shapes.to(torch.int64)
+    features = None
+    for size in torch.unique(sizes, dim=0):
+        rows, cols = int(size[0]), int(size[1])
+        picked = (sizes == size).all(dim=1).nonzero(as_tuple=True)[0]
+        computed = extractor(prepare(grids[picked][:, :rows, :cols]))
+        if features is None:
+            features = computed.new_zeros((grids.shape[0], computed.shape[1]))
+        features[picked] = computed
+    return features
+
+
 # =============================================================================
 # APPROACH 1: GRAPH NEURAL NETWORK (GNN) APPROACH
 # =============================================================================
@@ -247,7 +281,8 @@ class ARCGNNExtractor(BaseFeaturesExtractor):
         batch_size = observations['grid'].shape[0]
 
         # Process grid
-        grid_features = self.grid_extractor(observations['grid'].unsqueeze(1))
+        grid_features = unpadded_grid_features(self.grid_extractor, observations['grid'],
+                                               observations.get('grid_shape'))
         grid_features = self.grid_projection(grid_features)
 
         # Process object-relation graphs
@@ -507,7 +542,8 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
         batch_size = observations['grid'].shape[0]
 
         # Process grid
-        grid_features = self.grid_extractor(observations['grid'].unsqueeze(1))
+        grid_features = unpadded_grid_features(self.grid_extractor, observations['grid'],
+                                               observations.get('grid_shape'))
         grid_features = self.grid_projection(grid_features)
 
         # Process objects
@@ -516,8 +552,15 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
         # Aggregate objects with attention-based pooling
         obj_mask = (observations['objects_emb'].sum(dim=-1) != 0)  # Valid object mask
         if obj_mask.any():
+            # The guard above is per batch, and the NaN is per row: one
+            # all-background grid among several masks every key of its own
+            # row, and softmax over nothing but -inf is NaN. Such a row
+            # attends over its first slot and the masked mean below
+            # multiplies the result away - see ObjectSetProcessor.forward.
+            attends = obj_mask.clone()
+            attends[~obj_mask.any(dim=1), 0] = True
             obj_attended, _ = self.object_aggregator(obj_embeddings, obj_embeddings, obj_embeddings,
-                                                   key_padding_mask=~obj_mask)
+                                                   key_padding_mask=~attends)
             # Masked mean pooling
             obj_mask_expanded = obj_mask.unsqueeze(-1).float()
             obj_features = (obj_attended * obj_mask_expanded).sum(dim=1) / obj_mask_expanded.sum(dim=1).clamp(min=1)
@@ -577,11 +620,12 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 extractors[key] = self.extr_arch
                 total_concat_size += self.extr_arch[2].out_channels
                 # print(f'cnn_concat_size: {total_concat_size}')
-            elif key == 'action_space':
-                # The action space's own .nvec (varies per task) - ARCGridWorld
-                # includes it in every observation so the policy can see it,
-                # but it's not a feature to embed: forward() below never
-                # reads it, same as ARCGNNExtractor/ARCSeparateExtractor.
+            elif key in ('action_space', 'grid_shape'):
+                # Neither is a feature to embed. The action space's own
+                # .nvec (varies per task) is in every observation so the
+                # policy can see it; grid_shape is there to undo the
+                # observation padding, and forward() below uses it for
+                # exactly that rather than encoding it.
                 continue
             else:
                 raise ValueError(f'Unknown feature: {key}')
@@ -596,10 +640,15 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         for key, extractor in self.extractors.items():
             # print(f'observation key {key} has shape: {observation[key].shape}')
             if key == 'grid':
-                x = torch.nn.functional.one_hot(torch.tensor(observation[key], dtype=torch.int64), num_classes=10)  # Shape: (Batch, H, W, 10)
-                x = x.float()  # Convert to float
-                x = x.permute(0, 3, 1, 2)  # Change to (Batch, 10, H, W)
-                res = extractor(x)
+                def prepare(grid):
+                    x = torch.nn.functional.one_hot(torch.tensor(grid, dtype=torch.int64), num_classes=10)  # Shape: (Batch, H, W, 10)
+                    x = x.float()  # Convert to float
+                    return x.permute(0, 3, 1, 2)  # Change to (Batch, 10, H, W)
+                # Cropped to the real grid first when the observation was
+                # padded to a common shape - the pad value is not a colour
+                # and one_hot would not know what to do with it.
+                res = unpadded_grid_features(extractor, observation[key],
+                                             observation.get('grid_shape'), prepare)
             else:
                 res = extractor(observation[key].unsqueeze(1))
                 # print(f'output for key {key} has shape: {res.shape}')
@@ -649,17 +698,26 @@ class ObjectSetProcessor(nn.Module):
 
         # Self-attention for object interactions
         if mask is not None:
+            # A row with no objects at all - an all-background grid - would
+            # mask every key, and a softmax over nothing but -inf is NaN,
+            # which spreads to the whole batch through the shared layers and
+            # comes out as "Expected parameter logits ... found invalid
+            # values". So such a row attends over its first slot, and the
+            # masked mean below multiplies the result away again: the row's
+            # contribution is zeros, as it should be, rather than NaN.
+            attends = mask.clone()
+            attends[~mask.any(dim=1), 0] = True
             # Convert mask to attention mask format
-            attn_mask = mask.unsqueeze(1).expand(-1, max_objects, -1)
+            attn_mask = attends.unsqueeze(1).expand(-1, max_objects, -1)
             attn_mask = attn_mask.float().masked_fill(attn_mask == 0, float('-inf'))
         else:
-            attn_mask = None
+            attends, attn_mask = None, None
         # print(f'forward in ObjectSetProcessor: batch_size:{batch_size} max_objects:{max_objects}' )
         # print(f'forward in ObjectSetProcessor: object_embeddings.shape:{object_embeddings.shape}' )
         # print(self.self_attention)
         attended, _ = self.self_attention(
             object_embeddings, object_embeddings, object_embeddings,
-            key_padding_mask=~mask if mask is not None else None
+            key_padding_mask=~attends if attends is not None else None
         )
 
         # Residual connection

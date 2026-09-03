@@ -13,6 +13,7 @@ import pytest
 from gymnasium import spaces
 
 from rl.features import ARCCombinedExtractor
+from symbolic.objects_analysis import OBJECT_DIM
 
 
 def test_action_space_key_is_skipped_not_raised():
@@ -118,3 +119,72 @@ def test_each_relation_head_is_built_at_the_width_of_the_group_it_names():
             f"{name} is built at width {first_linear.in_features}, "
             f"but the group it names is {width} wide"
         )
+
+
+# -- a grid with no objects at all -------------------------------------------
+#
+# All-background grids exist in ARC, and an observation of one has every
+# object slot padded. Attention over a fully padded row masks every key,
+# and a softmax over nothing but -inf is NaN - which spreads through the
+# shared layers to the whole batch and surfaces much later as PPO's
+# "Expected parameter logits ... found invalid values", naming neither the
+# grid nor the layer. ARCSeparateExtractor guards the same thing per batch
+# (`if obj_mask.any()`), which is the wrong grain: one empty row among
+# several still goes through masked.
+
+def _processor():
+    import torch
+    from rl.features import ObjectSetProcessor
+
+    torch.manual_seed(0)
+    return ObjectSetProcessor(embedding_dim=OBJECT_DIM).eval()
+
+
+def _slots(filled=()):
+    """Object embeddings for one observation: `filled` slots occupied."""
+    import torch
+
+    slots = torch.zeros((1, 4, OBJECT_DIM))
+    for slot in filled:
+        slots[0, slot] = 0.5
+    return slots
+
+
+def test_an_object_less_observation_does_not_produce_nan():
+    import torch
+
+    embeddings = _slots()
+
+    with torch.no_grad():
+        output = _processor()(embeddings, mask=(embeddings.sum(dim=-1) != 0))
+
+    assert not torch.isnan(output).any()
+
+
+def test_an_empty_row_beside_a_filled_one_does_not_produce_nan():
+    """The per-row case a per-batch guard misses, and the one a mixed
+    rollout actually produces."""
+    import torch
+
+    embeddings = torch.cat([_slots((0,)), _slots()])  # one row filled, one empty
+
+    with torch.no_grad():
+        output = _processor()(embeddings, mask=(embeddings.sum(dim=-1) != 0))
+
+    assert not torch.isnan(output).any()
+
+
+def test_an_object_less_row_contributes_nothing_rather_than_noise():
+    """Its features are zeros: the row attends over a padding slot only so
+    that softmax has something to normalise, and the masked mean multiplies
+    the result away again."""
+    import torch
+
+    empty = _slots()
+    together = torch.cat([_slots(), _slots((0,))])
+
+    with torch.no_grad():
+        alone = _processor()(empty, mask=(empty.sum(dim=-1) != 0))
+        beside = _processor()(together, mask=(together.sum(dim=-1) != 0))
+
+    assert torch.allclose(alone[0], beside[0], atol=1e-6)

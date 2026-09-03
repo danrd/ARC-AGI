@@ -167,6 +167,38 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict):
         vec_env.close()
 
 
+def check_one_grid_shape(task):
+    """Refuse a task whose examples are different sizes, and say why.
+
+    The observation carries the raw grid, and its Box is sized from the
+    subtask the env was built with. So subtasks of different sizes cannot
+    share a vec env (mixed) and cannot even be handed to the same agent one
+    after another (sequential): stable-baselines3 checks the observation
+    space on set_env and refuses. Half the shape-preserving training split
+    is like this - 128 of 262 tasks - so this is the common case, not an
+    edge one.
+
+    Nothing here can be fixed by trying harder: what raises otherwise is
+    "could not broadcast input array from shape (10,10) into shape (6,6)"
+    from inside DummyVecEnv, which names neither the task nor the reason.
+
+    Two ways out, both decisions rather than fixes. Padding every grid to a
+    common size is one. The other is dropping 'grid' from the observation:
+    every extractor pools it to a fixed width already
+    (AdaptiveAvgPool2d((1, 1)) - 16 channel means over the whole grid, a
+    colour histogram with no spatial content) against 128 from the object
+    embeddings, so the model is size-agnostic and only the space
+    declaration is not.
+    """
+    shapes = {subtask.train_inp_shape for subtask in task.subtasks}
+    shapes.add(task.test_subtask.train_inp_shape)
+    if len(shapes) > 1:
+        raise ValueError(
+            f"{task.label}: examples are {sorted(shapes)} - one agent cannot "
+            f"span them while the observation carries a fixed-size grid. "
+            f"Pad them to a common size, or drop 'grid' from the observation.")
+
+
 def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, verbose=False,
                   plot_grid_pred=False, mode='mixed'):
     """Train one agent on a whole task, then score it on the held-out pair.
@@ -188,6 +220,7 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     """
     if mode not in ('mixed', 'sequential'):
         raise ValueError(f"mode={mode!r}: expected 'mixed' or 'sequential'")
+    check_one_grid_shape(task)
     seed = rl_config['seed']
     seed_everything(seed)
     train_metrics = {}

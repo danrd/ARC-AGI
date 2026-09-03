@@ -115,6 +115,43 @@ class TestTheHeldOutPair:
         assert sorted(lens) == [0, 1, 2]
 
 
+class TestExamplesOfDifferentSizes:
+    """Half the shape-preserving training split shows the rule at several
+    grid sizes, and one agent cannot span those while the observation
+    carries a fixed-size grid: the vec env cannot hold them together, and
+    set_env refuses them one after another. What used to come out of that
+    was DummyVecEnv's "could not broadcast input array from shape (10,10)
+    into shape (6,6)", which names neither the task nor the reason."""
+
+    @pytest.fixture
+    def ragged(self, task):
+        odd = ARCSubtask("t_odd", np.zeros((3, 3), dtype=int),
+                         np.ones((3, 3), dtype=int))
+        return ARCTask(label="ragged", subtasks=task.subtasks + [odd],
+                       test_inp=task.test_subtask.train_inp,
+                       test_out=task.test_subtask.train_out)
+
+    @pytest.mark.parametrize("mode", ["mixed", "sequential"])
+    def test_the_refusal_names_the_task_and_the_sizes(self, ragged, config, ppo, mode):
+        with pytest.raises(ValueError, match=r"ragged.*\(2, 2\).*\(3, 3\)"):
+            train_on_task(ragged, rl_config=config, PPO_config=ppo, mode=mode)
+
+    def test_a_test_input_of_its_own_size_is_refused_too(self, task, config, ppo):
+        """It is scored through the same agent, so its size has to match as
+        much as the training ones do."""
+        odd = ARCTask(label="odd_test", subtasks=task.subtasks,
+                      test_inp=np.zeros((4, 4), dtype=int),
+                      test_out=np.ones((4, 4), dtype=int))
+
+        with pytest.raises(ValueError, match="odd_test"):
+            train_on_task(odd, rl_config=config, PPO_config=ppo)
+
+    def test_examples_of_one_size_are_not_refused(self, task, config, ppo):
+        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
+
+        assert "test_acc" in metrics
+
+
 class TestTheConfigReachesTheAgent:
     """A hyperparameter the config names and create_agent forgets to pass is
     a setting that looks configured and is not. gae_lambda was one from the

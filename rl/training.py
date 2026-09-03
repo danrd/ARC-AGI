@@ -217,6 +217,14 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     The score that answers "did it learn the rule" is on task.test_subtask,
     which no mode ever trains on. The per-subtask accuracies are the
     training ones and are reported alongside, not instead.
+
+    total_steps is the budget for the task in both modes, so the sequential
+    walk divides it among the subtasks rather than spending it on each. It
+    used to spend it on each, which made the modes incomparable at the same
+    setting - measured at 50_000, the sequential runs took three to four
+    times the steps and the wall clock of the mixed ones, and the collapse
+    to submitting on step one that showed up only there is what more
+    training does, not what the mode does.
     """
     if mode not in ('mixed', 'sequential'):
         raise ValueError(f"mode={mode!r}: expected 'mixed' or 'sequential'")
@@ -239,9 +247,11 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
             lens_for_subtasks[idx] = mean_len
     else:
         agent = agent_init
+        share = dict(rl_config)
+        share['total_steps'] = max(1, rl_config['total_steps'] // len(subtasks))
         for idx, subtask in enumerate(subtasks):
             acc, mean_len, agent, callback, _vec_env = train_on_subtask(
-                subtask=subtask, rl_config=rl_config, PPO_config=PPO_config,
+                subtask=subtask, rl_config=share, PPO_config=PPO_config,
                 agent_init=agent, verbose=verbose, plot_grid_pred=plot_grid_pred)
             accs_for_subtasks[idx] = acc
             lens_for_subtasks[idx] = mean_len

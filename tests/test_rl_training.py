@@ -23,6 +23,7 @@ import pytest
 from data.configs.rl_configs import load_PPO_config
 from rl.arc_task import ARCSubtask, ARCTask
 from rl.rl_module import RLModule, RlConfig
+from rl import training
 from rl.training import (create_agent, create_vec_env, train_on_subtasks,
                          train_on_task)
 
@@ -78,6 +79,26 @@ class TestWhatIsInTheRolloutBuffer:
                                        mode="sequential")
 
         assert labels_of(agent.get_env()) == ["t_2"]
+
+    def test_the_sequential_walk_divides_the_task_budget(self, task, config, ppo,
+                                                         monkeypatch):
+        """total_steps is what the task gets, in both modes. Spent on each
+        subtask instead, the sequential walk trains for three times as long
+        at the same setting - and then the two modes cannot be compared at
+        all, because what looks like the mode is the step count."""
+        asked = []
+        real = training.train_on_subtask
+
+        def spy(subtask, rl_config, **kwargs):
+            asked.append(rl_config["total_steps"])
+            return real(subtask, rl_config=rl_config, **kwargs)
+
+        monkeypatch.setattr(training, "train_on_subtask", spy)
+
+        train_on_task(task, rl_config=config, PPO_config=ppo, mode="sequential")
+
+        assert len(asked) == len(task.subtasks)
+        assert sum(asked) <= config["total_steps"]
 
     def test_an_unknown_mode_names_itself(self, task, config, ppo):
         with pytest.raises(ValueError, match="sideways"):

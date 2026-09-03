@@ -417,7 +417,17 @@ class ARCGridWorld(gymnasium.Env):
         self.prev_action = action.copy()
 
         # Reward normalization
-        reward = round(reward / self.max_reward, 2)
+        # Normalised but not rounded. round(x, 2) used to sit here, and
+        # max_reward scales with the distance to the target, so on any task
+        # further away than a few cells the penalty for a useless action -
+        # -1/max_reward - rounded to exactly 0.00. Measured over 2000 random
+        # steps per task: with the rounding, 93% to 99% of steps paid exactly
+        # zero on three of four tasks; without it, 0.1% to 0.7%. A search
+        # does not care - playouts pick actions without consulting reward,
+        # and removing the rounding changed nothing over 24 tasks - but PPO
+        # learns from nothing else, and was being trained on a signal that
+        # was zero almost everywhere.
+        reward = reward / self.max_reward
 
         truncated = (self.step_no >= self.max_episode_len)
         info = {
@@ -474,7 +484,17 @@ class ARCGridWorld(gymnasium.Env):
         if prev_action is not None and np.array_equal(prev_action, action):
             reward += -1 * self.repetitive_actions_penalty
 
-        reward = round(reward / self.max_reward, 2)
+        # Normalised but not rounded. round(x, 2) used to sit here, and
+        # max_reward scales with the distance to the target, so on any task
+        # further away than a few cells the penalty for a useless action -
+        # -1/max_reward - rounded to exactly 0.00. Measured over 2000 random
+        # steps per task: with the rounding, 93% to 99% of steps paid exactly
+        # zero on three of four tasks; without it, 0.1% to 0.7%. A search
+        # does not care - playouts pick actions without consulting reward,
+        # and removing the rounding changed nothing over 24 tasks - but PPO
+        # learns from nothing else, and was being trained on a signal that
+        # was zero almost everywhere.
+        reward = reward / self.max_reward
         return new_grid, objects, new_max_int, reward, done
 
     def get_state(self):

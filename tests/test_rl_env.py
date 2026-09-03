@@ -486,6 +486,52 @@ def test_an_action_naming_an_empty_slot_does_nothing_rather_than_raising():
     assert env.observation_space["relations_emb"].contains(obs["relations_emb"])
 
 
+# -- reward normalisation: the scale a real task puts the penalty on --------
+#
+# `round(reward / self.max_reward, 2)` used to sit at both normalisation
+# sites. max_reward scales with the distance to the target, so on a real
+# task it is in the thousands and the penalty for a useless action -
+# -1/max_reward - rounded to exactly 0.00. Measured over 2000 random steps
+# per task: with the rounding, 93% to 99% of steps paid exactly zero on
+# three of four tasks; without it, 0.1% to 0.7%. MCTS never noticed
+# (playouts pick actions without consulting reward, and removing the
+# rounding changed nothing over 24 tasks), but PPO learns from nothing
+# else. The two tests below are on a real ARC subtask on purpose: the
+# synthetic ones above are close enough to their target that two decimals
+# still carry the penalty, which is exactly why this went unseen.
+
+def test_a_useless_step_is_paid_for_on_a_task_whose_reward_scale_is_large(subtask):
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE)
+    env.set_subtask(subtask)
+    env.reset()
+    assert env.max_reward > 200, \
+        f"needs a task where the penalty is below two decimals: {env.max_reward}"
+    empty_slot = env.max_objects - 1
+
+    _, reward, _, _, _ = env.step(np.array([1, empty_slot, empty_slot]))
+
+    assert reward == pytest.approx(-env.action_penalty / env.max_reward)
+    assert reward != 0.0
+
+
+def test_the_simulated_step_pays_the_same_as_the_real_one(subtask):
+    """MCTS scores nodes through simulate_action, which normalises at its
+    own site - the two have to agree or a rollout values an action the env
+    does not."""
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE)
+    env.set_subtask(subtask)
+    env.reset()
+    empty_slot = env.max_objects - 1
+    action = np.array([1, empty_slot, empty_slot])
+
+    _, _, _, simulated, _ = env.simulate_action(
+        action, env.objects, env.grid, env.max_int, None)
+    _, stepped, _, _, _ = env.step(action)
+
+    assert simulated == pytest.approx(stepped)
+    assert simulated != 0.0
+
+
 def test_a_vec_env_spans_subtasks_with_different_object_counts():
     """What the fixed shapes buy: training on a mix of subtasks instead of
     one at a time. This raised `could not broadcast input array from shape

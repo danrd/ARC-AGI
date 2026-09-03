@@ -13,7 +13,7 @@ Loading a previously-trained policy and logging can layer on top later.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,6 +46,7 @@ class RlConfig(BaseModel):
     feasible_actions: Dict[int, str] = Field(default_factory=lambda: {0: "submit"})
     repr_level: int = 1
     observation_space_elements: List[str] = ["objects_emb"]  # ["objects_emb", "relations_emb"]
+    observation_grid_shape: Optional[Tuple[int, int]] = None
 
 
 class RLModule:

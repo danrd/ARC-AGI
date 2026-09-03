@@ -24,6 +24,10 @@ class _Env:
     def maximal_intersection(self, grid):
         return int(np.asarray(grid).sum())
 
+    def real_grid(self, grid):
+        """Unpadded here; ARCGridWorld crops the observation padding off."""
+        return grid
+
 
 class _Wrapper:
     """What a vector actually holds: gymnasium's wrapper around the env."""

@@ -42,6 +42,7 @@ class ARCGridWorld(gymnasium.Env):
                 observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:'submit'},
                 max_objects=MAX_OBJECTS,
+                observation_grid_shape=None,
                 ):
         self.max_objects = max_objects
         self.step_no = 0
@@ -58,6 +59,15 @@ class ARCGridWorld(gymnasium.Env):
         self.pad_val = pad_val
         self.low_val = self.pad_val if self.pad_val < 0 else 0
         self.max_val = self.pad_val if self.pad_val > 0 else 9
+        # Padding that exists only in the observation. `padding` above pads
+        # the grid itself, which moves the objects, the intersection and
+        # every reward derived from them; this pads nothing but the array
+        # handed to stable-baselines3, whose buffers need one shape per key
+        # for every env in a vector. The env's grid, objects, max_int and
+        # rewards are computed on the real grid throughout, and the true
+        # shape rides along in the observation as `grid_shape` so the
+        # policy can crop the padding back off before it looks at anything.
+        self.obs_grid_shape = tuple(observation_grid_shape) if observation_grid_shape else None
         self.input_pattern = input_pattern
         self.milestones_rewards = milestones_rewards
         self.reward_approach = reward_approach
@@ -79,6 +89,46 @@ class ARCGridWorld(gymnasium.Env):
             'grid': spaces.Box(low=self.low_val, high=self.max_val, shape=(30, 30), dtype=self.grid_dtype),
         }
         self.observation_space = spaces.Dict(self.observation_space)
+
+    def observed_grid(self, grid):
+        """A grid as the observation carries it: padded when a fixed
+        observation shape was asked for, untouched otherwise.
+
+        Top-left aligned, not centred, so `grid_shape` alone names the
+        valid region - centred padding would need the offsets carried too.
+        Padded with pad_val, which is outside the colour range, so a policy
+        that ignores grid_shape sees something it cannot mistake for a
+        colour rather than something plausible.
+        """
+        grid = np.asarray(grid).astype(self.grid_dtype)
+        if self.obs_grid_shape is None:
+            return grid
+        rows, cols = grid.shape
+        if rows > self.obs_grid_shape[0] or cols > self.obs_grid_shape[1]:
+            raise ValueError(
+                f"grid is {grid.shape}, larger than the observation shape "
+                f"{self.obs_grid_shape} it would have to be padded into")
+        padded = np.full(self.obs_grid_shape, self.pad_val, dtype=self.grid_dtype)
+        padded[:rows, :cols] = grid
+        return padded
+
+    def true_grid_shape(self):
+        """The shape the policy should crop an observed grid back to."""
+        return np.array(self.grid.shape, dtype=np.int64)
+
+    def real_grid(self, grid):
+        """An observed grid with the observation padding taken back off.
+
+        For everything outside the policy that gets handed an observation
+        rather than the env's own grid - scoring a terminal observation, for
+        one, where feeding the padded array to maximal_intersection compares
+        it against a target of another shape.
+        """
+        grid = np.asarray(grid)
+        if self.obs_grid_shape is None:
+            return grid
+        rows, cols = np.asarray(self.train_out).shape
+        return grid[:rows, :cols]
 
     def step_intersection(self, grid:np.array):
         """Calculates the difference between the maximal intersection at previous step and the current one.
@@ -215,15 +265,24 @@ class ARCGridWorld(gymnasium.Env):
         self.world = World(objects=self.initial_objects, actions_dict=self.actions_dict, font_color=self.font_color)
         # Update observation space for current grid size
         self.observation_space = {}
-        self.observation_space['grid'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x, shape_y), dtype=self.grid_dtype)
+        grid_shape = self.obs_grid_shape or (shape_x, shape_y)
+        self.observation_space['grid'] = spaces.Box(low=self.low_val, high=self.max_val, shape=grid_shape, dtype=self.grid_dtype)
+        if self.obs_grid_shape is not None:
+            # The one entry that makes the padding reversible. Bounded by
+            # the observation shape because that is the largest grid it can
+            # describe.
+            self.observation_space['grid_shape'] = spaces.Box(
+                low=1, high=max(self.obs_grid_shape), shape=(2,), dtype=np.int64)
         # Flat, matching np.array(self.action_space.nvec) - the three entries
         # are action count, object slots, object slots. Bounded by 900
         # because a 30x30 grid cannot hold more objects than cells.
         self.observation_space['action_space'] = spaces.Box(low=0, high=900, shape=(3,), dtype=np.int64)
         if self.input_pattern == 'separate':
-            self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
+            self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val,
+                shape=self.obs_grid_shape or (shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
         if "target" in self.observation_space_elements:
-            self.observation_space['target'] = spaces.Box(low=self.low_val, high=self.max_val, shape=(shape_x, shape_y), dtype=self.grid_dtype)
+            self.observation_space['target'] = spaces.Box(low=self.low_val, high=self.max_val,
+                shape=self.obs_grid_shape or (shape_x, shape_y), dtype=self.grid_dtype)
         # Both embedding blocks are sized by max_objects, not by this
         # subtask's object count, so they are the same shape for every
         # subtask - see MAX_OBJECTS.
@@ -304,12 +363,14 @@ class ARCGridWorld(gymnasium.Env):
 
     def submit_grid(self):
         obs = {}
-        obs['grid'] = self.grid.copy().astype(self.grid_dtype)
+        obs['grid'] = self.observed_grid(self.grid)
+        if self.obs_grid_shape is not None:
+            obs['grid_shape'] = self.true_grid_shape()
         obs['action_space'] = np.array(self.action_space.nvec)
         if self.input_pattern == 'separate':
-            obs['input_pattern'] = self.train_inp.copy()
+            obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
-            obs['target'] = np.array(self.train_out).copy().astype(self.grid_dtype)
+            obs['target'] = self.observed_grid(self.train_out)
         if "objects_emb" in self.observation_space_elements:
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
@@ -334,14 +395,16 @@ class ARCGridWorld(gymnasium.Env):
         self.prev_action = None
 
         obs = {
-            'grid': np.array(self.grid).astype(self.grid_dtype),
+            'grid': self.observed_grid(self.grid),
             'action_space': np.array(self.action_space.nvec)
         }
+        if self.obs_grid_shape is not None:
+            obs['grid_shape'] = self.true_grid_shape()
 
         if self.input_pattern == 'separate':
-            obs['input_pattern'] = np.array(self.train_inp).copy().astype(self.grid_dtype)
+            obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
-            obs['target'] = np.array(self.train_out).copy().astype(self.grid_dtype)
+            obs['target'] = self.observed_grid(self.train_out)
         if "objects_emb" in self.observation_space_elements:
             self.objects_emb = self.initial_objects_emb.copy()
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
@@ -384,15 +447,17 @@ class ARCGridWorld(gymnasium.Env):
             reward += -1 * self.action_penalty # penalty for ineffective actions
 
         obs = {}
-        obs['grid'] = copy(new_grid)
+        obs['grid'] = self.observed_grid(new_grid)
         obs['action_space'] = np.array(self.action_space.nvec)
         self.grid = copy(new_grid)
+        if self.obs_grid_shape is not None:
+            obs['grid_shape'] = self.true_grid_shape()
 
 
         if self.input_pattern == 'separate':
-            obs['input_pattern'] = self.train_inp.copy().astype(self.grid_dtype)
+            obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
-            obs['target'] = self.train_out.copy().astype(self.grid_dtype)
+            obs['target'] = self.observed_grid(self.train_out)
         if "objects_emb" in self.observation_space_elements:
             # Same shape and dtype as reset() and submit_grid() hand back: an
             # episode whose observations change shape or type partway through
@@ -527,7 +592,7 @@ def create_env(
                 max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
                 seed=None, font_color=0, padding=False, input_pattern=False, milestones_rewards=(1, 2, 3, 4),
                 pad_val=10, reward_approach=1, repr_level=1, observation_space_elements = ["objects_emb", "relations_emb"],
-                feasible_actions={0:"submit"}
+                feasible_actions={0:"submit"}, observation_grid_shape=None,
                ):
     env = ARCGridWorld(
         max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
@@ -535,6 +600,7 @@ def create_env(
         seed=seed, font_color=font_color, padding=padding, input_pattern=input_pattern, repr_level=repr_level,
         reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
         feasible_actions=feasible_actions,observation_space_elements=observation_space_elements,
+        observation_grid_shape=observation_grid_shape,
         )
     return env
 

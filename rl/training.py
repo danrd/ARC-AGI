@@ -61,6 +61,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    repetitive_actions_penalty=1.0, seed=None, font_color=0, padding=False, input_pattern=False,
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
+                   observation_grid_shape=None,
                   ):
     """Auxiliary function for creating environments to create vectorized environment."""
     gym.envs.register(
@@ -72,6 +73,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    seed=seed, font_color=font_color, padding=padding, input_pattern=input_pattern, repr_level=repr_level,
                    reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
                    feasible_actions=feasible_actions, observation_space_elements=observation_space_elements,
+                   observation_grid_shape=observation_grid_shape,
                   )
     # .unwrapped: gym.make() wraps env in OrderEnforcing/PassiveEnvChecker,
     # and current gymnasium no longer forwards custom methods through
@@ -83,13 +85,15 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
 def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_reward=5.0, action_penalty=1.0,
                    repetitive_actions_penalty=1.0, seed=None, font_color=0, padding=False, input_pattern=False,
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
-                   feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"]):
+                   feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
+                   observation_grid_shape=None):
     """Auxiliary function for creating vectorized environment."""
     envs = [functools.partial(create_ARC_env, subtask=subtask, max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                               action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
                               seed=seed, font_color=font_color, padding=padding, input_pattern=input_pattern, repr_level=repr_level,
                               reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
                               observation_space_elements=observation_space_elements,
+                              observation_grid_shape=observation_grid_shape,
                               feasible_actions=feasible_actions) for subtask in subtasks for i in range(n_envs)]
     vec_env = VecMonitor(DummyVecEnv(envs))
     return vec_env
@@ -110,7 +114,8 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
                              repetitive_actions_penalty=rl_config['repetitive_actions_penalty'], seed=seed, font_color=rl_config['font_color'],
                              padding=rl_config['padding'], input_pattern=rl_config['input_pattern'], milestones_rewards=rl_config['milestones_rewards'],
                              pad_val=rl_config['pad_val'], reward_approach=rl_config['reward_approach'],
-                             feasible_actions=rl_config['feasible_actions'], observation_space_elements=rl_config['observation_space_elements'])
+                             feasible_actions=rl_config['feasible_actions'], observation_space_elements=rl_config['observation_space_elements'],
+                             observation_grid_shape=rl_config.get('observation_grid_shape'))
     # verbose passed through: the callback's own default is True, and a
     # verbose evaluation prints and calls plot_grid - at rl_config's
     # eval_freq that is a figure every few steps of training.
@@ -160,15 +165,21 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict):
                              milestones_rewards=rl_config['milestones_rewards'],
                              pad_val=rl_config['pad_val'], reward_approach=rl_config['reward_approach'],
                              feasible_actions=rl_config['feasible_actions'],
-                             observation_space_elements=rl_config['observation_space_elements'])
+                             observation_space_elements=rl_config['observation_space_elements'],
+                             observation_grid_shape=rl_config.get('observation_grid_shape'))
     try:
         return evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'])
     finally:
         vec_env.close()
 
 
-def check_one_grid_shape(task):
+def check_one_grid_shape(task, observation_grid_shape=None):
     """Refuse a task whose examples are different sizes, and say why.
+
+    Unless `observation_grid_shape` is set, in which case there is nothing
+    to refuse: the observation is padded to that common shape for the
+    buffer's sake and cropped back before the policy looks at it - see
+    ARCGridWorld.observed_grid and rl.features.unpadded_grid_features.
 
     The observation carries the raw grid, and its Box is sized from the
     subtask the env was built with. So subtasks of different sizes cannot
@@ -178,25 +189,22 @@ def check_one_grid_shape(task):
     is like this - 128 of 262 tasks - so this is the common case, not an
     edge one.
 
-    Nothing here can be fixed by trying harder: what raises otherwise is
-    "could not broadcast input array from shape (10,10) into shape (6,6)"
-    from inside DummyVecEnv, which names neither the task nor the reason.
-
-    Two ways out, both decisions rather than fixes. Padding every grid to a
-    common size is one. The other is dropping 'grid' from the observation:
-    every extractor pools it to a fixed width already
-    (AdaptiveAvgPool2d((1, 1)) - 16 channel means over the whole grid, a
-    colour histogram with no spatial content) against 128 from the object
-    embeddings, so the model is size-agnostic and only the space
-    declaration is not.
+    Left as a refusal rather than turned on for everyone, because what
+    raises otherwise is "could not broadcast input array from shape (10,10)
+    into shape (6,6)" from inside DummyVecEnv, which names neither the task
+    nor the reason - and because an observation shape is a setting, not
+    something to pick on a caller's behalf.
     """
+    if observation_grid_shape:
+        return
     shapes = {subtask.train_inp_shape for subtask in task.subtasks}
     shapes.add(task.test_subtask.train_inp_shape)
     if len(shapes) > 1:
         raise ValueError(
             f"{task.label}: examples are {sorted(shapes)} - one agent cannot "
-            f"span them while the observation carries a fixed-size grid. "
-            f"Pad them to a common size, or drop 'grid' from the observation.")
+            f"span them while the observation carries a grid of one fixed "
+            f"size. Set observation_grid_shape to pad the observation to a "
+            f"common shape; the padding is cropped back off in the policy.")
 
 
 def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, verbose=False,
@@ -228,7 +236,7 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     """
     if mode not in ('mixed', 'sequential'):
         raise ValueError(f"mode={mode!r}: expected 'mixed' or 'sequential'")
-    check_one_grid_shape(task)
+    check_one_grid_shape(task, rl_config.get('observation_grid_shape'))
     seed = rl_config['seed']
     seed_everything(seed)
     train_metrics = {}

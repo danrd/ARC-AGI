@@ -45,7 +45,11 @@ def closed_fraction(env, grid=None) -> float:
     span = env.target_int - env.base_int
     if span <= 0:
         return 1.0
-    reached = env.max_int if grid is None else env.maximal_intersection(grid)
+    # real_grid because what comes out of an observation may be padded to a
+    # common shape for the buffer's sake (see ARCGridWorld.observed_grid),
+    # and scoring that against the target compares two different shapes.
+    reached = env.max_int if grid is None else \
+        env.maximal_intersection(env.real_grid(grid))
     return float((reached - env.base_int) / span)
 
 

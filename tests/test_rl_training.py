@@ -167,6 +167,18 @@ class TestExamplesOfDifferentSizes:
         with pytest.raises(ValueError, match="odd_test"):
             train_on_task(odd, rl_config=config, PPO_config=ppo)
 
+    def test_an_observation_shape_makes_them_trainable(self, ragged, config, ppo):
+        """The refusal is about the observation, not about the task: padded
+        to a common shape for the buffer and cropped back in the policy,
+        the same examples train in one vector."""
+        padded = {**config, "observation_grid_shape": (8, 8)}
+
+        _, _, agent, metrics = train_on_task(ragged, rl_config=padded,
+                                             PPO_config=ppo)
+
+        assert labels_of(agent.get_env()) == ["t_0", "t_1", "t_2", "t_odd"]
+        assert "test_acc" in metrics
+
     def test_examples_of_one_size_are_not_refused(self, task, config, ppo):
         _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
 

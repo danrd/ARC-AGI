@@ -22,7 +22,13 @@ rl_config = {
     'pad_val': 10,
     'feasible_actions': {0:'submit'},
     'repr_level': 1,
-    'observation_space_elements': ["objects_emb"] # ["objects_emb", "relations_emb"]
+    'observation_space_elements': ["objects_emb"], # ["objects_emb", "relations_emb"]
+    # None keeps the observation's grid sized to the subtask, which means one
+    # agent can only span examples that are all the same size. A shape here
+    # (ARC's largest is (30, 30)) pads the observation to it for the buffer's
+    # sake and carries the true shape alongside, so the policy crops it back
+    # off - see ARCGridWorld.observed_grid.
+    'observation_grid_shape': None,
     }
 
 def load_PPO_config():

@@ -49,19 +49,27 @@ class RlConfig(BaseModel):
 
 
 class RLModule:
-    def __init__(self, rl_config: RlConfig, ppo_config: Optional[dict] = None):
+    def __init__(self, rl_config: RlConfig, ppo_config: Optional[dict] = None,
+                 mode: str = "mixed"):
         self.rl_config = rl_config
         self.ppo_config = ppo_config
+        self.mode = mode
 
     def solve(self, task) -> Dict[str, Any]:
         from rl.training import train_on_task
 
         accs, lens, agent, train_metrics = train_on_task(
             task=task, rl_config=self.rl_config.model_dump(), PPO_config=self.ppo_config,
+            mode=self.mode,
         )
         self.agent = agent
+        # The policy's grid on the held-out input is a candidate answer only
+        # when it is the answer: train_metrics['test_acc'] is the fraction of
+        # the distance closed, so 1.0 means the grid matches the target and
+        # anything less is a wrong grid that would be reported as a solution.
+        solved = train_metrics.get("test_acc") == 1.0
         return {
-            "solution": None,  # train_on_task trains a policy, not a grid prediction
+            "solution": train_metrics.get("test_grid") if solved else None,
             "module_results": {
                 "accuracies": accs,
                 "episode_lengths": lens,

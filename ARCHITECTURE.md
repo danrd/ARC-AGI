@@ -132,15 +132,15 @@ graph TD
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (45)"]
+  tests["tests (46)"]
   utils["utils (3)"]
-  tests -->|31| rl
+  tests -->|34| rl
   tests -->|24| subsymbolic
   tests -->|23| symbolic
   rl -->|8| symbolic
   scripts -->|7| rl
   rl -->|6| data
-  tests -->|5| data
+  tests -->|6| data
   tests -->|5| orchestration
   orchestration -->|4| subsymbolic
   rl -->|4| utils
@@ -164,14 +164,14 @@ graph TD
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
 | `data.configs.env_configs` | 6 |
-| `data.configs.rl_configs` | 4 |
+| `data.configs.rl_configs` | 5 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
 | `orchestration.graph` | 2 |
 | `rl.arc_env` | 7 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 15 |
+| `rl.arc_task` | 16 |
 | `rl.arc_transformators` | 4 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 1 |
@@ -182,9 +182,9 @@ graph TD
 | `rl.plotting` | 1 |
 | `rl.policy` | 2 |
 | `rl.rl_job` | 1 |
-| `rl.rl_module` | 2 |
+| `rl.rl_module` | 3 |
 | `rl.search_hints` | 5 |
-| `rl.training` | 4 |
+| `rl.training` | 5 |
 | `rl.utils` | 6 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |

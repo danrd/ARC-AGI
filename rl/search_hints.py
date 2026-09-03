@@ -376,6 +376,30 @@ def time_limit(seconds):
         signal.signal(signal.SIGALRM, previous)
 
 
+def _rescued(simulator, task, actions, settings):
+    """The solutions a cut search had found but not yet verified.
+
+    A fresh env, because the one the search ran in is wherever the timeout
+    left it, and replay_solution steps what it is given. A candidate that
+    does not replay is dropped, which is the same standard the search's own
+    verification holds them to.
+    """
+    if simulator is None or not getattr(simulator, "solutions", None):
+        return []
+    env = make_env(task, actions, settings.episode_len)
+    rescued = []
+    with contextlib.redirect_stdout(io.StringIO()), \
+            contextlib.redirect_stderr(io.StringIO()):
+        for candidate in simulator.solutions:
+            try:
+                replayed = mcts.replay_solution(env, candidate)
+            except Exception:
+                continue
+            if replayed is not None:
+                rescued.append(replayed)
+    return rescued
+
+
 def search_once(task, actions, settings):
     """One search, reported as the material a block is rendered from.
 
@@ -391,6 +415,11 @@ def search_once(task, actions, settings):
     original_init = mcts.EnvironmentSimulator.__init__
 
     def watching(self, simulated, action):
+        # The simulator is reachable only from here. It holds the solutions
+        # the playouts found, which rollout_preparation verifies in a loop
+        # after its own is done - so a search cut by the timeout never
+        # reaches them, and they are most of what a search finds.
+        state["simulator"] = self
         result = original(self, simulated, action)
         landed = result[0]["max_int"]
         if landed > state["peak"]:
@@ -425,9 +454,21 @@ def search_once(task, actions, settings):
                     min_pool=4, c=settings.c)
     except SearchTimedOut:
         # The peak and the per-action gains were recorded as the search ran,
-        # so a cut search still has something to say - it loses only the
-        # rollouts it had not returned yet.
-        pass
+        # so a cut search still has something to say. Its solutions were not
+        # so lucky: they live in the simulator until rollout_preparation
+        # verifies them in a loop after its own, which a cut search never
+        # reaches - so a task the search actually solved came back solved
+        # with no sequence to show for it, or not solved at all.
+        #
+        # Measured in the budget sweep: at 640 iterations the median task
+        # ran the full 600s timeout, and tasks that were solved at 40 and
+        # 160 came back peak 1.0 and solved false. That column was counting
+        # timeouts, not search.
+        #
+        # Verified here rather than trusted, exactly as the loop that was
+        # missed would have: a sequence found in a playout is a claim about
+        # the simulator, and the replay is what makes it a solution.
+        rollouts = _rescued(state.get("simulator"), task, actions, settings)
     finally:
         mcts.EnvironmentSimulator.simulate_step = original
         mcts.EnvironmentSimulator.__init__ = original_init

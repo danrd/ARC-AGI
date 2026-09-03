@@ -248,6 +248,92 @@ class TestReplayingAgainstTheRealEnv:
         assert not hints.replays(task, [(index["rotate90"], 0, 0)], actions)
 
 
+class _Simulator:
+    """What a cut search leaves behind: the candidates the playouts found,
+    not yet verified."""
+
+    def __init__(self, solutions):
+        self.solutions = solutions
+
+
+class TestASearchCutByTheTimeout:
+    """A timeout used to throw away everything the search had found.
+
+    peak and the per-action gains are recorded step by step through the
+    patch on simulate_step, so they survived. Solutions did not: they sit
+    in the simulator until rollout_preparation verifies them in a loop
+    after its own, and a cut search never gets there - so a task the search
+    had solved came back with peak 1.0 and no solution.
+
+    Visible in the budget sweep, where at 640 iterations the median task
+    ran the full 600s timeout and tasks solved at 40 and 160 came back
+    unsolved: 0a2355a6, 1acc24af, 3a301edc, 42918530, 84db8fc4. The column
+    was counting timeouts.
+    """
+
+    def test_a_solution_the_simulator_had_found_survives(self, setup):
+        actions, index, task = setup
+        candidate = [(index["red_color_outer_holes"], 0, 0)]
+
+        rescued = hints._rescued(_Simulator([candidate]), task, actions,
+                                 hints.SearchSettings())
+
+        assert len(rescued) == 1
+        assert rescued[0]["solved"]
+
+    def test_a_candidate_that_does_not_replay_is_dropped(self, setup):
+        """Verified, not trusted - the same standard the loop that was
+        missed holds them to. rotate90 does not solve this task."""
+        actions, index, task = setup
+
+        rescued = hints._rescued(_Simulator([[(index["rotate90"], 0, 0)]]),
+                                 task, actions, hints.SearchSettings())
+
+        assert rescued == []
+
+    def test_nothing_to_rescue_is_not_an_error(self, setup):
+        actions, _, task = setup
+        settings = hints.SearchSettings()
+
+        assert hints._rescued(None, task, actions, settings) == []
+        assert hints._rescued(_Simulator([]), task, actions, settings) == []
+
+    def test_a_cut_search_reports_the_solution_it_had(self, setup, monkeypatch):
+        """End to end through search_once: the simulator is reachable only
+        from inside the patch on simulate_step, so this pins that it is
+        captured there and used when the search is cut."""
+        import numpy as np
+        actions, index, task = setup
+        candidate = [(index["red_color_outer_holes"], 0, 0)]
+
+        def cut_short(env, **kwargs):
+            simulator = hints.mcts.EnvironmentSimulator(env)
+            simulator.simulate_step(hints.mcts.env_state_snapshot(env),
+                                    np.array([index["rotate90"], 0, 0]))
+            simulator.solutions = [candidate]
+            raise hints.SearchTimedOut()
+
+        monkeypatch.setattr(hints.mcts, "rollout_preparation", cut_short)
+
+        found = hints.search_once(task, actions, hints.SearchSettings())
+
+        # Submit appended by the replay, the same trace the uncut path
+        # would have produced - see mcts.replay_solution.
+        assert found["solutions"] == [[list(candidate[0]), [0, 0, 0]]]
+
+    def test_a_cut_search_with_nothing_found_is_still_empty(self, setup, monkeypatch):
+        actions, _, task = setup
+
+        def cut_short(env, **kwargs):
+            raise hints.SearchTimedOut()
+
+        monkeypatch.setattr(hints.mcts, "rollout_preparation", cut_short)
+
+        found = hints.search_once(task, actions, hints.SearchSettings())
+
+        assert found["solutions"] == [] and found["partials"] == []
+
+
 class TestTheOnlinePath:
     """`hints_for` with the search stubbed: what is pinned is the merging
     of repeats and the shape handed to the renderer, not the search."""

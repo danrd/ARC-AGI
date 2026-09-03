@@ -69,21 +69,20 @@ class ARCCustomNetwork(nn.Module):
             # Second head for the rest dimensions
             self.policy_nets.append(nn.Linear(self.latent_dim_pi, sum(action_dims[1:])))
         elif action_heads == 3:
-            # KNOWN LIMITATION: this branch hardcodes indices assuming a
-            # 5-dimensional action space (type + 2 coordinate pairs) -
-            # ARCGridWorld's action_space is always 3-dimensional
-            # (type + object1_idx + object2_idx, see arc_env.py's
-            # set_subtask), so action_dims[3]/[4] raise IndexError with
-            # every current config. Every other branch here is dim-count-
-            # agnostic (1: sum(), 2: slice, 5: loop over all dims) - only
-            # this one assumes a stale action-space shape. Use
-            # action_heads=1, 2, or 5 until this is redesigned for 3 dims.
-            # First head for action type
-            self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
-            # Second head for first two coordinates
-            self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[1] + action_dims[2]))
-            # Third head for second two coordinates
-            self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[3] + action_dims[4]))
+            # One head per dimension of ARCGridWorld's action space: the
+            # transform, the first object, the second. This branch used to
+            # index action_dims[3] and [4], written for a five-dimensional
+            # space (type + two coordinate pairs) that nothing builds any
+            # more - so every run configured with three heads, which is
+            # what the shipped config asks for, died with IndexError before
+            # its first step.
+            if self.n_action_dims != 3:
+                raise ValueError(
+                    f"action_heads=3 means one head per dimension of a "
+                    f"three-dimensional action space (transform, object, "
+                    f"object); this space has {self.n_action_dims}")
+            for dim in action_dims:
+                self.policy_nets.append(nn.Linear(self.latent_dim_pi, dim))
         elif action_heads == 5:
             # Separate head for each dimension
             for dim in action_dims:

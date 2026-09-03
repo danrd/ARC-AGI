@@ -340,6 +340,32 @@ def test_create_agent_restores_a_checkpoint(subtask, tmp_path):
         vec_env.close()
 
 
+def test_a_handed_down_agent_is_pointed_at_the_env_it_was_handed(subtask):
+    """train_on_task passes one agent through every subtask, and each call
+    builds its own vec_env. create_agent used to return the agent untouched,
+    so it went on collecting rollouts in subtask 0's env while being
+    evaluated on the new one - five accuracies that read as five trainings
+    were one policy measured on five grids."""
+    first = create_vec_env([subtask], n_envs=1, max_episode_len=5,
+                            feasible_actions=SUBMIT_ONLY,
+                            observation_space_elements=["objects_emb"])
+    second = create_vec_env([subtask], n_envs=1, max_episode_len=5,
+                             feasible_actions=SUBMIT_ONLY,
+                             observation_space_elements=["objects_emb"])
+    try:
+        agent = create_agent(rl_config={"model_type": "PPO"}, vec_env=first,
+                             model_config={"action_heads": 5})
+
+        again = create_agent(rl_config={"model_type": "PPO"}, vec_env=second,
+                             agent_init=agent)
+
+        assert again is agent  # the same policy, carried forward
+        assert again.get_env() is second
+    finally:
+        first.close()
+        second.close()
+
+
 def test_create_agent_names_an_unsupported_model_type(subtask):
     """Every branch has to either return an agent or say why it can't - one
     that falls through returns an unbound local, and the error then names

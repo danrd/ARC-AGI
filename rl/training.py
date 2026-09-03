@@ -20,6 +20,14 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
     naming `agent`, which says nothing about the argument that caused it.
     """
     if agent_init:
+        # Pointed at this vec_env, not left holding the one it was built on.
+        # train_on_task hands the same agent down the subtasks, each with a
+        # freshly built env - and without this the agent kept rolling out in
+        # subtask 0 for every one of them while being evaluated on the env it
+        # never saw. Five accuracies that looked like five trainings were one
+        # policy measured on five grids.
+        if vec_env is not None:
+            agent_init.set_env(vec_env)
         return agent_init
     if path_to_pretrained:
         # A classmethod on the algorithm, not a method on an instance - there

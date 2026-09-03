@@ -4,6 +4,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from stable_baselines3 import PPO
 from rl.arc_env import ARCGridWorld
 from rl.evaluation import evaluate_ARC_policy
+from stable_baselines3.common.callbacks import CallbackList
 from rl.callbacks import MonitorCallback, ARCLogger
 from rl.mcts import rollout_preparation, extract_promising_actions
 from utils.utils import seed_everything
@@ -99,13 +100,20 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
     return vec_env
 
 def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init=None,
-                      path_to_pretrained=None, verbose=False, plot_grid_pred=False, debug=False):
+                      path_to_pretrained=None, verbose=False, plot_grid_pred=False, debug=False,
+                      extra_callback=None):
     """Train one agent on `subtasks` at once: one vec env holding all of
     them, so one rollout buffer carries steps from every subtask and the
     policy update sees the task rather than one of its examples.
 
     train_on_subtask is this with a single-element list - kept under its own
     name because notebooks call it.
+
+    `extra_callback` runs alongside MonitorCallback rather than instead of
+    it - the seam for watching a run without editing the loop, which is how
+    the question "does a rollout ever close any of the distance" gets
+    asked at all: every held-out score comes from a deterministic
+    evaluation and cannot see what the stochastic rollouts did.
     """
     seed = rl_config['seed']
     seed_everything(seed)
@@ -131,7 +139,8 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
     # training run before the first step.
     logger = ARCLogger(rl_config['log_path'], ["stdout", "csv"], metrics_list)
     agent.set_logger(logger)
-    agent.learn(rl_config['total_steps'], callback=callback)
+    callbacks = callback if extra_callback is None else CallbackList([callback, extra_callback])
+    agent.learn(rl_config['total_steps'], callback=callbacks)
     acc, mean_len, grid_pred = evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'])
     if verbose:
         labels = ', '.join(subtask.label for subtask in subtasks)
@@ -141,11 +150,13 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
     return acc, mean_len, agent, callback, vec_env
 
 def train_on_subtask(subtask, rl_config:dict, PPO_config:dict=None, agent_init=None,
-                     path_to_pretrained=None, verbose=False, plot_grid_pred=False, debug=False):
+                     path_to_pretrained=None, verbose=False, plot_grid_pred=False, debug=False,
+                     extra_callback=None):
     """One subtask, one env - train_on_subtasks with a single-element list."""
     return train_on_subtasks([subtask], rl_config=rl_config, PPO_config=PPO_config,
                              agent_init=agent_init, path_to_pretrained=path_to_pretrained,
-                             verbose=verbose, plot_grid_pred=plot_grid_pred, debug=debug)
+                             verbose=verbose, plot_grid_pred=plot_grid_pred, debug=debug,
+                             extra_callback=extra_callback)
 
 
 def evaluate_on_subtask(agent, subtask, rl_config:dict):
@@ -208,7 +219,7 @@ def check_one_grid_shape(task, observation_grid_shape=None):
 
 
 def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, verbose=False,
-                  plot_grid_pred=False, mode='mixed'):
+                  plot_grid_pred=False, mode='mixed', extra_callback=None):
     """Train one agent on a whole task, then score it on the held-out pair.
 
     `mode='mixed'` puts every training subtask in one vec env and trains
@@ -247,7 +258,8 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     if mode == 'mixed':
         _acc, _len, agent, callback, _vec_env = train_on_subtasks(
             subtasks=subtasks, rl_config=rl_config, PPO_config=PPO_config,
-            agent_init=agent_init, verbose=verbose, plot_grid_pred=plot_grid_pred)
+            agent_init=agent_init, verbose=verbose, plot_grid_pred=plot_grid_pred,
+            extra_callback=extra_callback)
         expl_vars['all'] = round(callback.explained_variances[-1], 3)
         for idx, subtask in enumerate(subtasks):
             acc, mean_len, _grid = evaluate_on_subtask(agent, subtask, rl_config)
@@ -260,7 +272,8 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
         for idx, subtask in enumerate(subtasks):
             acc, mean_len, agent, callback, _vec_env = train_on_subtask(
                 subtask=subtask, rl_config=share, PPO_config=PPO_config,
-                agent_init=agent, verbose=verbose, plot_grid_pred=plot_grid_pred)
+                agent_init=agent, verbose=verbose, plot_grid_pred=plot_grid_pred,
+                extra_callback=extra_callback)
             accs_for_subtasks[idx] = acc
             lens_for_subtasks[idx] = mean_len
             expl_vars[idx] = round(callback.explained_variances[-1], 3)

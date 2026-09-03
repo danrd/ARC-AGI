@@ -19,6 +19,7 @@ import inspect
 
 import numpy as np
 import pytest
+from stable_baselines3.common.callbacks import BaseCallback
 
 from data.configs.rl_configs import load_PPO_config
 from rl.arc_task import ARCSubtask, ARCTask
@@ -134,6 +135,40 @@ class TestTheHeldOutPair:
 
         assert sorted(accs) == [0, 1, 2]
         assert sorted(lens) == [0, 1, 2]
+
+
+class TestWatchingARun:
+    """Every held-out score comes from a deterministic evaluation, so it
+    cannot see what the stochastic rollouts did. `extra_callback` is the
+    seam for asking that without editing the loop - and it has to run
+    alongside MonitorCallback, not instead of it, or watching a run would
+    silently turn its evaluation off."""
+
+    class _Counter(BaseCallback):
+        def __init__(self):
+            super().__init__()
+            self.steps = 0
+
+        def _on_step(self):
+            self.steps += 1
+            return True
+
+    @pytest.mark.parametrize("mode", ["mixed", "sequential"])
+    def test_an_extra_callback_sees_the_steps(self, task, config, ppo, mode):
+        watch = self._Counter()
+
+        train_on_task(task, rl_config=config, PPO_config=ppo, mode=mode,
+                      extra_callback=watch)
+
+        assert watch.steps > 0
+
+    def test_the_monitor_callback_still_runs(self, task, config, ppo):
+        """It is what train_on_task reads explained_variance off, so a
+        replaced callback would come back as a KeyError much later."""
+        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo,
+                                         extra_callback=self._Counter())
+
+        assert metrics["expl_vars"]
 
 
 class TestExamplesOfDifferentSizes:

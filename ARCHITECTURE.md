@@ -132,11 +132,11 @@ graph TD
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (44)"]
+  tests["tests (45)"]
   utils["utils (3)"]
-  tests -->|30| rl
+  tests -->|31| rl
   tests -->|24| subsymbolic
-  tests -->|21| symbolic
+  tests -->|23| symbolic
   rl -->|8| symbolic
   scripts -->|7| rl
   rl -->|6| data
@@ -176,7 +176,7 @@ graph TD
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 1 |
 | `rl.evaluation` | 3 |
-| `rl.features` | 2 |
+| `rl.features` | 3 |
 | `rl.mcts` | 4 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 1 |
@@ -207,9 +207,9 @@ graph TD
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |
-| `symbolic.objects_analysis` | 14 |
+| `symbolic.objects_analysis` | 15 |
 | `symbolic.patterns` | 4 |
-| `symbolic.summaries` | 8 |
+| `symbolic.summaries` | 9 |
 | `symbolic.symbolic_module` | 2 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 6 |

@@ -146,6 +146,50 @@ class GraphDataConstructor:
         """Batch multiple graphs together"""
         return Batch.from_data_list(graph_list)
 
+def graph_inputs(object_embeddings, relation_embeddings):
+    """One observation's objects and relations as (nodes, edges, edge_attr).
+
+    The env packs relations as `(max_objects, (max_objects - 1) *
+    RELATION_DIM)`: row i holds object i's vector against each *other*
+    object, laid end to end in object order with i itself skipped. The
+    previous version of this read that matrix as if it were one row per
+    pair, sliced it by pair count, and passed rows of
+    `(max_objects - 1) * RELATION_DIM` values as edge features of width
+    RELATION_DIM. It also built edge indices out of the padded object
+    slots, which do not index the node tensor once padding is dropped.
+
+    Both directions are kept when both are recorded: i's vector against j
+    and j's against i are different rows and mean different things. A pair
+    with an all-zero vector is left unconnected - that is what "no relation
+    recorded" looks like coming out of the padding.
+    """
+    filled = (object_embeddings.sum(dim=1) != 0).nonzero(as_tuple=True)[0]
+    if len(filled) == 0:
+        return (torch.zeros((1, OBJECT_DIM), dtype=object_embeddings.dtype),
+                [], torch.empty((0, RELATION_DIM), dtype=object_embeddings.dtype))
+
+    nodes = object_embeddings[filled]
+    edges, attributes = [], []
+    for source, source_slot in enumerate(filled.tolist()):
+        row = relation_embeddings[source_slot]
+        for target, target_slot in enumerate(filled.tolist()):
+            if source_slot == target_slot:
+                continue
+            # The block for `target_slot` within `source_slot`'s row: the
+            # others in slot order, with the row's own slot left out.
+            block = target_slot - (1 if target_slot > source_slot else 0)
+            if (block + 1) * RELATION_DIM > row.shape[0]:
+                continue
+            vector = row[block * RELATION_DIM:(block + 1) * RELATION_DIM]
+            if not bool((vector != 0).any()):
+                continue
+            edges.append([source, target])
+            attributes.append(vector)
+    if not edges:
+        return nodes, [], torch.empty((0, RELATION_DIM), dtype=nodes.dtype)
+    return nodes, edges, torch.stack(attributes)
+
+
 class ARCGNNExtractor(BaseFeaturesExtractor):
     """Feature extractor using Graph Neural Networks for object-relation processing."""
 
@@ -210,55 +254,10 @@ class ARCGNNExtractor(BaseFeaturesExtractor):
         gnn_features = []
 
         for i in range(batch_size):
-            # Extract embeddings for this sample
-            obj_emb = observations['objects_emb'][i]  # Shape: (max_objects, 32)
-            rel_emb = observations['relations_emb'][i]  # Shape: (max_relations, 17)
-
-            # Create object pairs (assuming relations_emb corresponds to pairs)
-            # This needs to be adapted based on your specific relation structure
-            valid_objects = (obj_emb.sum(dim=1) != 0).nonzero(as_tuple=True)[0]
-            num_valid = len(valid_objects)
-
-            if num_valid > 1:
-                # Create pairs for all valid objects
-                pairs = []
-                pair_idx = 0
-                for j in range(num_valid):
-                    for k in range(j + 1, num_valid):
-                        if pair_idx < rel_emb.shape[0]:
-                            pairs.append([valid_objects[j].item(), valid_objects[k].item()])
-                            pair_idx += 1
-
-                # Create graph
-                if pairs:
-                    graph = self.graph_constructor.create_graph_from_embeddings(
-                        obj_emb[valid_objects],
-                        rel_emb[:len(pairs)],
-                        pairs
-                    )
-                else:
-                    graph = self.graph_constructor.create_graph_from_embeddings(
-                        obj_emb[valid_objects],
-                        torch.empty((0, 17)),
-                        []
-                    )
-            else:
-                # Single object or no objects
-                if num_valid == 1:
-                    graph = self.graph_constructor.create_graph_from_embeddings(
-                        obj_emb[valid_objects],
-                        torch.empty((0, 17)),
-                        []
-                    )
-                else:
-                    # No valid objects - create dummy graph
-                    graph = self.graph_constructor.create_graph_from_embeddings(
-                        torch.zeros((1, 32)),
-                        torch.empty((0, 17)),
-                        []
-                    )
-
-            gnn_features.append(graph)
+            nodes, edges, edge_attr = graph_inputs(
+                observations['objects_emb'][i], observations['relations_emb'][i])
+            gnn_features.append(self.graph_constructor.create_graph_from_embeddings(
+                nodes, edge_attr, edges))
 
         # Batch graphs and process through GNN
         batch_graphs = self.graph_constructor.batch_graphs(gnn_features)

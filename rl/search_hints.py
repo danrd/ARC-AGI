@@ -118,14 +118,22 @@ class SearchSettings:
     timeout: int = 120
 
 
-def output_colours(grid):
-    """The colour words a grid contains, in digit order.
+def output_colours(*grids):
+    """The colour words these grids contain, in digit order.
 
-    The output's palette, not the input's: painting is only ever useful in a
+    The outputs' palette, not the inputs': painting is only ever useful in a
     colour the answer contains, so this is the exact set worth generating
     colour-dependent actions for - not a heuristic.
+
+    Several grids because the unit that needs a vocabulary is sometimes the
+    task rather than one pair. A colour absent from every example's output
+    will not be in the test's either, but one that appears in only the
+    second example is still the task's - and passing one grid drops it.
+    A search over a single pair passes that pair; training over a task
+    passes all of its outputs.
     """
-    digits = sorted({int(value) for value in np.asarray(grid).ravel()})
+    digits = sorted({int(value) for grid in grids
+                     for value in np.asarray(grid).ravel()})
     return tuple(COLORS_MAPPING[d] for d in digits if d in COLORS_MAPPING)
 
 

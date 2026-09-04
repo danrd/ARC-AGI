@@ -47,6 +47,7 @@ class RlConfig(BaseModel):
     repr_level: int = 1
     observation_space_elements: List[str] = ["objects_emb"]  # ["objects_emb", "relations_emb"]
     observation_grid_shape: Optional[Tuple[int, int]] = None
+    max_objects: int = 16
 
 
 class RLModule:

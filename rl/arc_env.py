@@ -593,6 +593,7 @@ def create_env(
                 seed=None, font_color=0, padding=False, input_pattern=False, milestones_rewards=(1, 2, 3, 4),
                 pad_val=10, reward_approach=1, repr_level=1, observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:"submit"}, observation_grid_shape=None,
+                max_objects=MAX_OBJECTS,
                ):
     env = ARCGridWorld(
         max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
@@ -600,7 +601,7 @@ def create_env(
         seed=seed, font_color=font_color, padding=padding, input_pattern=input_pattern, repr_level=repr_level,
         reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
         feasible_actions=feasible_actions,observation_space_elements=observation_space_elements,
-        observation_grid_shape=observation_grid_shape,
+        observation_grid_shape=observation_grid_shape, max_objects=max_objects,
         )
     return env
 

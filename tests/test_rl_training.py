@@ -22,6 +22,7 @@ import pytest
 from stable_baselines3.common.callbacks import BaseCallback
 
 from data.configs.rl_configs import load_PPO_config
+from rl.arc_env import MAX_OBJECTS
 from rl.arc_task import ARCSubtask, ARCTask
 from rl.rl_module import RLModule, RlConfig
 from rl import training
@@ -135,6 +136,39 @@ class TestTheHeldOutPair:
 
         assert sorted(accs) == [0, 1, 2]
         assert sorted(lens) == [0, 1, 2]
+
+
+class TestTheSettingsThatSizeTheSpace:
+    """max_objects sets the two object indices of every action, and on the
+    median shape-preserving task only 3.5% of the (object, object) pairs
+    name two real objects. Whether shrinking it helps is a measurement -
+    and it could not be taken at all, because the env accepted the setting
+    and no factory between rl_config and it passed one on."""
+
+    def test_the_envs_are_built_with_the_configured_slots(self, task, config, ppo):
+        vec_env = create_vec_env([task.subtasks[0]], n_envs=1, max_episode_len=5,
+                                  feasible_actions=SUBMIT_ONLY,
+                                  observation_space_elements=["objects_emb"],
+                                  max_objects=4)
+        try:
+            assert [env.unwrapped.max_objects for env in vec_env.unwrapped.envs] == [4]
+            assert list(vec_env.action_space.nvec[1:]) == [4, 4]
+        finally:
+            vec_env.close()
+
+    def test_training_passes_the_setting_down(self, task, config, ppo):
+        _, _, agent, _ = train_on_task(task, rl_config={**config, "max_objects": 3},
+                                       PPO_config=ppo)
+
+        assert list(agent.get_env().action_space.nvec[1:]) == [3, 3]
+
+    def test_a_config_without_it_keeps_the_default(self, task, config, ppo):
+        """Notebooks pass dicts assembled by hand, so a missing key is a
+        default rather than a KeyError."""
+        _, _, agent, _ = train_on_task(task, rl_config=config, PPO_config=ppo)
+
+        assert list(agent.get_env().action_space.nvec[1:]) == [MAX_OBJECTS,
+                                                               MAX_OBJECTS]
 
 
 class TestWatchingARun:

@@ -29,6 +29,11 @@ rl_config = {
     # sake and carries the true shape alongside, so the policy crops it back
     # off - see ARCGridWorld.observed_grid.
     'observation_grid_shape': None,
+    # Object slots, and so the two object indices of every action. Sized by
+    # this rather than by the task, so a slot past the objects a grid has is
+    # a legal action that does nothing: on the median shape-preserving task
+    # only 3.5% of the (object, object) pairs name two real objects.
+    'max_objects': 16,
     }
 
 def load_PPO_config():

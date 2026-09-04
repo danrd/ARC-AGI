@@ -472,6 +472,23 @@ class TestTheVocabularyASearchGets:
         assert hints.output_colours(np.array([[0, 3], [8, 3]])) == \
                ("black", "green", "sky")
 
+    def test_several_grids_are_the_union_of_their_palettes(self):
+        """The unit that needs a vocabulary is sometimes the task, not one
+        pair: a colour appearing only in the second example is still the
+        task's, and asking one grid drops it. Measured cost of dropping it -
+        of four tasks trained on in one session, three needed a colour the
+        vocabulary did not carry and one needed none of the two it had."""
+        import numpy as np
+
+        assert hints.output_colours(np.array([[0, 3]]),
+                                    np.array([[8, 8]])) == \
+               ("black", "green", "sky")
+
+    def test_one_grid_still_answers_for_that_grid(self):
+        import numpy as np
+
+        assert hints.output_colours(np.array([[0, 3]])) == ("black", "green")
+
     def test_a_colour_the_answer_needs_gets_actions_of_its_own(self):
         """The measured gap this closes: with a fixed red/blue vocabulary,
         81 of 260 scanned tasks needed a colour outside {1, 2} and not one

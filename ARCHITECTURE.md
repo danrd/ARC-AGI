@@ -138,8 +138,8 @@ graph TD
   tests -->|24| subsymbolic
   tests -->|23| symbolic
   rl -->|8| symbolic
+  tests -->|8| data
   scripts -->|7| rl
-  tests -->|7| data
   rl -->|6| data
   tests -->|5| orchestration
   orchestration -->|4| subsymbolic
@@ -163,7 +163,7 @@ graph TD
 | module | imported by |
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
-| `data.configs.env_configs` | 6 |
+| `data.configs.env_configs` | 7 |
 | `data.configs.rl_configs` | 6 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |

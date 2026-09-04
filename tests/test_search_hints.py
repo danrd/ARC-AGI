@@ -122,6 +122,75 @@ class TestReadableNames:
                "background shortest path left (colour 2)"
 
 
+class TestDescribingWhatAnActionDoes:
+    """The wording comes from a table written against the implementations,
+    not from the names, because several names mislead: read as English,
+    `color_outer_holes` is "colour the holes outside" where it fills the
+    concave notches of an outline, and `dense_outer_contour` reads as a
+    contour of the object where it paints the unoccupied edge of the
+    object's bounding rectangle.
+    """
+
+    def test_every_action_the_vocabulary_can_generate_has_a_description(self):
+        """A missing one falls back to the function name, which is the
+        thing this replaced - so the table has to cover the vocabulary, and
+        an action added later has to be described before it ships."""
+        from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS,
+                                              TRANSFORM_DESCRIPTIONS,
+                                              UNIMPLEMENTED_ACTIONS)
+        bases = ({a for roster in AGENT2ACTIONS.values() for a in roster}
+                 | {a for group in ACTION_TYPES.values() for a in group}) \
+            - UNIMPLEMENTED_ACTIONS
+
+        assert bases - set(TRANSFORM_DESCRIPTIONS) == set()
+        assert set(TRANSFORM_DESCRIPTIONS) - bases == set()
+
+    def test_the_description_replaces_the_function_name(self):
+        described = hints.describe_action("color_outer_holes_red")
+
+        assert "concave notches" in described
+        assert "color_outer_holes" not in described
+
+    def test_a_misleading_name_is_described_by_what_it_does(self):
+        """dense_outer_contour paints the object's bounding-rectangle edge,
+        not a contour of the object."""
+        described = hints.describe_action("dense_outer_contour_green")
+
+        assert "bounding rectangle" in described
+
+    def test_the_colour_it_paints_with_is_the_digit_the_grid_holds(self):
+        assert "colour 2" in hints.describe_action("red_recolor")
+
+    def test_a_two_colour_action_keeps_its_colours_in_order(self):
+        """Which colour plays which role differs per transform, so the
+        template names them: the first is what the line is drawn in, the
+        second what the collision does."""
+        described = hints.describe_action("blue_emission_with_red_object_recolor_E")
+
+        assert described.index("colour 1") < described.index("colour 2")
+
+    def test_a_direction_is_a_word_the_grid_can_be_read_in(self):
+        """N is (-1, 0) in the emission tables - one row up in the printed
+        grid - so it is 'up', and a bare letter is not something a reader
+        of digits can act on."""
+        assert "up" in hints.describe_action("shift_object_N")
+        assert "down and left" in hints.describe_action("sky_emission_SW")
+
+    def test_the_colour_marker_is_one_setting(self):
+        """The grids are digits, and a digit is a colour, a count and a
+        coordinate in the same block - so the marker is what says which.
+        Swappable because which marker reads best is a measurement."""
+        assert "the 2s" in hints.describe_action("red_recolor",
+                                                  colour_phrase="the {digit}s")
+        assert "symbol 2" in hints.describe_action("red_recolor",
+                                                    colour_phrase="symbol {digit}")
+
+    def test_an_undescribed_name_falls_back_to_the_listing(self):
+        """A hint that reads oddly beats one that is missing."""
+        assert hints.describe_action("red_not_a_transform") == \
+               "not a transform (colour 2)"
+
+
 class TestRenderingABlock:
     @staticmethod
     def pooled(**kwargs):
@@ -151,7 +220,7 @@ class TestRenderingABlock:
 
         text = hints.render_block(("aaa", None, None), pooled, {})
 
-        assert "reproduced the output exactly" in text
+        assert "reproduced its output exactly" in text
         assert "1. step fliplr" in text
         assert "submit" not in text
 
@@ -160,7 +229,7 @@ class TestRenderingABlock:
 
         text = hints.render_block(("aaa", None, None), pooled, {})
 
-        assert "reached 42% of the target cells" in text
+        assert "recovered 42% of the cells" in text
         assert "1. step fliplr" in text and "2. step flipud" in text
 
     def test_gains_are_reported_in_cells_not_in_intersection_points(self):
@@ -173,11 +242,13 @@ class TestRenderingABlock:
         assert "up to 17 cells" in text
 
     def test_moves_below_the_floor_are_not_listed(self):
+        """Named by what they do, so the two mirrors are told apart by
+        their descriptions rather than by their function names."""
         pooled = self.pooled(effective={"aaa": {"fliplr": 4, "flipud": 40}})
 
         text = hints.render_block(("aaa", None, None), pooled, {}, min_gain=5)
 
-        assert "flipud" in text and "fliplr" not in text
+        assert "top to bottom" in text and "left to right" not in text
 
     def test_a_task_whose_moves_are_all_below_the_floor_gets_no_block(self):
         pooled = self.pooled(effective={"aaa": {"fliplr": 4}})
@@ -218,18 +289,18 @@ class TestLeavingTheAnswerOut:
         text = hints.render_block(("aaa", None, None), self.pooled(), {},
                                    skip_solved=True)
 
-        assert "reproduced the output exactly" not in text
+        assert "reproduced its output exactly" not in text
 
     def test_the_moves_list_survives(self):
         text = hints.render_block(("aaa", None, None), self.pooled(), {},
                                    skip_solved=True)
 
-        assert "fliplr" in text and "up to 20 cells" in text
+        assert "left to right" in text and "up to 20 cells" in text
 
     def test_by_default_the_sequence_is_still_there(self):
         text = hints.render_block(("aaa", None, None), self.pooled(), {})
 
-        assert "reproduced the output exactly" in text
+        assert "reproduced its output exactly" in text
 
 
 class TestReplayingAgainstTheRealEnv:

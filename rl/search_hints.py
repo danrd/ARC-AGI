@@ -40,6 +40,7 @@ from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS, ALL_DIRECTION
                                       COLOR_DEPENDENT_ACTIONS, COLORS_MAPPING,
                                       DIRECTION_DEPENDENT_ACTIONS,
                                       DOUBLE_COLOR_DEPENDENT_ACTIONS,
+                                      TRANSFORM_DESCRIPTIONS,
                                       UNIMPLEMENTED_ACTIONS)
 from rl.arc_env import ARCGridWorld
 from rl.arc_task import ARCSubtask
@@ -51,6 +52,21 @@ from rl.utils import define_feasible_actions
 #: reference it has no way to resolve.
 _DIGIT = {name: digit for digit, name in COLORS_MAPPING.items()}
 _DIRECTIONS = set(ALL_DIRECTIONS)
+
+#: Compass letters as the grid reads them. N is (-1, 0) in the emission
+#: tables - one row up in the printed grid - so these are the directions a
+#: reader looking at the digits sees, not an abstraction over them.
+_DIRECTION_WORDS = {"N": "up", "S": "down", "E": "right", "W": "left",
+                    "NE": "up and right", "NW": "up and left",
+                    "SE": "down and right", "SW": "down and left"}
+
+#: How a colour is named in a hint. The grids in the prompt are digits, and
+#: a digit appears there as a colour, as a count ("22 cells") and as a
+#: coordinate ("rows 2-10") - so the marker is what says which of the three
+#: this one is, and dropping it is not the same as dropping the idea of
+#: colour. Swappable because which marker reads best is a question for a
+#: measurement: "colour 2", "the 2s", "symbol 2".
+COLOUR_PHRASE = "colour {digit}"
 
 #: One cell fixed moves maximal_intersection by two - it counts
 #: 2 * matches - valid - so a gain of 34 is 17 cells.
@@ -217,37 +233,75 @@ def distinct(sequences):
                   key=len)
 
 
-def readable(name):
-    """`blue_emission_with_red_object_recolor_E` as something a reader can
-    hold: the verb, then the arguments it was given.
+def split_name(name):
+    """A generated action name as (base, colours, directions).
 
-    Arguments are listed, not woven into a sentence. Which colour plays
-    which role differs per transform, and a rendering that guesses reads
-    fluently while saying the wrong thing.
+    Names are assembled by define_feasible_actions out of a base transform
+    and whichever colour and direction tokens it takes, so they can be
+    taken apart the same way - the tokens that are neither are the base.
     """
-    verb, colours, directions = [], [], []
+    base, colours, directions = [], [], []
     for token in name.split("_"):
         if token in _DIGIT:
             colours.append(str(_DIGIT[token]))
         elif token in _DIRECTIONS:
             directions.append(token)
         else:
-            verb.append(token)
+            base.append(token)
+    return "_".join(base), colours, directions
+
+
+def describe_action(name, other="the other shape", colour_phrase=COLOUR_PHRASE):
+    """What an action does, in words, rather than what it is called.
+
+    The name is not enough to say this and cannot be made to be: read as
+    English, `color_outer_holes` is "colour the holes outside", where it
+    fills the concave notches of an outline, and `dense_outer_contour`
+    reads as a contour of the object where it paints the unoccupied edge
+    of the object's bounding rectangle. So the wording comes from
+    TRANSFORM_DESCRIPTIONS, which was written against the implementations.
+
+    Falls back to the old listing - verb, then arguments - for a name whose
+    base has no description, because a hint that reads oddly is worth more
+    than one that is missing.
+    """
+    base, colours, directions = split_name(name)
+    template = TRANSFORM_DESCRIPTIONS.get(base)
+    if template is None:
+        return readable(name)
+    named = [colour_phrase.format(digit=digit) for digit in colours]
+    return template.format(colour=named[0] if named else "a colour",
+                           second=named[1] if len(named) > 1 else "another colour",
+                           direction=(_DIRECTION_WORDS.get(directions[0], directions[0])
+                                      if directions else "some direction"),
+                           other=other)
+
+
+def readable(name):
+    """`blue_emission_with_red_object_recolor_E` as something a reader can
+    hold: the verb, then the arguments it was given.
+
+    Arguments are listed, not woven into a sentence. Which colour plays
+    which role differs per transform, and a rendering that guesses reads
+    fluently while saying the wrong thing - which is why describe_action
+    reads its wording from a table rather than deriving it here.
+    """
+    base, colours, directions = split_name(name)
     arguments = []
     if colours:
         arguments.append(f"colour{'s' if len(colours) > 1 else ''} "
                          + ", ".join(colours))
     if directions:
         arguments.append("direction " + ", ".join(directions))
-    text = " ".join(verb)
+    text = base.replace("_", " ")
     return f"{text} ({'; '.join(arguments)})" if arguments else text
 
 
 def describe_object(obj):
     """Which object a step was applied to, in the grid's own terms."""
     colours = "/".join(str(int(c)) for c in obj.color_numbers)
-    return (f"colour {colours}, {obj.size} cells, rows {obj.min_i}-{obj.max_i}, "
-            f"cols {obj.min_j}-{obj.max_j}")
+    return (f"the shape made of {colours}, {obj.size} cells, spanning rows "
+            f"{obj.min_i}-{obj.max_i} and columns {obj.min_j}-{obj.max_j}")
 
 
 def render_steps(task, sequence, names, actions, episode_len=25):
@@ -266,7 +320,8 @@ def render_steps(task, sequence, names, actions, episode_len=25):
             index = int(step[1])
             target = (describe_object(objects[index]) if index < len(objects)
                       else "an empty object slot")
-            lines.append(f"{readable(names[str(step[0])])} on {target}")
+            lines.append(f"Take {target}. Then "
+                         f"{describe_action(names[str(step[0])])}.")
             env.step(np.asarray(step))
     return lines
 
@@ -308,8 +363,8 @@ def render_block(task, found, actions, moves=6, min_gain=5, episode_len=25,
         best = min(distinct(solved), key=len)
         body = [step for step in best if names[str(step[0])] != "submit"]
         body = minimise(task, body, actions, episode_len)
-        lines.append("An automated search over the first training pair "
-                     "reproduced the output exactly with:")
+        lines.append("A search over the first training pair reproduced its "
+                     "output exactly, by these steps:")
         lines += [f"  {i + 1}. {line}" for i, line in
                   enumerate(render_steps(task, body, names, actions, episode_len))]
     elif partial:
@@ -318,9 +373,9 @@ def render_block(task, found, actions, moves=6, min_gain=5, episode_len=25,
         peak = reached(task, body, actions, episode_len)
         if peak is not None:
             body = minimise(task, body, actions, episode_len, goal=peak)
-        lines.append(f"An automated search over the first training pair did not "
-                     f"reproduce the output. Its best attempt reached "
-                     f"{progress:.0%} of the target cells with:")
+        lines.append(f"A search over the first training pair did not reproduce "
+                     f"its output. Its best attempt recovered {progress:.0%} of "
+                     f"the cells the output needs, by these steps:")
         lines += [f"  {i + 1}. {line}" for i, line in
                   enumerate(render_steps(task, body, names, actions, episode_len))]
     # A gain is measured against whatever state the search was standing in,
@@ -333,13 +388,15 @@ def render_block(task, found, actions, moves=6, min_gain=5, episode_len=25,
               sorted(effective.items(), key=lambda kv: (-kv[1], kv[0]))
               if gain >= min_gain * POINTS_PER_CELL][:moves]
     if ranked:
-        opening = ("Single moves that recovered cells at some point in that "
-                   "search:" if lines else
-                   "An automated search over the first training pair did not "
-                   "reproduce the output. Single moves that recovered cells at "
-                   "some point in it:")
+        opening = ("Single steps that recovered cells somewhere in that "
+                   "search, whatever the grid looked like at the time:"
+                   if lines else
+                   "A search over the first training pair did not reproduce its "
+                   "output. These single steps recovered cells somewhere in it, "
+                   "whatever the grid looked like at the time:")
         lines.append(opening)
-        lines += [f"  {readable(name)} (up to {gain // POINTS_PER_CELL} cells)"
+        lines += [f"  - {describe_action(name)} "
+                  f"(recovered up to {gain // POINTS_PER_CELL} cells)"
                   for name, gain in ranked]
     return "\n".join(lines) if lines else None
 

@@ -171,6 +171,44 @@ class TestTheSettingsThatSizeTheSpace:
                                                                MAX_OBJECTS]
 
 
+class TestTellingTheTwoKindsOfOneApart:
+    """closed_fraction scores a subtask whose input already matches its
+    output 1.0 - "nothing to close" rather than "solved". Three of the five
+    such subtasks in the whole shape-preserving training split landed in
+    one six-task sample this session, and their 1.0s read as the first
+    thing PPO had ever learned. So the spans travel with the accuracies."""
+
+    @pytest.fixture
+    def with_a_degenerate_subtask(self, task):
+        """Its second subtask is already at its target."""
+        grid = np.array([[5, 5], [0, 0]])
+        done = ARCSubtask("t_done", grid, grid)
+        return ARCTask(label="mixed", subtasks=[task.subtasks[0], done],
+                       test_inp=task.test_subtask.train_inp,
+                       test_out=task.test_subtask.train_out)
+
+    def test_the_spans_come_back_with_the_accuracies(self, task, config, ppo):
+        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
+
+        assert sorted(metrics["spans"]) == [0, 1, 2]
+        assert all(span > 0 for span in metrics["spans"].values())
+
+    def test_a_subtask_with_nothing_to_close_has_a_span_of_zero(
+            self, with_a_degenerate_subtask, config, ppo):
+        accs, _, _, metrics = train_on_task(with_a_degenerate_subtask,
+                                            rl_config=config, PPO_config=ppo)
+
+        assert metrics["spans"][1] == 0
+        assert accs[1] == 1.0  # scored by definition, not by the policy
+        assert metrics["spans"][0] > 0
+
+    def test_it_is_named_where_a_reader_will_see_it(
+            self, with_a_degenerate_subtask, config, ppo, capsys):
+        train_on_task(with_a_degenerate_subtask, rl_config=config, PPO_config=ppo)
+
+        assert "nothing to close" in capsys.readouterr().out
+
+
 class TestWatchingARun:
     """Every held-out score comes from a deterministic evaluation, so it
     cannot see what the stochastic rollouts did. `extra_callback` is the

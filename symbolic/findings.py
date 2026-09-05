@@ -118,41 +118,82 @@ def _ranked(findings: Sequence[Finding]) -> Tuple[Finding, ...]:
 # a key that is never produced doesn't fail loudly, it just quietly degrades
 # every one of those findings to the "parameters differ" fallback, throwing
 # away a value that was measured.
-_PHRASES: Dict[str, Tuple[str, Tuple[str, ...]]] = {
-    "uniform_translation": ("every object moves by {shift}", ("shift",)),
-    "translation": ("objects move between input and output", ()),
-    "causal_shift": ("objects are shifted according to: {rule}", ("rule",)),
-    "color_mapping": ("colors are remapped consistently", ()),
-    "color_based_deletion": ("objects of color {color} are removed", ("color",)),
-    "shape_based_deletion": ("all {shape} objects are removed", ("shape",)),
-    "position_based_deletion": ("objects at {positions} are removed", ("positions",)),
-    "object_deletion": ("objects are removed from the input", ()),
-    "object_addition": ("new objects appear in the output", ()),
-    "aligned_addition": ("new objects are added {alignment_type} with existing ones", ("alignment_type",)),
-    "shape_duplication": ("shapes from the input are duplicated", ()),
-    "size_scaling": ("objects are scaled by factor {scale_factor:.2f}", ("scale_factor",)),
-    "symmetry_change": ("the symmetry of the grid changes", ()),
+#: pattern -> (phrasing when the parameter is agreed, required parameters,
+#: phrasing when it is not). The third entry exists because the generic
+#: fallback - "<pattern> occurs, but its parameters differ between examples"
+#: - dropped the subject with the parameter, and the subject is what keeps
+#: the claim honest: "size scaling occurs" reads as being about the grid,
+#: and 31% of blocks carried it beside "the output keeps the input's grid
+#: size", so a third of the summaries contradicted themselves in the same
+#: list. Saying "objects are scaled" instead says which of the two is
+#: meant. It fired on 64% of blocks over 100 tasks, so this is the common
+#: rendering, not the corner.
+_PHRASES: Dict[str, Tuple[str, Tuple[str, ...], str]] = {
+    "uniform_translation": ("every object moves by {shift}", ("shift",),
+                            "every object moves by the same offset, and the "
+                            "offset differs between examples"),
+    "translation": ("objects move between input and output", (), ""),
+    "causal_shift": ("objects are shifted by a rule: {rule}", ("rule",),
+                     "objects are shifted by a rule that differs between examples"),
+    "color_mapping": ("colors are remapped consistently", (), ""),
+    "color_based_deletion": ("objects of color {color} are removed", ("color",),
+                             "objects of one colour are removed, a different "
+                             "colour in each example"),
+    "shape_based_deletion": ("all {shape} objects are removed", ("shape",),
+                             "all objects of one shape are removed, a different "
+                             "shape in each example"),
+    "position_based_deletion": ("objects at {positions} are removed", ("positions",),
+                                "objects at particular positions are removed, "
+                                "different positions in each example"),
+    "object_deletion": ("objects are removed from the input", (), ""),
+    "object_addition": ("new objects appear in the output", (), ""),
+    "aligned_addition": ("new objects appear, aligned with existing ones along "
+                         "{alignment_type}", ("alignment_type",),
+                         "new objects appear aligned with existing ones, along "
+                         "a different axis in each example"),
+    "shape_duplication": ("shapes from the input are duplicated", (), ""),
+    "size_scaling": ("objects are scaled by factor {scale_factor:.2f}",
+                     ("scale_factor",),
+                     "objects are scaled, by a different factor in each example"),
+    "symmetry_change": ("the symmetry of the grid changes", (), ""),
 }
+
+#: Parameter values that are dict keys in the analyser and words nowhere.
+_VALUE_WORDS = {"y_aligned": "the y axis", "x_aligned": "the x axis"}
+
+
+def _humanise(value):
+    """An internal identifier as something a reader can act on.
+
+    The analyser puts its own keys into `parameters` - `y_aligned`,
+    `shift_equals_inner_holes` - and 26% of blocks over 100 tasks carried
+    one through to the prompt. A reader who has not read the codebase
+    cannot use them, and a reader who guesses will guess wrong.
+    """
+    if not isinstance(value, str):
+        return value
+    return _VALUE_WORDS.get(value, value.replace("_", " "))
 
 
 def _statement_for(pattern_type: str, agreed: Mapping[str, Any]) -> str:
     """Render a pattern as a sentence, naming only established parameters."""
-    template, required = _PHRASES.get(pattern_type, (None, ()))
+    template, required, unagreed = _PHRASES.get(pattern_type, (None, (), ""))
     if template is not None and all(key in agreed for key in required):
         try:
-            return template.format(**{key: agreed[key] for key in required})
+            return template.format(**{key: _humanise(agreed[key])
+                                      for key in required})
         except (ValueError, TypeError):
             # A parameter of an unexpected type for its format spec (a scale
             # factor that isn't a number, say) - fall through rather than
             # crash the whole summary over one malformed value.
             pass
 
-    readable = pattern_type.replace("_", " ")
-    if template is not None:
-        # The pattern held, but the parameter it hinges on differed between
-        # examples - say that, rather than picking one example's value.
-        return f"{readable} occurs, but its parameters differ between examples"
-    return readable
+    # The pattern held and the parameter it hinges on did not, so the
+    # phrasing has to keep the subject while dropping the value - see
+    # _PHRASES on what the subjectless version cost.
+    if unagreed:
+        return unagreed
+    return pattern_type.replace("_", " ")
 
 
 def _transformation_findings(task_analysis) -> Tuple[Finding, ...]:

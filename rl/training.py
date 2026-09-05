@@ -188,6 +188,36 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict):
         vec_env.close()
 
 
+def distance_to_close(subtask, rl_config:dict):
+    """How far this subtask's input starts from its output, in the units
+    the accuracy is a fraction of.
+
+    Zero means the input already matches the target, and closed_fraction
+    scores such a subtask 1.0 by definition - "nothing to close" rather
+    than "solved". That number cost this session a false positive: three of
+    the five degenerate subtasks in the whole shape-preserving training
+    split landed in one six-task sample, and their 1.0s read as the first
+    thing PPO had ever learned. So the spans travel with the accuracies,
+    and a caller can tell one kind of 1.0 from the other.
+    """
+    env = create_ARC_env(subtask, max_episode_len=rl_config['max_episode_len'],
+                         repr_level=rl_config['repr_level'],
+                         font_color=rl_config['font_color'],
+                         padding=rl_config['padding'],
+                         input_pattern=rl_config['input_pattern'],
+                         pad_val=rl_config['pad_val'],
+                         reward_approach=rl_config['reward_approach'],
+                         feasible_actions=rl_config['feasible_actions'],
+                         observation_space_elements=rl_config['observation_space_elements'],
+                         observation_grid_shape=rl_config.get('observation_grid_shape'),
+                         max_objects=rl_config.get('max_objects', MAX_OBJECTS))
+    try:
+        env.reset()
+        return int(env.unwrapped.target_int - env.unwrapped.base_int)
+    finally:
+        env.close()
+
+
 def check_one_grid_shape(task, observation_grid_shape=None):
     """Refuse a task whose examples are different sizes, and say why.
 
@@ -284,6 +314,15 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     test_acc, test_len, test_grid = evaluate_on_subtask(agent, task.test_subtask, rl_config)
     print(f'Explaines variances for subtasks: {expl_vars}')
     train_metrics['expl_vars'] = list(expl_vars.values())
+    # Alongside the accuracies, not instead: a subtask whose input already
+    # matches its output has nothing to close and is scored 1.0 whatever
+    # the policy did.
+    train_metrics['spans'] = {idx: distance_to_close(subtask, rl_config)
+                              for idx, subtask in enumerate(subtasks)}
+    degenerate = [idx for idx, span in train_metrics['spans'].items() if span <= 0]
+    if degenerate:
+        print(f'Subtasks with nothing to close, scored 1.0 by definition: '
+              f'{degenerate}')
     train_metrics['test_acc'] = test_acc
     train_metrics['test_len'] = test_len
     train_metrics['test_grid'] = test_grid

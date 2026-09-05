@@ -70,7 +70,7 @@ def test_every_phrase_references_a_parameter_its_own_detector_produces():
     produced = _parameter_keys_by_pattern_type()
 
     wrong = {}
-    for pattern_type, (_template, required) in _PHRASES.items():
+    for pattern_type, (_template, required, _unagreed) in _PHRASES.items():
         if not required or pattern_type not in produced:
             continue
         missing = set(required) - produced[pattern_type]
@@ -78,6 +78,34 @@ def test_every_phrase_references_a_parameter_its_own_detector_produces():
             wrong[pattern_type] = sorted(missing)
 
     assert not wrong, f"phrased but never produced by that detector: {wrong}"
+
+
+def test_a_phrase_that_loses_its_parameter_keeps_its_subject():
+    """"size scaling occurs, but its parameters differ between examples" was
+    what 42 of 100 blocks carried, and 31 of them carried it beside "the
+    output keeps the input's grid size" - two lines of one list saying
+    opposite things, because the subjectless phrasing reads as being about
+    the grid where the finding is about objects."""
+    from symbolic.findings import _PHRASES
+
+    subjectless = {pattern for pattern, (_t, required, unagreed) in _PHRASES.items()
+                   if required and not unagreed}
+
+    assert subjectless == set()
+    assert "objects are scaled" in _PHRASES["size_scaling"][2]
+
+
+def test_an_internal_identifier_does_not_reach_the_reader():
+    """`y_aligned` and `shift_equals_inner_holes` are keys in the analyser's
+    own dicts. 26 of 100 blocks passed one through to the prompt."""
+    from symbolic.findings import _statement_for
+
+    aligned = _statement_for("aligned_addition", {"alignment_type": "y_aligned"})
+    shifted = _statement_for("causal_shift", {"rule": "shift_equals_inner_holes"})
+
+    assert "y_aligned" not in aligned and "the y axis" in aligned
+    assert "shift_equals_inner_holes" not in shifted
+    assert "shift equals inner holes" in shifted
 
 
 def _finding(subject, statement, indices, total, confidence=0.9, **params):
@@ -207,8 +235,12 @@ class TestBuildFindings:
 
         statement = build_task_findings(analysis).transformations[0].statement
 
-        assert "differ between examples" in statement
+        assert "differs between examples" in statement
         assert "(0, 0)" not in statement
+        # The subject survives the value: "uniform translation occurs, but
+        # its parameters differ" dropped it, and a subjectless claim is what
+        # made a third of these blocks contradict their own grid-size line.
+        assert "object" in statement
 
     @staticmethod
     def test_unknown_pattern_type_is_rendered_readably_not_dropped():

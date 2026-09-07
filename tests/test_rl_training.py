@@ -311,6 +311,39 @@ class TestTheConfigReachesTheAgent:
         finally:
             vec_env.close()
 
+    def test_two_agents_built_from_the_config_do_not_share_a_grid_encoder(
+            self, task, config):
+        """The config named an architecture by handing over one module built
+        at import time, so every agent in a process trained the same
+        nn.Conv2d weights: the second run started on the first run's encoder,
+        and any in-process comparison of two settings measured the second on
+        top of the first."""
+        import torch
+
+        def build():
+            vec_env = create_vec_env([task.subtasks[0]], n_envs=1,
+                                     max_episode_len=5,
+                                     feasible_actions=SUBMIT_ONLY,
+                                     observation_space_elements=["objects_emb"])
+            model_config = {**load_PPO_config(), "n_steps": 16, "batch_size": 8,
+                            "verbose": 0}
+            agent = create_agent(rl_config=config, vec_env=vec_env,
+                                 model_config=model_config)
+            return agent, vec_env
+
+        first, first_env = build()
+        second, second_env = build()
+        try:
+            theirs = second.policy.features_extractor.extractors["grid"]
+            before = theirs[0].weight.detach().clone()
+            with torch.no_grad():
+                first.policy.features_extractor.extractors["grid"][0].weight.add_(1.0)
+
+            assert torch.equal(theirs[0].weight, before)
+        finally:
+            first_env.close()
+            second_env.close()
+
     def test_no_key_of_the_ppo_config_goes_unread(self):
         """Structural, so a key added to the config later cannot sit there
         doing nothing without this failing."""

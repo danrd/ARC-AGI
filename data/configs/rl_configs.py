@@ -54,7 +54,11 @@ def load_PPO_config():
     'actor_arch': [256, 256, 256],
     'critic_arch': [256, 256, 256],
     'activation_fn': nn.ReLU,
-    'extr_arch': lin_arch,
+    # The function, not a module built from it: a single module here is one
+    # set of weights shared by every agent built in the process, and the
+    # extractor would have to know to copy it. Naming what to build says
+    # "this architecture" rather than "this network".
+    'extr_arch': lin,
     'action_heads': 3,
     }
 
@@ -67,4 +71,4 @@ def lin(act_func=nn.ReLU()):
               nn.AdaptiveAvgPool2d((1, 1)),  # Output shape: [batch, 16, 1, 1]
               nn.Flatten()                   # Output shape: [batch, 16]
             )
-lin_arch = lin()
+lin_arch = lin()  # kept for notebooks that import it; configs name `lin`

@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -589,22 +591,57 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
 # =============================================================================
 # APPROACH 3: Combined approach
 # =============================================================================
+GRID_KEYS = ('grid', 'input_pattern', 'target')
+
+
+def grid_arch_width(arch):
+    """How many features a grid encoder emits, by asking it.
+
+    Read off arch[2].out_channels before, which is the second convolution
+    of the one architecture shipped and an IndexError or a wrong number for
+    anything else a config might name.
+    """
+    with torch.no_grad():
+        return arch(torch.zeros(1, 10, 30, 30)).shape[1]
+
+
+def default_grid_arch():
+    """The grid encoder used when a config does not supply one."""
+    return nn.Sequential(
+        nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
+        nn.ReLU(),
+        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
+        nn.ReLU(),
+        nn.AdaptiveAvgPool2d((1, 1)),
+        nn.Flatten(),
+    )
+
+
 class ARCCombinedExtractor(BaseFeaturesExtractor):
+    """The grid-shaped observations get one encoder each, of the shape
+    `extr_arch` describes; the object and relation embeddings get their own.
+
+    `extr_arch` is a description, not a network to adopt. The shipped config
+    holds a single module built once at import (data.configs.rl_configs.
+    lin_arch), so every agent constructed in one process was handed the very
+    same nn.Conv2d weights: an agent started where the previous one's
+    training had left the encoder, and two agents alive at once had their
+    optimisers writing to one set of parameters. Copying makes each
+    extractor own what it trains, which is what a config naming an
+    architecture means.
+    """
+
     def __init__(self, observation_space: spaces.Dict, extr_arch=None):
         super().__init__(observation_space, features_dim=1)
         extractors = {}
         total_concat_size = 0
-        if extr_arch:
-            self.extr_arch =  extr_arch
+        if callable(extr_arch) and not isinstance(extr_arch, nn.Module):
+            self.build_grid_arch = extr_arch
+        elif extr_arch is not None:
+            self.build_grid_arch = lambda: copy.deepcopy(extr_arch)
         else:
-            self.extr_arch = nn.Sequential(
-                                          nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
-                                          nn.ReLU(),
-                                          nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
-                                          nn.ReLU(),
-                                          nn.AdaptiveAvgPool2d((1, 1)),
-                                          nn.Flatten()
-                                        )
+            self.build_grid_arch = default_grid_arch
+        self.extr_arch = self.build_grid_arch()
         for key, subspace in observation_space.spaces.items():
             if key == "objects_emb":
                 # print(f'objects_emb subspace.shape:{subspace.shape}')
@@ -616,10 +653,17 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 dim = subspace.shape[0] * subspace.shape[1]
                 extractors[key] = nn.Sequential(nn.Flatten(), nn.Linear(dim, dim*2), nn.ReLU(), nn.Linear(dim*2, dim), nn.ReLU())
                 total_concat_size += dim
-            elif key == 'grid':
-                extractors[key] = self.extr_arch
-                total_concat_size += self.extr_arch[2].out_channels
-                # print(f'cnn_concat_size: {total_concat_size}')
+            elif key in GRID_KEYS:
+                # 'grid' is the grid being worked on; 'input_pattern' is the
+                # example's input kept alongside it (rl_config's
+                # input_pattern='separate'), 'target' the wanted output.
+                # All three are grids and all three are encoded as one, each
+                # through its own weights - the config used to declare these
+                # observations and the extractor used to reject them, so
+                # every run asking for either died with 'Unknown feature'
+                # before its first step.
+                extractors[key] = self.extr_arch if key == 'grid' else self.build_grid_arch()
+                total_concat_size += grid_arch_width(extractors[key])
             elif key in ('action_space', 'grid_shape'):
                 # Neither is a feature to embed. The action space's own
                 # .nvec (varies per task) is in every observation so the
@@ -639,7 +683,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         # self.extractors contain nn.Modules that do all the processing.
         for key, extractor in self.extractors.items():
             # print(f'observation key {key} has shape: {observation[key].shape}')
-            if key == 'grid':
+            if key in GRID_KEYS:
                 def prepare(grid):
                     x = torch.nn.functional.one_hot(torch.tensor(grid, dtype=torch.int64), num_classes=10)  # Shape: (Batch, H, W, 10)
                     x = x.float()  # Convert to float

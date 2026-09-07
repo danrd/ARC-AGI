@@ -188,3 +188,98 @@ def test_an_object_less_row_contributes_nothing_rather_than_noise():
         beside = _processor()(together, mask=(together.sum(dim=-1) != 0))
 
     assert torch.allclose(alone[0], beside[0], atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# an extractor owns the weights it trains
+# ---------------------------------------------------------------------------
+#
+# data.configs.rl_configs builds its grid encoder once at import (lin_arch =
+# lin()) and hands that one module to every agent through
+# features_extractor_kwargs. The extractor used to adopt it as-is, so all
+# the agents built in one process shared a single set of nn.Conv2d weights:
+# an agent began where the previous one's training had left the encoder, and
+# two agents alive at once had their optimisers writing to the same tensors.
+# Every in-process comparison of two configurations was measuring the second
+# one on top of the first.
+
+def _grid_space():
+    return spaces.Dict({
+        "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+    })
+
+
+def test_two_extractors_built_from_one_architecture_train_separately():
+    import torch
+    from rl.features import default_grid_arch
+
+    shared = default_grid_arch()
+
+    first = ARCCombinedExtractor(_grid_space(), extr_arch=shared)
+    second = ARCCombinedExtractor(_grid_space(), extr_arch=shared)
+
+    before = second.extractors["grid"][0].weight.detach().clone()
+    with torch.no_grad():
+        first.extractors["grid"][0].weight.add_(1.0)
+
+    assert torch.equal(second.extractors["grid"][0].weight, before)
+
+
+def test_an_architecture_can_be_given_as_something_that_builds_one():
+    from rl.features import default_grid_arch
+
+    extractor = ARCCombinedExtractor(_grid_space(), extr_arch=default_grid_arch)
+
+    assert extractor.features_dim == 16
+
+
+# ---------------------------------------------------------------------------
+# the other grids in an observation
+# ---------------------------------------------------------------------------
+#
+# ARCGridWorld puts the example's own input in the observation under
+# 'input_pattern' when rl_config asks for input_pattern='separate', and the
+# wanted output under 'target' when observation_space_elements names it.
+# Both are declared in its observation space and filled in reset() and
+# step(); the extractor rejected them as unknown, so either setting killed
+# the run with `ValueError: Unknown feature` before its first step.
+
+@pytest.mark.parametrize("key", ["input_pattern", "target"])
+def test_the_other_grids_are_encoded_rather_than_rejected(key):
+    import torch
+
+    observation_space = spaces.Dict({
+        "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+        key: spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+    })
+
+    extractor = ARCCombinedExtractor(observation_space)
+    features = extractor({
+        "grid": torch.zeros((2, 9, 9), dtype=torch.int64),
+        key: torch.zeros((2, 9, 9), dtype=torch.int64),
+    })
+
+    assert set(extractor.extractors) == {"grid", key}
+    assert features.shape == (2, extractor.features_dim)
+    assert extractor.features_dim == 32  # both grids, 16 features each
+
+
+def test_a_second_grid_is_read_rather_than_ignored():
+    """Encoded through its own weights, so changing it changes the features
+    - a branch that quietly returned zeros would also make the shapes fit."""
+    import torch
+
+    observation_space = spaces.Dict({
+        "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+        "input_pattern": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+    })
+    extractor = ARCCombinedExtractor(observation_space)
+    grid = torch.zeros((1, 9, 9), dtype=torch.int64)
+    other = torch.zeros((1, 9, 9), dtype=torch.int64)
+    other[0, 4, 4] = 3
+
+    with torch.no_grad():
+        unchanged = extractor({"grid": grid, "input_pattern": grid})
+        changed = extractor({"grid": grid, "input_pattern": other})
+
+    assert not torch.allclose(unchanged, changed)

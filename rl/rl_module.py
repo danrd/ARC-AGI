@@ -41,7 +41,7 @@ class RlConfig(BaseModel):
     padding: bool = False
     input_pattern: str = "start"
     milestones_rewards: List[int] = [1, 2, 3, 4]
-    reward_approach: int = 3
+    reward_approach: int = 2  # see data.configs.rl_configs.rl_config
     pad_val: int = 10
     feasible_actions: Dict[int, str] = Field(default_factory=lambda: {0: "submit"})
     repr_level: int = 1

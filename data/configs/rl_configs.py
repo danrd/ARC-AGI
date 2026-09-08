@@ -18,7 +18,18 @@ rl_config = {
     'padding': False,
     'input_pattern': 'start',
     'milestones_rewards': [1,2,3,4],
-    'reward_approach': 3,
+    # 2, not 3. Under 3 a submit that solved nothing pays 0 and never less,
+    # while acting pays -0.01 to -0.03 a step on the measured tasks - so
+    # giving up on the first step is the best return the reward offers, and
+    # PPO finds it: four of six 30k runs ended submitting on 100% of steps,
+    # transform-head entropy 0.007 to 0.023 out of ~4.0, and the share of
+    # steps that closed any distance fell from 17-20% to zero. ent_coef does
+    # not hold against that. Under 2 the same submit costs, and partial
+    # credit for the milestones reached gives the gradient 3 has none of: on
+    # the same action set, same process, same seed, submits went to 0.0% of
+    # steps and entropy stayed at 2.6-2.8. That buys back acting, not
+    # learning - the share of steps closing distance still decays.
+    'reward_approach': 2,
     'pad_val': 10,
     'feasible_actions': {0:'submit'},
     'repr_level': 1,

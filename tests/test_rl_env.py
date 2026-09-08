@@ -575,3 +575,57 @@ def test_a_vec_env_spans_subtasks_with_different_object_counts():
         assert obs["objects_emb"].shape[0] == 2
     finally:
         vec_env.close()
+
+
+# -- what the default reward asks the agent to do ---------------------------
+#
+# The shipped default used to be reward_approach 3, under which a submit
+# that solved nothing pays 0 and never less, while acting costs -0.01 to
+# -0.03 a step: giving up on the first step is then the best return the
+# reward offers, and PPO finds it. Four of six 30k runs ended submitting on
+# 100% of steps, transform-head entropy 0.007-0.023 out of ~4.0, and the
+# share of steps closing any distance fell from 17-20% to zero. This pins
+# the property rather than the number, so a later change of approach that
+# keeps giving up unprofitable is free to happen.
+
+def test_the_default_reward_makes_giving_up_cost_something(subtask):
+    from data.configs.rl_configs import rl_config
+
+    env = make_env(reward_approach=rl_config["reward_approach"])
+    env.set_subtask(subtask)
+    env.reset()
+
+    achieved_nothing = env._submit_reward(env.base_int)
+
+    assert achieved_nothing < 0, (
+        f"reward_approach {rl_config['reward_approach']} pays "
+        f"{achieved_nothing} for a submit that closed no distance, so "
+        "submitting immediately is at least as good as acting")
+
+
+def test_the_default_reward_pays_more_the_further_the_agent_got(subtask):
+    """The gradient approach 3 has none of: it pays the same 0 for every
+    submit short of the solved one, so nothing about the reward tells the
+    agent that half way is better than nowhere."""
+    from data.configs.rl_configs import rl_config
+
+    env = make_env(reward_approach=rl_config["reward_approach"])
+    env.set_subtask(subtask)
+    env.reset()
+
+    reached = [env._submit_reward(milestone) for milestone in env.milestones]
+
+    steps_up = [later - earlier for earlier, later in zip(reached, reached[1:])]
+
+    assert all(step > 0 for step in steps_up), (
+        f"every milestone reached should pay more than the one before it, "
+        f"or the reward says nothing about getting further: {reached}")
+
+
+def test_both_config_sources_agree_on_the_reward():
+    """rl.rl_module.RlConfig restates data.configs.rl_configs.rl_config for
+    pydantic's sake, and the two are only useful while they say the same."""
+    from data.configs.rl_configs import rl_config
+    from rl.rl_module import RlConfig
+
+    assert RlConfig().reward_approach == rl_config["reward_approach"]

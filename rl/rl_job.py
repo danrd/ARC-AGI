@@ -84,36 +84,97 @@ class RLJobHandle:
                 self.process.join()
 
 
-def with_searched_actions(task: Any, rl_config: Dict[str, Any],
-                          settings: Any = None) -> Dict[str, Any]:
-    """`rl_config` with feasible_actions narrowed to what a search can use.
+def object_slots(task: Any, repr_level: int) -> int:
+    """How many object slots this task's grids ever fill.
 
-    The shipped config carries {0: 'submit'} - a placeholder, not a
-    vocabulary - so a run started from it trains an agent whose only move is
-    to give up. Every measurement in this repository built the action set by
-    hand instead, which meant the thing being measured was never what the
-    pipeline ran.
+    The action space is (transform, object, object) over max_objects slots
+    whatever the task holds, so a slot past the objects a grid has is a
+    legal action that does nothing. Measured over the 262 shape-preserving
+    training tasks at repr_level 1: the median task holds 3 objects against
+    16 slots, 251 of them fewer than 16, and only 3.5% of the (object,
+    object) pairs name two real objects on the median task. Sizing the slots
+    to the task shrinks that pair space by a median factor of 28.
 
-    The search is what narrows it: 137 to 607 actions in a task's generated
-    vocabulary against 20 to 135 the search ever moved the grid with, and 9
-    to 13 once intersected with the roster of the agent a task is labelled
-    with. `task.agent` supplies that label when it has one; without it the
-    search's own set stands.
+    Counted the way ARCGridWorld counts them - GridSummary over the example
+    input at the configured repr_level - and over the held-out input too,
+    since one agent is scored on that grid as well.
+    """
+    from symbolic.summaries import GridSummary
 
-    A search that fails or finds nothing leaves the config untouched rather
-    than taking the pipeline down with it - training on a wider space is a
-    worse run, not a broken one. It costs 0.7 to 116 seconds per task
-    (median around 16), against the minutes a training run takes, and
+    grids = [subtask.train_inp for subtask in task.subtasks]
+    test_subtask = getattr(task, "test_subtask", None)
+    if test_subtask is not None:
+        grids.append(test_subtask.train_inp)
+    return max(len(GridSummary(grid=grid, shape=grid.shape,
+                               levels=[repr_level])
+                   .repr_levels[repr_level].objects)
+               for grid in grids)
+
+
+def observation_shape(task: Any):
+    """The shape an observation has to be padded to, or None.
+
+    None when every example is already one size: there is nothing to pad,
+    and a shape here would only make the observation bigger than the task.
+    Otherwise the largest of the task's own grids, which is what it takes to
+    put them in one rollout buffer - not ARC's 30x30 maximum, which is 7
+    times the median task's need.
+
+    Only the observation is padded; the env's grid is untouched and
+    rl.features.unpadded_grid_features crops each observation back to its
+    true shape before the policy sees it.
+    """
+    shapes = [subtask.train_inp_shape for subtask in task.subtasks]
+    test_subtask = getattr(task, "test_subtask", None)
+    if test_subtask is not None:
+        shapes.append(test_subtask.train_inp_shape)
+    if len(set(shapes)) == 1:
+        return None
+    return (max(shape[0] for shape in shapes),
+            max(shape[1] for shape in shapes))
+
+
+def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
+                      settings: Any = None) -> Dict[str, Any]:
+    """`rl_config` cut down to the space this task actually needs.
+
+    The shipped config is written to be task-independent, and each of those
+    defaults is a placeholder that costs a run:
+
+    - feasible_actions is {0: 'submit'}, so a run started from it trains an
+      agent whose only move is to give up. The search narrows it: 137 to 607
+      actions in a task's generated vocabulary, 20 to 135 the search ever
+      moved the grid with, 9 to 13 once intersected with the roster of the
+      agent the task is labelled with (`task.agent`, when it has one).
+    - max_objects is 16 for every task, and the median task holds 3.
+    - observation_grid_shape is None, which refuses any task whose examples
+      differ in size - 133 of the 262 shape-preserving training tasks, so
+      more than half of them never reached their first step.
+
+    Every measurement in this repository set these by hand instead, which is
+    why a script's numbers and the pipeline's were never about the same
+    thing.
+
+    A search that fails leaves the actions alone rather than taking the
+    pipeline down with it - training over a wider space is a worse run, not
+    a broken one. The slots and the shape are read off the task and cannot
+    fail that way. The search costs 0.7 to 116 seconds per task (median
+    around 16) against the minutes a training run takes, and
     SearchSettings.timeout bounds the tail.
     """
     from rl.search_hints import SearchSettings, feasible_from_search
 
+    narrowed = dict(rl_config)
+    narrowed["max_objects"] = object_slots(
+        task, rl_config.get("repr_level", 1))
+    narrowed["observation_grid_shape"] = observation_shape(task)
     try:
-        actions = feasible_from_search(task, settings or SearchSettings(),
-                                       agent=getattr(task, "agent", None))
+        narrowed["feasible_actions"] = feasible_from_search(
+            task, settings or SearchSettings(),
+            agent=getattr(task, "agent", None))
     except Exception:  # noqa: BLE001 - a failed search must not fail the run
-        return rl_config
-    return {**rl_config, "feasible_actions": actions}
+        pass
+    return narrowed
 
 
 def _rl_training_worker(task: Any) -> Dict[str, Any]:
@@ -125,7 +186,7 @@ def _rl_training_worker(task: Any) -> Dict[str, Any]:
     from data.configs.rl_configs import rl_config, load_PPO_config
     from rl.rl_module import RLModule, RlConfig
 
-    return RLModule(RlConfig(**with_searched_actions(task, rl_config)),
+    return RLModule(RlConfig(**narrowed_for_task(task, rl_config)),
                     load_PPO_config()).solve(task)
 
 

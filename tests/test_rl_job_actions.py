@@ -7,7 +7,7 @@ only move was to give up. Every measurement in this repository built the
 action set by hand instead, which meant the thing measured was never the
 thing the pipeline ran.
 
-rl.rl_job.with_searched_actions is the seam that closes that: the search
+rl.rl_job.narrowed_for_task is the seam that closes that: the search
 already knows which of a task's 137-607 generated actions ever moved the
 grid (20-135 of them), and the roster of the agent a task is labelled with
 narrows it to 9-13 where one exists.
@@ -15,16 +15,28 @@ narrows it to 9-13 where one exists.
 from __future__ import annotations
 
 
-from rl.rl_job import with_searched_actions
+from rl.rl_job import narrowed_for_task
+
+
+class _Subtask:
+    def __init__(self, shape, grid=None):
+        import numpy as np
+        self.train_inp = np.zeros(shape, dtype=int) if grid is None else grid
+        self.train_inp_shape = self.train_inp.shape
 
 
 class _Task:
-    def __init__(self, agent=None):
+    """Two examples of one size and a held-out pair, unless told otherwise."""
+
+    def __init__(self, agent=None, shapes=((3, 3), (3, 3)), test_shape=(3, 3)):
         if agent is not None:
             self.agent = agent
+        self.subtasks = [_Subtask(shape) for shape in shapes]
+        self.test_subtask = _Subtask(test_shape)
 
 
-CONFIG = {"feasible_actions": {0: "submit"}, "seed": 42}
+CONFIG = {"feasible_actions": {0: "submit"}, "seed": 42, "repr_level": 1,
+          "max_objects": 16, "observation_grid_shape": None}
 
 
 class TestWhatThePipelineTrainsOn:
@@ -33,7 +45,7 @@ class TestWhatThePipelineTrainsOn:
         monkeypatch.setattr(hints, "feasible_from_search",
                             lambda *a, **k: {0: "submit", 1: "red_recolor"})
 
-        config = with_searched_actions(_Task(), CONFIG)
+        config = narrowed_for_task(_Task(), CONFIG)
 
         assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
 
@@ -42,7 +54,7 @@ class TestWhatThePipelineTrainsOn:
         monkeypatch.setattr(hints, "feasible_from_search",
                             lambda *a, **k: {0: "submit", 1: "red_recolor"})
 
-        config = with_searched_actions(_Task(), CONFIG)
+        config = narrowed_for_task(_Task(), CONFIG)
 
         assert config["seed"] == 42
 
@@ -53,7 +65,7 @@ class TestWhatThePipelineTrainsOn:
         monkeypatch.setattr(hints, "feasible_from_search",
                             lambda *a, **k: {0: "submit", 1: "red_recolor"})
 
-        with_searched_actions(_Task(), CONFIG)
+        narrowed_for_task(_Task(), CONFIG)
 
         assert CONFIG["feasible_actions"] == {0: "submit"}
 
@@ -67,7 +79,7 @@ class TestWhatThePipelineTrainsOn:
 
         monkeypatch.setattr(hints, "feasible_from_search", capture)
 
-        with_searched_actions(_Task(agent="connector"), CONFIG)
+        narrowed_for_task(_Task(agent="connector"), CONFIG)
 
         assert seen["agent"] == "connector"
 
@@ -81,7 +93,7 @@ class TestWhatThePipelineTrainsOn:
 
         monkeypatch.setattr(hints, "feasible_from_search", capture)
 
-        config = with_searched_actions(_Task(), CONFIG)
+        config = narrowed_for_task(_Task(), CONFIG)
 
         assert seen["agent"] is None
         assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
@@ -96,7 +108,7 @@ class TestWhatThePipelineTrainsOn:
 
         monkeypatch.setattr(hints, "feasible_from_search", explode)
 
-        config = with_searched_actions(_Task(), CONFIG)
+        config = narrowed_for_task(_Task(), CONFIG)
 
         assert config["feasible_actions"] == {0: "submit"}
 
@@ -108,7 +120,7 @@ def test_the_worker_narrows_before_it_trains(monkeypatch):
     import rl.rl_module as module
     seen = {}
 
-    monkeypatch.setattr(job, "with_searched_actions",
+    monkeypatch.setattr(job, "narrowed_for_task",
                         lambda task, config, settings=None:
                         {**config, "feasible_actions": {0: "submit", 1: "x"}})
 
@@ -124,3 +136,126 @@ def test_the_worker_narrows_before_it_trains(monkeypatch):
     job._rl_training_worker(_Task())
 
     assert seen["actions"] == {0: "submit", 1: "x"}
+
+
+class TestSizingTheObjectSlots:
+    """The action space is (transform, object, object) over max_objects
+    slots whatever the task holds, so a slot past the objects a grid has is
+    a legal action that does nothing. Over the 262 shape-preserving training
+    tasks the median holds 3 objects against 16 slots, 251 need fewer than
+    16, and only 3.5% of the (object, object) pairs name two real objects on
+    the median task - a median factor of 28 in the pair space.
+    """
+
+    @staticmethod
+    def _task(*grids):
+        import numpy as np
+
+        class _Sub:
+            def __init__(self, grid):
+                self.train_inp = np.array(grid)
+                self.train_inp_shape = self.train_inp.shape
+
+        class _T:
+            pass
+
+        task = _T()
+        task.subtasks = [_Sub(g) for g in grids[:-1]]
+        task.test_subtask = _Sub(grids[-1])
+        return task
+
+    def test_the_slots_are_the_objects_the_task_holds(self):
+        from rl.rl_job import object_slots
+
+        one = [[0, 0, 0], [0, 5, 0], [0, 0, 0]]
+        two = [[5, 0, 5], [0, 0, 0], [0, 0, 0]]
+
+        assert object_slots(self._task(one, one), 1) == 1
+        assert object_slots(self._task(one, two), 1) == 2
+
+    def test_the_held_out_grid_counts_too(self):
+        """One agent is scored on it, so a slot it needs and the training
+        examples do not is a slot the space has to have."""
+        from rl.rl_job import object_slots
+
+        one = [[0, 0, 0], [0, 5, 0], [0, 0, 0]]
+        three = [[5, 0, 5], [0, 0, 0], [5, 0, 0]]
+
+        assert object_slots(self._task(one, one, three), 1) == 3
+
+    def test_the_config_gets_the_task_s_own_slot_count(self):
+        from rl.rl_job import narrowed_for_task
+        import rl.search_hints as hints
+        import pytest
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: {0: "submit", 1: "x"})
+        one = [[0, 0, 0], [0, 5, 0], [0, 0, 0]]
+        try:
+            config = narrowed_for_task(self._task(one, one), CONFIG)
+        finally:
+            monkeypatch.undo()
+
+        assert config["max_objects"] == 1
+
+
+class TestSizingTheObservation:
+    """Examples of different sizes cannot share a rollout buffer while the
+    observation carries a grid sized to one subtask - 133 of the 262
+    shape-preserving training tasks, which never reached their first step.
+    The observation is padded to a common shape and cropped back inside the
+    extractor; the env's own grid is untouched.
+    """
+
+    def test_examples_of_one_size_need_no_padding(self, monkeypatch):
+        """A shape here would only make the observation bigger than the
+        task: ARC's 30x30 maximum is 7 times the median task's need."""
+        import rl.search_hints as hints
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: {0: "submit", 1: "x"})
+
+        config = narrowed_for_task(_Task(shapes=((3, 3), (3, 3)),
+                                         test_shape=(3, 3)), CONFIG)
+
+        assert config["observation_grid_shape"] is None
+
+    def test_examples_of_different_sizes_are_padded_to_their_own_largest(
+            self, monkeypatch):
+        import rl.search_hints as hints
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: {0: "submit", 1: "x"})
+
+        config = narrowed_for_task(_Task(shapes=((9, 9), (10, 8)),
+                                         test_shape=(12, 11)), CONFIG)
+
+        assert config["observation_grid_shape"] == (12, 11)
+
+    def test_the_held_out_grid_is_covered(self, monkeypatch):
+        """It is bigger than every training example here, and an agent that
+        cannot observe it cannot be scored on it."""
+        import rl.search_hints as hints
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: {0: "submit", 1: "x"})
+
+        config = narrowed_for_task(_Task(shapes=((3, 3), (4, 4)),
+                                         test_shape=(20, 20)), CONFIG)
+
+        assert config["observation_grid_shape"] == (20, 20)
+
+    def test_a_failed_search_still_leaves_the_slots_and_the_shape(
+            self, monkeypatch):
+        """They are read off the task and cannot fail the way a search can,
+        so losing the search should not cost them."""
+        import rl.search_hints as hints
+
+        def explode(*a, **k):
+            raise RuntimeError("search died")
+
+        monkeypatch.setattr(hints, "feasible_from_search", explode)
+
+        config = narrowed_for_task(_Task(shapes=((9, 9), (10, 8)),
+                                         test_shape=(12, 11)), CONFIG)
+
+        assert config["observation_grid_shape"] == (12, 11)
+        assert config["feasible_actions"] == {0: "submit"}

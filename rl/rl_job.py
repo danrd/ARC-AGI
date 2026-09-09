@@ -84,6 +84,38 @@ class RLJobHandle:
                 self.process.join()
 
 
+def with_searched_actions(task: Any, rl_config: Dict[str, Any],
+                          settings: Any = None) -> Dict[str, Any]:
+    """`rl_config` with feasible_actions narrowed to what a search can use.
+
+    The shipped config carries {0: 'submit'} - a placeholder, not a
+    vocabulary - so a run started from it trains an agent whose only move is
+    to give up. Every measurement in this repository built the action set by
+    hand instead, which meant the thing being measured was never what the
+    pipeline ran.
+
+    The search is what narrows it: 137 to 607 actions in a task's generated
+    vocabulary against 20 to 135 the search ever moved the grid with, and 9
+    to 13 once intersected with the roster of the agent a task is labelled
+    with. `task.agent` supplies that label when it has one; without it the
+    search's own set stands.
+
+    A search that fails or finds nothing leaves the config untouched rather
+    than taking the pipeline down with it - training on a wider space is a
+    worse run, not a broken one. It costs 0.7 to 116 seconds per task
+    (median around 16), against the minutes a training run takes, and
+    SearchSettings.timeout bounds the tail.
+    """
+    from rl.search_hints import SearchSettings, feasible_from_search
+
+    try:
+        actions = feasible_from_search(task, settings or SearchSettings(),
+                                       agent=getattr(task, "agent", None))
+    except Exception:  # noqa: BLE001 - a failed search must not fail the run
+        return rl_config
+    return {**rl_config, "feasible_actions": actions}
+
+
 def _rl_training_worker(task: Any) -> Dict[str, Any]:
     """Runs in the child process. Must be a module-level function (not
     nested) since the spawn context pickles the target. Imports
@@ -93,7 +125,8 @@ def _rl_training_worker(task: Any) -> Dict[str, Any]:
     from data.configs.rl_configs import rl_config, load_PPO_config
     from rl.rl_module import RLModule, RlConfig
 
-    return RLModule(RlConfig(**rl_config), load_PPO_config()).solve(task)
+    return RLModule(RlConfig(**with_searched_actions(task, rl_config)),
+                    load_PPO_config()).solve(task)
 
 
 def default_rl_start_fn(task: Any) -> RLJobHandle:

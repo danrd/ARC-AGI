@@ -842,3 +842,103 @@ class TestTheDefaultsAreTheMeasuredOnes:
 
         assert (settings.rollouts, settings.iterations, settings.playout,
                 settings.rounds) == (5, 50, "weighted", 1)
+
+
+class TestNarrowingTheActionSpaceToWhatASearchCanUse:
+    """A task's generated vocabulary is 137 to 607 actions on the measured
+    tasks and the agent explores it by sampling; the search has already
+    walked it and knows which 20 to 135 ever moved the grid. Narrowing to
+    those is the same task over a space two to five times smaller, and
+    intersecting with the roster of the agent a task is labelled with takes
+    it to 9 to 13.
+
+    The roster is where this gets dangerous. AGENT2ACTIONS covers five agent
+    names; idx2agent.pkl labels tasks with nine, and the four it does not
+    cover account for 444 of the 800 labelled tasks. An empty roster means
+    "no roster written", never "this agent may do nothing" - and an empty
+    feasible_actions leaves ARCGridWorld able to submit and nothing else,
+    which is not a narrower version of the task.
+    """
+
+    VOCABULARY = {0: "submit", 1: "red_recolor", 2: "blue_recolor",
+                  3: "red_gravity", 4: "blue_emission_N"}
+
+    def _found(self, effective):
+        return {"actions": dict(self.VOCABULARY), "effective": effective,
+                "solutions": [], "partials": [], "peak": 0.0}
+
+    def test_only_the_actions_the_search_moved_the_grid_with_are_kept(self):
+        found = self._found({"red_recolor": 8, "red_gravity": 2})
+
+        actions = hints.feasible_from_search("task", found=found)
+
+        assert set(actions.values()) == {"submit", "red_recolor", "red_gravity"}
+        assert actions[0] == "submit"
+
+    def test_the_indices_are_dense_and_start_after_submit(self):
+        """ARCGridWorld sizes its action space from len(feasible_actions)
+        and looks actions up by index, so a gap is an index that names
+        nothing."""
+        found = self._found({"red_recolor": 8, "red_gravity": 2})
+
+        actions = hints.feasible_from_search("task", found=found)
+
+        assert sorted(actions) == list(range(len(actions)))
+
+    def test_a_search_that_found_nothing_leaves_the_whole_vocabulary(self):
+        """Rather than an agent that can only submit."""
+        actions = hints.feasible_from_search("task", found=self._found({}))
+
+        assert set(actions.values()) == set(self.VOCABULARY.values())
+
+    def test_an_agent_with_a_roster_narrows_further(self, monkeypatch):
+        monkeypatch.setattr(hints, "roster_for",
+                            lambda *a: {"red_recolor", "blue_recolor"})
+        found = self._found({"red_recolor": 8, "red_gravity": 2})
+
+        actions = hints.feasible_from_search(
+            "task", hints.SearchSettings(colours=("red", "blue")),
+            agent="modifier", found=found)
+
+        assert set(actions.values()) == {"submit", "red_recolor"}
+
+    def test_an_agent_with_no_roster_keeps_what_the_search_found(self,
+                                                                monkeypatch):
+        """constructor, generalizer, extrapolator, mixer and mapper have no
+        roster and carry 444 of the 800 labelled tasks between them."""
+        monkeypatch.setattr(hints, "roster_for", lambda *a: set())
+        found = self._found({"red_recolor": 8, "red_gravity": 2})
+
+        actions = hints.feasible_from_search(
+            "task", hints.SearchSettings(colours=("red", "blue")),
+            agent="constructor", found=found)
+
+        assert set(actions.values()) == {"submit", "red_recolor", "red_gravity"}
+
+    def test_a_roster_that_misses_everything_keeps_what_the_search_found(
+            self, monkeypatch):
+        monkeypatch.setattr(hints, "roster_for", lambda *a: {"blue_emission_N"})
+        found = self._found({"red_recolor": 8, "red_gravity": 2})
+
+        actions = hints.feasible_from_search(
+            "task", hints.SearchSettings(colours=("red", "blue")),
+            agent="shifter", found=found)
+
+        assert set(actions.values()) == {"submit", "red_recolor", "red_gravity"}
+
+    def test_an_effective_name_outside_the_vocabulary_is_dropped(self):
+        """The env can only run what its own vocabulary names."""
+        found = self._found({"red_recolor": 8, "not_a_real_action": 9})
+
+        actions = hints.feasible_from_search("task", found=found)
+
+        assert set(actions.values()) == {"submit", "red_recolor"}
+
+    def test_the_roster_of_an_unknown_agent_is_empty_rather_than_raising(self):
+        assert hints.roster_for("no_such_agent", ("red",), ("N",)) == set()
+
+    def test_a_real_roster_generates_names(self):
+        names = hints.roster_for("modifier", ("red",), ("N",))
+
+        assert names
+        assert "submit" not in names

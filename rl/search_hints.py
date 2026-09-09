@@ -711,6 +711,58 @@ def search_task(task, settings=None):
     return merged
 
 
+def roster_for(agent, colours, directions):
+    """Every action name one agent's bases generate, or an empty set.
+
+    Empty for an agent AGENT2ACTIONS has no roster for, which is most of
+    them: the labels in idx2agent.pkl are constructor, generalizer,
+    extrapolator, mixer and mapper as well as the five that have rosters,
+    and those five cover 356 of the 800 labelled tasks. So a caller cannot
+    treat an empty roster as "this agent may do nothing".
+    """
+    names = set()
+    for base in sorted(set(AGENT2ACTIONS.get(agent) or ()) - UNIMPLEMENTED_ACTIONS):
+        if base == "submit":
+            continue
+        generated = define_feasible_actions(
+            [base], list(colours), list(directions), COLOR_DEPENDENT_ACTIONS,
+            DOUBLE_COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS)
+        names |= {n for n in generated.values() if n != "submit"}
+    return names
+
+
+def feasible_from_search(task, settings=None, agent=None, found=None):
+    """The action set to train on, narrowed to what a search could use.
+
+    An env is configured with a vocabulary generated from the task's
+    palette, and that is 137 to 607 actions on the measured tasks - a space
+    the agent explores by sampling. The search has already walked it and
+    knows which actions ever moved the grid: 20 to 135 of them. Training on
+    that subset is the same task over a space two to five times smaller.
+
+    `agent` narrows further, to the actions that agent's bases generate -
+    measured at 9 to 13 once intersected. It is optional and it is a
+    suggestion: an agent with no roster, or one whose roster misses
+    everything the search found, falls back to the search's own set rather
+    than to nothing. Handing ARCGridWorld an empty vocabulary leaves it able
+    to submit and nothing else, which is not a narrower version of the task.
+
+    `found` passes in an already-computed search_task result, since a run
+    that also builds a prompt has paid for one already (see HintCache).
+
+    Returns feasible_actions as ARCGridWorld wants it: {0: 'submit', ...}.
+    """
+    settings = settings or SearchSettings()
+    found = found if found is not None else search_task(task, settings)
+    vocabulary = set(found["actions"].values()) - {"submit"}
+    kept = set(found["effective"]) & vocabulary or vocabulary
+    if agent is not None:
+        colours = settings.colours or output_colours(as_triple(task)[2])
+        narrowed = kept & roster_for(agent, colours, settings.directions)
+        kept = narrowed or kept
+    return {0: "submit", **{i: name for i, name in enumerate(sorted(kept), start=1)}}
+
+
 def hints_for(task, settings=None):
     """The hint block for one task, computed now, or None."""
     settings = settings or SearchSettings()

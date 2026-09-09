@@ -137,8 +137,8 @@ graph TD
   tests -->|45| rl
   tests -->|24| subsymbolic
   tests -->|23| symbolic
+  rl -->|9| symbolic
   tests -->|9| data
-  rl -->|8| symbolic
   scripts -->|7| rl
   rl -->|6| data
   tests -->|5| orchestration
@@ -209,7 +209,7 @@ graph TD
 | `symbolic.findings` | 4 |
 | `symbolic.objects_analysis` | 15 |
 | `symbolic.patterns` | 4 |
-| `symbolic.summaries` | 9 |
+| `symbolic.summaries` | 10 |
 | `symbolic.symbolic_module` | 2 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 6 |
@@ -221,7 +221,7 @@ Packages that import each other:
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`
-- `symbolic` -> `rl` (1) against `rl` -> `symbolic` (8):
+- `symbolic` -> `rl` (1) against `rl` -> `symbolic` (9):
   - `symbolic.summaries imports rl.arc_task`
 - `data` -> `utils` (1) against `utils` -> `data` (1):
   - `data.datasets.ARC.arc_dataset imports utils.utils`

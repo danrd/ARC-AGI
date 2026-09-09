@@ -132,9 +132,9 @@ graph TD
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (47)"]
+  tests["tests (48)"]
   utils["utils (3)"]
-  tests -->|42| rl
+  tests -->|45| rl
   tests -->|24| subsymbolic
   tests -->|23| symbolic
   tests -->|9| data
@@ -181,9 +181,9 @@ graph TD
 | `rl.optimization` | 2 |
 | `rl.plotting` | 1 |
 | `rl.policy` | 2 |
-| `rl.rl_job` | 1 |
-| `rl.rl_module` | 4 |
-| `rl.search_hints` | 5 |
+| `rl.rl_job` | 2 |
+| `rl.rl_module` | 5 |
+| `rl.search_hints` | 7 |
 | `rl.training` | 6 |
 | `rl.utils` | 6 |
 | `scripts.compare_llm_arms` | 0 |

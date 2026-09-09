@@ -579,47 +579,52 @@ def test_a_vec_env_spans_subtasks_with_different_object_counts():
 
 # -- what the default reward asks the agent to do ---------------------------
 #
-# The shipped default used to be reward_approach 3, under which a submit
-# that solved nothing pays 0 and never less, while acting costs -0.01 to
-# -0.03 a step: giving up on the first step is then the best return the
-# reward offers, and PPO finds it. Four of six 30k runs ended submitting on
-# 100% of steps, transform-head entropy 0.007-0.023 out of ~4.0, and the
-# share of steps closing any distance fell from 17-20% to zero. This pins
-# the property rather than the number, so a later change of approach that
-# keeps giving up unprofitable is free to happen.
+# Characterisation, not approval. Under the shipped default a submit that
+# solved nothing pays 0 and never less, while acting costs -0.01 to -0.03 a
+# step on the measured tasks - so giving up on the first step is the best
+# return this reward offers, and PPO finds it: of six 30k runs, four ended
+# submitting on 100% of steps, transform-head entropy 0.007-0.023 out of
+# ~4.0, and the share of steps closing any distance fell from 17-20% to
+# zero. ent_coef does not hold against that.
+#
+# approach 2, which charges for an empty submit and pays partial credit,
+# does stop the collapse - submits to 0.0% of steps, entropy holding at
+# 2.6-2.8 - and was the default briefly for that reason. By the outcome, the
+# fraction of the distance the trained policy closes, it was no better on
+# any of three tasks and worse on two (-1.513 against -1.392; -0.625 against
+# -0.250, held-out -0.750 against 0.000), so it was reverted. These pin what
+# the default actually does, so that replacing it is a decision someone
+# makes rather than a line that drifts.
 
-def test_the_default_reward_makes_giving_up_cost_something(subtask):
+def test_the_default_reward_pays_nothing_for_giving_up(subtask):
+    """And so leaves submitting immediately at least as good as acting,
+    which is the shape of the collapse measured above - not a property to
+    preserve, a property to know about."""
     from data.configs.rl_configs import rl_config
 
     env = make_env(reward_approach=rl_config["reward_approach"])
     env.set_subtask(subtask)
     env.reset()
 
-    achieved_nothing = env._submit_reward(env.base_int)
-
-    assert achieved_nothing < 0, (
-        f"reward_approach {rl_config['reward_approach']} pays "
-        f"{achieved_nothing} for a submit that closed no distance, so "
-        "submitting immediately is at least as good as acting")
+    assert env._submit_reward(env.base_int) == 0
 
 
-def test_the_default_reward_pays_more_the_further_the_agent_got(subtask):
-    """The gradient approach 3 has none of: it pays the same 0 for every
-    submit short of the solved one, so nothing about the reward tells the
-    agent that half way is better than nowhere."""
+def test_the_default_reward_says_nothing_about_getting_part_way(subtask):
+    """Every submit short of the solved one pays the same, so the reward
+    carries no signal that half way beats nowhere. The step channel is
+    where all of the gradient lives."""
     from data.configs.rl_configs import rl_config
 
     env = make_env(reward_approach=rl_config["reward_approach"])
     env.set_subtask(subtask)
     env.reset()
 
-    reached = [env._submit_reward(milestone) for milestone in env.milestones]
+    milestones = list(env.milestones)
+    short_of_solved = [env._submit_reward(m) for m in milestones[:-1]]
 
-    steps_up = [later - earlier for earlier, later in zip(reached, reached[1:])]
-
-    assert all(step > 0 for step in steps_up), (
-        f"every milestone reached should pay more than the one before it, "
-        f"or the reward says nothing about getting further: {reached}")
+    assert len(set(short_of_solved)) == 1, (
+        f"partial results are no longer indistinguishable: {short_of_solved}")
+    assert env._submit_reward(milestones[-1]) > short_of_solved[0]
 
 
 def test_both_config_sources_agree_on_the_reward():

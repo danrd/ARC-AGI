@@ -47,6 +47,10 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
     policy = PPO_config['policy'] if PPO_config['policy'] != 'default' else "MultiInputPolicy"
     policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
                      'action_heads':PPO_config['action_heads'],
+                     # Observations the critic may read and the actor may
+                     # not - see ARCCustomActorCriticPolicy. Empty by
+                     # default, and then the two see the same thing.
+                     'critic_only_keys':PPO_config['critic_only_keys'],
                      'features_extractor_kwargs':{'extr_arch': PPO_config['extr_arch']}}
     # gae_lambda among them: the config has carried a value for it all
     # along and this call dropped it, so every agent ever built here ran on

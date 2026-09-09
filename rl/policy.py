@@ -27,11 +27,16 @@ class ARCCustomNetwork(nn.Module):
         use_sde: bool = False,
         net_arch: dict = {'pi': [64], 'vf': [64]},
         action_heads: int = 1,
+        feature_dim_vf: Optional[int] = None,
     ):
         super().__init__()
         self.action_dims = action_dims
         self.action_heads = action_heads
         self.n_action_dims = len(action_dims)
+        # The critic can be fed a wider observation than the actor - see
+        # ARCCustomActorCriticPolicy's critic_only_keys - and then the two
+        # halves start from different widths.
+        feature_dim_vf = feature_dim if feature_dim_vf is None else feature_dim_vf
 
         # Get network architecture
         policy = net_arch['pi']
@@ -46,7 +51,7 @@ class ARCCustomNetwork(nn.Module):
             shared_net.append(nn.ReLU())
 
         # Value network
-        value_net = [nn.Linear(feature_dim, value[0]), nn.ReLU()]
+        value_net = [nn.Linear(feature_dim_vf, value[0]), nn.ReLU()]
         for i in range(len(value)-1):
             value_net.append(nn.Linear(value[i], value[i+1]))
             value_net.append(nn.ReLU())
@@ -105,6 +110,22 @@ class ARCCustomNetwork(nn.Module):
         return self.value_net(features)
 
 class ARCCustomActorCriticPolicy(ActorCriticPolicy):
+    """Actor and critic over ARCGridWorld's dict observation.
+
+    `critic_only_keys` names observations the critic may read and the actor
+    may not. The critic runs only during training - it exists to turn
+    returns into advantages, and nothing calls it at inference - so it is
+    free to read what will not exist at test time, while the actor, which is
+    all that runs on a held-out pair, never sees it. 'target' is the case
+    this was built for: the wanted output is known for every training
+    example and unknown for the test one.
+
+    stable-baselines3's own share_features_extractor=False does not do this.
+    It builds two extractors over the *same* observation (see
+    ActorCriticPolicy.extract_features), so both halves still see every key;
+    routing different keys to each is what the code below adds.
+    """
+
     def __init__(
         self,
         observation_space: spaces.Space,
@@ -113,11 +134,16 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         features_extractor_class=ARCCombinedExtractor,
         features_extractor_kwargs: Optional[Dict] = None,
         action_heads: int = 1,
+        critic_only_keys: Tuple[str, ...] = (),
         *args,
         **kwargs,
     ):
         # Save action_heads before passing to parent class
         self.action_heads = action_heads
+        self.critic_only_keys = tuple(critic_only_keys)
+        if self.critic_only_keys:
+            # Two extractors, or there is nothing to route between.
+            kwargs["share_features_extractor"] = False
 
         # Disable orthogonal initialization if needed
         kwargs["ortho_init"] = kwargs.get("ortho_init", True)
@@ -132,13 +158,36 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             **kwargs,
         )
 
+    def _actor_observation_space(self) -> spaces.Space:
+        """What the actor is allowed to see."""
+        if not self.critic_only_keys:
+            return self.observation_space
+        return spaces.Dict({key: space
+                            for key, space in self.observation_space.spaces.items()
+                            if key not in self.critic_only_keys})
+
+    def _actor_observation(self, obs):
+        if not self.critic_only_keys:
+            return obs
+        return {key: value for key, value in obs.items()
+                if key not in self.critic_only_keys}
+
     def _build_mlp_extractor(self) -> None:
+        # Runs inside ActorCriticPolicy._build, after both extractors exist
+        # and before value_net and the optimiser - so replacing the actor's
+        # extractor here still leaves it in self.parameters().
+        if self.critic_only_keys:
+            self.pi_features_extractor = self.features_extractor_class(
+                self._actor_observation_space(),
+                **(self.features_extractor_kwargs or {}))
+            self.features_dim = self.pi_features_extractor.features_dim
         action_dims = self.action_space.nvec.tolist()
         self.mlp_extractor = ARCCustomNetwork(
             self.features_dim,
             action_dims=action_dims,
             net_arch=self.net_arch,
-            action_heads=self.action_heads
+            action_heads=self.action_heads,
+            feature_dim_vf=self.vf_features_extractor.features_dim,
         )
 
     def _get_action_dist_from_latent(self, latent_pi: List[torch.Tensor]):
@@ -149,11 +198,21 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         distribution.proba_distribution(logits)
         return distribution
 
-    def extract_features(self, obs) -> torch.Tensor:
+    def extract_features(self, obs, features_extractor=None):
         """Preprocess the observation if needed and extract features.
+
+        Returns one tensor when the extractor is shared and (actor, critic)
+        when it is not, matching ActorCriticPolicy - forward() and
+        evaluate_actions() below unpack accordingly. The actor is handed an
+        observation with critic_only_keys removed rather than one it is
+        merely expected to ignore, so the split holds whatever an extractor
+        does with keys it was not built for.
         """
-        # preprocessed_obs = preprocess_obs(obs, self.observation_space, normalize_images=self.normalize_images)
-        return self.features_extractor(obs)
+        if self.share_features_extractor:
+            extractor = features_extractor or self.features_extractor
+            return extractor(obs)
+        return (self.pi_features_extractor(self._actor_observation(obs)),
+                self.vf_features_extractor(obs))
 
     def forward(self, obs, deterministic: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass through both the actor and critic networks.

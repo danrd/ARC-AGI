@@ -18,18 +18,33 @@ rl_config = {
     'padding': False,
     'input_pattern': 'start',
     'milestones_rewards': [1,2,3,4],
-    # 2, not 3. Under 3 a submit that solved nothing pays 0 and never less,
-    # while acting pays -0.01 to -0.03 a step on the measured tasks - so
-    # giving up on the first step is the best return the reward offers, and
-    # PPO finds it: four of six 30k runs ended submitting on 100% of steps,
+    # 3 pays 0 for a submit that solved nothing, and never less, while
+    # acting pays -0.01 to -0.03 a step on the measured tasks: giving up on
+    # the first step is the best return this reward offers, and PPO finds
+    # it. Of six 30k runs, four ended submitting on 100% of steps,
     # transform-head entropy 0.007 to 0.023 out of ~4.0, and the share of
-    # steps that closed any distance fell from 17-20% to zero. ent_coef does
-    # not hold against that. Under 2 the same submit costs, and partial
-    # credit for the milestones reached gives the gradient 3 has none of: on
-    # the same action set, same process, same seed, submits went to 0.0% of
-    # steps and entropy stayed at 2.6-2.8. That buys back acting, not
-    # learning - the share of steps closing distance still decays.
-    'reward_approach': 2,
+    # steps closing any distance fell from 17-20% to zero. ent_coef does not
+    # hold against a reward that asks for this.
+    #
+    # 2 was tried for exactly that reason - it charges for a submit that
+    # achieved nothing and pays partial credit for milestones reached - and
+    # it does stop the collapse: on one action set, one process, one seed,
+    # submits went to 0.0% of steps and entropy held at 2.6-2.8 against
+    # 0.16. But by the outcome, the fraction of the distance to the target
+    # the trained policy actually closes, it was no better on any of three
+    # tasks and worse on two: -1.513 against -1.392, and -0.625 against
+    # -0.250 with the held-out pair at -0.750 against 0.000. The agent stops
+    # giving up and spends the horizon making the grid worse; 0 was better
+    # than that. Not giving up is a proxy, and it went the other way from
+    # the thing it stands for.
+    #
+    # So 3 stays, not because it is good - most closed fractions under it
+    # are negative too - but because the one alternative measured against it
+    # lost. Whatever replaces it should be judged on closed distance, and on
+    # more than one seed: the same script on the same tasks moved 178fcbfb
+    # from -0.187 to 0.000 between two runs, because search_task is bounded
+    # by wall clock and handed the agent 39 actions once and 40 the next.
+    'reward_approach': 3,
     'pad_val': 10,
     'feasible_actions': {0:'submit'},
     'repr_level': 1,

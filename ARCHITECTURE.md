@@ -136,7 +136,7 @@ graph TD
   utils["utils (3)"]
   tests -->|45| rl
   tests -->|24| subsymbolic
-  tests -->|23| symbolic
+  tests -->|24| symbolic
   rl -->|9| symbolic
   tests -->|9| data
   scripts -->|7| rl
@@ -207,7 +207,7 @@ graph TD
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |
-| `symbolic.objects_analysis` | 15 |
+| `symbolic.objects_analysis` | 16 |
 | `symbolic.patterns` | 4 |
 | `symbolic.summaries` | 10 |
 | `symbolic.symbolic_module` | 2 |

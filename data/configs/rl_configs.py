@@ -86,6 +86,14 @@ def load_PPO_config():
     # "this architecture" rather than "this network".
     'extr_arch': lin,
     'action_heads': 3,
+    # Observations the critic reads and the actor does not. The critic runs
+    # only during training - it turns returns into advantages and nothing
+    # calls it at inference - so it may read what will not exist at test
+    # time, while the actor, which is all that runs on a held-out pair,
+    # never sees it. ('target',) alongside 'target' in
+    # observation_space_elements is the asymmetric case; empty means both
+    # halves see the same observation.
+    'critic_only_keys': (),
     }
 
 def lin(act_func=nn.ReLU()):

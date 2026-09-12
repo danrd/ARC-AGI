@@ -229,27 +229,20 @@ def graph_inputs(object_embeddings, relation_embeddings):
 class ARCGNNExtractor(BaseFeaturesExtractor):
     """Feature extractor using Graph Neural Networks for object-relation processing."""
 
-    def __init__(self, observation_space: spaces.Dict, gnn_output_dim=256, grid_cnn_features=128):
+    def __init__(self, observation_space: spaces.Dict, extr_arch=None,
+                 gnn_output_dim=256, grid_cnn_features=128):
         super().__init__(observation_space, features_dim=1)
+        needs_relations(observation_space, type(self).__name__)
 
         self.gnn_output_dim = gnn_output_dim
         self.grid_cnn_features = grid_cnn_features
 
-        # Grid CNN extractor
-        self.grid_extractor = nn.Sequential(
-                              nn.Conv2d(in_channels=1, out_channels=8, kernel_size=3, stride=1, padding=1),
-                              nn.ReLU(),
-                              nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
-                              nn.ReLU(),
-                              nn.AdaptiveAvgPool2d((1, 1)),  # Output shape: [batch, 16, 1, 1]
-                              nn.Flatten()                   # Output shape: [batch, 16]
-                            )
-
-        # Calculate grid CNN output size
-        with torch.no_grad():
-            sample_grid = torch.randn(1, 1, 30, 30)  # Assuming max 30x30 grid
-            grid_output = self.grid_extractor(sample_grid)
-            self.grid_cnn_output_size = grid_output.shape[1]
+        # The same grid encoder the other extractors get, from the same
+        # config key: this took no extr_arch at all, so create_agent - which
+        # always passes one - could not build this class, and no run ever
+        # reached its first step.
+        self.grid_extractor = build_grid_arch(extr_arch)
+        self.grid_cnn_output_size = grid_arch_width(self.grid_extractor)
 
         # Grid feature projection
         self.grid_projection = nn.Sequential(
@@ -283,8 +276,12 @@ class ARCGNNExtractor(BaseFeaturesExtractor):
         batch_size = observations['grid'].shape[0]
 
         # Process grid
+        # one_hot_grid, not the raw grid: a colour is a name, not a
+        # quantity - see one_hot_grid. Cropped to the true grid first, since
+        # the pad value is not a colour.
         grid_features = unpadded_grid_features(self.grid_extractor, observations['grid'],
-                                               observations.get('grid_shape'))
+                                               observations.get('grid_shape'),
+                                               one_hot_grid)
         grid_features = self.grid_projection(grid_features)
 
         # Process object-relation graphs
@@ -477,25 +474,15 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
     """Enhanced separate processing approach with improved object and relation handling
     """
 
-    def __init__(self, observation_space: spaces.Dict,
+    def __init__(self, observation_space: spaces.Dict, extr_arch=None,
                  object_output_dim=64, relation_output_dim=64, grid_cnn_features=128):
         super().__init__(observation_space, features_dim=1)
+        needs_relations(observation_space, type(self).__name__)
 
-        # Grid CNN (reuse from original)
-        self.grid_extractor = nn.Sequential(
-                              nn.Conv2d(in_channels=1, out_channels=8, kernel_size=3, stride=1, padding=1),
-                              nn.ReLU(),
-                              nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
-                              nn.ReLU(),
-                              nn.AdaptiveAvgPool2d((1, 1)),  # Output shape: [batch, 16, 1, 1]
-                              nn.Flatten()                   # Output shape: [batch, 16]
-                            )
-
-        # Calculate grid CNN output size
-        with torch.no_grad():
-            sample_grid = torch.randn(1, 1, 30, 30)
-            grid_output = self.grid_extractor(sample_grid)
-            self.grid_cnn_output_size = grid_output.shape[1]
+        # The same grid encoder the other extractors get, from the same
+        # config key - see ARCGNNExtractor.
+        self.grid_extractor = build_grid_arch(extr_arch)
+        self.grid_cnn_output_size = grid_arch_width(self.grid_extractor)
 
         self.grid_projection = nn.Sequential(
             nn.Linear(self.grid_cnn_output_size, grid_cnn_features),
@@ -544,8 +531,12 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
         batch_size = observations['grid'].shape[0]
 
         # Process grid
+        # one_hot_grid, not the raw grid: a colour is a name, not a
+        # quantity - see one_hot_grid. Cropped to the true grid first, since
+        # the pad value is not a colour.
         grid_features = unpadded_grid_features(self.grid_extractor, observations['grid'],
-                                               observations.get('grid_shape'))
+                                               observations.get('grid_shape'),
+                                               one_hot_grid)
         grid_features = self.grid_projection(grid_features)
 
         # Process objects
@@ -594,6 +585,52 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
 GRID_KEYS = ('grid', 'input_pattern', 'target')
 
 
+def one_hot_grid(grid):
+    """A grid of colour numbers as one plane per colour.
+
+    Colours are names, not quantities: fed as a single channel, colour 9 is
+    nine times colour 1 to a convolution, and the difference between two
+    colours becomes a distance. ARCCombinedExtractor has always one-hot
+    encoded; ARCGNNExtractor and ARCSeparateExtractor passed the raw grid
+    through a one-channel convolution instead, which is a different model of
+    what a colour is - and made the three incomparable as architectures.
+    """
+    planes = torch.nn.functional.one_hot(grid.to(torch.int64), num_classes=10)
+    return planes.float().permute(0, 3, 1, 2)
+
+
+def needs_relations(observation_space, name):
+    """Refuse an observation without relations, and say what to set.
+
+    ARCGNNExtractor builds its graph out of them and ARCSeparateExtractor
+    processes them in its own branch, so neither can run on an observation
+    that carries objects alone - which is what rl_config ships
+    (observation_space_elements = ["objects_emb"]). Without this the failure
+    is a KeyError from inside forward, naming a dict key rather than the
+    setting that decides it.
+    """
+    if "relations_emb" in getattr(observation_space, "spaces", {}):
+        return
+    raise ValueError(
+        f"{name} reads relation embeddings and this observation has none. "
+        "Add 'relations_emb' to rl_config's observation_space_elements, or "
+        "use ARCCombinedExtractor, which works without them.")
+
+
+def build_grid_arch(extr_arch=None):
+    """One grid encoder, from a module to copy, a factory, or the default.
+
+    `extr_arch` describes an architecture; a module handed over is copied so
+    that two extractors built from one config do not share weights - see
+    ARCCombinedExtractor.
+    """
+    if callable(extr_arch) and not isinstance(extr_arch, nn.Module):
+        return extr_arch()
+    if extr_arch is not None:
+        return copy.deepcopy(extr_arch)
+    return default_grid_arch()
+
+
 def grid_arch_width(arch):
     """How many features a grid encoder emits, by asking it.
 
@@ -635,12 +672,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim=1)
         extractors = {}
         total_concat_size = 0
-        if callable(extr_arch) and not isinstance(extr_arch, nn.Module):
-            self.build_grid_arch = extr_arch
-        elif extr_arch is not None:
-            self.build_grid_arch = lambda: copy.deepcopy(extr_arch)
-        else:
-            self.build_grid_arch = default_grid_arch
+        self.build_grid_arch = lambda: build_grid_arch(extr_arch)
         self.extr_arch = self.build_grid_arch()
         for key, subspace in observation_space.spaces.items():
             if key == "objects_emb":

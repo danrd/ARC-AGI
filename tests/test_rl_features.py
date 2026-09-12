@@ -283,3 +283,109 @@ def test_a_second_grid_is_read_rather_than_ignored():
         changed = extractor({"grid": grid, "input_pattern": other})
 
     assert not torch.allclose(unchanged, changed)
+
+
+# ---------------------------------------------------------------------------
+# the three extractors are buildable, and comparable
+# ---------------------------------------------------------------------------
+#
+# rl.training.create_agent always passes features_extractor_kwargs={'extr_arch':
+# ...}, and neither ARCGNNExtractor nor ARCSeparateExtractor took such an
+# argument - so both raised TypeError in the constructor and no run through
+# rl.training ever reached its first step with either. They also encoded the
+# grid differently from ARCCombinedExtractor: a single channel of colour
+# numbers, where colour 9 is nine times colour 1 to a convolution and the
+# difference between two colours is a distance. Sweeping architectures that
+# disagree about what a colour is would not compare what the names suggest.
+
+def _relation_space(slots=4):
+    from symbolic.summaries import RELATION_DIM
+
+    return spaces.Dict({
+        "grid": spaces.Box(low=0, high=10, shape=(6, 6), dtype=np.int64),
+        "objects_emb": spaces.Box(low=0, high=1, shape=(slots, OBJECT_DIM),
+                                  dtype=np.float32),
+        "relations_emb": spaces.Box(
+            low=-np.inf, high=np.inf,
+            shape=(slots, (slots - 1) * RELATION_DIM), dtype=np.float32),
+    })
+
+
+def _extractor_classes():
+    from rl.features import (ARCCombinedExtractor, ARCGNNExtractor,
+                             ARCSeparateExtractor)
+
+    return [ARCCombinedExtractor, ARCGNNExtractor, ARCSeparateExtractor]
+
+
+@pytest.mark.parametrize("extractor_class", _extractor_classes())
+def test_every_extractor_accepts_the_architecture_the_config_names(
+        extractor_class):
+    from rl.features import default_grid_arch
+
+    extractor = extractor_class(_relation_space(), extr_arch=default_grid_arch())
+
+    assert extractor.features_dim > 0
+
+
+@pytest.mark.parametrize("extractor_class", _extractor_classes())
+def test_every_extractor_encodes_a_colour_as_a_name_not_a_quantity(
+        extractor_class):
+    """Swapping two colours should not move features by an amount that
+    depends on how far apart their numbers are: with one-hot planes the two
+    swaps below are the same permutation of channels, and with a single
+    channel of colour numbers they are not."""
+    import torch
+    from symbolic.summaries import RELATION_DIM
+
+    torch.manual_seed(0)
+    extractor = extractor_class(_relation_space()).eval()
+
+    def features(first, second):
+        grid = torch.zeros((1, 6, 6), dtype=torch.int64)
+        grid[0, :3] = first
+        grid[0, 3:] = second
+        with torch.no_grad():
+            return extractor({
+                "grid": grid,
+                "objects_emb": torch.zeros((1, 4, OBJECT_DIM)),
+                "relations_emb": torch.zeros((1, 4, 3 * RELATION_DIM)),
+            })
+
+    near = features(1, 2)
+    far = features(1, 9)
+
+    assert not torch.allclose(near, far), "the grid is not read at all"
+    swapped_near = features(2, 1)
+    swapped_far = features(9, 1)
+    assert (torch.allclose(near, swapped_near)
+            == torch.allclose(far, swapped_far)), \
+        "how much a colour swap moves the features depends on the numbers"
+
+
+@pytest.mark.parametrize("extractor_class", _extractor_classes()[1:])
+def test_an_observation_without_relations_says_which_setting_to_change(
+        extractor_class):
+    """rl_config ships observation_space_elements = ["objects_emb"], and
+    both of these read relations - without this the failure is a KeyError
+    from inside forward, naming a dict key rather than the setting."""
+    space = spaces.Dict({
+        "grid": spaces.Box(low=0, high=10, shape=(6, 6), dtype=np.int64),
+        "objects_emb": spaces.Box(low=0, high=1, shape=(4, OBJECT_DIM),
+                                  dtype=np.float32),
+    })
+
+    with pytest.raises(ValueError, match="observation_space_elements"):
+        extractor_class(space)
+
+
+def test_the_combined_extractor_still_runs_without_relations():
+    """It is the one that does not need them, and the shipped config does
+    not provide them."""
+    space = spaces.Dict({
+        "grid": spaces.Box(low=0, high=10, shape=(6, 6), dtype=np.int64),
+        "objects_emb": spaces.Box(low=0, high=1, shape=(4, OBJECT_DIM),
+                                  dtype=np.float32),
+    })
+
+    assert ARCCombinedExtractor(space).features_dim > 0

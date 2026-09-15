@@ -495,6 +495,14 @@ class EnvironmentSimulator:
         #: replay_solution has to confirm one against the real env before
         #: anything treats it as an answer.
         self.solutions = []
+        #: The real actions already applied to the env the tree is rooted
+        #: at. A search runs from wherever the rollout has got to, so a
+        #: node's action_path() starts there and not at reset - and
+        #: replay_solution replays from reset. Without this prefix every
+        #: solution found after the first real step is recorded with its
+        #: beginning missing and fails to replay. Measured on ea786f4a: 25
+        #: solutions recorded, 8 verified, 0 confirmed.
+        self.prefix = []
 
     def record_solution(self, actions, keep=8):
         """One sequence that reached the target, from wherever it was found.
@@ -503,8 +511,12 @@ class EnvironmentSimulator:
         turns up again every time the tree revisits the branch holding it,
         and a long sequence with the answer somewhere in the middle is a
         worse trace to learn from than the short one that stops there.
+
+        Recorded from the env's reset state, which is where replay_solution
+        starts: `prefix` is what the rollout has already applied, and
+        `actions` is the path from there.
         """
-        candidate = [list(a) for a in actions]
+        candidate = [list(a) for a in self.prefix] + [list(a) for a in actions]
         key = tuple(tuple(a) for a in candidate)
         if any(key == tuple(tuple(a) for a in known) for known in self.solutions):
             return
@@ -778,7 +790,11 @@ def collect_mcts_rollouts(env,
         reached = []
 
         while not (done or truncated) and step_count < max_episode_len:
-            # MCTS explores on a snapshot of the current real state.
+            # MCTS explores on a snapshot of the current real state, so a
+            # solution it finds is a path from here - see
+            # EnvironmentSimulator.prefix.
+            mcts.env_simulator.prefix = [list(np.asarray(a).reshape(-1))
+                                         for a in rollout['actions']]
             root = mcts.search(env_state_snapshot(env))
             action = mcts.get_best_action(root)
 

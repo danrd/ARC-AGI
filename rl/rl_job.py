@@ -105,10 +105,20 @@ def object_slots(task: Any, repr_level: int) -> int:
     test_subtask = getattr(task, "test_subtask", None)
     if test_subtask is not None:
         grids.append(test_subtask.train_inp)
-    return max(len(GridSummary(grid=grid, shape=grid.shape,
+    held = max(len(GridSummary(grid=grid, shape=grid.shape,
                                levels=[repr_level])
                    .repr_levels[repr_level].objects)
                for grid in grids)
+    # At least two, because both the action space and the relation block are
+    # defined over pairs. An action is (transform, object, object), and the
+    # relations an observation carries are shaped
+    # (slots, (slots - 1) * RELATION_DIM) - which at one slot is a block of
+    # width zero, and every reader of it fails: measured over the arm sweep,
+    # all eight tasks whose grids hold a single object crashed in all three
+    # arms that carry relations, and only those. The spare slot names no
+    # object, so an action reaching for it does nothing, exactly as a slot
+    # past the objects always has.
+    return max(2, held)
 
 
 def observation_shape(task: Any):

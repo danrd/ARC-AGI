@@ -893,3 +893,74 @@ class TestTracesAreCutAtTheirPeak:
         rollout = self._collect([2, 5, 3, 1], monkeypatch)
 
         assert rollout["total_reward"] == sum(rollout["rewards"])
+
+
+class TestASolutionIsRecordedFromWhereItCanBeReplayed:
+    """A search runs from wherever the rollout has got to: mcts_rollouts
+    steps the real env and re-roots the tree each time, so a node's
+    action_path() starts at that state and not at reset. record_solution
+    stored exactly that path, and replay_solution replays from env.reset() -
+    so every solution found after the first real step was recorded with its
+    beginning missing and could not replay.
+
+    Measured on ea786f4a before the fix: 25 solutions recorded, 8 taken
+    through the replay, 0 confirmed. The search was solving the task and
+    throwing the answer away.
+    """
+
+    @staticmethod
+    def _simulator(env):
+        return mcts.EnvironmentSimulator(env)
+
+    def test_a_simulator_starts_with_no_actions_behind_it(self, env):
+        assert self._simulator(env).prefix == []
+
+    def test_what_the_rollout_already_applied_is_part_of_the_solution(self, env):
+        simulator = self._simulator(env)
+        simulator.prefix = [[1, 0, 0], [1, 0, 0]]
+
+        simulator.record_solution([[1, 2, 3]])
+
+        assert simulator.solutions == [[[1, 0, 0], [1, 0, 0], [1, 2, 3]]]
+
+    def test_with_nothing_applied_the_path_is_the_solution(self, env):
+        """The first real step is the case that used to work, and it has to
+        keep working."""
+        simulator = self._simulator(env)
+
+        simulator.record_solution([[1, 2, 3]])
+
+        assert simulator.solutions == [[[1, 2, 3]]]
+
+    def test_two_paths_that_differ_only_in_their_prefix_are_both_kept(self, env):
+        """They are different sequences from reset, and de-duplication runs
+        on the recorded candidate - without the prefix they collapse into
+        one and a real solution is dropped as a duplicate."""
+        simulator = self._simulator(env)
+        simulator.prefix = [[1, 0, 0]]
+        simulator.record_solution([[2, 0, 0]])
+        simulator.prefix = [[3, 0, 0]]
+        simulator.record_solution([[2, 0, 0]])
+
+        assert len(simulator.solutions) == 2
+
+    def test_the_rollout_keeps_the_prefix_current(self, env, monkeypatch):
+        """Structural: whatever mcts_rollouts has applied to the env must be
+        on the simulator before the next search runs, or the prefix is stale
+        and the recorded solution is wrong in a new way."""
+        seen = []
+        original = mcts.MCTS.search
+
+        def watching(self, state):
+            seen.append([list(a) for a in self.env_simulator.prefix])
+            return original(self, state)
+
+        monkeypatch.setattr(mcts.MCTS, "search", watching)
+        with resource_budget():
+            mcts.collect_mcts_rollouts(env, n_rollouts=1, mcts_iterations=2,
+                                       max_episode_len=3)
+
+        assert seen, "no search ran"
+        assert seen[0] == []
+        assert all(len(later) == len(earlier) + 1
+                   for earlier, later in zip(seen, seen[1:])), seen

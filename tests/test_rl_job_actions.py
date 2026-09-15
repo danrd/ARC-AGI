@@ -165,13 +165,15 @@ class TestSizingTheObjectSlots:
         return task
 
     def test_the_slots_are_the_objects_the_task_holds(self):
+        """Above the floor of two - see
+        TestATaskWhoseGridsHoldOneObject, which is why there is one."""
         from rl.rl_job import object_slots
 
-        one = [[0, 0, 0], [0, 5, 0], [0, 0, 0]]
         two = [[5, 0, 5], [0, 0, 0], [0, 0, 0]]
+        three = [[5, 0, 5], [0, 0, 0], [5, 0, 0]]
 
-        assert object_slots(self._task(one, one), 1) == 1
-        assert object_slots(self._task(one, two), 1) == 2
+        assert object_slots(self._task(two, two), 1) == 2
+        assert object_slots(self._task(two, three), 1) == 3
 
     def test_the_held_out_grid_counts_too(self):
         """One agent is scored on it, so a slot it needs and the training
@@ -191,13 +193,13 @@ class TestSizingTheObjectSlots:
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(hints, "feasible_from_search",
                             lambda *a, **k: {0: "submit", 1: "x"})
-        one = [[0, 0, 0], [0, 5, 0], [0, 0, 0]]
+        four = [[5, 0, 5], [0, 0, 0], [5, 0, 5]]
         try:
-            config = narrowed_for_task(self._task(one, one), CONFIG)
+            config = narrowed_for_task(self._task(four, four), CONFIG)
         finally:
             monkeypatch.undo()
 
-        assert config["max_objects"] == 1
+        assert config["max_objects"] == 4
 
 
 class TestSizingTheObservation:
@@ -259,3 +261,83 @@ class TestSizingTheObservation:
 
         assert config["observation_grid_shape"] == (12, 11)
         assert config["feasible_actions"] == {0: "submit"}
+
+
+class TestATaskWhoseGridsHoldOneObject:
+    """An action is (transform, object, object) and the relations an
+    observation carries are shaped (slots, (slots - 1) * RELATION_DIM): at
+    one slot that block has width zero, and everything that reads it fails.
+
+    Measured over the arm sweep: all eight tasks whose grids hold a single
+    object crashed in all three arms carrying relations - ValueError
+    "cannot reshape array of size 0 into shape (1,0)" for the combined and
+    GNN extractors, RuntimeError from index_select for the separate one -
+    and no task with two or more objects crashed in any arm.
+    """
+
+    @staticmethod
+    def _one_object_task():
+        import numpy as np
+
+        class _Sub:
+            def __init__(self, grid):
+                self.train_inp = np.array(grid)
+                self.train_inp_shape = self.train_inp.shape
+
+        class _T:
+            pass
+
+        lone = [[0, 0, 0], [0, 5, 0], [0, 0, 0]]
+        task = _T()
+        task.subtasks = [_Sub(lone), _Sub(lone)]
+        task.test_subtask = _Sub(lone)
+        return task
+
+    def test_the_slots_never_fall_below_a_pair(self):
+        from rl.rl_job import object_slots
+
+        assert object_slots(self._one_object_task(), 1) == 2
+
+    def test_the_relation_block_is_not_empty(self, monkeypatch):
+        """The property the floor exists for, checked against the env that
+        declares the block rather than against the number."""
+        import rl.search_hints as hints
+        from rl.arc_task import ARCSubtask
+        from rl.rl_job import narrowed_for_task
+        from rl.training import create_ARC_env
+        import numpy as np
+
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: {0: "submit", 1: "black_recolor"})
+        task = self._one_object_task()
+        config = narrowed_for_task(task, CONFIG)
+        subtask = ARCSubtask("lone_0", task.subtasks[0].train_inp,
+                             np.array([[5, 5, 5], [5, 0, 5], [5, 5, 5]]))
+
+        env = create_ARC_env(
+            subtask, max_episode_len=5, feasible_actions={0: "submit"},
+            observation_space_elements=["objects_emb", "relations_emb"],
+            max_objects=config["max_objects"])
+        env.reset()
+
+        width = env.observation_space["relations_emb"].shape[1]
+        assert width > 0, "a zero-width relation block is what broke"
+
+    def test_a_task_with_more_objects_is_untouched(self):
+        from rl.rl_job import object_slots
+        import numpy as np
+
+        class _Sub:
+            def __init__(self, grid):
+                self.train_inp = np.array(grid)
+                self.train_inp_shape = self.train_inp.shape
+
+        class _T:
+            pass
+
+        task = _T()
+        three = [[5, 0, 5], [0, 0, 0], [5, 0, 0]]
+        task.subtasks = [_Sub(three)]
+        task.test_subtask = _Sub(three)
+
+        assert object_slots(task, 1) == 3

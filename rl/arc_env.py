@@ -144,12 +144,24 @@ class ARCGridWorld(gymnasium.Env):
         # correction went the wrong way from the guess that preceded it -
         # the same probe on 045e512c went from 66 live triples to 340.
         #
-        # Kept rank 3 rather than collapsed to Discrete so that everything
-        # reading this space - ARCCustomNetwork's three heads, World.
-        # parse_action, rl.mcts's enumeration - keeps working unchanged; the
-        # second and third entries are single-choice and carry no gradient.
-        # A real move to Discrete is a larger change and this is the shape
-        # that lets the question be measured before it is made.
+        # Rank 3 is kept so that everything reading this space - World.
+        # parse_action, rl.mcts's enumeration, the buffer shapes - keeps
+        # working unchanged, but that is the shape only, not the structure.
+        # A whitelist is Discrete in everything but spelling: [N, 1, 1]
+        # gives ARCCustomNetwork one head of N logits and two of one, where
+        # the full space gives it three real heads. On 22eb0ac0 that is 5011
+        # logits in one categorical against 64 + 10 + 10 = 84 across three -
+        # a different optimisation problem, not a narrower one, and the
+        # measured cost is large: the live-only whitelist scored -4.5 on the
+        # held-out pair there against -0.125 for the full space. On a small
+        # task (dc433765: 25 against 14 + 2 + 2) the two are comparable and
+        # the whitelist was worth +0.5 on the same measure.
+        #
+        # So this is an instrument for measuring what narrowing is worth on
+        # small spaces, and evidence against moving the shipped space to
+        # Discrete on large ones. Narrowing a large space wants a policy
+        # that stays factored - conditional heads, where the object head
+        # reads the transform the first head chose.
         self.action_whitelist = ([tuple(int(i) for i in triple)
                                   for triple in action_whitelist]
                                  if action_whitelist is not None else None)

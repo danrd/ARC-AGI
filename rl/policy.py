@@ -6,6 +6,51 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from gymnasium import spaces
 from rl.features import ARCCombinedExtractor, ARCGNNExtractor, ARCSeparateExtractor
 
+class PointerHead(nn.Module):
+    """Logits over object slots, each scored from that slot's own row.
+
+    The head it replaces is nn.Linear(latent, max_objects) over the shared
+    latent, and the shared latent comes from a mean over the objects. A mean
+    is permutation invariant, so the logits are too: swapping the contents
+    of two slots leaves every one of them unchanged, measured at 6.6e-07
+    against a feature scale of 0.27 where replacing the objects outright
+    moves the features by 0.427. The only thing distinguishing slot i from
+    slot j there is the learned row W[i], a constant of the network rather
+    than a function of the observation - so the policy can learn a prior
+    over slot numbers and nothing else, and a slot number does not mean the
+    same thing on the next grid.
+
+    Scoring each slot from its own row makes the logits equivariant
+    instead: permute the objects and the logits permute with them. "Act on
+    the largest" becomes a score monotone in a field the row already
+    carries, which is one layer, rather than something no arrangement of
+    weights can express.
+
+    Dot-product scoring, in the style of attention and of the pointer
+    networks it is named after (Vinyals, Fortunato & Jaitly, 2015), which
+    read out a distribution over input positions rather than over a fixed
+    vocabulary.
+    """
+
+    def __init__(self, context_dim: int, object_dim: int, hidden: int = 64):
+        super().__init__()
+        self.query = nn.Linear(context_dim, hidden)
+        self.key = nn.Linear(object_dim, hidden)
+        self.scale = hidden ** 0.5
+
+    def forward(self, context: torch.Tensor, rows: torch.Tensor,
+                mask: torch.Tensor) -> torch.Tensor:
+        query = self.query(context).unsqueeze(1)
+        keys = self.key(rows)
+        logits = (query * keys).sum(dim=-1) / self.scale
+        # A large finite penalty rather than -inf: a row whose every slot is
+        # masked would make softmax(-inf, ...) NaN and take the whole batch
+        # with it, which is the trap ObjectSetProcessor documents on its own
+        # attention mask. object_slots() floors the count at two so it
+        # should not arise, and should-not-arise is what NaN waits for.
+        return logits.masked_fill(~mask.bool(), -1e9)
+
+
 class ARCCustomNetwork(nn.Module):
     """Custom network for policy and value function.
 
@@ -28,8 +73,19 @@ class ARCCustomNetwork(nn.Module):
         net_arch: dict = {'pi': [64], 'vf': [64]},
         action_heads: int = 1,
         feature_dim_vf: Optional[int] = None,
+        pointer_slots: Optional[int] = None,
+        pointer_dim: Optional[int] = None,
     ):
         super().__init__()
+        #: When the features carry per-object rows (see
+        #: ARCCombinedExtractor.pointer_tail), the object heads score each
+        #: slot from its own row. Without them they stay as they were.
+        self.pointer_slots = pointer_slots
+        self.pointer_dim = pointer_dim
+        #: How much of the feature vector is the pointer tail. Everything
+        #: before it is what the shared and value networks read.
+        self.pointer_width = (0 if pointer_slots is None
+                              else pointer_slots * (pointer_dim + 1))
         self.action_dims = action_dims
         self.action_heads = action_heads
         self.n_action_dims = len(action_dims)
@@ -37,6 +93,16 @@ class ARCCustomNetwork(nn.Module):
         # ARCCustomActorCriticPolicy's critic_only_keys - and then the two
         # halves start from different widths.
         feature_dim_vf = feature_dim if feature_dim_vf is None else feature_dim_vf
+        # The tail is read by the pointer heads and by nothing else. Left in
+        # the shared network's input it would make the context - and so the
+        # query - depend on which slot holds which object, and the logits
+        # would stop being an exact permutation of each other when the
+        # objects are permuted: measured that way first, swapping two slots
+        # moved every logit rather than swapping two of them. The value is a
+        # property of the state and not of the ordering either, so the
+        # critic drops it as well.
+        feature_dim = feature_dim - self.pointer_width
+        feature_dim_vf = feature_dim_vf - self.pointer_width
 
         # Get network architecture
         policy = net_arch['pi']
@@ -86,8 +152,19 @@ class ARCCustomNetwork(nn.Module):
                     f"action_heads=3 means one head per dimension of a "
                     f"three-dimensional action space (transform, object, "
                     f"object); this space has {self.n_action_dims}")
-            for dim in action_dims:
-                self.policy_nets.append(nn.Linear(self.latent_dim_pi, dim))
+            self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
+            for dim in action_dims[1:]:
+                if self.pointer_slots is None:
+                    self.policy_nets.append(nn.Linear(self.latent_dim_pi, dim))
+                    continue
+                if dim != self.pointer_slots:
+                    raise ValueError(
+                        f"an object dimension of {dim} against "
+                        f"{self.pointer_slots} slots in the features: the "
+                        "action space and the observation disagree about how "
+                        "many objects there are")
+                self.policy_nets.append(
+                    PointerHead(self.latent_dim_pi, self.pointer_dim))
         elif action_heads == 5:
             # Separate head for each dimension
             for dim in action_dims:
@@ -102,12 +179,36 @@ class ARCCustomNetwork(nn.Module):
         """
         return self.forward_actor(features), self.forward_critic(features)
 
+    def split_pointer_tail(self, features: torch.Tensor):
+        """(rows, mask) off the end of the feature vector, or (None, None).
+
+        The shared network still sees the whole vector, tail included -
+        this only reads the same numbers a second time, in the shape they
+        were written in.
+        """
+        if self.pointer_slots is None:
+            return None, None
+        width = self.pointer_dim + 1
+        tail = features[:, -self.pointer_slots * width:]
+        tail = tail.view(-1, self.pointer_slots, width)
+        return tail[..., :-1], tail[..., -1]
+
+    def without_pointer_tail(self, features: torch.Tensor) -> torch.Tensor:
+        """The features the shared and value networks read - everything the
+        pointer tail is not."""
+        if not self.pointer_width:
+            return features
+        return features[:, :-self.pointer_width]
+
     def forward_actor(self, features: torch.Tensor) -> List[torch.Tensor]:
-        shared_features = self.shared_net(features)
-        return [policy_net(shared_features) for policy_net in self.policy_nets]
+        shared_features = self.shared_net(self.without_pointer_tail(features))
+        rows, mask = self.split_pointer_tail(features)
+        return [net(shared_features, rows, mask)
+                if isinstance(net, PointerHead) else net(shared_features)
+                for net in self.policy_nets]
 
     def forward_critic(self, features: torch.Tensor) -> torch.Tensor:
-        return self.value_net(features)
+        return self.value_net(self.without_pointer_tail(features))
 
 class ARCCustomActorCriticPolicy(ActorCriticPolicy):
     """Actor and critic over ARCGridWorld's dict observation.
@@ -188,7 +289,16 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             net_arch=self.net_arch,
             action_heads=self.action_heads,
             feature_dim_vf=self.vf_features_extractor.features_dim,
+            # From the actor's extractor, which is the one whose features
+            # forward_actor slices - with critic_only_keys the two are
+            # different objects built over different observations.
+            pointer_slots=getattr(self._actor_extractor(), "pointer_slots", None),
+            pointer_dim=getattr(self._actor_extractor(), "pointer_dim", None),
         )
+
+    def _actor_extractor(self):
+        return (self.pi_features_extractor if self.critic_only_keys
+                else self.features_extractor)
 
     def _get_action_dist_from_latent(self, latent_pi: List[torch.Tensor]):
         """Create action distributions based on the number of action heads."""

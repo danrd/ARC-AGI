@@ -8,7 +8,10 @@ whole policy.
 """
 from __future__ import annotations
 
+import numpy as np
 import pytest
+import torch
+from gymnasium import spaces
 
 from rl.policy import ARCCustomActorCriticPolicy, ARCGNNPolicy, ARCSeparatePolicy
 
@@ -207,12 +210,17 @@ class TestWhatTheCriticMaySeeAndTheActorMayNot:
         actor's."""
         policy = self._policy(("target",))
 
+        # Both networks read their extractor's features less the pointer
+        # tail, which only the object heads read - see
+        # ARCCustomNetwork.without_pointer_tail.
+        tail = policy.mlp_extractor.pointer_width
+
         assert (policy.vf_features_extractor.features_dim
                 > policy.pi_features_extractor.features_dim)
         assert (policy.mlp_extractor.value_net[0].in_features
-                == policy.vf_features_extractor.features_dim)
+                == policy.vf_features_extractor.features_dim - tail)
         assert (policy.mlp_extractor.shared_net[0].in_features
-                == policy.pi_features_extractor.features_dim)
+                == policy.pi_features_extractor.features_dim - tail)
 
     def test_the_actor_s_extractor_is_still_trained(self):
         """It is rebuilt inside _build_mlp_extractor, which runs before the
@@ -251,3 +259,126 @@ class TestWhatTheCriticMaySeeAndTheActorMayNot:
         assert values.shape == (2, 1)
         assert not torch.isnan(log_prob).any()
         assert not torch.isnan(entropy).any()
+
+
+# -- pointing at an object rather than at a slot number ---------------------
+
+class TestWhichObjectTheActionNames:
+    """An action names an object slot. Before the pointer head the logit for
+    slot i came from nn.Linear over the shared latent, and the shared latent
+    comes from ObjectSetProcessor's mean over the objects - which is
+    permutation invariant. So swapping the contents of two slots left every
+    logit unchanged, measured at 6.6e-07 against a feature scale of 0.27,
+    while replacing the objects outright moved the features by 0.427: the
+    observation knew which objects were present and could not say which slot
+    held which, and the action addressed exactly that."""
+
+    SLOTS = 5
+
+    def _space(self):
+        from symbolic.objects_analysis import OBJECT_DIM
+        return spaces.Dict({
+            "grid": spaces.Box(0, 9, shape=(8, 8), dtype=np.int64),
+            "action_space": spaces.Box(0, 900, shape=(3,), dtype=np.int64),
+            "objects_emb": spaces.Box(0, 1, shape=(self.SLOTS, OBJECT_DIM),
+                                      dtype=np.float32)})
+
+    def _built(self):
+        from rl.features import ARCCombinedExtractor
+        from rl.policy import ARCCustomNetwork
+        torch.manual_seed(0)
+        extractor = ARCCombinedExtractor(self._space()).eval()
+        network = ARCCustomNetwork(
+            extractor.features_dim, action_dims=[6, self.SLOTS, self.SLOTS],
+            net_arch={"pi": [256], "vf": [256]}, action_heads=3,
+            pointer_slots=extractor.pointer_slots,
+            pointer_dim=extractor.pointer_dim).eval()
+        return extractor, network
+
+    def _observation(self, objects_held=3):
+        from symbolic.objects_analysis import OBJECT_DIM
+        objects = torch.zeros(1, self.SLOTS, OBJECT_DIM)
+        objects[0, :objects_held] = torch.rand(objects_held, OBJECT_DIM)
+        return {"grid": torch.randint(0, 9, (1, 8, 8)),
+                "action_space": torch.tensor([[6, self.SLOTS, self.SLOTS]]),
+                "objects_emb": objects}
+
+    def test_swapping_two_objects_swaps_their_logits(self):
+        """The property the whole head exists for, and the one the previous
+        head could not have: equivariance where the pooled vector is
+        invariant."""
+        extractor, network = self._built()
+        obs = self._observation()
+        swapped = {key: value.clone() for key, value in obs.items()}
+        swapped["objects_emb"][0, [0, 2]] = swapped["objects_emb"][0, [2, 0]]
+
+        with torch.no_grad():
+            before = network.forward_actor(extractor(obs))[1]
+            after = network.forward_actor(extractor(swapped))[1]
+
+        assert torch.allclose(after[0, [0, 1, 2]], before[0, [2, 1, 0]],
+                              atol=1e-5), (
+            f"{[round(float(x), 5) for x in before[0, :3]]} became "
+            f"{[round(float(x), 5) for x in after[0, :3]]}, which is not a "
+            "permutation of it")
+
+    def test_the_transform_head_ignores_the_ordering(self):
+        """It chooses from a fixed vocabulary, not from the slots, so
+        reordering the same objects must not move it - and it is the control
+        that says the swap above was a reordering and not a change of
+        content."""
+        extractor, network = self._built()
+        obs = self._observation()
+        swapped = {key: value.clone() for key, value in obs.items()}
+        swapped["objects_emb"][0, [0, 2]] = swapped["objects_emb"][0, [2, 0]]
+
+        with torch.no_grad():
+            before = network.forward_actor(extractor(obs))[0]
+            after = network.forward_actor(extractor(swapped))[0]
+
+        assert torch.allclose(before, after, atol=1e-5)
+
+    def test_an_empty_slot_cannot_be_chosen(self):
+        """Slots past the objects a grid holds used to be legal actions that
+        did nothing. The mask makes them unreachable instead."""
+        extractor, network = self._built()
+
+        with torch.no_grad():
+            logits = network.forward_actor(extractor(self._observation(2)))[1]
+
+        assert float(logits[0, 2:].max()) < -1e8
+        assert float(logits[0, :2].min()) > -1e8
+
+    def test_different_objects_give_different_logits(self):
+        """Equivariance with every slot scored the same would be equivariance
+        over nothing."""
+        extractor, network = self._built()
+        obs = self._observation()
+
+        with torch.no_grad():
+            logits = network.forward_actor(extractor(obs))[1]
+
+        real = logits[0, :3]
+        assert float(real.max() - real.min()) > 1e-4, real
+
+    def test_without_the_tail_the_heads_stay_as_they_were(self):
+        """ARCGNNExtractor and ARCSeparateExtractor hand over no per-object
+        rows, and a network built on them has to keep working."""
+        from rl.policy import ARCCustomNetwork, PointerHead
+
+        network = ARCCustomNetwork(64, action_dims=[6, 4, 4],
+                                   net_arch={"pi": [32], "vf": [32]},
+                                   action_heads=3)
+
+        assert not any(isinstance(net, PointerHead) for net in network.policy_nets)
+        with torch.no_grad():
+            heads = network.forward_actor(torch.rand(2, 64))
+        assert [tuple(h.shape) for h in heads] == [(2, 6), (2, 4), (2, 4)]
+
+    def test_a_disagreement_about_the_object_count_is_named(self):
+        from rl.policy import ARCCustomNetwork
+
+        with pytest.raises(ValueError, match="disagree about how many"):
+            ARCCustomNetwork(400, action_dims=[6, 7, 7],
+                             net_arch={"pi": [32], "vf": [32]},
+                             action_heads=3, pointer_slots=5, pointer_dim=32)

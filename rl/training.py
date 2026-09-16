@@ -67,6 +67,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
+                   action_whitelist=None,
                   ):
     """Auxiliary function for creating environments to create vectorized environment."""
     gym.envs.register(
@@ -80,6 +81,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    feasible_actions=feasible_actions, observation_space_elements=observation_space_elements,
                    observation_grid_shape=observation_grid_shape,
                    max_objects=max_objects,
+                   action_whitelist=action_whitelist,
                   )
     # .unwrapped: gym.make() wraps env in OrderEnforcing/PassiveEnvChecker,
     # and current gymnasium no longer forwards custom methods through
@@ -92,7 +94,8 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                    repetitive_actions_penalty=1.0, seed=None, font_color=0, padding=False, input_pattern=False,
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
-                   observation_grid_shape=None, max_objects=MAX_OBJECTS):
+                   observation_grid_shape=None, max_objects=MAX_OBJECTS,
+                   action_whitelist=None):
     """Auxiliary function for creating vectorized environment."""
     envs = [functools.partial(create_ARC_env, subtask=subtask, max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                               action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
@@ -101,6 +104,7 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                               observation_space_elements=observation_space_elements,
                               observation_grid_shape=observation_grid_shape,
                               max_objects=max_objects,
+                              action_whitelist=action_whitelist,
                               feasible_actions=feasible_actions) for subtask in subtasks for i in range(n_envs)]
     vec_env = VecMonitor(DummyVecEnv(envs))
     return vec_env
@@ -130,7 +134,8 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
                              pad_val=rl_config['pad_val'], reward_approach=rl_config['reward_approach'],
                              feasible_actions=rl_config['feasible_actions'], observation_space_elements=rl_config['observation_space_elements'],
                              observation_grid_shape=rl_config.get('observation_grid_shape'),
-                             max_objects=rl_config.get('max_objects', MAX_OBJECTS))
+                             max_objects=rl_config.get('max_objects', MAX_OBJECTS),
+                             action_whitelist=rl_config.get('action_whitelist'))
     # verbose passed through: the callback's own default is True, and a
     # verbose evaluation prints and calls plot_grid - at rl_config's
     # eval_freq that is a figure every few steps of training.
@@ -185,7 +190,11 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict):
                              feasible_actions=rl_config['feasible_actions'],
                              observation_space_elements=rl_config['observation_space_elements'],
                              observation_grid_shape=rl_config.get('observation_grid_shape'),
-                             max_objects=rl_config.get('max_objects', MAX_OBJECTS))
+                             max_objects=rl_config.get('max_objects', MAX_OBJECTS),
+                             # The same action space the policy was trained
+                             # on: an index into a different whitelist names
+                             # a different triple.
+                             action_whitelist=rl_config.get('action_whitelist'))
     try:
         return evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'])
     finally:

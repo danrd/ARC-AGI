@@ -935,3 +935,104 @@ def test_a_restored_state_restores_the_objects_and_the_baseline():
     assert len(after) == len(before)
     for one, two in zip(before, after):
         assert np.array_equal(one, two), f"{one} became {two}"
+
+
+# -- per-cell deltas instead of whole reference grids -----------------------
+
+def _delta_env(elements, **kwargs):
+    kwargs.setdefault("input_pattern", "start")
+    kwargs.setdefault("feasible_actions", {0: "submit", 1: "rotate90",
+                                           2: "flip_h"})
+    return make_env(observation_space_elements=elements, **kwargs)
+
+
+def test_the_input_delta_starts_empty_and_marks_what_changed():
+    """What the agent has done, which the grid alone does not say: under
+    input_pattern='start' the episode begins with the grid equal to the
+    input, so the plane begins at zero and fills in as cells move."""
+    subtask = _two_Ls()
+    env = _delta_env(["delta_input"])
+    env.set_subtask(subtask)
+    obs, _ = env.reset(seed=0)
+
+    assert obs["delta_input"].sum() == 0
+
+    moved, *_ = env.step(np.array([1, 0, 0]))
+
+    changed = (np.asarray(env.grid) != subtask.train_inp)
+    assert moved["delta_input"].sum() == changed.sum() > 0
+    assert np.array_equal(moved["delta_input"].astype(bool), changed)
+
+
+def test_the_target_delta_marks_what_is_still_wrong():
+    subtask = _two_Ls()
+    env = _delta_env(["delta_target"])
+    env.set_subtask(subtask)
+    obs, _ = env.reset(seed=0)
+
+    wrong = (subtask.train_inp != subtask.train_out)
+    assert np.array_equal(obs["delta_target"].astype(bool), wrong)
+    assert obs["delta_target"].sum() == wrong.sum() > 0
+
+
+def test_a_delta_is_only_built_when_it_was_asked_for():
+    subtask = _two_Ls()
+    env = _delta_env(["objects_emb"])
+    env.set_subtask(subtask)
+    obs, _ = env.reset(seed=0)
+
+    assert "delta_input" not in obs
+    assert "delta_target" not in obs
+    assert "delta_input" not in env.observation_space.spaces
+
+
+@pytest.mark.parametrize("elements", [["delta_input"], ["delta_target"],
+                                      ["objects_emb", "delta_input",
+                                       "delta_target"]])
+def test_every_delta_observation_falls_inside_its_declared_space(elements):
+    subtask = _two_Ls()
+    env = _delta_env(elements)
+    env.set_subtask(subtask)
+
+    obs, _ = env.reset(seed=0)
+    stepped, *_ = env.step(np.array([1, 0, 0]))
+
+    for where, values in (("reset", obs), ("step", stepped)):
+        for key, value in values.items():
+            assert env.observation_space[key].contains(value), (
+                f"{where}'s {key!r} is outside {env.observation_space[key]}")
+
+
+def test_the_delta_padding_reads_as_unchanged_not_as_changed():
+    """observed_grid pads with pad_val so a policy ignoring grid_shape sees
+    a value no colour has. A delta's alphabet is {0, 1}, and pad_val there
+    would be the largest number in the plane - a convolution would read the
+    padding as the strongest possible "this cell changed". Zero says the
+    same thing an untouched cell says."""
+    subtask = _two_Ls()
+    env = _delta_env(["delta_input", "delta_target"],
+                     observation_grid_shape=(12, 14))
+    env.set_subtask(subtask)
+    obs, _ = env.reset(seed=0)
+
+    for key in ("delta_input", "delta_target"):
+        plane = obs[key]
+        assert plane.shape == (12, 14)
+        assert set(np.unique(plane)) <= {0, 1}, f"{key} holds {np.unique(plane)}"
+        assert plane[9:, :].sum() == 0, f"{key}'s padding reads as changed"
+        assert plane[:, 9:].sum() == 0, f"{key}'s padding reads as changed"
+
+
+def test_the_deltas_survive_a_submit():
+    """submit_grid builds its own observation, so it has to carry the same
+    keys - a terminal observation missing one is a shape mismatch in the
+    rollout buffer."""
+    subtask = _two_Ls()
+    env = _delta_env(["delta_input", "delta_target"])
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+
+    obs, _reward, done, _truncated, _info = env.step(np.array([0, 0, 0]))
+
+    assert done is True
+    assert {"delta_input", "delta_target"} <= obs.keys()

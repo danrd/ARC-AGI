@@ -582,11 +582,24 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
 # =============================================================================
 # APPROACH 3: Combined approach
 # =============================================================================
-GRID_KEYS = ('grid', 'input_pattern', 'target')
+#: Observation keys shaped like a grid, each encoded by its own copy of the
+#: grid architecture. 'grid' is the one being worked on, 'input_pattern' the
+#: example's input, 'target' the wanted output, and the two deltas are
+#: per-cell comparisons against the input and the target - see
+#: ARCGridWorld._add_deltas for why a delta is carried instead of the grid
+#: it compares against.
+GRID_KEYS = ('grid', 'input_pattern', 'target', 'delta_input', 'delta_target')
 
 
 def one_hot_grid(grid):
     """A grid of colour numbers as one plane per colour.
+
+    Delta planes go through this too, which spends ten channels on an
+    alphabet of two. It is wasteful rather than wrong - channels 2 to 9 are
+    dead and the first two carry the plane - and it keeps every grid-shaped
+    key on one encoder, which is what makes the arms comparable. A delta
+    encoder of its own is worth having once a delta arm is worth keeping.
+
 
     Colours are names, not quantities: fed as a single channel, colour 9 is
     nine times colour 1 to a convolution, and the difference between two

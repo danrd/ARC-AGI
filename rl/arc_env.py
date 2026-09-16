@@ -209,6 +209,47 @@ class ARCGridWorld(gymnasium.Env):
         }
         self.observation_space = spaces.Dict(self.observation_space)
 
+    def _add_deltas(self, obs):
+        """The delta planes this observation asked for, if any.
+
+        Compared on the real grids and padded afterwards, so the padding is
+        never mistaken for a difference: pad_val is outside the colour range
+        and differs from whatever the reference holds there, which would
+        mark every padded cell as changed.
+
+        Shapes need not agree - a task can have an input larger or smaller
+        than its output - so the comparison runs over the overlap and the
+        rest reads as different, which is what it is.
+        """
+        for key, reference in (('delta_input', self.train_inp),
+                               ('delta_target', self.train_out)):
+            if key not in self.observation_space_elements:
+                continue
+            grid = np.asarray(self.grid)
+            other = np.asarray(reference)
+            plane = np.ones(grid.shape, dtype=self.grid_dtype)
+            rows = min(grid.shape[0], other.shape[0])
+            cols = min(grid.shape[1], other.shape[1])
+            plane[:rows, :cols] = (grid[:rows, :cols]
+                                   != other[:rows, :cols]).astype(self.grid_dtype)
+            obs[key] = self.observed_grid(plane) if self.obs_grid_shape is None \
+                else self._padded_delta(plane)
+
+    def _padded_delta(self, plane):
+        """A delta padded with zeros rather than pad_val.
+
+        observed_grid pads with pad_val so a policy ignoring grid_shape sees
+        something that cannot be a colour. A delta is not a colour: its
+        alphabet is {0, 1}, pad_val would be the largest value in the plane,
+        and a convolution reading it would treat the padding as the
+        strongest possible signal of "changed". Zero is the same thing the
+        unchanged cells say, which is the safe reading.
+        """
+        padded = np.zeros(self.obs_grid_shape, dtype=self.grid_dtype)
+        rows, cols = plane.shape
+        padded[:rows, :cols] = plane
+        return padded
+
     def observed_grid(self, grid):
         """A grid as the observation carries it: padded when a fixed
         observation shape was asked for, untouched otherwise.
@@ -407,6 +448,34 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             self.observation_space['target'] = spaces.Box(low=self.low_val, high=self.max_val,
                 shape=self.obs_grid_shape or (shape_x, shape_y), dtype=self.grid_dtype)
+        # One plane per cell saying whether the working grid still differs
+        # from the example's input, rather than ten planes carrying the
+        # input itself.
+        #
+        # The input and the target are constant for the whole episode, so
+        # carrying either as its own grid spends ten one-hot channels on
+        # something that never moves - and the extractor pools each grid to
+        # its own handful of numbers, so a per-cell comparison between two
+        # of them is not expressible however many are supplied. A delta is
+        # one channel, it changes on every step because the grid does, and
+        # it puts the comparison where a convolution can read it.
+        #
+        # 'delta_input' is what the agent has changed. It is available at
+        # inference - the test pair has an input like any other - so the
+        # actor may read it.
+        #
+        # 'delta_target' is what is still wrong, and that is the answer:
+        # an actor reading it would pick the object overlapping the wrong
+        # cells and could not run on a test pair at all. It exists for the
+        # critic, which is only called during training (see
+        # ARCCustomActorCriticPolicy.critic_only_keys), and belongs in
+        # critic_only_keys whenever it is switched on.
+        for key in ('delta_input', 'delta_target'):
+            if key in self.observation_space_elements:
+                self.observation_space[key] = spaces.Box(
+                    low=0, high=1,
+                    shape=self.obs_grid_shape or (shape_x, shape_y),
+                    dtype=self.grid_dtype)
         # Both embedding blocks are sized by max_objects, not by this
         # subtask's object count, so they are the same shape for every
         # subtask - see MAX_OBJECTS.
@@ -495,6 +564,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
+        self._add_deltas(obs)
         if "objects_emb" in self.observation_space_elements:
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
@@ -529,6 +599,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
+        self._add_deltas(obs)
         if "objects_emb" in self.observation_space_elements:
             self.objects_emb = self.initial_objects_emb.copy()
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
@@ -595,6 +666,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
+        self._add_deltas(obs)
         if "objects_emb" in self.observation_space_elements:
             # Same shape and dtype as reset() and submit_grid() hand back: an
             # episode whose observations change shape or type partway through

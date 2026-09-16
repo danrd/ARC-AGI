@@ -133,10 +133,16 @@ class ARCGridWorld(gymnasium.Env):
         # Narrowing by transform, which feasible_actions does, cannot express
         # what is actually dead here: a transform is useful on one object and
         # a no-op on another, so the property belongs to the triple. Measured
-        # over the shape-preserving training tasks, 6.4% of the
-        # distinguishable triples move the grid at all - the other 94% are
-        # legal moves that do nothing, and an episode of 25 steps drawn from
-        # them contains about one action worth learning from.
+        # from the reset state, 28% of the distinguishable triples move the
+        # grid at all, and the rate varies widely by task - 4.5% on a grid of
+        # eight objects, 23-31% on one of three or four. The rest are legal
+        # moves that do nothing.
+        #
+        # An earlier probe read 6.4% and was measuring the get_state bug
+        # below: with the objects left where the previous trial had moved
+        # them, transforms that would have worked came back as no-ops. The
+        # correction went the wrong way from the guess that preceded it -
+        # the same probe on 045e512c went from 66 live triples to 340.
         #
         # Kept rank 3 rather than collapsed to Discrete so that everything
         # reading this space - ARCCustomNetwork's three heads, World.

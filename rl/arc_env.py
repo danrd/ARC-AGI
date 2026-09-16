@@ -34,6 +34,34 @@ MAX_OBJECTS = 16
 #: and bounding-box fields are positive for any non-empty object. So the
 #: padding is distinguishable without a separate mask, which is the
 #: convention ARCGNNExtractor already reads (`obj_emb.sum(dim=1) != 0`).
+
+#: `input_pattern` answers two independent questions, and until now one
+#: setting decided both of them together:
+#:
+#:   what the working grid starts as | is the example's input its own
+#:                                   | observation key
+#:   'start'           the input     | no
+#:   'separate'        zeros         | yes
+#:   'start_separate'  the input     | yes
+#:   False             zeros         | no
+#:
+#: The fourth combination had no spelling, which is why the measured
+#: advantage of 'separate' over 'start' cannot be attributed: it moves the
+#: starting state and the observation at the same time. Under 'start' the
+#: grid begins as the input and drifts 2-16% of its cells over an episode,
+#: so an input channel there would be near-duplicate; under 'separate' the
+#: grid begins at zeros and the input is the only place that information
+#: exists. 'start_separate' separates the two.
+def starts_from_input(input_pattern) -> bool:
+    """Does the working grid begin as the example's input?"""
+    return input_pattern in ('start', 'start_separate')
+
+
+def shows_input(input_pattern) -> bool:
+    """Does the observation carry the example's input as its own key?"""
+    return input_pattern in ('separate', 'start_separate')
+
+
 class ARCGridWorld(gymnasium.Env):
     def __init__(
                 self, max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
@@ -250,7 +278,7 @@ class ARCGridWorld(gymnasium.Env):
         shape_y = self.subtask.train_out_shape[1]
         shape_x_inp = self.subtask.train_inp_shape[0]
         shape_y_inp = self.subtask.train_inp_shape[1]
-        if self.input_pattern == 'start':
+        if starts_from_input(self.input_pattern):
             starting_grid = copy(self.subtask.train_inp)
             if shape_x_inp < shape_x or shape_y_inp < shape_y:
                 starting_grid = pad_grid(starting_grid, (shape_x, shape_y), self.font_color)
@@ -277,7 +305,7 @@ class ARCGridWorld(gymnasium.Env):
         # are action count, object slots, object slots. Bounded by 900
         # because a 30x30 grid cannot hold more objects than cells.
         self.observation_space['action_space'] = spaces.Box(low=0, high=900, shape=(3,), dtype=np.int64)
-        if self.input_pattern == 'separate':
+        if shows_input(self.input_pattern):
             self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val,
                 shape=self.obs_grid_shape or (shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
         if "target" in self.observation_space_elements:
@@ -367,7 +395,7 @@ class ARCGridWorld(gymnasium.Env):
         if self.obs_grid_shape is not None:
             obs['grid_shape'] = self.true_grid_shape()
         obs['action_space'] = np.array(self.action_space.nvec)
-        if self.input_pattern == 'separate':
+        if shows_input(self.input_pattern):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
@@ -401,7 +429,7 @@ class ARCGridWorld(gymnasium.Env):
         if self.obs_grid_shape is not None:
             obs['grid_shape'] = self.true_grid_shape()
 
-        if self.input_pattern == 'separate':
+        if shows_input(self.input_pattern):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
@@ -454,7 +482,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['grid_shape'] = self.true_grid_shape()
 
 
-        if self.input_pattern == 'separate':
+        if shows_input(self.input_pattern):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)

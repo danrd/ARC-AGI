@@ -634,3 +634,58 @@ def test_both_config_sources_agree_on_the_reward():
     from rl.rl_module import RlConfig
 
     assert RlConfig().reward_approach == rl_config["reward_approach"]
+
+
+# -- what the grid starts as, and whether the input is shown ----------------
+
+@pytest.mark.parametrize("pattern,from_input,shown", [
+    ("start", True, False),
+    ("separate", False, True),
+    ("start_separate", True, True),
+    (False, False, False),
+])
+def test_input_pattern_decides_the_start_and_the_key_independently(
+        pattern, from_input, shown):
+    """'separate' beat 'start' by the widest margin of eight arms, and the
+    comparison cannot say why: it moves the starting grid to zeros *and*
+    adds the input to the observation at once. Four spellings, two
+    questions, so the next sweep can hold one still and move the other.
+    """
+    subtask = _multi_object_subtask()
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE, input_pattern=pattern)
+    env.set_subtask(subtask)
+
+    obs, _ = env.reset(seed=0)
+
+    starts_as_input = np.array_equal(env.grid, subtask.train_inp)
+    assert starts_as_input is from_input, (
+        f"input_pattern={pattern!r}: grid starts as the input? "
+        f"{starts_as_input}, wanted {from_input}")
+    assert ("input_pattern" in obs) is shown
+    assert ("input_pattern" in env.observation_space.spaces) is shown
+    if shown:
+        assert np.array_equal(obs["input_pattern"], subtask.train_inp)
+
+
+def test_the_shown_input_stays_the_input_after_the_grid_moves():
+    """Under 'start_separate' the two start out equal, so the key is only
+    worth its width if it keeps holding the original once the grid is
+    edited - otherwise it is a second copy of the grid."""
+    # An L, not the single cells _multi_object_subtask draws: a one-cell
+    # object rotates onto itself and the step would leave the grid alone,
+    # which is exactly the case this test cannot tell from a bug.
+    inp = np.zeros((8, 8), dtype=int)
+    inp[1, 1] = inp[1, 2] = inp[2, 1] = 3
+    inp[5, 5] = inp[5, 6] = 4
+    out = inp.copy()
+    out[0, 0] = 9
+    subtask = ARCSubtask("L_shaped", inp, out)
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE,
+                   input_pattern="start_separate")
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+
+    obs, *_ = env.step(np.array([1, 0, 0]))
+
+    assert np.array_equal(obs["input_pattern"], subtask.train_inp)
+    assert not np.array_equal(obs["grid"], obs["input_pattern"])

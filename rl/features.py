@@ -781,7 +781,10 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         total_concat_size = 0
         #: How wide the per-object rows carried for a pointer head are, and
         #: how many slots there are - None when the observation holds no
-        #: objects. ARCCustomNetwork reads both off the extractor.
+        #: objects, or when pointer_dim is 0. ARCCustomNetwork reads both
+        #: off the extractor and falls back to the Linear object heads when
+        #: there are no rows, which is what makes "the same observation
+        #: without a pointer head" a control this can be measured against.
         self.pointer_dim = pointer_dim
         self.pointer_slots = None
         self.build_grid_arch = lambda: build_grid_arch(extr_arch)
@@ -795,8 +798,9 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 # Room for the per-object rows a pointer head scores, on
                 # top of the pooled vector every existing reader takes -
                 # see pointer_tail.
-                self.pointer_slots = subspace.shape[0]
-                total_concat_size += self.pointer_slots * (pointer_dim + 1)
+                if pointer_dim:
+                    self.pointer_slots = subspace.shape[0]
+                    total_concat_size += self.pointer_slots * (pointer_dim + 1)
                 # print(f'objects_emb_concat_size: {output_dim}')
             elif key == "relations_emb":
                 dim = subspace.shape[0] * subspace.shape[1]

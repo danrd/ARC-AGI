@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 from gymnasium import spaces
 
 from rl.features import ARCCombinedExtractor
@@ -389,3 +390,104 @@ def test_the_combined_extractor_still_runs_without_relations():
     })
 
     assert ARCCombinedExtractor(space).features_dim > 0
+
+
+# -- the embeddings the pooling averages away ------------------------------
+
+class TestWhatThePoolingThrowsAway:
+    """An action names an object slot, and the logit for slot i is built by
+    ARCCustomNetwork from a vector in which slot i's embedding has been
+    averaged with every other one. So the only thing an object head can
+    learn is a prior over slot numbers - which is why a whitelist of slot
+    indices helped on the examples it came from and moved the held-out pair
+    by zero on every task in the ablation. A head that scored each slot
+    from its own embedding would need those embeddings to still exist."""
+
+    def _processor(self, slots=4, width=OBJECT_DIM):
+        from rl.features import OptimalObjectExtractor
+        return OptimalObjectExtractor((slots, width), output_dim=64)
+
+    def test_the_per_object_embeddings_survive_the_pooling(self):
+        extractor = self._processor(slots=4)
+        objects = torch.zeros(2, 4, OBJECT_DIM)
+        objects[:, :3] = torch.rand(2, 3, OBJECT_DIM)
+
+        pooled = extractor(objects.reshape(2, -1))
+
+        assert pooled.shape == (2, 64)
+        assert extractor.per_object.shape[:2] == (2, 4), (
+            f"per-object embeddings are {tuple(extractor.per_object.shape)}, "
+            "expected one row per slot")
+        assert extractor.per_object_mask.shape == (2, 4)
+
+    def test_the_mask_marks_the_slots_that_hold_an_object(self):
+        extractor = self._processor(slots=5)
+        objects = torch.zeros(1, 5, OBJECT_DIM)
+        objects[0, :2] = torch.rand(2, OBJECT_DIM)
+
+        extractor(objects.reshape(1, -1))
+
+        assert extractor.per_object_mask[0].tolist() == [True, True,
+                                                         False, False, False]
+
+    def test_two_different_objects_get_two_different_embeddings(self):
+        """The property a slot-scoring head rests on: if every slot came out
+        the same, scoring them separately would buy nothing."""
+        extractor = self._processor(slots=3)
+        objects = torch.zeros(1, 3, OBJECT_DIM)
+        objects[0, 0] = torch.rand(OBJECT_DIM)
+        objects[0, 1] = torch.rand(OBJECT_DIM)
+
+        extractor(objects.reshape(1, -1))
+        rows = extractor.per_object[0]
+
+        assert not torch.allclose(rows[0], rows[1], atol=1e-6)
+
+    def test_the_embeddings_carry_a_gradient_back_to_the_encoder(self):
+        """Read off an attribute rather than returned, so it is worth
+        pinning that they are still part of the graph - a head training on
+        a detached copy would learn from a fixed encoder."""
+        extractor = self._processor(slots=3)
+        objects = torch.zeros(1, 3, OBJECT_DIM)
+        objects[0, :2] = torch.rand(2, OBJECT_DIM)
+
+        extractor(objects.reshape(1, -1))
+        extractor.per_object.sum().backward()
+
+        grads = [p.grad for p in extractor.parameters() if p.grad is not None]
+        assert grads, "nothing in the encoder received a gradient"
+
+    def test_the_pooled_output_is_what_it_always_was(self):
+        """Characterisation: exposing the embeddings must not move the
+        vector every existing policy reads.
+
+        In eval mode, because ObjectSetProcessor's attention carries
+        dropout=0.1 - in train mode the same observation gives a different
+        feature vector on every forward pass, which is what dropout is for
+        and is worth knowing is there.
+        """
+        torch.manual_seed(0)
+        extractor = self._processor(slots=4).eval()
+        objects = torch.zeros(2, 4, OBJECT_DIM)
+        objects[:, :3] = torch.rand(2, 3, OBJECT_DIM)
+        flat = objects.reshape(2, -1)
+
+        once = extractor(flat)
+        twice = extractor(flat)
+
+        assert torch.allclose(once, twice)
+        assert once.shape == (2, 64)
+
+    def test_the_encoder_is_stochastic_while_it_trains(self):
+        """The reason the test above says eval(): dropout is on in train
+        mode, so two passes over one observation differ. Recorded because a
+        head added later will be compared against these features and a
+        difference that is really dropout is easy to mistake for one that
+        is not."""
+        torch.manual_seed(0)
+        extractor = self._processor(slots=4).train()
+        objects = torch.zeros(2, 4, OBJECT_DIM)
+        objects[:, :3] = torch.rand(2, 3, OBJECT_DIM)
+        flat = objects.reshape(2, -1)
+
+        assert not torch.allclose(extractor(flat), extractor(flat))

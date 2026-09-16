@@ -120,6 +120,11 @@ def load_PPO_config():
     # observation_space_elements is the asymmetric case; empty means both
     # halves see the same observation.
     'critic_only_keys': (),
+    # Width of the per-object rows ARCCombinedExtractor carries for the
+    # pointer heads, or 0 for the Linear object heads that preceded them -
+    # which is the control the pointer head is measured against rather than
+    # a setting anyone should want. See rl.policy.PointerHead.
+    'pointer_dim': 32,
     }
 
 def lin(act_func=nn.ReLU()):

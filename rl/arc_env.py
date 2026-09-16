@@ -92,6 +92,7 @@ class ARCGridWorld(gymnasium.Env):
                 feasible_actions={0:'submit'},
                 max_objects=MAX_OBJECTS,
                 observation_grid_shape=None,
+                action_whitelist=None,
                 ):
         self.max_objects = max_objects
         self.step_no = 0
@@ -126,13 +127,35 @@ class ARCGridWorld(gymnasium.Env):
         self.actions_dict = feasible_actions
         self.action_name_to_idx = {name: idx for idx, name in self.actions_dict.items()}
         self.objects = []
+        # An explicit list of (transform, object, object) triples the policy
+        # may choose from, or None for the full product.
+        #
+        # Narrowing by transform, which feasible_actions does, cannot express
+        # what is actually dead here: a transform is useful on one object and
+        # a no-op on another, so the property belongs to the triple. Measured
+        # over the shape-preserving training tasks, 6.4% of the
+        # distinguishable triples move the grid at all - the other 94% are
+        # legal moves that do nothing, and an episode of 25 steps drawn from
+        # them contains about one action worth learning from.
+        #
+        # Kept rank 3 rather than collapsed to Discrete so that everything
+        # reading this space - ARCCustomNetwork's three heads, World.
+        # parse_action, rl.mcts's enumeration - keeps working unchanged; the
+        # second and third entries are single-choice and carry no gradient.
+        # A real move to Discrete is a larger change and this is the shape
+        # that lets the question be measured before it is made.
+        self.action_whitelist = ([tuple(int(i) for i in triple)
+                                  for triple in action_whitelist]
+                                 if action_whitelist is not None else None)
         # Sized by max_objects rather than by the subtask, and so identical
         # for every subtask - set_subtask only fills in the action count.
-        self.action_space = spaces.MultiDiscrete([
-            len(self.actions_dict),  # Action types
-            self.max_objects,        # Object 1 index
-            self.max_objects,        # Object 2 index
-        ])
+        self.action_space = spaces.MultiDiscrete(
+            [len(self.action_whitelist), 1, 1] if self.action_whitelist
+            else [
+                len(self.actions_dict),  # Action types
+                self.max_objects,        # Object 1 index
+                self.max_objects,        # Object 2 index
+            ])
         # Initialize observation space
         self.observation_space = {
             'grid': spaces.Box(low=self.low_val, high=self.max_val, shape=(30, 30), dtype=self.grid_dtype),
@@ -469,10 +492,23 @@ class ARCGridWorld(gymnasium.Env):
         info = {}
         return (obs, info)
 
+    def resolved_action(self, action):
+        """The (transform, object, object) this action names.
+
+        With no whitelist that is the action itself. With one, the policy
+        chooses an index into the whitelist and this is where it becomes a
+        triple - see `action_whitelist` in __init__ for why the choice is
+        shaped that way.
+        """
+        if self.action_whitelist is None:
+            return action
+        return np.asarray(self.action_whitelist[int(np.asarray(action).reshape(-1)[0])])
+
     def step(self, action):
         reward = 0
         if self.subtask is None:
             raise ValueError('Subtask is not initialized!')
+        action = self.resolved_action(action)
         self.right_placement = 0
         self.step_no += 1
         # Submit grid (final action)
@@ -617,8 +653,17 @@ class ARCGridWorld(gymnasium.Env):
         return new_grid, objects, new_max_int, reward, done
 
     def get_state(self):
-        """Capture the complete state of the environment for later restoration.
-        Returns a dictionary containing all necessary state information.
+        """Capture the state of the environment for later restoration.
+
+        The grid was the only part of the episode this used to carry,
+        although it called itself complete. World.apply_transform mutates
+        the GridObjects in place, so a restore that put the grid back and
+        left the objects moved gave an env whose objects described a grid it
+        no longer had; max_int stayed where the last step left it, and every
+        reward after the restore was a delta from the wrong baseline. It
+        shows up wherever the same starting state is used twice - probing
+        which actions do anything from a fixed state found a different
+        answer depending on the order it tried them in.
         """
         state = {
             'grid': self.grid.copy(),
@@ -626,8 +671,16 @@ class ARCGridWorld(gymnasium.Env):
             'prev_action': self.prev_action.copy() if self.prev_action is not None else None,
             'right_placement': self.right_placement,
             'wrong_placement': self.wrong_placement,
+            # Deep: the objects are mutated in place, so a shallow list holds
+            # the same objects the env is about to move.
+            'objects': deepcopy(self.objects),
+            'grid_summary': deepcopy(self.grid_summary),
+            'max_int': self.max_int,
         }
-
+        for key in ('objects_emb', 'relations_emb'):
+            block = getattr(self, key, None)
+            if block is not None:
+                state[key] = block.copy()
         return state
 
     def set_state(self, state):
@@ -641,13 +694,20 @@ class ARCGridWorld(gymnasium.Env):
         self.prev_action = state['prev_action'].copy() if state['prev_action'] is not None else None
         self.right_placement = state['right_placement']
         self.wrong_placement = state['wrong_placement']
+        if 'objects' in state:
+            self.objects = deepcopy(state['objects'])
+            self.grid_summary = deepcopy(state['grid_summary'])
+            self.max_int = state['max_int']
+            for key in ('objects_emb', 'relations_emb'):
+                if key in state:
+                    setattr(self, key, state[key].copy())
 
 def create_env(
                 max_episode_len=25, right_placement_reward=5.0, action_penalty=1.0, repetitive_actions_penalty=1.0,
                 seed=None, font_color=0, padding=False, input_pattern=False, milestones_rewards=(1, 2, 3, 4),
                 pad_val=10, reward_approach=1, repr_level=1, observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:"submit"}, observation_grid_shape=None,
-                max_objects=MAX_OBJECTS,
+                max_objects=MAX_OBJECTS, action_whitelist=None,
                ):
     env = ARCGridWorld(
         max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
@@ -656,6 +716,7 @@ def create_env(
         reward_approach=reward_approach, milestones_rewards=milestones_rewards, pad_val=pad_val,
         feasible_actions=feasible_actions,observation_space_elements=observation_space_elements,
         observation_grid_shape=observation_grid_shape, max_objects=max_objects,
+        action_whitelist=action_whitelist,
         )
     return env
 

@@ -762,3 +762,176 @@ def test_start_separate_keeps_the_ruler_the_start_arm_uses():
         spans[pattern] = (env.base_int, env.target_int)
 
     assert spans["start"] == spans["start_separate"], spans
+
+
+# -- an explicit list of the triples worth choosing from -------------------
+
+def _two_Ls() -> ARCSubtask:
+    """Two three-cell Ls on a grid that starts as the input.
+
+    Single cells rotate and flip onto themselves, and ARCGridWorld's own
+    default input_pattern is False, which starts the grid at zeros: between
+    them, a test written on _multi_object_subtask and make_env's defaults
+    has no action that changes anything, and passes whatever the env does.
+    """
+    inp = np.zeros((9, 9), dtype=int)
+    inp[1, 1] = inp[1, 2] = inp[2, 1] = 3
+    inp[5, 5] = inp[5, 6] = inp[6, 5] = 4
+    out = inp.copy()
+    out[0, 0] = 9
+    return ARCSubtask("two_Ls", inp, out)
+
+
+def _live_triples(env, subtask):
+    """Every (transform, object, object) that moves this grid from reset."""
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+    start = np.array(env.grid).copy()
+    state = env.get_state()
+    objects = env.visible_object_count()
+    live = []
+    for transform in range(1, len(env.actions_dict)):
+        for first in range(objects):
+            for second in range(objects):
+                env.set_state(state)
+                env.step(np.array([transform, first, second]))
+                if not np.array_equal(np.array(env.grid), start):
+                    live.append((transform, first, second))
+    env.set_state(state)
+    return live
+
+
+def test_a_whitelist_makes_every_index_name_a_triple():
+    """The point of the list: the policy picks an index into it, and the
+    env turns that into the (transform, object, object) it stands for."""
+    subtask = _multi_object_subtask(n_objects=3)
+    whitelist = [(0, 0, 0), (1, 2, 1), (1, 0, 2)]
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE, action_whitelist=whitelist)
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+
+    assert list(env.action_space.nvec) == [3, 1, 1]
+    for index, triple in enumerate(whitelist):
+        assert tuple(env.resolved_action(np.array([index, 0, 0]))) == triple
+
+
+def test_a_whitelisted_env_still_submits():
+    """A list without submit in it is an episode that can only time out, so
+    the translation has to happen before the submit check, not after."""
+    subtask = _multi_object_subtask()
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE,
+                   action_whitelist=[(1, 0, 0), (0, 0, 0)])
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+
+    _, _, done, _, _ = env.step(np.array([1, 0, 0]))  # index 1 is submit
+
+    assert done is True
+
+
+def test_no_whitelist_leaves_the_action_space_alone():
+    subtask = _multi_object_subtask()
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE)
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+
+    assert list(env.action_space.nvec) == [2, env.max_objects, env.max_objects]
+    assert tuple(env.resolved_action(np.array([1, 2, 3]))) == (1, 2, 3)
+
+
+def test_a_live_whitelist_removes_the_no_ops_and_keeps_the_rest():
+    """What the ablation rests on: an env restricted to the triples that
+    move the grid has to still move it on every choice, and has to still
+    offer all of them."""
+    # Multi-cell objects, because rotating or flipping a single cell maps it
+    # onto itself: _multi_object_subtask draws single cells and has no live
+    # action under these two transforms at all.
+    inp = np.zeros((9, 9), dtype=int)
+    inp[1, 1] = inp[1, 2] = inp[2, 1] = 3
+    inp[5, 5] = inp[5, 6] = inp[6, 5] = 4
+    out = inp.copy()
+    out[0, 0] = 9
+    subtask = ARCSubtask("two_Ls", inp, out)
+    # input_pattern='start', because ARCGridWorld's own default is False and
+    # that starts the grid at zeros - an empty grid no transform can move,
+    # which is a no-op rate of 100% for reasons that have nothing to do with
+    # what this test is about.
+    actions = {0: "submit", 1: "rotate90", 2: "flip_h"}
+    probe = make_env(feasible_actions=actions, input_pattern="start")
+    live = _live_triples(probe, subtask)
+    assert live, "the probe found nothing live, so this test proves nothing"
+
+    env = make_env(feasible_actions=actions, input_pattern="start",
+                   action_whitelist=[(0, 0, 0)] + live)
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+    start = np.array(env.grid).copy()
+    state = env.get_state()
+
+    moved = 0
+    for index in range(1, len(live) + 1):
+        env.set_state(state)
+        env.step(np.array([index, 0, 0]))
+        if not np.array_equal(np.array(env.grid), start):
+            moved += 1
+
+    assert moved == len(live), f"{len(live) - moved} of {len(live)} did nothing"
+
+
+def test_a_restored_state_probes_the_same_way_whatever_came_before():
+    """The property the whitelist probe needs and the old get_state did not
+    have: restoring a state and trying an action has to give the same answer
+    regardless of which actions were tried before it. World mutates the
+    GridObjects in place, so a restore that put the grid back and left the
+    objects moved answered differently depending on the order.
+    """
+    subtask = _two_Ls()
+    actions = {0: "submit", 1: "rotate90", 2: "flip_h"}
+    env = make_env(feasible_actions=actions, input_pattern="start")
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+    state = env.get_state()
+    probe = (2, 1, 1)
+
+    env.set_state(state)
+    env.step(np.array(probe))
+    alone = np.array(env.grid).copy()
+
+    env.set_state(state)
+    for other in [(1, 0, 0), (2, 1, 1), (1, 1, 1)]:
+        env.step(np.array(other))
+    assert not np.array_equal(np.array(env.grid), state["grid"]), (
+        "nothing moved in between, so order cannot have mattered"
+    )
+    env.set_state(state)
+    env.step(np.array(probe))
+
+    assert np.array_equal(np.array(env.grid), alone), (
+        "the same action from the same restored state produced two grids")
+
+
+def test_a_restored_state_restores_the_objects_and_the_baseline():
+    subtask = _two_Ls()
+    env = make_env(feasible_actions={0: "submit", 1: "rotate90", 2: "flip_h"},
+                   input_pattern="start",
+                   observation_space_elements=["objects_emb", "relations_emb"])
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+    state = env.get_state()
+    # coords, which is what World.apply_transform moves. An earlier version
+    # of this read obj.cells, which GridObject does not have, so hasattr
+    # made every entry None and the comparison below held for any env at all.
+    before = [np.asarray(obj.coords).copy() for obj in env.objects]
+    max_int_before = env.max_int
+
+    for action in [(1, 0, 0), (2, 1, 1), (1, 1, 1)]:
+        env.step(np.array(action))
+    assert not np.array_equal(np.array(env.grid), state["grid"]), (
+        "no action moved anything, so the restore below proves nothing")
+    env.set_state(state)
+
+    assert env.max_int == max_int_before
+    after = [np.asarray(obj.coords).copy() for obj in env.objects]
+    assert len(after) == len(before)
+    for one, two in zip(before, after):
+        assert np.array_equal(one, two), f"{one} became {two}"

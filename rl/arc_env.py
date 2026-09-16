@@ -157,6 +157,35 @@ class ARCGridWorld(gymnasium.Env):
         # task (dc433765: 25 against 14 + 2 + 2) the two are comparable and
         # the whitelist was worth +0.5 on the same measure.
         #
+        # What the ablation this was built for found, over six tasks at one
+        # seed (scratchpad noop_ablation.py, arms live / touched / solving
+        # against random lists of the same size and against the full space):
+        #
+        # - Narrowing helps on the examples it was built from. At 21 actions
+        #   against 6300 on 22eb0ac0, a list of the triples an MCTS rollout
+        #   used to solve a subtask scored +0.667 against +0.208 for the
+        #   full space; a random list of the same 21 scored +0.333. Three
+        #   same-size comparisons were run - 25 and 41 on dc433765, 21 on
+        #   22eb0ac0 - and selection beat random in all three, so the gain
+        #   is the selection and not the size.
+        # - It does not help on the held-out pair. That column stayed at
+        #   zero for every search-derived list on every task. A whitelist
+        #   addresses objects by slot index, and slot 2 on an unseen grid is
+        #   a different object, so the list carries coordinates rather than
+        #   a rule.
+        # - Four of the six tasks did not move at all under any list, from
+        #   14 actions to 6300, selected or random.
+        #
+        # So narrowing is a cheap way to fit the examples better and not a
+        # way to generalise. An action that named its objects by property
+        # rather than by slot would be worth narrowing; this one is not.
+        #
+        # Mixed training also takes most of it back: one agent means one
+        # action space, so the whitelist is the union over the subtasks, and
+        # the union is much larger than any of them. Per subtask the search
+        # narrows 4x to 448x; as a union it is 1.0x on dc433765 (48 triples,
+        # the whole space) and 40x on 22eb0ac0.
+        #
         # So this is an instrument for measuring what narrowing is worth on
         # small spaces, and evidence against moving the shipped space to
         # Discrete on large ones. Narrowing a large space wants a policy

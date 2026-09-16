@@ -491,3 +491,119 @@ class TestWhatThePoolingThrowsAway:
         flat = objects.reshape(2, -1)
 
         assert not torch.allclose(extractor(flat), extractor(flat))
+
+
+# -- a delta read as a map ---------------------------------------------------
+
+class TestReadingADeltaAsAMap:
+    """A mean over a delta is the fraction of cells that differ, which is
+    max_int arrived at expensively, and it divides by the grid area: on a
+    20x20 plane one differing cell reads 0.0004 through the colour encoder.
+    DeltaReadout takes three readings instead, because how much, whether
+    anything, and where are three questions."""
+
+    def plane(self, cells, rows=20, cols=20):
+        grid = torch.zeros(1, 1, rows, cols)
+        for row, col in cells:
+            grid[0, 0, row, col] = 1.0
+        return grid
+
+    def parts(self, readout, out):
+        width = readout.channels
+        return (out[:, :width], out[:, width:2 * width],
+                out[:, 2 * width:3 * width], out[:, 3 * width:])
+
+    def test_the_centre_of_mass_finds_the_corner_the_difference_is_in(self):
+        from rl.features import DeltaReadout
+        torch.manual_seed(0)
+        readout = DeltaReadout().eval()
+
+        with torch.no_grad():
+            corners = {where: self.parts(readout, readout(self.plane([where])))
+                       for where in [(1, 1), (18, 18), (1, 18)]}
+
+        def centre(where):
+            _mass, _peak, down, across = corners[where]
+            return float(down.max()), float(across.max())
+
+        top_left, bottom_right, top_right = (centre((1, 1)), centre((18, 18)),
+                                             centre((1, 18)))
+        assert top_left[0] < 0.4 and top_left[1] < 0.4, top_left
+        assert bottom_right[0] > 0.6 and bottom_right[1] > 0.6, bottom_right
+        # The row and the column are read separately, so a difference in the
+        # top right has to come out low on one and high on the other.
+        assert top_right[0] < 0.4 < top_right[1], top_right
+
+    def test_an_empty_plane_has_no_peak_and_no_centre(self):
+        """Nothing to locate reads as (0, 0), which is also a real corner -
+        so the peak is what tells them apart, and it is zero here and not
+        there."""
+        from rl.features import DeltaReadout
+        torch.manual_seed(0)
+        readout = DeltaReadout().eval()
+
+        with torch.no_grad():
+            _mass, peak, down, across = self.parts(readout,
+                                                   readout(self.plane([])))
+            _m2, corner_peak, _d2, _a2 = self.parts(
+                readout, readout(self.plane([(0, 0)])))
+
+        assert float(peak.max()) == 0.0
+        assert float(down.abs().max()) == 0.0 and float(across.abs().max()) == 0.0
+        assert float(corner_peak.max()) > 0.0
+
+    def test_the_mass_counts_and_the_peak_does_not_vanish(self):
+        """The two readings the pooled encoder had to choose between: a mean
+        scales with how many cells differ, a max stays large when only one
+        does."""
+        from rl.features import DeltaReadout
+        torch.manual_seed(0)
+        readout = DeltaReadout().eval()
+        few = [(1, 1)]
+        many = [(1, 1), (1, 2), (2, 1), (2, 2), (1, 3)]
+
+        with torch.no_grad():
+            mass_few, peak_few, *_ = self.parts(readout, readout(self.plane(few)))
+            mass_many, peak_many, *_ = self.parts(readout, readout(self.plane(many)))
+
+        assert float(mass_many.max()) > float(mass_few.max())
+        assert float(peak_few.max()) > 10 * float(mass_few.max()), (
+            "the peak is meant to survive a sparse plane that the mean divides "
+            "away")
+
+    def test_the_convolutions_carry_no_bias(self):
+        """The property the centre of mass rests on: with a bias, ReLU fires
+        on empty cells too, every channel gets a constant background over the
+        whole plane, and the expected position of background-plus-a-speck is
+        the middle of the grid whatever the delta holds. Measured that way
+        before the fix, a cell at (1,1) and a cell at (18,18) both read a
+        centre of (0.524, 0.475)."""
+        from rl.features import DeltaReadout
+        readout = DeltaReadout()
+
+        for layer in readout.convs:
+            if isinstance(layer, torch.nn.Conv2d):
+                assert layer.bias is None, "a bias puts a floor under every cell"
+
+    def test_the_readout_is_four_numbers_per_channel(self):
+        from rl.features import DeltaReadout
+        readout = DeltaReadout(channels=8)
+
+        with torch.no_grad():
+            out = readout(self.plane([(2, 3)], rows=7, cols=9))
+
+        assert readout.out_dim == 32
+        assert out.shape == (1, 32)
+
+    def test_the_width_does_not_follow_the_grid_size(self):
+        """Every other grid-shaped key has to produce a fixed width whatever
+        the example's size - rl.features.unpadded_grid_features writes them
+        all into one array."""
+        from rl.features import DeltaReadout
+        readout = DeltaReadout().eval()
+
+        with torch.no_grad():
+            small = readout(self.plane([(1, 1)], rows=4, cols=5))
+            large = readout(self.plane([(1, 1)], rows=28, cols=30))
+
+        assert small.shape == large.shape == (1, readout.out_dim)

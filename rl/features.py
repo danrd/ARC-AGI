@@ -588,17 +588,102 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
 #: per-cell comparisons against the input and the target - see
 #: ARCGridWorld._add_deltas for why a delta is carried instead of the grid
 #: it compares against.
-GRID_KEYS = ('grid', 'input_pattern', 'target', 'delta_input', 'delta_target')
+GRID_KEYS = ('grid', 'input_pattern', 'target')
+
+#: Grid-shaped, but not grids: a delta holds one bit per cell rather than a
+#: colour, and it is read by DeltaReadout rather than by the colour encoder.
+DELTA_KEYS = ('delta_input', 'delta_target')
+
+
+def delta_plane(plane):
+    """A delta as the single channel it is.
+
+    One bit per cell, so the ten colour planes a grid needs would leave
+    eight of them dead. DeltaReadout takes this.
+    """
+    return plane.to(torch.float32).unsqueeze(1)
+
+
+class DeltaReadout(nn.Module):
+    """A delta plane read as a map, not summarised as a quantity.
+
+    The colour encoder ends in AdaptiveAvgPool2d((1,1)), and a mean over a
+    delta is the fraction of cells that differ - which is what max_int
+    already is, arrived at more expensively. Worse, it divides by the grid
+    area: measured on a 20x20 plane through the shipped convolutions, one
+    differing cell reads 0.00039 above an empty plane where a max reads
+    0.04787, a hundred and twenty times larger, and it is precisely the
+    endgame - a handful of wrong cells left - where the mean vanishes.
+
+    A max does not vanish, but it saturates: one differing cell reads
+    0.04787 and five read 0.05313, so it answers "is anything wrong" and
+    cannot count. Neither says where: over the whole plane, one cell at the
+    top left and one at the bottom right differ only through the boundary
+    effect of padding.
+
+    So all three readings are taken, because they are three different
+    questions:
+
+        mass  the mean - how much is still wrong
+        peak  the max  - whether anything is
+        ci,cj the centre of mass - where it is
+
+    The centre of mass treats each channel as a distribution over cells and
+    takes its expected row and column, normalised to [0, 1] so the answer
+    means the same at any grid size. That is the canonical readout of an
+    attention map, which is what a delta is. An empty plane has nothing to
+    locate and its centre reads 0 alongside a peak of 0, which is
+    distinguishable from a real difference at the top-left corner because
+    that one has a peak.
+
+    Four numbers per channel rather than one, and the three that matter are
+    the three the pooled encoder could not express.
+    """
+
+    def __init__(self, channels: int = 16):
+        super().__init__()
+        # bias=False is what makes the centre of mass mean anything. With a
+        # bias, a convolution fires on empty cells too - ReLU(0*w + b) is
+        # positive wherever b is - so every channel has a constant
+        # background over the whole plane, the distribution below is that
+        # background plus a speck, and its expected position is the middle
+        # of the grid whatever the delta holds. Measured before the fix: one
+        # cell at (1,1) and one at (18,18) both read a centre of
+        # (0.524, 0.475). Without a bias the convolution of a zero
+        # neighbourhood is exactly zero, so the support of each channel is
+        # the difference and its surroundings, and its centre is where the
+        # difference is.
+        self.convs = nn.Sequential(
+            nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(8, channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.ReLU(),
+        )
+        self.channels = channels
+        self.out_dim = channels * 4
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.convs(x)
+        rows, cols = features.shape[-2:]
+        mass = features.mean(dim=(2, 3))
+        peak = features.amax(dim=(2, 3))
+        flat = features.flatten(2)
+        # clamp, not an epsilon added to the total: a channel that fired
+        # nowhere has no centre, and dividing by the clamp leaves its
+        # weights at zero rather than spreading them evenly over the grid,
+        # which would read as "the difference is in the middle".
+        weights = flat / flat.sum(dim=2, keepdim=True).clamp(min=1e-6)
+        down = torch.arange(rows, device=x.device, dtype=features.dtype)
+        across = torch.arange(cols, device=x.device, dtype=features.dtype)
+        down = (down / max(rows - 1, 1)).view(1, 1, rows, 1).expand(1, 1, rows, cols)
+        across = (across / max(cols - 1, 1)).view(1, 1, 1, cols).expand(1, 1, rows, cols)
+        centre_i = (weights * down.flatten(2)).sum(dim=2)
+        centre_j = (weights * across.flatten(2)).sum(dim=2)
+        return torch.cat([mass, peak, centre_i, centre_j], dim=1)
 
 
 def one_hot_grid(grid):
     """A grid of colour numbers as one plane per colour.
-
-    Delta planes go through this too, which spends ten channels on an
-    alphabet of two. It is wasteful rather than wrong - channels 2 to 9 are
-    dead and the first two carry the plane - and it keeps every grid-shaped
-    key on one encoder, which is what makes the arms comparable. A delta
-    encoder of its own is worth having once a delta arm is worth keeping.
 
 
     Colours are names, not quantities: fed as a single channel, colour 9 is
@@ -709,6 +794,12 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 # before its first step.
                 extractors[key] = self.extr_arch if key == 'grid' else self.build_grid_arch()
                 total_concat_size += grid_arch_width(extractors[key])
+            elif key in DELTA_KEYS:
+                # Grid-shaped and read differently: see DeltaReadout for why
+                # a mean over a delta is max_int computed the long way round.
+                readout = DeltaReadout()
+                extractors[key] = readout
+                total_concat_size += readout.out_dim
             elif key in ('action_space', 'grid_shape'):
                 # Neither is a feature to embed. The action space's own
                 # .nvec (varies per task) is in every observation so the
@@ -728,7 +819,16 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         # self.extractors contain nn.Modules that do all the processing.
         for key, extractor in self.extractors.items():
             # print(f'observation key {key} has shape: {observation[key].shape}')
-            if key in GRID_KEYS:
+            if key in DELTA_KEYS:
+                # Cropped back to the real grid for the same reason a grid
+                # is: the observation padding is zeros here, and a centre of
+                # mass taken over the padded plane would be pulled towards
+                # the top-left corner by the region the grid does not
+                # occupy.
+                res = unpadded_grid_features(extractor, observation[key],
+                                             observation.get('grid_shape'),
+                                             delta_plane)
+            elif key in GRID_KEYS:
                 def prepare(grid):
                     x = torch.nn.functional.one_hot(torch.tensor(grid, dtype=torch.int64), num_classes=10)  # Shape: (Batch, H, W, 10)
                     x = x.float()  # Convert to float

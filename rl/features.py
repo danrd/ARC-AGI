@@ -774,10 +774,16 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     architecture means.
     """
 
-    def __init__(self, observation_space: spaces.Dict, extr_arch=None):
+    def __init__(self, observation_space: spaces.Dict, extr_arch=None,
+                 pointer_dim: int = 32):
         super().__init__(observation_space, features_dim=1)
         extractors = {}
         total_concat_size = 0
+        #: How wide the per-object rows carried for a pointer head are, and
+        #: how many slots there are - None when the observation holds no
+        #: objects. ARCCustomNetwork reads both off the extractor.
+        self.pointer_dim = pointer_dim
+        self.pointer_slots = None
         self.build_grid_arch = lambda: build_grid_arch(extr_arch)
         self.extr_arch = self.build_grid_arch()
         for key, subspace in observation_space.spaces.items():
@@ -786,6 +792,11 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 extractor, output_dim = create_object_extractor(subspace.shape)
                 extractors[key] = extractor
                 total_concat_size += output_dim
+                # Room for the per-object rows a pointer head scores, on
+                # top of the pooled vector every existing reader takes -
+                # see pointer_tail.
+                self.pointer_slots = subspace.shape[0]
+                total_concat_size += self.pointer_slots * (pointer_dim + 1)
                 # print(f'objects_emb_concat_size: {output_dim}')
             elif key == "relations_emb":
                 dim = subspace.shape[0] * subspace.shape[1]
@@ -819,6 +830,9 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 raise ValueError(f'Unknown feature: {key}')
 
         self.extractors = nn.ModuleDict(extractors)
+        if self.pointer_slots is not None:
+            self.pointer_projection = nn.Linear(
+                extractors["objects_emb"].processor.hidden_dim, pointer_dim)
         # print(f'total_concat_size: {total_concat_size}')
         self._features_dim = total_concat_size
 
@@ -850,7 +864,38 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 res = extractor(observation[key].unsqueeze(1))
                 # print(f'output for key {key} has shape: {res.shape}')
             encoded_tensor_list.append(res)
+        if self.pointer_slots is not None:
+            encoded_tensor_list.append(self.pointer_tail())
         return torch.cat(encoded_tensor_list, dim=1)
+
+    def pointer_tail(self) -> torch.Tensor:
+        """The per-object rows, flattened, each with a mask column.
+
+        An action names an object slot, and the logit for that slot comes
+        from the pooled vector - which ObjectSetProcessor's mean makes
+        permutation invariant. Swapping the contents of two slots therefore
+        leaves every logit unchanged: measured at 6.6e-07 against a feature
+        scale of 0.27, where replacing the objects outright moves the
+        features by 0.427. The observation knows which objects are present
+        and cannot say which slot holds which, while the action addresses
+        exactly that. This tail is the channel between the two - a head
+        scoring slot i from row i is equivariant where the pooled vector is
+        invariant.
+
+        The mask rides along as a column rather than being recovered from
+        the rows. A padded object is an all-zero row in the observation, but
+        these rows have been through attention and a LayerNorm and are not
+        zero any more, so a head deriving the mask from them would point at
+        slots holding nothing.
+
+        Projected to pointer_dim first: ObjectSetProcessor works at
+        hidden_dim 128, and 16 slots of that would add 2048 numbers to a
+        feature vector whose other branches are 16 to 144 wide.
+        """
+        processor = self.extractors["objects_emb"]
+        rows = self.pointer_projection(processor.per_object)
+        mask = processor.per_object_mask.unsqueeze(-1).to(rows.dtype)
+        return torch.cat([rows, mask], dim=-1).flatten(1)
 
 class ObjectSetProcessor(nn.Module):
     """Processes variable number of objects using attention mechanism for

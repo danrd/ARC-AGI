@@ -123,12 +123,44 @@ def load_PPO_config():
     }
 
 def lin(act_func=nn.ReLU()):
+    """The grid encoder: two convolutions and a pool to a 3x3 grid.
+
+    It used to pool to (1, 1), which returns one mean per channel over the
+    whole grid - how much of each of 16 textures the grid holds on average,
+    and nothing at all about where. Measured with the grid as the only
+    observation, at 150_000 steps, six encoders on the three tasks of six
+    that respond at that budget, three seeds each:
+
+        arm     pool   width   held-out, averaged over 6 runs
+        pool1   1x1       16   +0.000        <- what this was
+        deep1   1x1       16   +0.060        <- four convolutions, RF 9x9
+        pool2   2x2       64   +0.333
+        pool3   3x3      144   +0.417
+        deep3   3x3      144   +0.250
+        pool4   4x4      256   +0.262
+
+    The robust part is the first row: a global mean scored zero on the
+    held-out pair in all six of its runs, where every encoder that keeps
+    some notion of where scored above zero somewhere. On dc433765 that is
+    0.000 on three seeds against 0.500 on three seeds for anything pooled
+    2x2 or finer. Depth without pooling does not substitute: deep1 sees
+    9x9 instead of 5x5 and still averages it away, and scores 0.060.
+
+    Which k is best is not resolved - 2, 3 and 4 differ by less than the
+    spread across seeds on six runs, and on 253bf280 the 4x4 arm ranges
+    from +0.5 to -0.429 across its three seeds. 3x3 has the best held-out
+    average of the three and sits in the middle on width, so it is the one
+    taken; the finding being acted on is "not a global mean", not "3x3
+    exactly".
+
+    `act_func` is accepted and unused, as it was before.
+    """
     return nn.Sequential(
               nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
               nn.ReLU(),
               nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
               nn.ReLU(),
-              nn.AdaptiveAvgPool2d((1, 1)),  # Output shape: [batch, 16, 1, 1]
-              nn.Flatten()                   # Output shape: [batch, 16]
+              nn.AdaptiveAvgPool2d((3, 3)),  # Output shape: [batch, 16, 3, 3]
+              nn.Flatten()                   # Output shape: [batch, 144]
             )
 lin_arch = lin()  # kept for notebooks that import it; configs name `lin`

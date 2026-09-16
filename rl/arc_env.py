@@ -45,13 +45,34 @@ MAX_OBJECTS = 16
 #:   'start_separate'  the input     | yes
 #:   False             zeros         | no
 #:
-#: The fourth combination had no spelling, which is why the measured
-#: advantage of 'separate' over 'start' cannot be attributed: it moves the
-#: starting state and the observation at the same time. Under 'start' the
-#: grid begins as the input and drifts 2-16% of its cells over an episode,
-#: so an input channel there would be near-duplicate; under 'separate' the
-#: grid begins at zeros and the input is the only place that information
-#: exists. 'start_separate' separates the two.
+#: The third combination had no spelling, which is why the measured
+#: advantage of 'separate' over 'start' could not be attributed: it moves
+#: the starting state and the observation at the same time.
+#:
+#: A zeroed start does not currently work, whatever the measurement said.
+#: set_subtask builds initial_objects from `subtask.train_inp`, not from the
+#: grid the episode starts on, so a zeroed start hands the policy a full
+#: object block and an action space addressing objects that are nowhere in
+#: its grid - two objects claimed against a grid of no cells, in the probe
+#: below. It is a state no repair of the observation reaches: the objects
+#: would have to come from the starting grid, and then a zeroed start holds
+#: none, which the object block and the (transform, object, object) action
+#: space have no representation for. It belongs to a setup that builds
+#: objects up by recolouring cells - one this env does not implement - and
+#: is kept only against that.
+#:
+#: It also moves the ruler. base_int is the intersection at reset, and the
+#: accuracy every arm is scored on is a fraction of (target_int - base_int).
+#: Over six shape-preserving training tasks that span is 4/32/84/86/24/40
+#: from the input and 16/40/112/98/20/496 from zeros - the same task scored
+#: against a denominator up to 12x larger. Arms that differ here are not
+#: comparable, so 'separate' is not a candidate and not a control.
+#:
+#: 'start_separate' is the question that remains: the same starting grid as
+#: 'start', the same ruler, and the input additionally carried as its own
+#: key. Under 'start' the grid drifts 2-16% of its cells over an episode,
+#: so the key is close to a duplicate of the grid - which is what makes it
+#: worth measuring rather than assuming.
 def starts_from_input(input_pattern) -> bool:
     """Does the working grid begin as the example's input?"""
     return input_pattern in ('start', 'start_separate')
@@ -283,7 +304,12 @@ class ARCGridWorld(gymnasium.Env):
             if shape_x_inp < shape_x or shape_y_inp < shape_y:
                 starting_grid = pad_grid(starting_grid, (shape_x, shape_y), self.font_color)
         else:
-            starting_grid = np.zeros(self.subtask.train_out_shape)
+            # self.grid_dtype, not np.zeros' float64: self.grid is compared
+            # against the integer target, handed to GridSummary and written
+            # back by World, and only observed_grid ever cast it - so the
+            # observation looked right while the env's own grid was float.
+            starting_grid = np.zeros(self.subtask.train_out_shape,
+                                     dtype=self.grid_dtype)
         if self.padding:
             if shape_x != self.padding[0] or shape_y != self.padding[1]:
                 starting_grid = pad_grid(starting_grid, self.padding, self.pad_val)

@@ -689,3 +689,76 @@ def test_the_shown_input_stays_the_input_after_the_grid_moves():
 
     assert np.array_equal(obs["input_pattern"], subtask.train_inp)
     assert not np.array_equal(obs["grid"], obs["input_pattern"])
+
+
+def test_a_zeroed_start_claims_objects_its_grid_does_not_hold():
+    """Characterisation, not a wish: this is what a zeroed start does now.
+
+    set_subtask reads initial_objects off `subtask.train_inp`, whatever the
+    episode starts on. Start from zeros and the policy is handed a full
+    object block, and an action space indexing it, for objects that are
+    nowhere in the grid it is editing. A zeroed start is for a setup that
+    builds objects up by recolouring cells; this env has no such setup, and
+    until it does, the state below is the reason 'separate' is not a
+    candidate.
+    """
+    subtask = _multi_object_subtask(n_objects=3)
+    env = make_env(feasible_actions=SUBMIT_AND_ROTATE, input_pattern="separate")
+    env.set_subtask(subtask)
+    env.reset(seed=0)
+
+    assert np.count_nonzero(env.grid) == 0
+    assert len(env.initial_objects) == 3, "objects come from the input"
+    assert env.visible_object_count() == 3, (
+        "and the action space addresses all three against an empty grid")
+
+
+def test_the_starting_grid_is_integer_whatever_it_starts_as():
+    """np.zeros is float64, and only observed_grid cast it - so the
+    observation matched its declared int64 space while self.grid, which
+    maximal_intersection and GridSummary both read, did not."""
+    subtask = _multi_object_subtask()
+    for pattern in ("start", "separate", "start_separate", False):
+        env = make_env(feasible_actions=SUBMIT_AND_ROTATE, input_pattern=pattern)
+        env.set_subtask(subtask)
+        env.reset(seed=0)
+        assert np.asarray(env.grid).dtype == env.grid_dtype, (
+            f"input_pattern={pattern!r} left the grid "
+            f"{np.asarray(env.grid).dtype}")
+
+
+def test_the_accuracy_denominator_moves_with_the_starting_grid():
+    """Why an arm that changes the starting grid cannot be compared to one
+    that does not: rl.training.distance_to_close is
+    target_int - base_int, base_int is the intersection at reset, and reset
+    depends on input_pattern. Measured over six shape-preserving training
+    tasks the span is 4/32/84/86/24/40 from the input against
+    16/40/112/98/20/496 from zeros - the same task, a denominator up to 12
+    times larger.
+    """
+    subtask = _multi_object_subtask()
+    spans = {}
+    for pattern in ("start", "separate"):
+        env = make_env(feasible_actions=SUBMIT_AND_ROTATE, input_pattern=pattern)
+        env.set_subtask(subtask)
+        env.reset(seed=0)
+        spans[pattern] = env.target_int - env.base_int
+
+    assert spans["start"] != spans["separate"], (
+        f"the spans agree here ({spans}), so this task no longer shows what "
+        "the test is about - pick one whose input is not near its output")
+
+
+def test_start_separate_keeps_the_ruler_the_start_arm_uses():
+    """The point of the arm: it moves the observation and nothing else, so
+    its accuracies are on the same scale as base's and the paired
+    difference means what it says."""
+    subtask = _multi_object_subtask()
+    spans = {}
+    for pattern in ("start", "start_separate"):
+        env = make_env(feasible_actions=SUBMIT_AND_ROTATE, input_pattern=pattern)
+        env.set_subtask(subtask)
+        env.reset(seed=0)
+        spans[pattern] = (env.base_int, env.target_int)
+
+    assert spans["start"] == spans["start_separate"], spans

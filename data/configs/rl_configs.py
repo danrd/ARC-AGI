@@ -4,6 +4,32 @@ from rl.policy import ARCCustomActorCriticPolicy
 
 rl_config = {
     'model_type': 'PPO',
+    # The budget, and the one setting that decides whether anything else is
+    # measurable at all. What matters is not the step count but how many
+    # times PPO updates on it: a rollout holds n_steps x n_envs, n_envs is
+    # the subtask count in mixed mode, so a task with three examples at
+    # n_steps=512 gets total_steps/1536 calls to train().
+    #
+    # Measured on dc433765, grid-only observation, two seeds, everything
+    # else held:
+    #
+    #    30_000 steps (~8 updates)    closed fraction 0.000, held-out 0.000
+    #   100_000 steps (~27 updates)   closed fraction 0.714, held-out 0.500
+    #   300_000 steps (~84 updates)   closed fraction 0.714-0.786, held-out 0.500
+    #
+    # So below roughly 25 updates the policy has not begun to learn, and a
+    # sweep run there compares configurations none of which are training -
+    # which reads as "the setting does not matter" and is not that. Six grid
+    # encoders from 16 to 256 features wide, across three seeds, produced
+    # one number per task at 30_000 steps and a held-out of zero on all 108
+    # runs; the same encoder at 100_000 solved a task the sweep had called
+    # hopeless.
+    #
+    # The plateau is between 100k and 300k, which matches how this value was
+    # chosen originally: more than 300k almost never bought anything, and
+    # very small budgets never worked. 100_000 to 150_000 is enough for a
+    # trial sweep; 300_000 for a result worth keeping. Economise on how many
+    # configurations are compared, never on this.
     'total_steps': 1000000,
     'n_eval_episodes': 1,
     'n_envs': 1,

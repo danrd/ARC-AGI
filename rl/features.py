@@ -734,6 +734,24 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
 class ObjectSetProcessor(nn.Module):
     """Processes variable number of objects using attention mechanism for
     permutation invariance and better object interaction modeling.
+
+    forward() returns the pooled vector, and `per_object` on the way out
+    holds the embeddings it was pooled from. The mean below is where the
+    policy stops being able to say "this object": an action names a slot,
+    and the logit for slot i is produced by ARCCustomNetwork from a vector
+    in which slot i's embedding has already been averaged with every other
+    one. Nothing connects "the object in slot i is small and red" to "slot
+    i scores high", so the only thing an object head can learn is a prior
+    over slot numbers - which is a property of the example it trained on,
+    not of the rule, and does not survive a grid whose slot 2 holds
+    something else.
+
+    That is the same failure the action-whitelist ablation measured from
+    the other side: lists built from the training examples helped on them
+    and moved the held-out pair by exactly zero, on every task and every
+    criterion, because a list of slot indices carries coordinates rather
+    than a rule. Keeping the per-object embeddings is what a head scoring
+    each slot from its own embedding would need.
     """
 
     def __init__(self, embedding_dim, hidden_dim=128, num_heads=4):
@@ -811,6 +829,14 @@ class ObjectSetProcessor(nn.Module):
         output = self.aggregation(aggregated)
         output = self.layer_norm2(output)
 
+        # Kept, not returned: every caller and stable-baselines3 itself
+        # expect one tensor out of a features extractor, so the pooled
+        # vector stays the return value and the per-object embeddings ride
+        # alongside. Detached from nothing - they are part of the graph, so
+        # a head reading them trains the same encoder.
+        self.per_object = object_embeddings
+        self.per_object_mask = mask
+
         return output
 
 # Usage example for your extractor
@@ -844,7 +870,10 @@ class OptimalObjectExtractor(nn.Module):
         # Create mask for valid objects (assuming invalid objects are all zeros)
         mask = (x_reshaped.sum(dim=-1) != 0)  # (batch_size, max_objects)
 
-        return self.processor(x_reshaped, mask)
+        pooled = self.processor(x_reshaped, mask)
+        self.per_object = self.processor.per_object
+        self.per_object_mask = self.processor.per_object_mask
+        return pooled
 
 # Integration with your existing code
 def create_object_extractor(subspace_shape):

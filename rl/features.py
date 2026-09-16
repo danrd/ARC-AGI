@@ -741,13 +741,21 @@ def grid_arch_width(arch):
 
 
 def default_grid_arch():
-    """The grid encoder used when a config does not supply one."""
+    """The grid encoder used when a config does not supply one.
+
+    Pools to 3x3 rather than to 1x1, and the same as
+    data.configs.rl_configs.lin, which carries the measurement: a global
+    mean returns how much of each texture the grid holds and nothing about
+    where, and scored zero on the held-out pair in all six of its runs
+    where every encoder keeping some notion of where scored above zero
+    somewhere.
+    """
     return nn.Sequential(
         nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
         nn.ReLU(),
         nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
         nn.ReLU(),
-        nn.AdaptiveAvgPool2d((1, 1)),
+        nn.AdaptiveAvgPool2d((3, 3)),
         nn.Flatten(),
     )
 

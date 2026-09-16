@@ -227,11 +227,33 @@ def test_two_extractors_built_from_one_architecture_train_separately():
 
 
 def test_an_architecture_can_be_given_as_something_that_builds_one():
-    from rl.features import default_grid_arch
+    from rl.features import default_grid_arch, grid_arch_width
 
     extractor = ARCCombinedExtractor(_grid_space(), extr_arch=default_grid_arch)
 
-    assert extractor.features_dim == 16
+    # Asked of the architecture rather than written out: the number moved
+    # from 16 to 144 when the pooling went from 1x1 to 3x3, and a test that
+    # restates it only records which day it was written.
+    assert extractor.features_dim == grid_arch_width(default_grid_arch())
+
+
+def test_the_default_encoder_keeps_some_notion_of_where():
+    """The measured property, not the number: a grid encoder that ends in a
+    global mean returns one value per channel whatever the grid holds, and
+    it scored zero on the held-out pair in all six runs it was measured in
+    where every spatially-pooled encoder scored above zero somewhere."""
+    from rl.features import default_grid_arch
+    from data.configs.rl_configs import lin
+
+    for build in (default_grid_arch, lin):
+        arch = build()
+        with torch.no_grad():
+            wide = arch(torch.zeros(1, 10, 20, 20)).shape[1]
+        channels = [layer.out_channels for layer in arch
+                    if isinstance(layer, torch.nn.Conv2d)][-1]
+        assert wide > channels, (
+            f"{build.__name__} returns {wide} features for {channels} "
+            "channels, so it pools every position into one")
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +284,11 @@ def test_the_other_grids_are_encoded_rather_than_rejected(key):
 
     assert set(extractor.extractors) == {"grid", key}
     assert features.shape == (2, extractor.features_dim)
-    assert extractor.features_dim == 32  # both grids, 16 features each
+    # Both grids through the same architecture, so twice its width - asked
+    # of the architecture rather than written out, because the width moved
+    # from 16 to 144 when the default pooling went from 1x1 to 3x3.
+    from rl.features import default_grid_arch, grid_arch_width
+    assert extractor.features_dim == 2 * grid_arch_width(default_grid_arch())
 
 
 def test_a_second_grid_is_read_rather_than_ignored():

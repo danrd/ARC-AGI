@@ -1500,3 +1500,85 @@ class TestThePairCacheIsExact:
 
         assert len(set(sizes)) == 1, \
             f"the cache grew across steps: {sizes}"
+
+
+class TestATransformLeavesNothingDescribingTheOldPosition:
+    """reinit_obj is what a transform calls after moving an object's cells.
+    Anything it forgets to recompute goes on describing where the object
+    used to be, for the rest of the episode.
+
+    Written as "the moved object equals a fresh one built at the new
+    place", because that is the property - not a list of attributes, which
+    would pass while saying nothing about the next attribute someone adds.
+    """
+
+    @staticmethod
+    def _grid_with(cells, colour=1, side=9):
+        grid = np.zeros((side, side), dtype=int)
+        for i, j in cells:
+            grid[i, j] = colour
+        return grid
+
+    @staticmethod
+    def _built(grid, cells, shape="complex", colour=(1,), label="obj_0"):
+        from symbolic.objects_analysis import GridObject
+        return GridObject(shape=shape, coords=list(cells), color=list(colour),
+                          label=label, grid_shape=grid.shape, grid=grid)
+
+    @pytest.mark.parametrize("attribute", ["color_shares", "color_structure",
+                                           "symmetry"])
+    def test_a_moved_object_matches_one_built_where_it_landed(self, attribute):
+        """An L moved onto a differently coloured patch. Its own cells keep
+        their colour, the box it spans does not - which is what
+        color_structure and color_shares are taken from."""
+        start = [(1, 1), (2, 1), (3, 1), (3, 2), (3, 3)]
+        landing = [(5, 5), (6, 5), (7, 5), (7, 6), (7, 7)]
+        grid = self._grid_with(start)
+        grid[5:8, 5:8] = 4          # something for the new box to contain
+        for i, j in landing:
+            grid[i, j] = 1
+
+        moved = self._built(grid, start)
+        moved.reinit_obj(landing, grid)
+        fresh = self._built(grid, landing)
+
+        got, want = getattr(moved, attribute), getattr(fresh, attribute)
+        if isinstance(want, np.ndarray):
+            assert np.array_equal(got, want), f"{attribute}: {got} != {want}"
+        else:
+            assert got == want, f"{attribute}: {got} != {want}"
+
+    def test_symmetry_follows_the_shape_and_not_the_history(self):
+        """An asymmetric object reshaped into a symmetric one. Nothing about
+        the comparison above would catch a symmetry that is simply never
+        touched if both objects happened to agree."""
+        crooked = [(1, 1), (2, 1), (3, 1), (3, 2)]
+        square = [(5, 5), (5, 6), (6, 5), (6, 6)]
+        grid = self._grid_with(crooked + square)
+
+        obj = self._built(grid, crooked)
+        before = obj.symmetry
+        obj.reinit_obj(square, grid)
+
+        assert before == 'assymetry', f"the fixture starts symmetric: {before}"
+        assert obj.symmetry != before, \
+            "symmetry still describes the shape the object used to have"
+        assert obj.symmetry == self._built(grid, square).symmetry
+
+    def test_the_colour_histogram_the_policy_reads_is_the_current_one(self):
+        """color_shares is the first ten numbers of an object embedding, so
+        a stale one is a wrong observation and not only a wrong attribute."""
+        cells = [(1, 1), (1, 2), (2, 1), (2, 2)]
+        grid = self._grid_with(cells, colour=1)
+
+        obj = self._built(grid, cells)
+        recoloured = grid.copy()
+        for i, j in cells:
+            recoloured[i, j] = 7
+        obj.reinit_obj(cells, recoloured)
+
+        embedding = obj.create_embedding()
+        assert embedding[7] > 0, \
+            f"the embedding does not carry the new colour: {embedding[:10]}"
+        assert embedding[1] == 0, \
+            f"the embedding still carries the old colour: {embedding[:10]}"

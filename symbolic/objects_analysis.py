@@ -461,7 +461,22 @@ class GridObject():
         return positioning
 
     def reinit_obj(self, new_coords:List[tuple], grid:np.array=None):
-        """Updated object attributed based on new coordinates."""
+        """Updated object attributed based on new coordinates.
+
+        Everything __init__ derives from the coordinates or the grid is
+        derived again here. Three attributes used not to be, and each
+        described where the object had been rather than where it now is:
+
+          color_structure  the grid inside the bounding box
+          color_shares     the colour histogram taken off that structure
+          symmetry         recomputed from the new cells
+
+        color_shares was the one that mattered. It is the first ten
+        numbers of every object embedding (see create_embedding), so a
+        recoloured or moved object went on reporting its old colour
+        distribution to whatever reads the observation, for the rest of
+        the episode.
+        """
         self.coords = tuple(sorted(new_coords, key=lambda x: (x[1],x[0])))
         self.coords_offsets = tuple((coord[0]-self.coords[0][0], coord[1]-self.coords[0][1]) for coord in self.coords)
         self.center, self.precise_center = self.find_object_center()
@@ -482,8 +497,19 @@ class GridObject():
             self.hu_moments = self.calculate_hu_moments()
             self.compactness = self.calculate_compactness()
             self.inner_holes_share = self.calculate_inner_holes_share()
+            # The same reading __init__ takes, cell included: a one-cell
+            # object is symmetric by fiat there rather than by the check,
+            # which returns 'assymetry' for size 1.
+            self.symmetry = self.check_symmetry() if self.shape != 'cell' \
+                else 'horizontal_and_vertical_symmetry'
         # Color update if grid provided
         if grid is not None:
+            # Before the colours below, which is only an ordering
+            # preference - calculate_color_shares reads the structure and
+            # nothing else - and after the edges above, which it slices by.
+            self.color_structure = grid[self.min_i:self.max_i+1,
+                                        self.min_j:self.max_j+1].copy()
+            self.color_shares = self.calculate_color_shares()
             colors = tuple(grid[i, j] for i, j in self.coords)
             self.color_numbers = tuple(set(colors))
             self.colors = tuple(colors_mapping[color] for color in self.color_numbers)

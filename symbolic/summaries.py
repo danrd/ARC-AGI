@@ -444,11 +444,16 @@ def pair_token(obj) -> tuple:
     the grid rather than of the object's own cells belongs here: the holes
     and the colour structure of the box.
 
-    congruence_key and symmetry are a different case and deliberately left
-    out. reinit_obj does not recompute them at all, so they are equally
-    stale whether a relation comes from this cache or from a fresh pass -
-    including them would change behaviour rather than preserve it. They
-    are worth fixing, but as their own change with its own measurement.
+    `symmetry` is a different case and deliberately left out. reinit_obj
+    does not recompute it at all, so it is equally stale whether a relation
+    comes from this cache or from a fresh pass - including it would change
+    behaviour rather than preserve it. Worth fixing, as its own change with
+    its own measurement. The same goes for color_shares and
+    color_structure, which reinit_obj also leaves behind.
+
+    congruence_key is not on that list, though an earlier version of this
+    comment said it was: it is set inside define_inner_contour, which
+    reinit_obj does call, so it tracks the object's current cells.
     """
     holes = tuple(hole.coords for hole in
                   tuple(getattr(obj, "inner_holes", ()))

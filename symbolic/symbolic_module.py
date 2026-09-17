@@ -20,7 +20,44 @@ import numpy as np
 from copy import copy, deepcopy
 from dataclasses import dataclass
 from itertools import permutations, product
+from math import factorial
 from typing import Any, Dict, List, Optional, Tuple
+
+
+#: What a colour-mix search will spend before it gives up.
+#:
+#: That search tries every ordering of the segments against every
+#: augmentation, so its cost is `len(segments)! * len(AUGS)`. Measured at
+#: 12-15 thousand candidates a second: six segments take 0.3 s, eight take
+#: 20 s, nine about three minutes, and the two training tasks that hand it
+#: sixteen segments would need some thirty thousand years. That is the
+#: "hang" every run of this module has worked around with an alarm - it was
+#: never a deadlock, just a factorial.
+#:
+#: The bound costs no answer that was ever produced. A census of the
+#: training split: 38 tasks reach this search, 32 of them with five
+#: segments or fewer, and the six above that (8, 9, 9, 16, 16 and 36
+#: segments) are all refused by the solver anyway - including the one at
+#: eight, which finishes its search in 7 s and finds nothing.
+#:
+#: Counted rather than timed on purpose. A wall-clock cutoff makes the
+#: answer depend on how loaded the machine was, and this pipeline
+#: reproduces run to run - the same seed gives the same number in a
+#: different process on a different day, which is a property worth keeping.
+MAX_MIX_CANDIDATES = 50_000
+
+
+def affordable_orderings(segment_count: int) -> bool:
+    """Whether a colour-mix search over this many segments is one this
+    module will spend.
+
+    A function rather than an expression inlined at the one call site,
+    because it is the decision itself and a test that re-derives
+    `factorial(n) * len(AUGS)` on its own side proves only that two copies
+    of the same arithmetic agree - it passes just as happily when the
+    module counts something else entirely.
+    """
+    return factorial(segment_count) * len(AUGS) <= MAX_MIX_CANDIDATES
 
 
 @dataclass
@@ -594,6 +631,11 @@ class MixerSolver:
                     return SolveResult.fail(
                         f"strategy from earlier example contradicts example {idx}: {e.message}"
                     )
+                except _TooManyOrderings as e:
+                    # Not "raised", which is what the catch-all below would
+                    # call it: this is the solver declining a task it
+                    # cannot afford, and it reads as a refusal.
+                    return SolveResult.fail(f"mixer declines example {idx}: {e.message}")
                 if pos_solution:
                     solution = copy(pos_solution)
 
@@ -807,6 +849,17 @@ class MixerSolver:
                     return (aug_name, perm)
             raise _WrongCheck(f"previously found ({aug_name}, {perm}) no longer matches")
 
+        # Before the loop rather than inside it: the point is to decline a
+        # search that cannot finish, and a check that only fires after the
+        # first million orderings has already spent the time it was meant
+        # to save. Checked after the `solution` branch above, which costs
+        # one build and is worth doing at any segment count.
+        if not affordable_orderings(len(segments)):
+            raise _TooManyOrderings(
+                f"{len(segments)} segments would take "
+                f"{factorial(len(segments)) * len(AUGS):,} orderings to try, "
+                f"past the {MAX_MIX_CANDIDATES:,} this search spends")
+
         for perm in permutations(range(len(segments))):
             perm = list(perm)
             for aug_name in AUGS:
@@ -922,6 +975,16 @@ class _WrongCheck(Exception):
     current example. Caught in MixerSolver.solve() and turned into a
     SolveResult.fail(...) with the message preserved."""
     def __init__(self, message="Contradiction in answer searching"):
+        self.message = message
+        super().__init__(message)
+
+
+class _TooManyOrderings(Exception):
+    """Internal-only: the colour-mix search was handed more segments than
+    MAX_MIX_CANDIDATES allows orderings for. Caught in MixerSolver.solve()
+    and turned into a SolveResult.fail(...) - a solver that declines is
+    wrong about the task, not broken, and the message says which it is."""
+    def __init__(self, message):
         self.message = message
         super().__init__(message)
 

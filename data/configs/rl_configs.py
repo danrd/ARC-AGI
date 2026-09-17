@@ -125,6 +125,10 @@ def load_PPO_config():
     # which is the control the pointer head is measured against rather than
     # a setting anyone should want. See rl.policy.PointerHead.
     'pointer_dim': 32,
+    # The object branch's architecture, the way extr_arch is the grid's:
+    # keyword arguments for ObjectSetProcessor - dropout, self_attention,
+    # grouped, cross_attention, use_position. None is what this shipped as.
+    'object_arch': None,
     }
 
 def lin(act_func=nn.ReLU()):

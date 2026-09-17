@@ -311,54 +311,70 @@ class ObjectProcessor(nn.Module):
     """Enhanced object processor with better feature grouping and attention
     """
 
-    def __init__(self, object_dim=OBJECT_DIM, hidden_dim=128, output_dim=64):
+    def __init__(self, object_dim=OBJECT_DIM, hidden_dim=128, output_dim=64,
+                 dropout=0.1, grouped=True, cross_attention=True,
+                 use_position=True):
+        """`dropout`, `grouped`, `cross_attention` and `use_position` are the
+        axes an object-branch sweep varies; the defaults are what this was.
+
+        dropout reaches five places between here and ObjectSetProcessor -
+        0.1 in each group processor, 0.1 in the cross-attention, 0.2 in the
+        fusion and 0.1 in the self-attention across objects. It regularises
+        a long run, and a policy here gets around a hundred updates, so
+        whether it is doing anything but adding noise is a question rather
+        than a setting.
+
+        use_position=False keeps the split OBJECT_SCHEMA already declares -
+        INTERNAL_GROUPS against EXTERNAL_GROUPS - which nothing had ever
+        used. Most ARC transformations are translation invariant, so
+        absolute position is exactly the field a policy can fit and not
+        transfer.
+        """
         super().__init__()
+        self.grouped = grouped
+        self.use_cross_attention = cross_attention
 
         # Which slots of the object vector feed each head, taken from the
         # schema that defines the vector rather than restated as ranges: the
         # groups a consumer cares about need not sit next to each other, and
         # a hard-coded range silently reads different fields once the schema
         # changes. Registered as buffers so they follow the module's device.
+        spatial_groups = (SIZE, POSITION) if use_position else (SIZE,)
         self.register_buffer("color_index", torch.tensor(group_indices(COLOR), dtype=torch.long))
-        self.register_buffer("spatial_index", torch.tensor(group_indices(SIZE, POSITION), dtype=torch.long))
+        self.register_buffer("spatial_index", torch.tensor(group_indices(*spatial_groups), dtype=torch.long))
         self.register_buffer("shape_index", torch.tensor(group_indices(TOPOLOGY), dtype=torch.long))
 
         self.color_dim = len(group_indices(COLOR))
-        self.spatial_dim = len(group_indices(SIZE, POSITION))
+        self.spatial_dim = len(group_indices(*spatial_groups))
         self.shape_dim = len(group_indices(TOPOLOGY))
 
-        # Specialized processors for each feature group
-        self.color_processor = nn.Sequential(
-            nn.Linear(self.color_dim, 32),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(32, 16)
-        )
+        def group_net(width):
+            return nn.Sequential(nn.Linear(width, 32), nn.ReLU(),
+                                 nn.Dropout(dropout), nn.Linear(32, 16))
 
-        self.spatial_processor = nn.Sequential(
-            nn.Linear(self.spatial_dim, 32),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(32, 16)
-        )
-
-        self.shape_processor = nn.Sequential(
-            nn.Linear(self.shape_dim, 32),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(32, 16)
-        )
-
-        # Cross-attention between feature groups
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=16, num_heads=4, dropout=0.1, batch_first=True
-        )
+        if grouped:
+            # Specialized processors for each feature group
+            self.color_processor = group_net(self.color_dim)
+            self.spatial_processor = group_net(self.spatial_dim)
+            self.shape_processor = group_net(self.shape_dim)
+            fused_width = 48
+            if cross_attention:
+                self.cross_attention = nn.MultiheadAttention(
+                    embed_dim=16, num_heads=4, dropout=dropout, batch_first=True)
+        else:
+            # One network over the whole vector: the grouping is a claim
+            # that colour, extent and topology want separate treatment, and
+            # it is only worth its three heads if it beats not making it.
+            self.plain_processor = nn.Sequential(
+                nn.Linear(self.color_dim + self.spatial_dim + self.shape_dim, 64),
+                nn.ReLU(), nn.Dropout(dropout), nn.Linear(64, 48))
+            fused_width = 48
 
         # Feature fusion
         self.fusion_net = nn.Sequential(
-            nn.Linear(48, hidden_dim),  # 16 * 3 feature groups
+            nn.Linear(fused_width, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(min(dropout * 2, 0.9)),
             nn.Linear(hidden_dim, output_dim)
         )
 
@@ -366,24 +382,27 @@ class ObjectProcessor(nn.Module):
 
     def forward(self, x):
         """x: tensor of shape (batch_size, max_objects, OBJECT_DIM)"""
-        batch_size, max_objects, _ = x.shape
-
         # Split into feature groups
         color_features = x.index_select(-1, self.color_index)
         spatial_features = x.index_select(-1, self.spatial_index)
         shape_features = x.index_select(-1, self.shape_index)
 
-        # Process each group
-        color_emb = self.color_processor(color_features)    # (batch, max_objects, 16)
-        spatial_emb = self.spatial_processor(spatial_features)  # (batch, max_objects, 16)
-        shape_emb = self.shape_processor(shape_features)    # (batch, max_objects, 16)
+        if not self.grouped:
+            combined_features = self.plain_processor(
+                torch.cat([color_features, spatial_features, shape_features], dim=-1))
+        else:
+            # Process each group
+            color_emb = self.color_processor(color_features)    # (batch, max_objects, 16)
+            spatial_emb = self.spatial_processor(spatial_features)  # (batch, max_objects, 16)
+            shape_emb = self.shape_processor(shape_features)    # (batch, max_objects, 16)
 
-        # Apply cross-attention between spatial and shape features
-        spatial_attended, _ = self.cross_attention(spatial_emb, shape_emb, shape_emb)
-        spatial_emb = spatial_emb + spatial_attended
+            if self.use_cross_attention:
+                # Apply cross-attention between spatial and shape features
+                spatial_attended, _ = self.cross_attention(spatial_emb, shape_emb, shape_emb)
+                spatial_emb = spatial_emb + spatial_attended
 
-        # Concatenate all features
-        combined_features = torch.cat([color_emb, spatial_emb, shape_emb], dim=-1)
+            # Concatenate all features
+            combined_features = torch.cat([color_emb, spatial_emb, shape_emb], dim=-1)
 
         # Final processing
         output = self.fusion_net(combined_features)
@@ -775,7 +794,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     """
 
     def __init__(self, observation_space: spaces.Dict, extr_arch=None,
-                 pointer_dim: int = 32):
+                 pointer_dim: int = 32, object_arch=None):
         super().__init__(observation_space, features_dim=1)
         extractors = {}
         total_concat_size = 0
@@ -792,7 +811,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         for key, subspace in observation_space.spaces.items():
             if key == "objects_emb":
                 # print(f'objects_emb subspace.shape:{subspace.shape}')
-                extractor, output_dim = create_object_extractor(subspace.shape)
+                extractor, output_dim = create_object_extractor(
+                    subspace.shape, object_arch)
                 extractors[key] = extractor
                 total_concat_size += output_dim
                 # Room for the per-object rows a pointer head scores, on
@@ -924,22 +944,28 @@ class ObjectSetProcessor(nn.Module):
     each slot from its own embedding would need.
     """
 
-    def __init__(self, embedding_dim, hidden_dim=128, num_heads=4):
+    def __init__(self, embedding_dim, hidden_dim=128, num_heads=4,
+                 dropout=0.1, self_attention=True, grouped=True,
+                 cross_attention=True, use_position=True):
         super().__init__()
 
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
+        self.use_self_attention = self_attention
 
         # Object embedding processor
-        self.object_processor = ObjectProcessor(hidden_dim=hidden_dim*2, output_dim=hidden_dim)
+        self.object_processor = ObjectProcessor(
+            hidden_dim=hidden_dim*2, output_dim=hidden_dim, dropout=dropout,
+            grouped=grouped, cross_attention=cross_attention,
+            use_position=use_position)
 
         # Self-attention for object interactions
         self.self_attention = nn.MultiheadAttention(
             embed_dim=hidden_dim,
             num_heads=num_heads,
-            dropout=0.1,
+            dropout=dropout,
             batch_first=True
-        )
+        ) if self_attention else None
 
         # Final aggregation
         self.aggregation = nn.Sequential(
@@ -979,13 +1005,14 @@ class ObjectSetProcessor(nn.Module):
         # print(f'forward in ObjectSetProcessor: batch_size:{batch_size} max_objects:{max_objects}' )
         # print(f'forward in ObjectSetProcessor: object_embeddings.shape:{object_embeddings.shape}' )
         # print(self.self_attention)
-        attended, _ = self.self_attention(
-            object_embeddings, object_embeddings, object_embeddings,
-            key_padding_mask=~attends if attends is not None else None
-        )
+        if self.use_self_attention:
+            attended, _ = self.self_attention(
+                object_embeddings, object_embeddings, object_embeddings,
+                key_padding_mask=~attends if attends is not None else None
+            )
 
-        # Residual connection
-        object_embeddings = self.layer_norm1(object_embeddings + attended)
+            # Residual connection
+            object_embeddings = self.layer_norm1(object_embeddings + attended)
 
         # Aggregate objects (mean pooling with mask consideration)
         if mask is not None:
@@ -1011,7 +1038,7 @@ class ObjectSetProcessor(nn.Module):
 
 # Usage example for your extractor
 class OptimalObjectExtractor(nn.Module):
-    def __init__(self, input_shape, output_dim=None):
+    def __init__(self, input_shape, output_dim=None, object_arch=None):
         super().__init__()
 
         # Assuming input_shape is (max_objects, 32)
@@ -1026,7 +1053,8 @@ class OptimalObjectExtractor(nn.Module):
         self.processor = ObjectSetProcessor(
             embedding_dim=output_dim,
             hidden_dim=128,
-            num_heads=4
+            num_heads=4,
+            **(object_arch or {})
         )
 
     def forward(self, x):
@@ -1046,13 +1074,19 @@ class OptimalObjectExtractor(nn.Module):
         return pooled
 
 # Integration with your existing code
-def create_object_extractor(subspace_shape):
+def create_object_extractor(subspace_shape, object_arch=None):
     """Replace your current objects_emb extractor with this
+
+    `object_arch` is the object branch's own architecture, the way
+    `extr_arch` is the grid's: a dict of keyword arguments for
+    ObjectSetProcessor - dropout, self_attention, grouped, cross_attention,
+    use_position. None is the shipped shape.
     """
     max_objects, feature_dim = subspace_shape
     output_dim = max(64, max_objects * 8)
 
-    return OptimalObjectExtractor(subspace_shape, output_dim), output_dim
+    return (OptimalObjectExtractor(subspace_shape, output_dim, object_arch),
+            output_dim)
 
 
 def count_parameters(model):

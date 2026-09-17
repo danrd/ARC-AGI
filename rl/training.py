@@ -53,8 +53,12 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                      'critic_only_keys':PPO_config['critic_only_keys'],
                      'features_extractor_kwargs':{
                          'extr_arch': PPO_config['extr_arch'],
-                         'pointer_dim': PPO_config.get('pointer_dim', 32),
-                         'object_arch': PPO_config.get('object_arch')}}
+                         'pointer_dim': PPO_config['pointer_dim'],
+                         'object_arch': PPO_config['object_arch'],
+                         # How relations enter when the observation has
+                         # them - see ARCCombinedExtractor. Ignored when it
+                         # does not, which is what rl_config ships.
+                         'relation_mode': PPO_config['relation_mode']}}
     # gae_lambda among them: the config has carried a value for it all
     # along and this call dropped it, so every agent ever built here ran on
     # PPO's own default of 0.95 while the config said 0.9.

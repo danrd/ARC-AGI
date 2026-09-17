@@ -15,6 +15,7 @@ from gymnasium import spaces
 
 from rl.features import ARCCombinedExtractor
 from symbolic.objects_analysis import OBJECT_DIM
+from symbolic.summaries import RELATION_DIM
 
 
 def test_action_space_key_is_skipped_not_raised():
@@ -733,3 +734,165 @@ class TestVaryingTheObjectBranch:
         assert processor.object_processor.grouped is True
         assert processor.object_processor.use_cross_attention is True
         assert processor.object_processor.spatial_dim == 9  # size and position
+
+
+class TestRelationsReachTheObjectsTheyBelongTo:
+    """The relation matrix is laid out as "the others, in slot order, with
+    this slot left out", so the block holding slot j inside row i sits at
+    `j - (j > i)`. Getting that wrong is silent: every pair still gets a
+    relation vector, just somebody else's, and the network learns whatever
+    that mixture supports.
+    """
+
+    @staticmethod
+    def _matrix(slots, dim):
+        """Row i, block for partner j, carries the number `i * 100 + j` in
+        every position - so a misrouted block is readable as the pair it
+        actually came from."""
+        relations = torch.zeros(1, slots, (slots - 1) * dim)
+        for i in range(slots):
+            for j in range(slots):
+                if i == j:
+                    continue
+                block = j - (1 if j > i else 0)
+                relations[0, i, block * dim:(block + 1) * dim] = i * 100 + j
+        return relations
+
+    @pytest.mark.parametrize("slots", [2, 3, 5, 8])
+    def test_every_block_lands_on_its_own_pair(self, slots):
+        from rl.features import pairwise_relations
+
+        dim = 3
+        unpacked = pairwise_relations(self._matrix(slots, dim))
+
+        assert unpacked.shape == (1, slots, slots, dim)
+        for i in range(slots):
+            for j in range(slots):
+                want = 0.0 if i == j else float(i * 100 + j)
+                got = unpacked[0, i, j]
+                assert torch.allclose(got, torch.full((dim,), want)), \
+                    f"({i}, {j}) carries {got.tolist()}, expected {want}"
+
+    def test_the_diagonal_is_cleared(self):
+        """An object is not in a relation with itself, and the block index
+        for the diagonal points at some real partner's block - so leaving
+        it in gives every object a message from itself that means whatever
+        its first partner did."""
+        from rl.features import pairwise_relations
+
+        unpacked = pairwise_relations(self._matrix(6, 4))
+
+        assert torch.equal(unpacked[0].diagonal(dim1=0, dim2=1),
+                           torch.zeros(4, 6))
+
+    def test_the_last_slot_is_not_an_index_error(self):
+        """`j - (j > i)` points one past the final block when i is the last
+        slot and j equals it. The diagonal is cleared either way, but
+        gather raises before that happens - which is how this was found."""
+        from rl.features import pairwise_relations
+
+        for slots in (2, 3, 9):
+            pairwise_relations(torch.randn(2, slots, (slots - 1) * 5))
+
+    def test_a_padded_slot_sends_no_message(self):
+        """A padded object is an all-zero row in the observation, but the
+        message network has biases, so message(0) is not 0. Without the
+        sender mask an empty slot contributes a constant to every real
+        object's mean."""
+        from rl.features import RelationMessages
+
+        slots, object_dim, dim = 5, 16, RELATION_DIM
+        messages = RelationMessages(object_dim=object_dim, dropout=0.0)
+        messages.eval()
+        rows = torch.randn(1, slots, object_dim)
+        relations = torch.randn(1, slots, (slots - 1) * dim)
+        full = torch.ones(1, slots, dtype=torch.bool)
+        partial = full.clone()
+        partial[0, 3] = False
+        partial[0, 4] = False
+
+        with torch.no_grad():
+            both = messages(rows, relations, partial)
+            # Whatever the two masked-out slots carry must not change the
+            # answer for the ones that are present.
+            noisy = relations.clone()
+            noisy[0, :, :] = relations[0, :, :]
+            for slot in (3, 4):
+                for other in range(slots):
+                    if other == slot:
+                        continue
+                    block = slot - (1 if slot > other else 0)
+                    noisy[0, other, block * dim:(block + 1) * dim] = 99.0
+            after = messages(rows, noisy, partial)
+
+        assert torch.allclose(both, after, atol=1e-6), \
+            "a padded slot changed what the present objects were told"
+
+    def test_messages_reach_the_rows_the_pointer_head_scores(self):
+        """The point of putting relations here rather than in a branch of
+        their own: an action names an object, and only a per-object row can
+        say anything about a particular one."""
+        from rl.features import ARCCombinedExtractor
+
+        slots = 6
+        space = spaces.Dict({
+            "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+            "objects_emb": spaces.Box(low=-10, high=10, shape=(slots, OBJECT_DIM),
+                                      dtype=np.float32),
+            "relations_emb": spaces.Box(
+                low=-10, high=10, shape=(slots, (slots - 1) * RELATION_DIM),
+                dtype=np.float32),
+        })
+        extractor = ARCCombinedExtractor(space, pointer_dim=32,
+                                         relation_mode="messages")
+        extractor.eval()
+        observation = {
+            "grid": torch.randint(0, 10, (1, 9, 9)),
+            "objects_emb": torch.randn(1, slots, OBJECT_DIM),
+            "relations_emb": torch.zeros(1, slots, (slots - 1) * RELATION_DIM),
+        }
+
+        with torch.no_grad():
+            extractor(observation)
+            quiet = extractor.pointer_tail().clone()
+            observation["relations_emb"] = torch.randn(
+                1, slots, (slots - 1) * RELATION_DIM)
+            extractor(observation)
+            loud = extractor.pointer_tail().clone()
+
+        assert not torch.allclose(quiet, loud), \
+            "changing the relations left the rows the pointer head reads alone"
+
+    def test_the_pooled_summary_is_taken_after_the_messages(self):
+        """Otherwise the relations reach the head and nothing else: the
+        vector handed to the rest of the network would still be the one
+        pooled before any message arrived."""
+        from rl.features import ARCCombinedExtractor
+
+        slots = 6
+        space = spaces.Dict({
+            "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+            "objects_emb": spaces.Box(low=-10, high=10, shape=(slots, OBJECT_DIM),
+                                      dtype=np.float32),
+            "relations_emb": spaces.Box(
+                low=-10, high=10, shape=(slots, (slots - 1) * RELATION_DIM),
+                dtype=np.float32),
+        })
+        extractor = ARCCombinedExtractor(space, pointer_dim=32,
+                                         relation_mode="messages")
+        extractor.eval()
+        observation = {
+            "grid": torch.randint(0, 10, (1, 9, 9)),
+            "objects_emb": torch.randn(1, slots, OBJECT_DIM),
+            "relations_emb": torch.zeros(1, slots, (slots - 1) * RELATION_DIM),
+        }
+        width = extractor.pointer_slots * (extractor.pointer_dim + 1)
+
+        with torch.no_grad():
+            quiet = extractor(observation)[:, :-width].clone()
+            observation["relations_emb"] = torch.randn(
+                1, slots, (slots - 1) * RELATION_DIM)
+            loud = extractor(observation)[:, :-width].clone()
+
+        assert not torch.allclose(quiet, loud), \
+            "the pooled part of the features ignored the relations"

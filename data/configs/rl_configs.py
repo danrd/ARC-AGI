@@ -129,6 +129,14 @@ def load_PPO_config():
     # keyword arguments for ObjectSetProcessor - dropout, self_attention,
     # grouped, cross_attention, use_position. None is what this shipped as.
     'object_arch': None,
+    # How 'relations_emb' is read, when observation_space_elements asks for
+    # it at all: 'flat' is the Flatten-and-two-Linears branch this shipped,
+    # whose parameter count is quartic in the slot count (132.9M at 16
+    # slots, against 155k for the whole object branch); 'messages' is one
+    # round of message passing with weights shared across pairs, constant
+    # at 22.7k however many slots there are, merged into the object rows so
+    # that it reaches the pointer head. See rl.features.RelationMessages.
+    'relation_mode': 'flat',
     }
 
 def lin(act_func=nn.ReLU()):

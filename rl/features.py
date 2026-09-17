@@ -182,6 +182,106 @@ class GraphDataConstructor:
         """Batch multiple graphs together"""
         return Batch.from_data_list(graph_list)
 
+def pairwise_relations(relations: torch.Tensor) -> torch.Tensor:
+    """`(B, n, (n-1)*R)` as `(B, n, n, R)`, with zeros down the diagonal.
+
+    The env lays a row out as "the others, in slot order, with this slot
+    left out", so the block holding slot j inside row i is at
+    `j - (j > i)`. Unpacking it is what lets a relation be read by the pair
+    it belongs to rather than by its position in a flattened vector -
+    which is the whole difference between weights shared across pairs and
+    a weight per (pair, feature) slot.
+
+    Done with one gather rather than the pair of Python loops in
+    graph_inputs: this runs inside the forward pass of every step, where
+    that one runs per sample and per pair.
+    """
+    batch, slots, width = relations.shape
+    if slots < 2:
+        return relations.new_zeros(batch, slots, slots, width)
+    dim = width // (slots - 1)
+    blocks = relations.view(batch, slots, slots - 1, dim)
+
+    rows = torch.arange(slots, device=relations.device).unsqueeze(1)
+    columns = torch.arange(slots, device=relations.device).unsqueeze(0)
+    # Clamped at both ends because of the diagonal, which is not a pair and
+    # gets cleared below: for the last slot the formula points one past the
+    # final block, and gather raises rather than ignoring an index whose
+    # value is about to be multiplied by zero.
+    block_of = (columns - (columns > rows).long()).clamp(min=0, max=slots - 2)
+    index = block_of.view(1, slots, slots, 1).expand(batch, slots, slots, dim)
+    unpacked = blocks.gather(2, index)
+
+    # The diagonal is not a pair. block_of puts something there (slot i
+    # reads its own first block) and it has to be cleared, or every object
+    # gets a message from itself that means whatever its first partner did.
+    keep = (rows != columns).view(1, slots, slots, 1)
+    return unpacked * keep
+
+
+class RelationMessages(nn.Module):
+    """One round of message passing over the objects, along the relations.
+
+    The alternative already in this file is `Flatten -> Linear(d, 2d)` over
+    the whole relation matrix, whose width is itself quadratic in the slot
+    count - so its parameter count grows as the fourth power: 7.4M at 8
+    slots, 18.8M at 10, 132.9M at 16, against 155k for the object branch
+    beside it. That is not the price of relations, it is the price of
+    reading them positionally: after the flatten, "the distance between
+    slot 3 and slot 7" is index 1234 and gets its own column of weights,
+    unrelated to the column holding the same feature for another pair, and
+    the indices shift when the object count changes.
+
+    Here the same little network is applied to every pair, so the
+    parameters are constant in the slot count and what is learned about one
+    pair transfers to the rest. Each object then takes the mean of the
+    messages from its partners - masked, so padded slots send nothing and
+    an object with no partners gets zeros rather than a division by zero.
+
+    The messages are kept beside the object rows and merged by a learned
+    projection rather than concatenated into the object vector: an object's
+    own description and what it stands in relation to are different kinds
+    of thing, and the merge is where the network decides how much of the
+    second to let into the first.
+    """
+
+    def __init__(self, relation_dim: int = RELATION_DIM, hidden: int = 32,
+                 object_dim: int = 128, dropout: float = 0.1):
+        super().__init__()
+        self.message = nn.Sequential(
+            nn.Linear(relation_dim, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, hidden),
+        )
+        self.merge = nn.Sequential(
+            nn.Linear(object_dim + hidden, object_dim),
+            nn.ReLU(),
+            nn.LayerNorm(object_dim),
+        )
+        self.hidden = hidden
+
+    def forward(self, rows: torch.Tensor, relations: torch.Tensor,
+                mask: torch.Tensor) -> torch.Tensor:
+        """rows `(B, n, object_dim)`, relations `(B, n, (n-1)*R)`, mask
+        `(B, n)` marking the slots that hold an object."""
+        pairs = pairwise_relations(relations)
+        messages = self.message(pairs)
+
+        # A message counts when its sender holds an object and the pair is
+        # not an object with itself. Without the sender mask a padded slot
+        # contributes self.message(0), which is not zero once the second
+        # layer has a bias.
+        senders = mask.unsqueeze(1).unsqueeze(-1).to(messages.dtype)
+        slots = rows.shape[1]
+        not_self = (~torch.eye(slots, dtype=torch.bool, device=rows.device)
+                    ).view(1, slots, slots, 1).to(messages.dtype)
+        weights = senders * not_self
+        pooled = (messages * weights).sum(2) / weights.sum(2).clamp(min=1.0)
+
+        return self.merge(torch.cat([rows, pooled], dim=-1))
+
+
 def graph_inputs(object_embeddings, relation_embeddings):
     """One observation's objects and relations as (nodes, edges, edge_attr).
 
@@ -794,10 +894,29 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     """
 
     def __init__(self, observation_space: spaces.Dict, extr_arch=None,
-                 pointer_dim: int = 32, object_arch=None):
+                 pointer_dim: int = 32, object_arch=None,
+                 relation_mode: str = "flat"):
+        """`relation_mode` decides how 'relations_emb' enters, when the
+        observation carries it at all:
+
+          'flat'      the whole matrix through Flatten and two Linears -
+                      what this shipped, and quadratic in width, so
+                      quartic in the slot count
+          'messages'  one round of message passing with weights shared
+                      across pairs, merged into the object rows - see
+                      RelationMessages
+
+        'messages' reaches the pointer head, because it changes the rows
+        the head scores; 'flat' cannot, because it produces one vector for
+        the whole observation. That is a difference in kind and not only
+        in size: an action names an object, and only the first of these
+        can say anything about a particular one.
+        """
         super().__init__(observation_space, features_dim=1)
         extractors = {}
         total_concat_size = 0
+        self.relation_mode = relation_mode
+        self.relation_messages = None
         #: How wide the per-object rows carried for a pointer head are, and
         #: how many slots there are - None when the observation holds no
         #: objects, or when pointer_dim is 0. ARCCustomNetwork reads both
@@ -823,6 +942,17 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                     total_concat_size += self.pointer_slots * (pointer_dim + 1)
                 # print(f'objects_emb_concat_size: {output_dim}')
             elif key == "relations_emb":
+                if relation_mode == "messages":
+                    # Nothing of its own in the concatenated vector: the
+                    # messages are merged into the object rows, which the
+                    # object branch already pools and the pointer tail
+                    # already carries. Built after the loop, where the
+                    # object branch's width is known.
+                    continue
+                if relation_mode != "flat":
+                    raise ValueError(
+                        f"relation_mode must be 'flat' or 'messages', "
+                        f"got {relation_mode!r}")
                 dim = subspace.shape[0] * subspace.shape[1]
                 extractors[key] = nn.Sequential(nn.Flatten(), nn.Linear(dim, dim*2), nn.ReLU(), nn.Linear(dim*2, dim), nn.ReLU())
                 total_concat_size += dim
@@ -854,6 +984,11 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 raise ValueError(f'Unknown feature: {key}')
 
         self.extractors = nn.ModuleDict(extractors)
+        if (relation_mode == "messages"
+                and "relations_emb" in observation_space.spaces
+                and "objects_emb" in extractors):
+            self.relation_messages = RelationMessages(
+                object_dim=extractors["objects_emb"].processor.hidden_dim)
         if self.pointer_slots is not None:
             self.pointer_projection = nn.Linear(
                 extractors["objects_emb"].processor.hidden_dim, pointer_dim)
@@ -862,6 +997,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
 
     def forward(self, observation) -> torch.Tensor:
         encoded_tensor_list = []
+        object_slot = None
         # self.extractors contain nn.Modules that do all the processing.
         for key, extractor in self.extractors.items():
             # print(f'observation key {key} has shape: {observation[key].shape}')
@@ -887,10 +1023,40 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             else:
                 res = extractor(observation[key].unsqueeze(1))
                 # print(f'output for key {key} has shape: {res.shape}')
+            if key == "objects_emb":
+                object_slot = len(encoded_tensor_list)
             encoded_tensor_list.append(res)
+        if self.relation_messages is not None and object_slot is not None:
+            encoded_tensor_list[object_slot] = self.pass_messages(observation)
         if self.pointer_slots is not None:
             encoded_tensor_list.append(self.pointer_tail())
         return torch.cat(encoded_tensor_list, dim=1)
+
+    def pass_messages(self, observation) -> torch.Tensor:
+        """Let each object see its relations, and re-pool what comes out.
+
+        Both halves matter. The rows are written back because the pointer
+        head scores them, and that is the only way a relation can reach the
+        choice of *which* object to act on. The pooled vector is recomputed
+        from the updated rows through the object branch's own aggregation,
+        because otherwise the summary handed to the rest of the network
+        would still be the one taken before any message arrived - the
+        relations would reach the head and nothing else.
+        """
+        extractor = self.extractors["objects_emb"]
+        processor = extractor.processor
+        updated = self.relation_messages(processor.per_object,
+                                         observation["relations_emb"],
+                                         processor.per_object_mask)
+        # On the extractor, which is what pointer_tail reads: OptimalObjectExtractor
+        # copies per_object out of its processor after the forward, and the
+        # copy is the one every later reader sees. Writing to the processor
+        # as well looked tidier and was untestable - nothing reads it.
+        extractor.per_object = updated
+
+        mask = processor.per_object_mask.unsqueeze(-1).to(updated.dtype)
+        aggregated = (updated * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+        return processor.layer_norm2(processor.aggregation(aggregated))
 
     def pointer_tail(self) -> torch.Tensor:
         """The per-object rows, flattened, each with a mask column.

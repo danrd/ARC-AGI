@@ -77,6 +77,89 @@ class SolveResult:
         return cls(success=False, grid=None, debug=debug)
 
 
+def _holding_out(task, index: int):
+    """`task` with training pair `index` moved into the test slot.
+
+    Built from `type(task)` rather than by importing ARCTask: rl imports
+    symbolic and not the other way round, and this needs no more of the
+    class than the constructor every task here already has.
+    """
+    kept = [pair for position, pair in enumerate(task.subtasks)
+            if position != index]
+    held = task.subtasks[index]
+    return type(task)(label=f"{task.label}-holding-out-{index}",
+                      subtasks=kept,
+                      test_inp=held.train_inp, test_out=held.train_out)
+
+
+def checked_solve(solver, task) -> SolveResult:
+    """`solver.solve(task)`, with the claim held to the solver's own examples.
+
+    A solver that thinks it succeeded has nothing to explain, which is the
+    one case where these modules are silent and the one case where they are
+    usually wrong: upscale_or_covering claims 350 of 400 training tasks and
+    is right on 13, color_restore claims 31 and is right on 1. Overall the
+    three solvers make 392 claims and 25 are correct - a claim on its own
+    carries almost no information.
+
+    A rule inferred from the examples can be applied back to them. Hold one
+    training pair out, give the solver the rest, and ask it for the held-out
+    pair, whose answer is known. A rule that cannot reproduce an example it
+    was shown is not a rule. Nothing here reads the test answer, so the
+    check is available at inference.
+
+    Measured over both splits, keeping a claim only when every held-out
+    example came back exactly right:
+
+        training    392 claims, 25 correct ->  21 kept, 21 correct
+                    precision   6.4% -> 100.0%
+        evaluation  375 claims, 28 correct ->  28 kept, 26 correct
+                    precision   7.5% ->  92.9%
+
+    The strict reading is what ships. Forgiving a declined example - a
+    solver refusing when it has one example fewer is arguably saying it
+    needs that example rather than that its rule is false - keeps one more
+    claim on training and it is a wrong one (100% -> 95.5%), and changes
+    nothing at all on evaluation. Same answers retained either way, so the
+    stricter rule is free.
+
+    Not folded into `solve` itself, and not a third kind of result. It
+    cannot live in `solve` because it calls `solve`, and a solver whose own
+    examples contradict it is simply wrong about the task - so it comes
+    back as `fail` with the reason in `debug`, like every other way these
+    solvers decline.
+
+    Costs one solve per training pair on top of the first: three or four
+    for most ARC tasks.
+    """
+    result = solver.solve(task)
+    if not result.success:
+        return result
+
+    pairs = list(getattr(task, "subtasks", ()))
+    if len(pairs) < 2:
+        # Defensive: holding one pair out of one leaves nothing to infer
+        # from. No ARC task is like this - the fewest either split has is
+        # two - but an unverifiable claim is not a verified one.
+        return SolveResult.fail(
+            f"{len(pairs)} training example(s) is too few to check the claim "
+            f"against")
+
+    for index, held in enumerate(pairs):
+        replay = solver.solve(_holding_out(task, index))
+        if not replay.success:
+            return SolveResult.fail(
+                f"claimed an answer, then declined example {index} when it "
+                f"was held out: {replay.debug}")
+        if not np.array_equal(np.asarray(replay.grid),
+                              np.asarray(held.train_out)):
+            return SolveResult.fail(
+                f"claimed an answer, then got example {index} wrong when it "
+                f"was held out - the rule does not reproduce an example it "
+                f"was shown")
+    return result
+
+
 def invert_pattern(pattern: np.ndarray, font_color) -> np.ndarray:
     """Swap background/foreground: shared by upscale and pattern planting."""
     inverted = pattern.copy()

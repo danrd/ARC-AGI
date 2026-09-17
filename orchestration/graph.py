@@ -106,13 +106,21 @@ class AgentState(TypedDict, total=False):
 def _dispatch_symbolic(task: Any, symbolic_module: Optional[Any] = None) -> Dict[str, Any]:
     """Tries each of SymbolicModule's solvers in turn, returns the first
     success. Solvers need no model/config, so a default instance is built
-    here if the caller didn't supply one."""
-    from symbolic.symbolic_module import SymbolicModule
+    here if the caller didn't supply one.
+
+    Through checked_solve rather than solve: a claim these solvers make is
+    right about 6% of the time, and holding it to the task's own examples
+    takes that to 93-100% - see checked_solve for the numbers on both
+    splits. A solver that cannot reproduce an example it was shown comes
+    back as a failure here, so the next solver gets its turn instead of
+    the first claim winning.
+    """
+    from symbolic.symbolic_module import SymbolicModule, checked_solve
 
     module = symbolic_module or SymbolicModule()
     errors = []
     for solver in (module.mixer, module.upscale_or_covering, module.color_restore):
-        result = solver.solve(task)
+        result = checked_solve(solver, task)
         if result.success:
             return {"solution": result.grid, "module_results": {"debug": result.debug}}
         errors.append(result.debug)

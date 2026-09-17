@@ -40,6 +40,175 @@ def _segments(count, side=6, colour=3):
     return built
 
 
+class _Solver:
+    """A solver whose answers are scripted, so the check can be tested
+    without a real task the real solvers happen to get right."""
+
+    def __init__(self, on_test, on_held_out):
+        self.on_test = on_test
+        #: label of the held-out task -> what to answer for it. A callable
+        #: gets the task and returns the answer.
+        self.on_held_out = on_held_out
+        self.calls = []
+
+    def solve(self, task):
+        self.calls.append(task.label)
+        answer = (self.on_test if "holding-out" not in task.label
+                  else self.on_held_out)
+        if callable(answer):
+            answer = answer(task)
+        if answer is None:
+            return SolveResult.fail("declined")
+        return SolveResult.ok(answer)
+
+
+def _task(label="t", pairs=3):
+    """`pairs` training examples, each output the input plus one, and a
+    test pair the same way - so a solver that has actually found the rule
+    reproduces every held-out example."""
+    from rl.arc_task import ARCSubtask, ARCTask
+
+    subtasks = []
+    for index in range(pairs):
+        inp = np.full((3, 3), index, dtype=int)
+        subtasks.append(ARCSubtask(f"{label}_{index}", inp, inp + 1))
+    test_inp = np.full((3, 3), 9, dtype=int)
+    return ARCTask(label=label, subtasks=subtasks, test_inp=test_inp,
+                   test_out=test_inp + 1)
+
+
+class TestAClaimIsHeldToTheTaskSOwnExamples:
+    def test_a_rule_that_reproduces_every_example_is_kept(self):
+        from symbolic.symbolic_module import checked_solve
+
+        task = _task()
+        solver = _Solver(on_test=task.test_out,
+                         on_held_out=lambda t: t.test_out)
+
+        result = checked_solve(solver, task)
+
+        assert result.success
+        assert np.array_equal(result.grid, task.test_out)
+
+    def test_a_rule_that_contradicts_an_example_is_refused(self):
+        from symbolic.symbolic_module import checked_solve
+
+        task = _task()
+        solver = _Solver(on_test=task.test_out,
+                         on_held_out=lambda t: t.test_out + 5)
+
+        result = checked_solve(solver, task)
+
+        assert not result.success
+        assert "wrong" in result.debug
+
+    def test_a_rule_that_declines_a_held_out_example_is_refused(self):
+        """The strict reading, and it is the one the numbers pick. Forgiving
+        a decline keeps one more claim on the training split and it is a
+        wrong one - 100.0% against 95.5% - and changes nothing on
+        evaluation."""
+        from symbolic.symbolic_module import checked_solve
+
+        task = _task()
+        solver = _Solver(on_test=task.test_out, on_held_out=None)
+
+        result = checked_solve(solver, task)
+
+        assert not result.success
+        assert "declined" in result.debug
+
+    def test_a_solver_that_already_failed_is_not_checked(self):
+        """Nothing to verify, and the check costs a solve per example."""
+        from symbolic.symbolic_module import checked_solve
+
+        class _Refuses:
+            def __init__(self):
+                self.calls = 0
+
+            def solve(self, task):
+                self.calls += 1
+                return SolveResult.fail("nope")
+
+        solver = _Refuses()
+        result = checked_solve(solver, _task())
+
+        assert not result.success
+        assert solver.calls == 1, "the check ran anyway"
+
+    def test_the_check_never_sees_the_test_answer(self):
+        """The whole reason it is available at inference. A solver asked
+        for a held-out pair is handed the other examples and that pair's
+        input - never the task's own test output."""
+        from symbolic.symbolic_module import _holding_out
+
+        task = _task(pairs=3)
+
+        for index in range(3):
+            variant = _holding_out(task, index)
+            assert len(variant.subtasks) == 2
+            assert not any(np.array_equal(s.train_out, task.test_out)
+                           for s in variant.subtasks)
+            assert np.array_equal(variant.test_inp,
+                                  task.subtasks[index].train_inp)
+            assert not np.array_equal(variant.test_out, task.test_out)
+
+    def test_the_dispatcher_applies_the_check(self):
+        """The wiring, asked of the dispatcher and not of the checker.
+
+        Every other test here passes with _dispatch_symbolic calling
+        `solve` directly - which is exactly the state this change is
+        undoing, and it is the one mutation the rest of the suite did not
+        notice.
+        """
+        from types import SimpleNamespace
+
+        from orchestration.graph import _dispatch_symbolic
+
+        task = _task()
+        claims_and_contradicts = _Solver(on_test=task.test_out,
+                                         on_held_out=lambda t: t.test_out + 5)
+        refuses = _Solver(on_test=None, on_held_out=None)
+        module = SimpleNamespace(mixer=claims_and_contradicts,
+                                 upscale_or_covering=refuses,
+                                 color_restore=refuses)
+
+        answer = _dispatch_symbolic(task, module)
+
+        assert answer["solution"] == "", (
+            "a claim its own examples contradict reached the dispatcher's "
+            "output")
+        assert "module_results" in answer
+
+    def test_the_dispatcher_still_returns_a_claim_that_checks_out(self):
+        """The other half: the check must not make the dispatcher answer
+        nothing at all."""
+        from types import SimpleNamespace
+
+        from orchestration.graph import _dispatch_symbolic
+
+        task = _task()
+        sound = _Solver(on_test=task.test_out, on_held_out=lambda t: t.test_out)
+        refuses = _Solver(on_test=None, on_held_out=None)
+        module = SimpleNamespace(mixer=sound, upscale_or_covering=refuses,
+                                 color_restore=refuses)
+
+        answer = _dispatch_symbolic(task, module)
+
+        assert np.array_equal(answer["solution"], task.test_out)
+
+    def test_every_example_is_held_out_in_turn(self):
+        from symbolic.symbolic_module import checked_solve
+
+        task = _task(pairs=4)
+        solver = _Solver(on_test=task.test_out,
+                         on_held_out=lambda t: t.test_out)
+
+        checked_solve(solver, task)
+
+        held = [c for c in solver.calls if "holding-out" in c]
+        assert len(held) == 4, f"only {held} were checked"
+
+
 class TestTheColourMixSearchDeclinesWhatItCannotFinish:
     def test_a_search_it_can_afford_is_run(self):
         """The bound must not be a blanket refusal - four segments is 24

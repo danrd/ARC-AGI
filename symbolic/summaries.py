@@ -426,6 +426,38 @@ class SubtaskSummary:
         }
 
 
+def pair_token(obj) -> tuple:
+    """What an object has to be for its relations to still hold.
+
+    Not the label. Transforms mutate GridObjects in place - World.apply_transform
+    hands the same instance back with new coordinates - so a cache keyed on
+    the label would serve relations computed against where the object used
+    to be, silently and for the rest of the episode.
+
+    Coordinates and colours are not enough, which cost this one wrong
+    answer in 219 before it was caught. An object's holes come from
+    `define_holes`, which reads the *grid* inside the object's bounding
+    box, so they change when some other object moves into or out of that
+    box - the object's own cells and colours untouched. match_score reads
+    those holes, and a stale cache entry gave 0.6 where a fresh pass gave
+    0.0 on a48eeaf7. So everything a relation reads that is a function of
+    the grid rather than of the object's own cells belongs here: the holes
+    and the colour structure of the box.
+
+    congruence_key and symmetry are a different case and deliberately left
+    out. reinit_obj does not recompute them at all, so they are equally
+    stale whether a relation comes from this cache or from a fresh pass -
+    including them would change behaviour rather than preserve it. They
+    are worth fixing, but as their own change with its own measurement.
+    """
+    holes = tuple(hole.coords for hole in
+                  tuple(getattr(obj, "inner_holes", ()))
+                  + tuple(getattr(obj, "outer_holes", ())))
+    structure = getattr(obj, "color_structure", None)
+    return (obj.label, obj.shape, obj.coords, obj.color_numbers, holes,
+            None if structure is None else structure.tobytes())
+
+
 class GridSummary():
     """Class for creating summary for a given grid."""
     def __init__(self, grid:np.array, shape:tuple, font_color:float=0, levels:List[int]=[1], shape_types=None):
@@ -441,6 +473,13 @@ class GridSummary():
                                     "in_line", "x_y_aligned_with", "x_aligned_with", "y_aligned_with",
                                     "aligned_top", "aligned_bottom", "aligned_left", "aligned_right")
         self.levels = levels
+        #: Pairwise analysis kept between calls, keyed by what the pair is
+        #: rather than by which objects they are - see `pair_token` and
+        #: `set_relations`. Every relation between two objects depends on
+        #: those two objects and nothing else, so a pair whose two objects
+        #: have not moved has the same relations it had last time.
+        self._pair_facts: Dict[tuple, tuple] = {}
+        self._pair_embeddings: Dict[tuple, Any] = {}
         self.repr_levels = self.set_repr_levels()
 
     def define_grid_corners(self):
@@ -744,7 +783,28 @@ class GridSummary():
         )
 
     def set_relations(self, objects) -> Tuple[Triples, RelationStatistics, ObjectDistances]:
-        """Iterate over objects to identify relations between them."""
+        """Iterate over objects to identify relations between them.
+
+        The analysis of one pair is cached on `self._pair_facts` under
+        `pair_token` of its two objects, so a call that follows a single
+        object moving re-analyses the n-1 pairs that object is in and
+        reuses the rest. update_representation_level is the caller that
+        matters: the env calls it up to twice a step, and this pass is
+        about half of it - measured at 2.27 ms of a 4.79 ms call on a
+        thirteen-object grid.
+
+        Exact rather than approximate, and for a reason worth stating:
+        everything computed per pair reads those two objects and nothing
+        else. RelationAnalyzer takes the pair and the grid shape,
+        calculate_distance takes the pair, and calculate_match_score
+        declares `grid`, `all_objects` and `font_color` but uses none of
+        them. So a pair whose objects have not changed cannot have
+        different relations, whatever happened elsewhere on the grid.
+
+        The loop order is untouched, because the order triples arrive in is
+        part of what this returns: object k's list holds the pairs (i, k)
+        for i < k first, in order, then the pairs (k, j) for j > k.
+        """
         all_object_triples = []
         # Seed every known relation at zero so the statistics always carry
         # the full vocabulary. Counting the name tuple itself would instead
@@ -757,11 +817,23 @@ class GridSummary():
         # Create mapping from label to triples for each object
         object_to_triples = defaultdict(list)
 
+        fresh_facts = {}
+        # Once per object, not once per pair: a token copies the colour
+        # structure out as bytes, and the loop below is quadratic.
+        tokens = [pair_token(obj) for obj in all_objects]
         for idx, obj1 in enumerate(all_objects):
-            for obj2 in all_objects[idx+1:]:
-                analyzer = RelationAnalyzer(obj1, obj2, self.shape)
-                triples = analyzer.triples
-                relation_counter = analyzer.relation_counter
+            for offset, obj2 in enumerate(all_objects[idx+1:], start=idx + 1):
+                key = (tokens[idx], tokens[offset], self.shape)
+                cached = self._pair_facts.get(key)
+                if cached is None:
+                    analyzer = RelationAnalyzer(obj1, obj2, self.shape)
+                    cached = (analyzer.triples, analyzer.relation_counter,
+                              self.calculate_distance(obj1, obj2))
+                # Kept on a dict built during this call rather than added
+                # to the old one, so pairs that no longer exist fall out
+                # instead of accumulating over an episode.
+                fresh_facts[key] = cached
+                triples, relation_counter, distance = cached
 
                 # Add triples for both objects
                 for triple in triples[0]:  # obj1 as head
@@ -771,10 +843,10 @@ class GridSummary():
 
                 relation_statistics.update(relation_counter)
 
-                # Distance calculation
-                distance = self.calculate_distance(obj1, obj2)
                 distances_dict[(obj1.label, obj2.label)] = distance
                 distances_dict[(obj2.label, obj1.label)] = distance
+
+        self._pair_facts = fresh_facts
 
         # Create ObjectTriples for each object
         for obj in all_objects:
@@ -820,6 +892,18 @@ class GridSummary():
                 head, relation, tail = triple
                 relation_lookup[head][tail].add(relation)
 
+        # Cached on the same terms as the relations themselves - see
+        # pair_token and set_relations. An embedding reads its two objects,
+        # the flags already decided for that pair, and their distance;
+        # nothing here is a function of the rest of the grid. This is the
+        # other third of update_representation_level's cost: 1.54 ms of a
+        # 4.79 ms call on a thirteen-object grid.
+        #
+        # Directed, unlike the relation facts: the embedding of (a, b)
+        # carries x_offset and y_offset, which are b - a, so it is not the
+        # embedding of (b, a).
+        fresh = {}
+        tokens = [pair_token(obj) for obj in objects_tuple]
         for i, obj1 in enumerate(objects_tuple):
             embeddings_dict[obj1.label] = {}
 
@@ -827,12 +911,17 @@ class GridSummary():
                 if i == j:
                     continue
 
-                # Create embedding efficiently
-                embedding = self._create_embedding(
-                    obj1, obj2, relation_lookup, distances, grid_size, objects_tuple
-                )
+                key = (tokens[i], tokens[j], grid_size)
+                embedding = self._pair_embeddings.get(key)
+                if embedding is None:
+                    embedding = self._create_embedding(
+                        obj1, obj2, relation_lookup, distances, grid_size,
+                        objects_tuple
+                    )
+                fresh[key] = embedding
                 embeddings_dict[obj1.label][obj2.label] = embedding
 
+        self._pair_embeddings = fresh
         return RelationEmbeddings(embeddings=embeddings_dict)
 
     def _create_embedding(self, obj1, obj2, relation_lookup, distances, grid_size, objects_tuple):

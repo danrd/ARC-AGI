@@ -633,3 +633,103 @@ class TestReadingADeltaAsAMap:
             large = readout(self.plane([(1, 1)], rows=28, cols=30))
 
         assert small.shape == large.shape == (1, readout.out_dim)
+
+
+# -- the object branch's own architecture ----------------------------------
+
+class TestVaryingTheObjectBranch:
+    """`object_arch` is to the object branch what `extr_arch` is to the
+    grid: a description a sweep can vary. The defaults are what this
+    shipped as, and each axis below is a claim the code makes that has
+    never been checked - that the three feature groups want separate
+    treatment, that objects want attention between them, that five layers
+    of dropout earn their noise at a hundred policy updates, and that
+    absolute position belongs in the vector at all."""
+
+    def _extractor(self, arch=None, slots=5):
+        from rl.features import ARCCombinedExtractor
+        space = spaces.Dict({
+            "grid": spaces.Box(0, 9, shape=(8, 8), dtype=np.int64),
+            "action_space": spaces.Box(0, 900, shape=(3,), dtype=np.int64),
+            "objects_emb": spaces.Box(0, 1, shape=(slots, OBJECT_DIM),
+                                      dtype=np.float32)})
+        return ARCCombinedExtractor(space, object_arch=arch)
+
+    def _observation(self, slots=5, held=3):
+        objects = torch.zeros(1, slots, OBJECT_DIM)
+        objects[0, :held] = torch.rand(held, OBJECT_DIM)
+        return {"grid": torch.randint(0, 9, (1, 8, 8)),
+                "action_space": torch.tensor([[6, slots, slots]]),
+                "objects_emb": objects}
+
+    @pytest.mark.parametrize("arch", [
+        None, {"dropout": 0.0}, {"self_attention": False},
+        {"use_position": False}, {"grouped": False},
+        {"cross_attention": False},
+        {"dropout": 0.0, "self_attention": False, "use_position": False}])
+    def test_every_variant_builds_and_returns_the_same_width(self, arch):
+        """Same width across variants, or the arms would differ in how much
+        the first shared layer reads as well as in what it reads."""
+        baseline = self._extractor()
+        extractor = self._extractor(arch).eval()
+
+        with torch.no_grad():
+            features = extractor(self._observation())
+
+        assert extractor.features_dim == baseline.features_dim
+        assert features.shape == (1, extractor.features_dim)
+
+    def test_dropping_position_drops_exactly_the_position_fields(self):
+        """OBJECT_SCHEMA already declares INTERNAL_GROUPS against
+        EXTERNAL_GROUPS, with a comment saying a consumer wanting to
+        generalise across position asks for the internal ones - and nothing
+        had ever asked."""
+        from symbolic.objects_analysis import (EXTERNAL_GROUPS, SIZE,
+                                               group_indices)
+
+        with_position = self._extractor().extractors["objects_emb"]
+        without = self._extractor({"use_position": False}).extractors["objects_emb"]
+
+        assert (without.processor.object_processor.spatial_dim
+                == len(group_indices(SIZE)))
+        assert (with_position.processor.object_processor.spatial_dim
+                == without.processor.object_processor.spatial_dim
+                + len(group_indices(*EXTERNAL_GROUPS)))
+
+    def test_dropout_zero_makes_the_encoder_repeatable_while_training(self):
+        """The default carries dropout in five places, so two passes over
+        one observation differ in train mode - which is easy to mistake for
+        an effect when comparing arms. At zero they agree."""
+        torch.manual_seed(0)
+        quiet = self._extractor({"dropout": 0.0}).train()
+        noisy = self._extractor().train()
+        obs = self._observation()
+
+        assert torch.allclose(quiet(obs), quiet(obs))
+        assert not torch.allclose(noisy(obs), noisy(obs))
+
+    def test_turning_the_attention_off_removes_it(self):
+        assert self._extractor({"self_attention": False}).extractors[
+            "objects_emb"].processor.self_attention is None
+        assert self._extractor().extractors[
+            "objects_emb"].processor.self_attention is not None
+
+    def test_an_ungrouped_branch_has_one_network_not_three(self):
+        plain = self._extractor({"grouped": False}).extractors[
+            "objects_emb"].processor.object_processor
+        grouped = self._extractor().extractors[
+            "objects_emb"].processor.object_processor
+
+        assert hasattr(plain, "plain_processor")
+        assert not hasattr(plain, "color_processor")
+        assert hasattr(grouped, "color_processor")
+
+    def test_the_default_is_what_it_was(self):
+        """Characterisation: object_arch=None has to leave the branch
+        exactly as the measurements before it were taken on."""
+        processor = self._extractor().extractors["objects_emb"].processor
+
+        assert processor.use_self_attention is True
+        assert processor.object_processor.grouped is True
+        assert processor.object_processor.use_cross_attention is True
+        assert processor.object_processor.spatial_dim == 9  # size and position

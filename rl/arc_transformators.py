@@ -3,6 +3,7 @@ from copy import copy
 from typing import Dict, List, Tuple
 from collections import deque
 from symbolic.objects_analysis import GridObject
+from symbolic.patterns import find_connected_components_with_color
 from data.configs.env_configs import COLORS_MAPPING
 
 
@@ -74,6 +75,57 @@ def count_holes(obj: 'GridObject') -> int:
         return 0
     return len(obj.inner_holes) + len(obj.outer_holes)
 
+def merged_box_and_holes(grid: np.ndarray, coords, font_color: int = 0,
+                         box_cache: Dict = None):
+    """The bounding box and hole count a GridObject over `coords` would give.
+
+    Scoring a candidate merge reads three numbers off the object it would
+    produce - `hor_size`, `vert_size` and `count_holes` - and used to build
+    a whole GridObject to get them. That object costs a contour, a
+    symmetry check, Hu moments, a shape classification and one more
+    GridObject per hole, all of it thrown away immediately;
+    find_best_object_match builds one per candidate configuration, and a
+    merge naming a 42-cell object first has 336 candidates. Measured on
+    d687bc17: 88 ms for the step against 0.13 ms for the median transform,
+    which is what put a sweep worker two hours into a single training run.
+
+    The count is exact rather than an approximation of the old one.
+    `count_holes` adds the inner holes to the outer ones, and
+    `define_holes` makes exactly one hole per connected component of the
+    font colour inside the bounding box - the inner/outer split decides
+    which list a component joins, never how many there are in total.
+
+    Note what the hole count reads: the *current* grid inside the box, not
+    the coordinates. A candidate merge has not been drawn yet, so obj2's
+    cells at the shifted position are still background here, and obj1's
+    own cells are not. That is what this scoring has always compared;
+    counting holes in the merged shape instead would change which
+    configuration wins, so it is left alone.
+
+    Which is also why `box_cache` is exact rather than an approximation:
+    the count is a function of the box and the grid alone, and the grid
+    does not change while find_best_object_match tries configurations. A
+    caller that hands in a dict gets the count computed once per distinct
+    box. That is worth more than it sounds - measured on d687bc17, all 168
+    candidates of one merge share a single box, because obj1 already spans
+    the grid and a one-cell partner cannot widen it. The dict belongs to
+    one loop over one unchanged grid; keeping one across a step would be
+    reading a stale grid.
+    """
+    i_coords = [cell[0] for cell in coords]
+    j_coords = [cell[1] for cell in coords]
+    min_i, max_i = min(i_coords), max(i_coords)
+    min_j, max_j = min(j_coords), max(j_coords)
+    if box_cache is not None and (min_i, max_i, min_j, max_j) in box_cache:
+        return box_cache[(min_i, max_i, min_j, max_j)]
+    box = grid[min_i:max_i + 1, min_j:max_j + 1]
+    holes = len(find_connected_components_with_color(box, font_color, folds=4))
+    result = (max_i - min_i + 1), (max_j - min_j + 1), holes
+    if box_cache is not None:
+        box_cache[(min_i, max_i, min_j, max_j)] = result
+    return result
+
+
 def check_intersection(coords1: List[tuple], coords2: List[tuple]) -> bool:
     """Check if two sets of coordinates intersect."""
     return bool(set(coords1).intersection(set(coords2)))
@@ -96,7 +148,7 @@ def all_on_grid(coords, grid_shape) -> bool:
 def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
                                  position: tuple, rotation_idx: int,
                                  all_grid_objects: List['GridObject'],
-                                 grid: np.ndarray) -> Dict:
+                                 grid: np.ndarray, box_cache: Dict = None) -> Dict:
     """Evaluate a potential match configuration between two objects.
     Args:
         obj1: First GridObject
@@ -142,29 +194,21 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
         # `tuple + list` is a TypeError rather than the concatenation it
         # reads as - which took every "merge" action down.
         merged_coords = list(set(list(obj1.coords) + list(shifted_coords)))
-        # The grid goes in, not just its shape: GridObject reads
-        # grid[min_i:max_i+1, ...] for its colour structure, and the default
-        # grid=None made that a TypeError - every merge died here, before the
-        # temporary object it needed to score the configuration existed.
-        merged_obj = GridObject(
-            shape="complex",
-            coords=merged_coords,
-            # tuple() on both sides: color_numbers is a tuple everywhere it is
-            # set, and stating it here keeps a stray list from making this a
-            # TypeError rather than the concatenation it reads as.
-            color=tuple(obj1.color_numbers) + tuple(obj2.color_numbers),
-            label=f"merged_{obj1.label}_{obj2.label}",
-            grid_shape=grid.shape,  # Assume we keep the positioning of obj1
-            grid=grid,
-        )
+        # The box and the hole count the merged object would have carried,
+        # without the object - see merged_box_and_holes for why the three
+        # numbers are the same ones and what the GridObject cost. The
+        # object itself went out under "merged_obj" and nothing ever read
+        # it: perform_merge draws from "shifted_coords" and obj2, and
+        # merge_objects builds its own.
+        hor_size, vert_size, merged_holes = merged_box_and_holes(
+            grid, merged_coords, box_cache=box_cache)
 
         # Calculate hole reduction
         original_holes = count_holes(obj1) + count_holes(obj2)
-        merged_holes = count_holes(merged_obj)
         hole_reduction = original_holes - merged_holes
 
         # Calculate compactness (area of bounding box / number of cells)
-        merged_area = merged_obj.hor_size * merged_obj.vert_size
+        merged_area = hor_size * vert_size
         merged_cells = len(merged_coords)
         compactness = merged_cells / merged_area if merged_area > 0 else 0
 
@@ -173,7 +217,6 @@ def evaluate_match_configuration(obj1: 'GridObject', obj2: 'GridObject',
             "hole_reduction": hole_reduction,
             "compactness": compactness,
             "shifted_coords": shifted_coords,
-            "merged_obj": merged_obj
         }
 
     return {"valid": False, "hole_reduction": 0, "compactness": 0}
@@ -196,12 +239,18 @@ def find_best_object_match(obj1: 'GridObject', obj2: 'GridObject',
     # Get all possible adjacent positions for obj1
     adjacent_positions = calculate_adjacency_positions(obj1)
 
+    # One dict for this loop, and not beyond it: the grid is fixed here,
+    # so two candidates with the same bounding box have the same hole
+    # count - see merged_box_and_holes.
+    box_cache = {}
+
     # Try all rotations of obj2
     for rotation_idx in range(4):
         # Try placing obj2 at each adjacent position of obj1
         for position in adjacent_positions:
             match_config = evaluate_match_configuration(
-                obj1, obj2, position, rotation_idx, all_grid_objects, grid
+                obj1, obj2, position, rotation_idx, all_grid_objects, grid,
+                box_cache=box_cache
             )
 
             if match_config["valid"]:

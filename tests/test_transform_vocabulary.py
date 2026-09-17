@@ -420,6 +420,124 @@ def test_merge_returns_a_grid_when_it_finds_no_configuration(monkeypatch):
     assert result.shape == grid.shape
 
 
+def _object_over(grid, coords, shape="complex", color=(1,), label="obj_0"):
+    """Labels carry an underscore because classify_shape rebuilds them as
+    `shape + "_" + label.split("_")[1]` and a bare name is an IndexError."""
+    from symbolic.objects_analysis import GridObject
+    return GridObject(shape=shape, coords=list(coords), color=list(color),
+                      label=label, grid_shape=grid.shape, grid=grid)
+
+
+#: Background cells punched out of a solid 7x7 block, named by what each
+#: layout is there to pin down. The diagonal pair is the one that matters
+#: most: define_holes walks components with folds=4, so those two cells are
+#: two holes, and any reimplementation that walks diagonals as well reports
+#: one. A layout of separated single cells cannot tell the two apart.
+HOLE_LAYOUTS = {
+    "one interior cell": [(3, 3)],
+    "two cells apart": [(2, 2), (5, 5)],
+    "two cells touching only diagonally": [(3, 3), (4, 4)],
+    "three in a diagonal chain": [(2, 2), (3, 3), (4, 4)],
+    "a cell on the bounding box edge": [(1, 1)],
+    "an edge cell and an interior one": [(1, 1), (4, 4)],
+}
+
+
+@pytest.mark.parametrize("layout", sorted(HOLE_LAYOUTS))
+def test_scoring_a_merge_reads_the_same_box_and_holes_as_the_object_did(layout):
+    """merged_box_and_holes replaces a whole GridObject, and has to agree
+    with it exactly.
+
+    Scoring a candidate merge needs three numbers - hor_size, vert_size and
+    count_holes - and used to build a GridObject per candidate to read them
+    off. That object also computes a contour, a symmetry, Hu moments, a
+    shape classification and one GridObject per hole, all discarded; on
+    d687bc17 one merge builds 336 candidates and the step took 88 ms
+    against 0.13 ms for the median transform.
+
+    So the replacement is held to the object it replaced, on the same
+    coordinates and the same grid. If the two ever disagree, a merge picks
+    a different configuration and the transform silently changes meaning -
+    which no test of "returns a grid of the right shape" would catch.
+    """
+    from rl.arc_transformators import count_holes, merged_box_and_holes
+
+    holes = HOLE_LAYOUTS[layout]
+    grid = np.zeros((9, 9), dtype=int)
+    cells = [(i, j) for i in range(1, 8) for j in range(1, 8)
+             if (i, j) not in holes]
+    for i, j in cells:
+        grid[i, j] = 1
+
+    obj = _object_over(grid, cells)
+    expected = (obj.hor_size, obj.vert_size, count_holes(obj))
+    assert count_holes(obj) == len(holes), (
+        f"the fixture for {layout!r} was meant to leave {len(holes)} holes "
+        f"and the object found {count_holes(obj)} - the case it is here to "
+        f"distinguish is not being exercised")
+    assert merged_box_and_holes(grid, cells) == expected
+
+
+def test_the_box_cache_does_not_change_what_a_merge_scores():
+    """The cache is keyed on the bounding box alone, which is only sound
+    because the grid is fixed for the length of one find_best_object_match.
+
+    It is not a micro-optimisation: measured on d687bc17, all 168
+    candidates of a single merge share one box, because obj1 already spans
+    the grid and a one-cell partner cannot widen it. The same count was
+    computed 168 times.
+    """
+    from rl import arc_transformators as T
+
+    grid = np.zeros((7, 7), dtype=int)
+    for i, j in [(1, 1), (1, 2), (1, 3), (2, 1), (2, 3), (3, 1), (3, 2), (3, 3)]:
+        grid[i, j] = 1
+    grid[5, 5] = 2
+    ring = [(1, 1), (1, 2), (1, 3), (2, 1), (2, 3), (3, 1), (3, 2), (3, 3)]
+
+    cache = {}
+    uncached = T.merged_box_and_holes(grid, ring)
+    cached = T.merged_box_and_holes(grid, ring, box_cache=cache)
+    again = T.merged_box_and_holes(grid, ring, box_cache=cache)
+
+    assert uncached == cached == again
+    assert list(cache) == [(1, 3, 1, 3)], \
+        f"one box was expected to be keyed once, got {list(cache)}"
+
+    # And a second box with a different content is not served the first
+    # one's answer.
+    wider = ring + [(5, 5)]
+    assert T.merged_box_and_holes(grid, wider, box_cache=cache) == \
+        T.merged_box_and_holes(grid, wider)
+    assert len(cache) == 2
+
+
+def test_a_merge_still_picks_the_configuration_it_used_to():
+    """End to end, on a placement whose winner is decidable by hand.
+
+    A 3x1 bar and a single cell, with one background cell left in the bar's
+    row: the configuration that fills it is the compact one, and the merge
+    has to move obj2 there rather than leave it where it was.
+    """
+    from rl.arc_transformators import find_most_probable_merge, perform_merge
+
+    grid = np.zeros((5, 7), dtype=int)
+    for j in (1, 2, 4):
+        grid[2, j] = 1
+    grid[0, 6] = 2
+    bar = _object_over(grid, [(2, 1), (2, 2), (2, 4)], color=(1,), label="bar_0")
+    cell = _object_over(grid, [(0, 6)], shape="cell", color=(2,), label="cell_0")
+
+    match = find_most_probable_merge(grid, bar, cell, [bar, cell])
+    assert match is not None, "no configuration was found at all"
+    assert (2, 3) in match["shifted_coords"], \
+        f"the gap at (2, 3) was left open: {match['shifted_coords']}"
+
+    after = perform_merge(grid.copy(), bar, cell, [bar, cell], font_color=0)
+    assert after[2, 3] == 2, f"obj2 was not drawn into the gap:\n{after}"
+    assert after[0, 6] == 0, f"obj2 was not cleared from where it was:\n{after}"
+
+
 def test_a_rotation_that_would_leave_the_grid_is_refused():
     """Not clipped. Rotating a non-square object about its own centre can put
     cells outside the grid, and the three ways out are not equal: clipping

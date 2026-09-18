@@ -1,28 +1,35 @@
-"""ARC/PPO-specific pieces for the Optuna hyperparameter search in
-rl.optimization: the PPO hyperparameter search space, and the objective
-function that trains one subtask with one sampled hyperparameter set and
-scores it - the "what to search over" and "how to score a trial" the
-generic search loop doesn't know about.
+"""ARC-specific pieces for the Optuna search in rl.optimization: what to
+vary, what to train, and what to call a good trial - the three things the
+generic loop cannot know.
 
-Known limitation: arc_ppo_objective drives create_vec_env/create_agent/
-agent.learn() exactly as rl.training's own train_on_subtask does - it
-doesn't work around any pre-existing bugs in that pipeline. As of this
-writing, a live end-to-end run still hits an unrelated observation_space
-mismatch inside vec_env.reset() (declared objects_emb shape vs. actual
-embedding shape) - pre-existing, out of scope here. tests/
-test_rl_arc_hp_search.py verifies this module's own wiring/logic against
-mocked training instead of a live run; re-verify against a real run once
-that's fixed.
+All three are arguments. `sample` is the search space, so the same
+objective can tune PPO, the ARC-specific settings, or both at once;
+`score` is the number Optuna maximises; `mode` is how the task is trained.
+Nothing here decides for the caller which of those is interesting.
+
+`score` matters more than it looks. The objective used to be the mean
+episode reward out of stable-baselines3's own buffer, which is training
+reward under whichever reward_approach the env was built with - not
+comparable between reward settings, and not the thing the agent is finally
+judged on. Those two have already been measured moving in opposite
+directions: under reward_approach 2 the agent stopped giving up, its
+reward rose, and the fraction of the distance it actually closed fell on
+two of three tasks. A search optimising reward would have picked that.
+"held_out" is the default for the same reason every sweep in this
+repository reads it: it is the only number taken on a pair the policy
+never trained on.
+
 """
 from __future__ import annotations
 
 import numpy as np
 import torch.nn as nn
 
-from data.configs.rl_configs import load_PPO_config
-from rl.arc_task import ARCSubtask
+from typing import Callable
+
+from data.configs.rl_configs import load_PPO_config, rl_config
 from rl.optimization import OptunaPruningCallback
-from rl.training import create_agent, create_vec_env
+from rl.training import train_on_task
 
 NET_ARCHS = {
     "small": [128, 128, 128],
@@ -58,35 +65,93 @@ def sample_ppo_hyperparameters(trial) -> dict:
     }
 
 
-def arc_ppo_objective(trial, subtask: ARCSubtask, rl_config: dict,
-                       warmup_fraction: float = 0.7, dead_epsilon: float = 1e-6,
-                       report_freq: int = 1000) -> float:
-    """Train PPO on `subtask` with one sampled hyperparameter set, prune
-    dead runs past `warmup_fraction` of the budget, and score by mean
-    episode reward over stable-baselines3's own ep_info_buffer (last 100
-    episodes) - not evaluate_ARC_policy/MonitorCallback, which have their
-    own unrelated, unfixed bugs; this keeps the search independent of
-    those."""
-    PPO_config = load_PPO_config()
-    PPO_config.update(sample_ppo_hyperparameters(trial))
+#: What a finished trial can be scored on. Each takes the four things
+#: train_on_task hands back and returns one number to maximise.
+#:
+#: held_out        the fraction of the distance to the target closed on the
+#:                 pair the policy never trained on - what every sweep in
+#:                 this repository reports
+#: mixed           the same fraction averaged over the training pairs. Says
+#:                 whether the task was fitted, not whether the rule was
+#: episode_reward  the mean episode reward SB3 itself tracked. Denominated
+#:                 in whichever reward_approach the env used, so it cannot
+#:                 compare two of them - and it is training reward
+#: episode_len     mean episode length, the tell for giving up: under a
+#:                 reward that pays for stopping, every episode is one step
+#:                 long. Negated, so that maximising it means "keep acting"
+SCORERS = {
+    "held_out": lambda accuracies, lens, agent, metrics:
+        float(metrics.get("test_acc", float("-inf"))),
+    "mixed": lambda accuracies, lens, agent, metrics:
+        float(np.mean(list(accuracies.values()))) if accuracies else float("-inf"),
+    "episode_reward": lambda accuracies, lens, agent, metrics:
+        float(np.mean([ep["r"] for ep in agent.ep_info_buffer]))
+        if getattr(agent, "ep_info_buffer", None) else float("-inf"),
+    "episode_len": lambda accuracies, lens, agent, metrics:
+        float(np.mean(list(lens.values()))) if lens else float("-inf"),
+}
 
-    vec_env = create_vec_env(
-        [subtask], n_envs=rl_config["n_envs"], max_episode_len=rl_config["max_episode_len"],
-        repr_level=rl_config["repr_level"], right_placement_reward=rl_config["right_placement_reward"],
-        action_penalty=rl_config["action_penalty"], repetitive_actions_penalty=rl_config["repetitive_actions_penalty"],
-        seed=rl_config["seed"], font_color=rl_config["font_color"], padding=rl_config["padding"],
-        input_pattern=rl_config["input_pattern"], milestones_rewards=rl_config["milestones_rewards"],
-        pad_val=rl_config["pad_val"], reward_approach=rl_config["reward_approach"],
-        feasible_actions=rl_config["feasible_actions"], observation_space_elements=rl_config["observation_space_elements"],
-    )
-    agent = create_agent(rl_config=rl_config, vec_env=vec_env, model_config=PPO_config)
+
+def split_settings(sampled: dict) -> tuple:
+    """A flat dict of sampled values, split into the PPO half and the ARC
+    half by which config each key belongs to.
+
+    Routed rather than declared, so a search space can name settings from
+    either side without the caller having to say which is which - and a
+    name belonging to neither raises instead of being silently dropped,
+    which is how a sweep comes to measure the default under another name.
+    """
+    ppo_keys = set(load_PPO_config())
+    arc_keys = set(rl_config)
+    both = ppo_keys & arc_keys
+    ppo, arc, unknown = {}, {}, []
+    for key, value in sampled.items():
+        if key in both:
+            raise ValueError(f"{key!r} exists in both configs; the sampler "
+                             f"cannot say which one it means")
+        if key in ppo_keys:
+            ppo[key] = value
+        elif key in arc_keys:
+            arc[key] = value
+        else:
+            unknown.append(key)
+    if unknown:
+        raise ValueError(f"sampled settings belong to no config: {unknown}")
+    return ppo, arc
+
+
+def arc_objective(trial, task, config: dict, *,
+                  sample: Callable = sample_ppo_hyperparameters,
+                  score="held_out", mode: str = "mixed",
+                  warmup_fraction: float = 0.7, dead_epsilon: float = 1e-6,
+                  report_freq: int = 1000) -> float:
+    """One trial: sample, train the whole task, score it.
+
+    `task` is a task and not one of its examples, because held-out is the
+    point - a subtask has no pair left over to be scored on. `mode` is
+    passed through to train_on_task, so 'sequential' is available for
+    whoever wants the other experiment.
+
+    `score` is a name from SCORERS or a callable taking the same four
+    arguments. `sample` returns a flat dict of settings from either config;
+    see split_settings.
+
+    Dead runs are pruned past `warmup_fraction` of the budget - not ranked
+    against other trials, see OptunaPruningCallback.
+    """
+    scorer = SCORERS[score] if isinstance(score, str) else score
+    ppo_updates, arc_updates = split_settings(sample(trial))
+
+    PPO_config = load_PPO_config()
+    PPO_config.update(ppo_updates)
+    run_config = dict(config, **arc_updates)
 
     pruning_callback = OptunaPruningCallback(
-        trial, total_steps=rl_config["total_steps"], warmup_fraction=warmup_fraction,
-        dead_epsilon=dead_epsilon, report_freq=report_freq,
+        trial, total_steps=run_config["total_steps"],
+        warmup_fraction=warmup_fraction, dead_epsilon=dead_epsilon,
+        report_freq=report_freq,
     )
-    agent.learn(rl_config["total_steps"], callback=pruning_callback)
-
-    if not agent.ep_info_buffer:
-        return float("-inf")  # never completed a single episode - as bad as it gets
-    return float(np.mean([ep["r"] for ep in agent.ep_info_buffer]))
+    accuracies, lens, agent, metrics = train_on_task(
+        task=task, rl_config=run_config, PPO_config=PPO_config, mode=mode,
+        extra_callback=pruning_callback)
+    return scorer(accuracies, lens, agent, metrics)

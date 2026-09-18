@@ -252,17 +252,21 @@ def test_reward_approach_2_pays_for_partial_progress(subtask):
     assert solved > max(partial), "solving should beat any partial result"
 
 
-def test_reward_approach_4_is_currently_broken(subtask):
-    """Regression tracker, not desired behavior: reward_approach == 4
-    reads self.max_reward_base, which is never set anywhere in
-    ARCGridWorld. If this starts passing, the bug's been fixed - update or
-    remove this test rather than leaving it pinned to the old behavior."""
+def test_reward_approach_4_runs(subtask):
+    """This tracked a bug and asked to be updated when it was fixed.
+
+    reward_approach == 4 read self.max_reward_base, assigned nowhere in the
+    file, so it raised AttributeError on the first submit - one of the four
+    approaches the config documents never ran at all. It is now the
+    monotonic one: see TestTheMonotonicReward for what it pays and why."""
     env = make_env(reward_approach=4)
     env.set_subtask(subtask)
     env.reset()
 
-    with pytest.raises(AttributeError):
-        env.step(np.array([0, 0, 0]))
+    _obs, reward, done, _trunc, _info = env.step(np.array([0, 0, 0]))
+
+    assert isinstance(float(reward), float)
+    assert done
 
 
 # -- gym.make() integration path: create_ARC_env / create_vec_env -----------
@@ -1036,3 +1040,110 @@ def test_the_deltas_survive_a_submit():
 
     assert done is True
     assert {"delta_input", "delta_target"} <= obs.keys()
+
+
+class TestTheMonotonicReward:
+    """reward_approach 4, which read an attribute the file never assigned
+    and so raised AttributeError on the first submit under it. Three of the
+    four documented approaches ran.
+
+    What it is for: 1, 2 and 3 are all flat in the thing the agent is
+    judged on. 3 pays for a solved grid and nothing else, so giving up on
+    the first step is the best return it offers and PPO finds it - four of
+    six runs submitted on 100% of steps. 2 pays by milestone, a staircase,
+    so within a step nothing is gained by getting closer; it stopped the
+    giving up and scored no better on any task and worse on two. 1 charges
+    for falling short, which is a penalty for trying.
+    """
+
+    @staticmethod
+    def _env(approach, base, target):
+        env = make_env(reward_approach=approach, input_pattern="start",
+                       observation_space_elements=["objects_emb"])
+        # The two ends of the scale, set directly: initialize_targets reads
+        # them off a subtask, and the point here is the shape of the
+        # function between them.
+        env.base_int = base
+        env.target_int = target
+        env.milestones = {target: 20.0}
+        env.milestones_rewards = [1, 2, 3, 4]
+        return env
+
+    def test_a_solved_grid_pays_what_approach_3_pays(self):
+        """So that comparing 3 against 4 compares the gradient and not the
+        scale of the prize."""
+        four = self._env(4, base=10, target=20)._submit_reward(20)
+        three = self._env(3, base=10, target=20)._submit_reward(20)
+
+        assert four == pytest.approx(three), \
+            f"a solve pays {four} under 4 and {three} under 3"
+
+    @pytest.mark.parametrize("reached,share", [
+        (10, 0.0), (12, 0.2), (15, 0.5), (18, 0.8), (20, 1.0)])
+    def test_the_reward_is_the_share_of_the_distance_closed(self, reached, share):
+        env = self._env(4, base=10, target=20)
+
+        assert env._submit_reward(reached) == pytest.approx(4 * share)
+
+    def test_a_grid_left_worse_than_it_started_pays_less_than_nothing(self):
+        """Not an oversight. Held-out runs have scored -2.7 by wrecking the
+        grid, and under approach 3 that costs exactly as much as stopping
+        on the first step: nothing."""
+        env = self._env(4, base=10, target=20)
+
+        assert env._submit_reward(6) < 0
+
+    def test_every_step_closer_pays_more(self):
+        """Monotonic is the whole claim, so it is asked of the function
+        rather than of a few points on it."""
+        env = self._env(4, base=10, target=20)
+        paid = [env._submit_reward(reached) for reached in range(6, 21)]
+
+        assert all(later > earlier for earlier, later in zip(paid, paid[1:])), \
+            f"not monotonic: {paid}"
+
+    def test_a_target_already_reached_at_the_start_pays_in_full(self):
+        """A subtask whose input already matches divides by a span of zero.
+        closed_fraction in rl/evaluation.py scores that 1.0 and so does
+        this."""
+        env = self._env(4, base=20, target=20)
+
+        assert env._submit_reward(20) == pytest.approx(4)
+
+    def test_every_documented_approach_runs(self):
+        """The bug this class exists for: approach 4 was listed in the
+        config's own comment and raised on every submit."""
+        for approach in (1, 2, 3, 4):
+            env = self._env(approach, base=10, target=20)
+            assert isinstance(env._submit_reward(15), (int, float))
+
+    def test_the_two_approaches_put_a_step_on_the_same_scale(self):
+        """Asked of an ordinary action, not of a submit.
+
+        Only step rewards are divided by max_reward - a submit's is
+        returned raw, so a solve pays 4.0 while a wasted step pays
+        -1/max_reward, around -0.005 on these tasks. Each approach builds
+        max_reward for itself, and approach 4 used to double it, which
+        would have halved every step penalty under it. A sweep between 3
+        and 4 would then have compared two reward scales as well as two
+        shapes.
+        """
+        grid = np.zeros((5, 5), dtype=int)
+        grid[1, 1] = 3
+        wanted = grid.copy()
+        wanted[3, 3] = 2
+        subtask = ARCSubtask("scale_0", grid, wanted)
+
+        paid = {}
+        for approach in (3, 4):
+            env = make_env(reward_approach=approach, input_pattern="start",
+                           observation_space_elements=["objects_emb"],
+                           feasible_actions={0: "submit", 1: "gravity"})
+            env.set_subtask(subtask)
+            env.reset()
+            _obs, reward, _done, _trunc, _info = env.step(np.array([1, 0, 0]))
+            paid[approach] = float(reward)
+
+        assert paid[4] == pytest.approx(paid[3]), (
+            f"the same step pays {paid[4]} under approach 4 and {paid[3]} "
+            f"under approach 3")

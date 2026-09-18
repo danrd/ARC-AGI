@@ -512,7 +512,11 @@ class ARCGridWorld(gymnasium.Env):
         if self.reward_approach == 2:
             self.max_reward += sum(self.milestones.values())
         elif self.reward_approach == 4:
-            self.max_reward *= 2
+            # Normalised exactly like 3, because 4 is 3 with a gradient and
+            # the comparison between them should not also be a comparison
+            # of scales. This used to double max_reward, which would have
+            # halved every reward under 4 against the same outcome under 3.
+            self.max_reward += self.milestones[self.target_int]
         elif self.reward_approach in [1,3]:
             self.max_reward += self.milestones[self.target_int]
 
@@ -550,8 +554,31 @@ class ARCGridWorld(gymnasium.Env):
                     break
             if reward == 0:
                 reward = -1 * self.milestones_rewards[-1]
-        elif self.reward_approach == 4: # monotonic scaling reward based on percentage of the task complition
-            reward = self.max_reward_base
+        elif self.reward_approach == 4:
+            # Monotonic in how much of the distance to the target was
+            # closed, which is the thing 1, 2 and 3 all fail to be.
+            #
+            # 3 pays milestones_rewards[-1] for a solved grid and 0 for
+            # everything else, so giving up on the first step is the best
+            # return it offers and PPO finds it: four of six runs submitted
+            # on 100% of steps. 2 pays partial credit by milestone, which
+            # stopped the giving up and scored no better on any task and
+            # worse on two - it is a staircase, so within a step nothing
+            # is gained by getting closer. 1 charges for falling short,
+            # which punishes trying.
+            #
+            # This pays the same milestones_rewards[-1] for a solved grid,
+            # so a solve is worth what it was worth, and that fraction of
+            # it for a partial one. Negative when the grid ends further
+            # from the target than it started, which is not an oversight:
+            # held-out runs have scored -2.7 by wrecking the grid, and
+            # under 3 that costs exactly as much as stopping straight away.
+            #
+            # `max_int` rather than self.max_int so simulate_action can
+            # reuse it, like the branches above.
+            span = self.target_int - self.base_int
+            closed = 1.0 if span <= 0 else (max_int - self.base_int) / span
+            reward = self.milestones_rewards[-1] * closed
         return reward
 
     def submit_grid(self):

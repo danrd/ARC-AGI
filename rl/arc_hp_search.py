@@ -19,6 +19,33 @@ two of three tasks. A search optimising reward would have picked that.
 repository reads it: it is the only number taken on a pair the policy
 never trained on.
 
+From a notebook, where Optuna wants a one-argument callable:
+
+    from functools import partial
+    from data.configs.rl_configs import rl_config
+    from rl.arc_hp_search import arc_objective
+    from rl.optimization import run_hyperparameter_search
+
+    config = dict(rl_config, total_steps=150_000, seed=42,
+                  feasible_actions=narrowed, max_objects=slots)
+    study = run_hyperparameter_search(
+        partial(arc_objective, task=task, config=config),
+        n_trials=40, study_name="ppo_over_the_best_observation")
+    study.best_params
+
+`config` is the ARC half and is not mutated, so one dict serves every
+trial. To search the ARC half instead, or both, pass a `sample` of your
+own - it returns a flat dict and the keys are routed by which config
+holds them:
+
+    def sample(trial):
+        return {"gamma": trial.suggest_categorical("gamma", [0.9, 0.99]),
+                "action_penalty": trial.suggest_float("action_penalty", 0, 1)}
+
+150_000 steps is the budget below which nothing is measurable - see
+rl_config's own note on total_steps - so a 40-trial study is a day of
+compute, not an afternoon. Pruning only ever drops a run that has shown
+no movement at all, never one that is merely behind.
 """
 from __future__ import annotations
 

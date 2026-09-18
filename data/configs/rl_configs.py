@@ -130,13 +130,30 @@ def load_PPO_config():
     # grouped, cross_attention, use_position. None is what this shipped as.
     'object_arch': None,
     # How 'relations_emb' is read, when observation_space_elements asks for
-    # it at all: 'flat' is the Flatten-and-two-Linears branch this shipped,
-    # whose parameter count is quartic in the slot count (132.9M at 16
-    # slots, against 155k for the whole object branch); 'messages' is one
-    # round of message passing with weights shared across pairs, constant
-    # at 22.7k however many slots there are, merged into the object rows so
-    # that it reaches the pointer head. See rl.features.RelationMessages.
-    'relation_mode': 'flat',
+    # it at all. 'messages' is one round of message passing with weights
+    # shared across pairs, merged into the object rows so that it reaches
+    # the pointer head - 22.7k parameters however many slots there are.
+    # 'flat' is the Flatten-and-two-Linears branch this shipped with, kept
+    # so the two can be compared.
+    #
+    # Measured over 93 runs on six tasks and up to seven seeds, paired
+    # against an observation of grid and objects alone:
+    #
+    #   flat       n=12  median difference -0.006, better on 6      - and it
+    #              only ran on four of the six tasks. Its parameter count is
+    #              quartic in the slot count: 132.9M at MAX_OBJECTS=16,
+    #              702M at 24 slots, 1.14bn at 27, where the optimiser
+    #              states alone are 12.7 GB and the run is OOM-killed.
+    #              Three to five times slower for a difference of zero.
+    #   messages   n=18  median +0.017, better on 9  - on its own, nothing
+    #   with the deltas alongside it, n=32, median +0.131, better on 19,
+    #   and better on four of the six tasks, worse on one, tied on one.
+    #
+    # So relations pay next to the deltas rather than by themselves, and
+    # only in this form. The effect is smaller than the 0.292 spread
+    # between seeds, so it shows up as a consistent sign rather than in any
+    # single run.
+    'relation_mode': 'messages',
     }
 
 def lin(act_func=nn.ReLU()):

@@ -246,10 +246,45 @@ class RelationMessages(nn.Module):
     """
 
     def __init__(self, relation_dim: int = RELATION_DIM, hidden: int = 32,
-                 object_dim: int = 128, dropout: float = 0.1):
+                 object_dim: int = 128, dropout: float = 0.1,
+                 endpoints: bool = False, aggregation: str = "mean",
+                 rounds: int = 1):
+        """The axes a relation-architecture sweep varies. The defaults are
+        what the first measurement used, so it stays reproducible.
+
+        `endpoints` is the one that changes what this is. With it off a
+        message is f(e_ij) - a function of the relation alone, which makes
+        this an aggregation over edges rather than message passing. A
+        graph network's message is f(h_i, h_j, e_ij): what one object
+        tells another depends on both of them as well as on the relation
+        between them. "The object to my left is the same shape as me"
+        cannot be said by the relation vector by itself.
+
+        `aggregation` is how an object combines what its partners sent.
+        A mean says "what are my relations like on average", a max says
+        "is any of them like this", a sum also counts how many there are -
+        which is the one that can distinguish two partners from five, and
+        the one whose scale grows with the object count.
+
+        `rounds` is how far news travels. One round tells an object about
+        its partners; two tell it about its partners' partners, which is
+        what a rule spanning three objects would need.
+        """
         super().__init__()
+        if aggregation not in ("mean", "max", "sum"):
+            raise ValueError(f"aggregation must be mean, max or sum, "
+                             f"got {aggregation!r}")
+        if rounds < 1:
+            raise ValueError(f"rounds must be at least 1, got {rounds}")
+        self.endpoints = endpoints
+        self.aggregation = aggregation
+        self.rounds = rounds
+        message_in = relation_dim + (2 * object_dim if endpoints else 0)
+        # One set of weights re-used across rounds rather than one per
+        # round: the parameter count stays put, and a second round is then
+        # a claim about distance rather than about capacity.
         self.message = nn.Sequential(
-            nn.Linear(relation_dim, hidden),
+            nn.Linear(message_in, hidden),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden, hidden),
@@ -266,20 +301,79 @@ class RelationMessages(nn.Module):
         """rows `(B, n, object_dim)`, relations `(B, n, (n-1)*R)`, mask
         `(B, n)` marking the slots that hold an object."""
         pairs = pairwise_relations(relations)
-        messages = self.message(pairs)
-
+        slots = rows.shape[1]
         # A message counts when its sender holds an object and the pair is
         # not an object with itself. Without the sender mask a padded slot
         # contributes self.message(0), which is not zero once the second
         # layer has a bias.
-        senders = mask.unsqueeze(1).unsqueeze(-1).to(messages.dtype)
-        slots = rows.shape[1]
+        senders = mask.unsqueeze(1).unsqueeze(-1).to(pairs.dtype)
         not_self = (~torch.eye(slots, dtype=torch.bool, device=rows.device)
-                    ).view(1, slots, slots, 1).to(messages.dtype)
+                    ).view(1, slots, slots, 1).to(pairs.dtype)
         weights = senders * not_self
-        pooled = (messages * weights).sum(2) / weights.sum(2).clamp(min=1.0)
 
-        return self.merge(torch.cat([rows, pooled], dim=-1))
+        for _ in range(self.rounds):
+            rows = self.merge(torch.cat(
+                [rows, self._pooled(rows, pairs, weights)], dim=-1))
+        return rows
+
+    def _pooled(self, rows, pairs, weights):
+        """What each object hears from its partners, this round."""
+        if self.endpoints:
+            slots = rows.shape[1]
+            receiver = rows.unsqueeze(2).expand(-1, -1, slots, -1)
+            sender = rows.unsqueeze(1).expand(-1, slots, -1, -1)
+            pairs = torch.cat([receiver, sender, pairs], dim=-1)
+        messages = self.message(pairs) * weights
+
+        if self.aggregation == "sum":
+            return messages.sum(2)
+        if self.aggregation == "max":
+            # Masked-out messages are already zero, and a max over zeros is
+            # zero - which is what an object with no partners should hear,
+            # and is not the -inf a padded slot would otherwise contribute.
+            return messages.max(2).values
+        return messages.sum(2) / weights.sum(2).clamp(min=1.0)
+
+
+class RelationBias(nn.Module):
+    """Relations as an additive bias on the attention between objects.
+
+    The other way of spending them, and the cheaper one. RelationMessages
+    computes a vector per pair and merges it into the object's row;
+    this computes a *number* per pair and head, and adds it to the
+    attention logit for that pair - so a relation does not enter what an
+    object is, only who it looks at. nn.MultiheadAttention takes exactly
+    that: a float attn_mask is added to the scores rather than used as a
+    gate, which is what makes this a few lines instead of a hand-written
+    attention.
+
+    Cheaper in parameters (one output per head against a hidden layer per
+    pair) and in what it claims: the object rows keep their own meaning and
+    the relations only re-weight the mixing. Whether that is enough is the
+    measurement - message passing was worth +0.131 against the control
+    with the deltas alongside it, and nothing on its own.
+
+    Requires the self-attention it biases: with self_attention off there is
+    no attention to bias, and this quietly becomes a no-op. The extractor
+    refuses that combination rather than measuring it.
+    """
+
+    def __init__(self, relation_dim: int = RELATION_DIM, num_heads: int = 4):
+        super().__init__()
+        # No bias term: an all-zero relation vector - which is what a
+        # padded pair and the diagonal both carry - has to score zero, or
+        # every non-pair gets a constant nudge that the attention then
+        # spends its softmax on.
+        self.score = nn.Linear(relation_dim, num_heads, bias=False)
+        self.num_heads = num_heads
+
+    def forward(self, relations: torch.Tensor) -> torch.Tensor:
+        """relations `(B, n, (n-1)*R)` -> `(B * num_heads, n, n)`, laid out
+        the way MultiheadAttention wants a per-head float mask."""
+        pairs = pairwise_relations(relations)
+        scores = self.score(pairs)
+        batch, slots, _, heads = scores.shape
+        return scores.permute(0, 3, 1, 2).reshape(batch * heads, slots, slots)
 
 
 def graph_inputs(object_embeddings, relation_embeddings):
@@ -895,7 +989,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
 
     def __init__(self, observation_space: spaces.Dict, extr_arch=None,
                  pointer_dim: int = 32, object_arch=None,
-                 relation_mode: str = "flat"):
+                 relation_mode: str = "flat", relation_arch=None):
         """`relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
 
@@ -905,6 +999,9 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
           'messages'  one round of message passing with weights shared
                       across pairs, merged into the object rows - see
                       RelationMessages
+          'bias'      a number per pair added to the attention logits
+                      between objects, so relations decide who looks at
+                      whom rather than what an object is - see RelationBias
 
         'messages' reaches the pointer head, because it changes the rows
         the head scores; 'flat' cannot, because it produces one vector for
@@ -949,10 +1046,15 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                     # already carries. Built after the loop, where the
                     # object branch's width is known.
                     continue
+                if relation_mode == "bias":
+                    # Same as 'messages': nothing of its own in the
+                    # concatenated vector. It re-weights the attention the
+                    # object branch already runs.
+                    continue
                 if relation_mode != "flat":
                     raise ValueError(
-                        f"relation_mode must be 'flat' or 'messages', "
-                        f"got {relation_mode!r}")
+                        f"relation_mode must be 'flat', 'messages' or "
+                        f"'bias', got {relation_mode!r}")
                 dim = subspace.shape[0] * subspace.shape[1]
                 extractors[key] = nn.Sequential(nn.Flatten(), nn.Linear(dim, dim*2), nn.ReLU(), nn.Linear(dim*2, dim), nn.ReLU())
                 total_concat_size += dim
@@ -984,11 +1086,24 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 raise ValueError(f'Unknown feature: {key}')
 
         self.extractors = nn.ModuleDict(extractors)
-        if (relation_mode == "messages"
-                and "relations_emb" in observation_space.spaces
-                and "objects_emb" in extractors):
+        self.relation_bias = None
+        has_relations = ("relations_emb" in observation_space.spaces
+                         and "objects_emb" in extractors)
+        if relation_mode == "messages" and has_relations:
             self.relation_messages = RelationMessages(
-                object_dim=extractors["objects_emb"].processor.hidden_dim)
+                object_dim=extractors["objects_emb"].processor.hidden_dim,
+                **(relation_arch or {}))
+        if relation_mode == "bias" and has_relations:
+            processor = extractors["objects_emb"].processor
+            if processor.self_attention is None:
+                # There is no attention to bias, so this would build
+                # cleanly, train, and measure the object branch under
+                # another name.
+                raise ValueError(
+                    "relation_mode='bias' needs the object branch's "
+                    "self-attention, which object_arch turned off")
+            self.relation_bias = RelationBias(
+                num_heads=processor.self_attention.num_heads)
         if self.pointer_slots is not None:
             self.pointer_projection = nn.Linear(
                 extractors["objects_emb"].processor.hidden_dim, pointer_dim)
@@ -998,6 +1113,14 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     def forward(self, observation) -> torch.Tensor:
         encoded_tensor_list = []
         object_slot = None
+        if self.relation_bias is not None:
+            # Before the loop, not after it: the object branch runs inside
+            # the loop and reads this during its attention. Set afterwards
+            # it survives to the *next* observation and biases that one
+            # instead - which still moves the features, so a test that only
+            # checked "relations change the output" passed.
+            self.extractors["objects_emb"].processor.attn_bias = \
+                self.relation_bias(observation["relations_emb"])
         # self.extractors contain nn.Modules that do all the processing.
         for key, extractor in self.extractors.items():
             # print(f'observation key {key} has shape: {observation[key].shape}')
@@ -1143,6 +1266,12 @@ class ObjectSetProcessor(nn.Module):
         self.layer_norm1 = nn.LayerNorm(hidden_dim)
         self.layer_norm2 = nn.LayerNorm(embedding_dim)
 
+        #: An additive bias for the attention below, set by the caller for
+        #: the next forward and cleared by it. A side channel like
+        #: per_object above, and for the same reason: every caller and
+        #: stable-baselines3 itself expect one tensor in and one out.
+        self.attn_bias = None
+
     def forward(self, x, mask=None):
         """x: tensor of shape (batch_size, max_objects, 32)
         mask: optional mask for variable number of objects
@@ -1174,8 +1303,14 @@ class ObjectSetProcessor(nn.Module):
         if self.use_self_attention:
             attended, _ = self.self_attention(
                 object_embeddings, object_embeddings, object_embeddings,
-                key_padding_mask=~attends if attends is not None else None
+                key_padding_mask=~attends if attends is not None else None,
+                attn_mask=self.attn_bias,
             )
+            # Cleared here rather than by the caller: a bias left over from
+            # the previous observation would be added to this one's
+            # attention, and with the batch sizes stable-baselines3 uses it
+            # would be the right shape to do so silently.
+            self.attn_bias = None
 
             # Residual connection
             object_embeddings = self.layer_norm1(object_embeddings + attended)

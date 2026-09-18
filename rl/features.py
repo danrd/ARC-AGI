@@ -248,7 +248,7 @@ class RelationMessages(nn.Module):
     def __init__(self, relation_dim: int = RELATION_DIM, hidden: int = 32,
                  object_dim: int = 128, dropout: float = 0.1,
                  endpoints: bool = False, aggregation: str = "mean",
-                 rounds: int = 1):
+                 rounds: int = 1, endpoint_dim: int = None):
         """The axes a relation-architecture sweep varies. The defaults are
         what the first measurement used, so it stays reproducible.
 
@@ -269,6 +269,17 @@ class RelationMessages(nn.Module):
         `rounds` is how far news travels. One round tells an object about
         its partners; two tell it about its partners' partners, which is
         what a rule spanning three objects would need.
+
+        `endpoint_dim` is what makes `endpoints` a fair test of itself.
+        Concatenated raw, the two object rows are 256 numbers at unit scale
+        against the relation's 24 at a mean magnitude of 0.344 - measured
+        on a built module, changing the relations then moves a message by
+        0.0138 where changing the objects moves it by 0.1518, eleven times
+        more, and the same relation change moves it 2.9x *less* than it
+        does without endpoints at all. So adding the objects mostly
+        subtracts the relation. Setting endpoint_dim projects each row to
+        that width and normalises it first, which is the version worth
+        measuring; None keeps the raw concatenation that was.
         """
         super().__init__()
         if aggregation not in ("mean", "max", "sum"):
@@ -279,7 +290,20 @@ class RelationMessages(nn.Module):
         self.endpoints = endpoints
         self.aggregation = aggregation
         self.rounds = rounds
-        message_in = relation_dim + (2 * object_dim if endpoints else 0)
+        self.endpoint_projection = None
+        if endpoints and endpoint_dim:
+            # LayerNorm as well as the projection: the width is half the
+            # imbalance and the scale is the other half. bias=False is what
+            # makes the pair of them scale-free - a bias does not scale
+            # with its input, so LayerNorm(10Wx + b) is not LayerNorm(Wx +
+            # b), and rows that drifted louder would drown the relation
+            # again through the back door.
+            self.endpoint_projection = nn.Sequential(
+                nn.Linear(object_dim, endpoint_dim, bias=False),
+                nn.LayerNorm(endpoint_dim),
+            )
+        endpoint_width = (endpoint_dim or object_dim) if endpoints else 0
+        message_in = relation_dim + 2 * endpoint_width
         # One set of weights re-used across rounds rather than one per
         # round: the parameter count stays put, and a second round is then
         # a claim about distance rather than about capacity.
@@ -320,8 +344,10 @@ class RelationMessages(nn.Module):
         """What each object hears from its partners, this round."""
         if self.endpoints:
             slots = rows.shape[1]
-            receiver = rows.unsqueeze(2).expand(-1, -1, slots, -1)
-            sender = rows.unsqueeze(1).expand(-1, slots, -1, -1)
+            ends = rows if self.endpoint_projection is None \
+                else self.endpoint_projection(rows)
+            receiver = ends.unsqueeze(2).expand(-1, -1, slots, -1)
+            sender = ends.unsqueeze(1).expand(-1, slots, -1, -1)
             pairs = torch.cat([receiver, sender, pairs], dim=-1)
         messages = self.message(pairs) * weights
 

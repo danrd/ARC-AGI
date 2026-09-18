@@ -13,7 +13,7 @@ import pytest
 import torch
 from gymnasium import spaces
 
-from rl.features import ARCCombinedExtractor
+from rl.features import ARCCombinedExtractor, pairwise_relations
 from symbolic.objects_analysis import OBJECT_DIM
 from symbolic.summaries import RELATION_DIM
 
@@ -896,3 +896,229 @@ class TestRelationsReachTheObjectsTheyBelongTo:
 
         assert not torch.allclose(quiet, loud), \
             "the pooled part of the features ignored the relations"
+
+
+class TestTheMessagePassingVariants:
+    """The axes a relation-architecture sweep varies, each held to the
+    thing that makes it different from the default rather than to the fact
+    that it builds."""
+
+    @staticmethod
+    def _messages(**arch):
+        from rl.features import RelationMessages
+        built = RelationMessages(object_dim=8, dropout=0.0, **arch)
+        built.eval()
+        return built
+
+    @staticmethod
+    def _inputs(slots=4, object_dim=8, filled=None):
+        torch.manual_seed(0)
+        rows = torch.randn(1, slots, object_dim)
+        relations = torch.randn(1, slots, (slots - 1) * RELATION_DIM)
+        mask = torch.zeros(1, slots, dtype=torch.bool)
+        mask[0, :filled if filled is not None else slots] = True
+        return rows, relations, mask
+
+    def test_without_endpoints_a_message_ignores_the_objects(self):
+        """Which is what makes the default an aggregation over edges rather
+        than message passing - stated as a test so the distinction is not
+        only in a docstring."""
+        passing = self._messages()
+        rows, relations, mask = self._inputs()
+
+        with torch.no_grad():
+            pairs = pairwise_relations(relations)
+            first = passing._pooled(rows, pairs, torch.ones(1, 4, 4, 1))
+            second = passing._pooled(rows * -3.0, pairs, torch.ones(1, 4, 4, 1))
+
+        assert torch.allclose(first, second), \
+            "the default message already depends on the objects"
+
+    def test_with_endpoints_a_message_depends_on_both_objects(self):
+        passing = self._messages(endpoints=True)
+        rows, relations, mask = self._inputs()
+
+        with torch.no_grad():
+            pairs = pairwise_relations(relations)
+            first = passing._pooled(rows, pairs, torch.ones(1, 4, 4, 1))
+            second = passing._pooled(rows * -3.0, pairs, torch.ones(1, 4, 4, 1))
+
+        assert not torch.allclose(first, second), \
+            "endpoints=True left the message a function of the relation alone"
+
+    @pytest.mark.parametrize("aggregation", ["mean", "max", "sum"])
+    def test_a_padded_partner_is_not_heard(self, aggregation):
+        """Every aggregation has its own way of leaking one. A mean divides
+        by a count that must not include it, a sum adds it outright, and a
+        max compares against it - and message(0) is not 0 once the layers
+        have biases."""
+        passing = self._messages(aggregation=aggregation)
+        rows, relations, mask = self._inputs(filled=2)
+
+        with torch.no_grad():
+            before = passing(rows, relations, mask)
+            noisy = relations.clone()
+            for present in range(2):
+                for absent in (2, 3):
+                    block = absent - (1 if absent > present else 0)
+                    noisy[0, present,
+                          block * RELATION_DIM:(block + 1) * RELATION_DIM] = 50.0
+            after = passing(rows, noisy, mask)
+
+        assert torch.allclose(before, after, atol=1e-6), \
+            f"{aggregation} heard a slot holding nothing"
+
+    def test_sum_counts_partners_where_mean_does_not(self):
+        """The reason to have it: two partners and five are the same to a
+        mean and different to a sum."""
+        rows, relations, _ = self._inputs(slots=4)
+        few = torch.zeros(1, 4, dtype=torch.bool)
+        few[0, :2] = True
+        many = torch.ones(1, 4, dtype=torch.bool)
+
+        for aggregation, differs in (("sum", True), ("mean", False)):
+            passing = self._messages(aggregation=aggregation)
+            # Same relation vector for every pair, so only the count of
+            # partners can distinguish the two cases.
+            same = torch.ones(1, 4, 3 * RELATION_DIM)
+            with torch.no_grad():
+                a = passing._pooled(rows, pairwise_relations(same),
+                                    few.unsqueeze(1).unsqueeze(-1).float()
+                                    * (~torch.eye(4, dtype=torch.bool)).view(1, 4, 4, 1).float())
+                b = passing._pooled(rows, pairwise_relations(same),
+                                    many.unsqueeze(1).unsqueeze(-1).float()
+                                    * (~torch.eye(4, dtype=torch.bool)).view(1, 4, 4, 1).float())
+            moved = not torch.allclose(a, b, atol=1e-6)
+            assert moved is differs, \
+                f"{aggregation}: partner count {'was' if moved else 'was not'} visible"
+
+    def test_two_rounds_carry_news_further_than_one(self):
+        """One round tells an object about its partners; two tell it about
+        its partners' partners, which is what a rule spanning three objects
+        needs."""
+        rows, relations, mask = self._inputs(slots=4)
+        one = self._messages(rounds=1)
+        two = self._messages(rounds=2)
+        two.load_state_dict(one.state_dict())
+
+        with torch.no_grad():
+            after_one = one(rows, relations, mask)
+            after_two = two(rows, relations, mask)
+
+        assert not torch.allclose(after_one, after_two), \
+            "a second round changed nothing, so it did not run"
+
+    def test_an_unknown_aggregation_is_refused(self):
+        """Rather than silently falling through to the mean, which would
+        make an arm named after it measure the default."""
+        from rl.features import RelationMessages
+
+        with pytest.raises(ValueError, match="aggregation"):
+            RelationMessages(object_dim=8, aggregation="median")
+
+    def test_bias_mode_needs_the_attention_it_biases(self):
+        """With self-attention off there is nothing to bias, and the arm
+        would build, train and report on the object branch under another
+        name."""
+        from rl.features import ARCCombinedExtractor
+
+        slots = 5
+        space = spaces.Dict({
+            "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+            "objects_emb": spaces.Box(low=-10, high=10, shape=(slots, OBJECT_DIM),
+                                      dtype=np.float32),
+            "relations_emb": spaces.Box(
+                low=-10, high=10, shape=(slots, (slots - 1) * RELATION_DIM),
+                dtype=np.float32),
+        })
+
+        with pytest.raises(ValueError, match="self-attention"):
+            ARCCombinedExtractor(space, pointer_dim=32, relation_mode="bias",
+                                 object_arch={"self_attention": False})
+
+    def test_the_bias_reaches_the_attention(self):
+        """A float attn_mask is added to the attention logits; the point of
+        the arm is that relations decide who looks at whom."""
+        from rl.features import ARCCombinedExtractor
+
+        slots = 5
+        space = spaces.Dict({
+            "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+            "objects_emb": spaces.Box(low=-10, high=10, shape=(slots, OBJECT_DIM),
+                                      dtype=np.float32),
+            "relations_emb": spaces.Box(
+                low=-10, high=10, shape=(slots, (slots - 1) * RELATION_DIM),
+                dtype=np.float32),
+        })
+        extractor = ARCCombinedExtractor(space, pointer_dim=32,
+                                         relation_mode="bias")
+        extractor.eval()
+        observation = {
+            "grid": torch.randint(0, 10, (1, 9, 9)),
+            "objects_emb": torch.randn(1, slots, OBJECT_DIM),
+            "relations_emb": torch.zeros(1, slots, (slots - 1) * RELATION_DIM),
+        }
+
+        with torch.no_grad():
+            quiet = extractor(observation).clone()
+            observation["relations_emb"] = torch.randn(
+                1, slots, (slots - 1) * RELATION_DIM) * 5
+            loud = extractor(observation).clone()
+
+        assert not torch.allclose(quiet, loud), \
+            "the relation bias did not reach the attention"
+
+    def test_the_bias_does_not_survive_into_the_next_observation(self):
+        """It is a side channel on the processor, so a stale one would be
+        added to the next batch's attention - and at a stable batch size it
+        would be the right shape to do it silently."""
+        from rl.features import ARCCombinedExtractor
+
+        slots = 5
+        space = spaces.Dict({
+            "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
+            "objects_emb": spaces.Box(low=-10, high=10, shape=(slots, OBJECT_DIM),
+                                      dtype=np.float32),
+            "relations_emb": spaces.Box(
+                low=-10, high=10, shape=(slots, (slots - 1) * RELATION_DIM),
+                dtype=np.float32),
+        })
+        extractor = ARCCombinedExtractor(space, pointer_dim=32,
+                                         relation_mode="bias")
+        extractor.eval()
+        observation = {
+            "grid": torch.randint(0, 10, (1, 9, 9)),
+            "objects_emb": torch.randn(1, slots, OBJECT_DIM),
+            "relations_emb": torch.randn(1, slots, (slots - 1) * RELATION_DIM),
+        }
+
+        with torch.no_grad():
+            extractor(observation)
+
+        assert extractor.extractors["objects_emb"].processor.attn_bias is None
+
+    def test_max_and_mean_hear_a_mixed_set_of_partners_differently(self):
+        """Without this, an arm named `max` can be the mean and the suite
+        cannot tell: the padding test passes either way, and with identical
+        partners the two agree by construction. So the partners are made to
+        differ, which is the case the max exists for - "is any of my
+        relations like this" against "what are they like on average"."""
+        rows, _relations, mask = self._inputs(slots=4)
+        mixed = torch.zeros(1, 4, 3 * RELATION_DIM)
+        mixed[0, :, :RELATION_DIM] = 6.0     # one loud partner per row
+
+        # The same weights in both, or this compares two random
+        # initialisations and passes whatever the aggregation does.
+        averaging = self._messages(aggregation="mean")
+        peaking = self._messages(aggregation="max")
+        peaking.load_state_dict(averaging.state_dict())
+
+        outputs = {}
+        for aggregation, passing in (("mean", averaging), ("max", peaking)):
+            with torch.no_grad():
+                outputs[aggregation] = passing._pooled(
+                    rows, pairwise_relations(mixed),
+                    (~torch.eye(4, dtype=torch.bool)).view(1, 4, 4, 1).float())
+
+        assert not torch.allclose(outputs["mean"], outputs["max"], atol=1e-6), \
+            "the max read a mixed set of partners the same way the mean did"

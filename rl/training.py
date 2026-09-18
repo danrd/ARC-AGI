@@ -58,7 +58,10 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                          # How relations enter when the observation has
                          # them - see ARCCombinedExtractor. Ignored when it
                          # does not, which is what rl_config ships.
-                         'relation_mode': PPO_config['relation_mode']}}
+                         'relation_mode': PPO_config['relation_mode'],
+                         # Keyword arguments for RelationMessages, the way
+                         # object_arch is for the object branch.
+                         'relation_arch': PPO_config['relation_arch']}}
     # gae_lambda among them: the config has carried a value for it all
     # along and this call dropped it, so every agent ever built here ran on
     # PPO's own default of 0.95 while the config said 0.9.

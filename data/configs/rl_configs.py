@@ -154,6 +154,10 @@ def load_PPO_config():
     # between seeds, so it shows up as a consistent sign rather than in any
     # single run.
     'relation_mode': 'messages',
+    # The message-passing architecture, the way object_arch is the object
+    # branch's: keyword arguments for RelationMessages - endpoints,
+    # aggregation, rounds, hidden. None is what was measured.
+    'relation_arch': None,
     }
 
 def lin(act_func=nn.ReLU()):

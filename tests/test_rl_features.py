@@ -1122,3 +1122,87 @@ class TestTheMessagePassingVariants:
 
         assert not torch.allclose(outputs["mean"], outputs["max"], atol=1e-6), \
             "the max read a mixed set of partners the same way the mean did"
+
+    def test_projecting_the_endpoints_keeps_the_relation_audible(self):
+        """Why endpoint_dim exists, as a property rather than a constant.
+
+        Concatenated raw, the two object rows are 256 numbers at unit scale
+        against the relation's 24 at a mean magnitude of 0.344, and the
+        message then moves 11x more for a change of objects than of
+        relations - 2.9x *less* for the relation than with no endpoints at
+        all. Adding the objects mostly subtracts the relation, which makes
+        an arm named `endpoints` a test of something else.
+        """
+        from rl.features import RelationMessages
+
+        torch.manual_seed(0)
+        # The branch's real width, because that is where the imbalance is:
+        # at a narrow object_dim the endpoints are already no wider than
+        # the relation and there is nothing to drown it.
+        slots, object_dim = 6, 128
+        rows = torch.nn.functional.layer_norm(
+            torch.randn(1, slots, object_dim), (object_dim,))
+        one = (torch.rand(1, slots, (slots - 1) * RELATION_DIM) > 0.6).float()
+        two = (torch.rand(1, slots, (slots - 1) * RELATION_DIM) > 0.6).float()
+        weights = (~torch.eye(slots, dtype=torch.bool)
+                   ).view(1, slots, slots, 1).float()
+
+        def sensitivity(**arch):
+            passing = RelationMessages(object_dim=object_dim, dropout=0.0,
+                                       **arch)
+            passing.eval()
+            with torch.no_grad():
+                first = passing._pooled(rows, pairwise_relations(one), weights)
+                second = passing._pooled(rows, pairwise_relations(two), weights)
+            return (first - second).abs().mean().item()
+
+        raw = sensitivity(endpoints=True)
+        projected = sensitivity(endpoints=True, endpoint_dim=16)
+
+        assert projected > raw, (
+            f"projecting the endpoints did not restore the relation's "
+            f"influence: {projected:.4f} against {raw:.4f} raw")
+
+    def test_endpoint_dim_changes_the_width_the_message_reads(self):
+        """The cheap half of the same check: a projection that is built but
+        never applied would leave the sensitivity test to chance."""
+        raw = self._messages(endpoints=True)
+        projected = self._messages(endpoints=True, endpoint_dim=4)
+
+        assert raw.endpoint_projection is None
+        assert projected.endpoint_projection is not None
+        assert projected.message[0].in_features == RELATION_DIM + 2 * 4
+        assert raw.message[0].in_features == RELATION_DIM + 2 * 8
+
+    def test_the_endpoint_projection_is_scale_free(self):
+        """The normalisation inside it, pinned by what it is for.
+
+        Half the imbalance is the width and the other half is the scale:
+        object rows arrive from a LayerNorm at unit scale while relation
+        features are flags with a mean magnitude of 0.344. A projection
+        without a norm passes whatever scale it was given straight through,
+        so an object branch that drifts to larger activations quietly
+        drowns the relation again.
+        """
+        from rl.features import RelationMessages
+
+        torch.manual_seed(0)
+        slots, object_dim = 6, 128
+        rows = torch.nn.functional.layer_norm(
+            torch.randn(1, slots, object_dim), (object_dim,))
+        relations = (torch.rand(1, slots, (slots - 1) * RELATION_DIM)
+                     > 0.6).float()
+        weights = (~torch.eye(slots, dtype=torch.bool)
+                   ).view(1, slots, slots, 1).float()
+        passing = RelationMessages(object_dim=object_dim, dropout=0.0,
+                                   endpoints=True, endpoint_dim=16)
+        passing.eval()
+
+        with torch.no_grad():
+            pairs = pairwise_relations(relations)
+            normal = passing._pooled(rows, pairs, weights)
+            louder = passing._pooled(rows * 10.0, pairs, weights)
+
+        assert torch.allclose(normal, louder, atol=1e-5), (
+            "ten times louder object rows changed the message, so the "
+            f"projection passes scale through: {(normal - louder).abs().max():.4f}")

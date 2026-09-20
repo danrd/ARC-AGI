@@ -259,6 +259,90 @@ def collect_random_rollouts(env,
 
     return rollouts
 
+class SearchPolicy:
+    """How the tree spends an iteration: what it descends through, what it
+    expands, and what it assumes about a move nobody has tried.
+
+    Every field is off by default, so a SearchPolicy() reproduces the plain
+    UCB1 search this module has always run - the measurements that justify
+    turning any of them on are in the attributes below.
+
+    c: UCB1's exploration constant.
+
+    fpu: first-play urgency. Plain UCB1 scores an unvisited child
+        float('inf'), which is not a value but an instruction: try every
+        child of a node before descending through any of them. On an ARC
+        action space that instruction is the whole search. Measured on the
+        env search_hints builds first - the one nothing has narrowed - the
+        pool is 544 actions on dc433765 and 18,048 on 22eb0ac0, so a
+        500-iteration budget expands the root and stops: depth 1, and the
+        result is a random sample of single actions with playouts attached
+        rather than a tree. `fpu` replaces the infinity with the parent's
+        own mean value less this much, which is a number selection can
+        compare against and descend past. None keeps the infinity.
+
+    widening: (k, alpha) for progressive widening, or None. A node with n
+        visits may hold ceil(k * n**alpha) children; past that, selection
+        descends instead of expanding. This is the other half of the same
+        problem - fpu lets the search descend through the children a node
+        has, widening stops it from having to make all of them first.
+        Enabling it also shuffles the expansion order, because the pool
+        arrives in itertools.product order (every object pair of transform
+        0, then transform 1) and a bounded prefix of that is not a sample.
+
+    selection: 'ucb1' scores whole actions. 'factored' scores the three
+        components of a MultiDiscrete action - (transform, obj_1, obj_2) -
+        separately and reads their sum as the estimate for an action nobody
+        has tried yet. The pool is a product of those components, so the
+        statistics per component grow as V + n + n where the statistics per
+        action grow as V * n * n. It is not a learned prior: the numbers
+        come from this search's own playouts and nothing else.
+
+    transpositions: share visits and value between nodes holding the same
+        grid, whatever path reached them. Two action sequences that end on
+        the same grid are the same position, and the tree otherwise
+        estimates each copy from scratch. Approximate in one way worth
+        naming: the env's repetition penalty reads prev_action, so two
+        copies of a grid can score a next step differently, and this merges
+        them anyway.
+    """
+
+    def __init__(self, c=1.414, fpu=None, widening=None, selection='ucb1',
+                 transpositions=False, rng=None):
+        if selection not in ('ucb1', 'factored'):
+            raise ValueError(f"unknown selection: {selection}")
+        self.c = c
+        self.fpu = fpu
+        self.widening = widening
+        self.selection = selection
+        self.transpositions = transpositions
+        self.rng = rng if rng is not None else np.random.default_rng()
+
+
+def state_key(state):
+    """What makes two snapshots the same position, for a transposition
+    table. The grid alone: max_int is computed from it, and the objects
+    describe it."""
+    return state['grid'].tobytes()
+
+
+def _stats(node, table):
+    """(visits, total_reward) for `node`, shared across every node holding
+    the same grid when a transposition table is in play."""
+    if table is None:
+        return node.visits, node.total_reward
+    entry = table.get(state_key(node.state))
+    if entry is None:
+        return node.visits, node.total_reward
+    return entry[0], entry[1]
+
+
+def widening_limit(visits, widening):
+    """How many children a node with this many visits may hold."""
+    k, alpha = widening
+    return max(1, int(math.ceil(k * max(visits, 1) ** alpha)))
+
+
 # Monte Carlo Tree Search Implementation
 class MCTSNode:
     def __init__(self, state, action=None, parent=None, reward=0.0, untried_actions=None):
@@ -271,23 +355,123 @@ class MCTSNode:
         self.immediate_reward = reward  # Reward received when reaching this state
         self.is_terminal = False
         self.untried_actions = untried_actions
+        #: Per-component visit/reward counts over this node's own children,
+        #: built only when factored selection asks for them.
+        self._component_visits = None
+        self._component_reward = None
 
     def is_fully_expanded(self, env_simulator):
         if self.untried_actions is None:
             self.untried_actions = list(env_simulator.all_actions)
         return len(self.untried_actions) == 0 and len(self.children) > 0
 
-    def select_child(self, c=1.414):
-        """Select child using UCB1 formula"""
+    def should_expand(self, policy):
+        """Whether this iteration adds a child here rather than descending.
+
+        Without widening this is the old rule read the other way round:
+        expand while anything is untried, descend once nothing is. With
+        widening the node stops expanding at its visit-count budget and
+        descends through what it already has, even with the pool barely
+        touched.
+        """
+        if not self.untried_actions:
+            return False
+        if not self.children:
+            return True
+        if policy.widening is None:
+            return True
+        return len(self.children) < widening_limit(self.visits, policy.widening)
+
+    def select_child(self, c=1.414, fpu=None, table=None):
+        """Select child using UCB1, or first-play urgency for one nobody has
+        visited (see SearchPolicy.fpu)."""
         if not self.children:
             return None
 
+        parent_visits, parent_reward = _stats(self, table)
+        parent_mean = parent_reward / parent_visits if parent_visits else 0.0
+        log_parent = math.log(max(parent_visits, 1))
+        unvisited = float('inf') if fpu is None else parent_mean - fpu
+
         def ucb1(node):
-            if node.visits == 0:
-                return float('inf')
-            return (node.total_reward / node.visits) + c * math.sqrt(math.log(self.visits) / node.visits)
+            visits, total = _stats(node, table)
+            if visits == 0:
+                return unvisited
+            return (total / visits) + c * math.sqrt(log_parent / visits)
 
         return max(self.children.values(), key=ucb1)
+
+    def component_scores(self, env_simulator, policy, table=None):
+        """What each component value of an action is worth here, by this
+        node's own children - the estimate factored selection reads for an
+        action that has never been tried.
+
+        Returns a list of one array per component, each holding a mean
+        reward per value, with the parent's own mean (less policy.fpu)
+        standing in for a value no child has used.
+        """
+        dims = env_simulator.component_dims
+        if self._component_visits is None:
+            self._component_visits = [np.zeros(d) for d in dims]
+            self._component_reward = [np.zeros(d) for d in dims]
+        parent_visits, parent_reward = _stats(self, table)
+        parent_mean = parent_reward / parent_visits if parent_visits else 0.0
+        fallback = parent_mean - (policy.fpu or 0.0)
+        scores = []
+        for visits, reward in zip(self._component_visits, self._component_reward):
+            seen = visits > 0
+            scores.append(np.where(seen, reward / np.maximum(visits, 1), fallback))
+        return scores
+
+    def factored_action(self, env_simulator, policy, table=None):
+        """The action to descend into or expand next, scored per component.
+
+        A child that exists is worth what it has been worth; one that does
+        not is worth the sum of its components' means, which is what the
+        node has learned about that transform and those objects from every
+        other action using them. The exploration term is UCB1's, over the
+        child's own visit count - zero for an action never tried, which is
+        where it belongs rather than at infinity.
+        """
+        matrix = env_simulator.action_matrix
+        if len(matrix) == 0:
+            return None
+        components = self.component_scores(env_simulator, policy, table)
+        # Mean rather than sum, so the prior lands on the same scale as a
+        # child's own mean reward and the two can share one exploration term.
+        value = sum(score[matrix[:, i]] for i, score in enumerate(components))
+        value = value / len(components)
+        visits = np.zeros(len(matrix))
+        for key, child in self.children.items():
+            index = env_simulator.action_index.get(key)
+            if index is None:
+                continue
+            child_visits, child_reward = _stats(child, table)
+            visits[index] = child_visits
+            if child_visits:
+                value[index] = child_reward / child_visits
+        parent_visits = _stats(self, table)[0]
+        score = value + policy.c * np.sqrt(math.log(max(parent_visits, 1) + 1) / (1.0 + visits))
+        best = np.flatnonzero(score >= score.max() - 1e-12)
+        # Chosen among exact ties rather than by argmax: every component
+        # starts unseen, so the first iterations score the whole pool
+        # identically and argmax would walk the product order - every object
+        # pair of transform 0 before transform 1 is ever tried.
+        chosen = best[0] if len(best) == 1 else int(policy.rng.choice(best))
+        return tuple(int(x) for x in matrix[chosen])
+
+    def expand_action(self, env_simulator, action):
+        """Add the child this action leads to, and return it."""
+        action = np.asarray(action)
+        key = tuple(int(x) for x in action.reshape(-1))
+        # Purely functional - never touches env_simulator.env.
+        next_state, reward, done, truncated, info = env_simulator.simulate_step(self.state, action)
+        child = MCTSNode(next_state, action, self, reward,
+                         untried_actions=list(self.untried_actions)
+                         if self.untried_actions is not None else None)
+        child.is_terminal = done or truncated
+        self.children[key] = child
+        return child
 
     def expand(self, env_simulator):
         """Expand node by adding a new child using environment simulator"""
@@ -298,17 +482,10 @@ class MCTSNode:
             return None
         action = np.array(self.untried_actions.pop(0))
 
-        # Purely functional - never touches env_simulator.env.
-        next_state, reward, done, truncated, info = env_simulator.simulate_step(self.state, action)
-
         # Each child gets its own copy of the remaining actions: sharing
         # self.untried_actions between parent and child meant popping from
         # one silently drained the other's list too.
-        child = MCTSNode(next_state, action, self, reward, untried_actions=list(self.untried_actions))
-        child.is_terminal = done or truncated
-        self.children[tuple(action)] = child
-
-        return child
+        return self.expand_action(env_simulator, action)
 
     def action_path(self):
         """The actions from the root down to this node, in order."""
@@ -350,13 +527,38 @@ class MCTSNode:
             done = done or truncated
         return total_reward
 
-    def backpropagate(self, reward):
-        """Backpropagate reward up the tree"""
-        self.visits += 1
-        self.total_reward += reward
+    def backpropagate(self, reward, table=None):
+        """Backpropagate reward up the tree.
 
-        if self.parent:
-            self.parent.backpropagate(reward)
+        Iterative rather than recursive: a tree that descends now reaches
+        the episode cap, and a rollout of 25 real steps stacks that many
+        searches' worth of depth behind it.
+
+        Three records move, not one. The node's own counters, the
+        transposition entry for its grid when there is a table, and the
+        parent's per-component counts for the action that reached it - the
+        last is what lets factored selection estimate an action nobody has
+        tried from the transform and the objects it names.
+        """
+        node = self
+        while node is not None:
+            node.visits += 1
+            node.total_reward += reward
+            if table is not None:
+                entry = table.get(state_key(node.state))
+                if entry is None:
+                    table[state_key(node.state)] = [1, reward]
+                else:
+                    entry[0] += 1
+                    entry[1] += reward
+            parent = node.parent
+            if (parent is not None and parent._component_visits is not None
+                    and node.action is not None):
+                values = np.asarray(node.action).reshape(-1)
+                for index, value in enumerate(values):
+                    parent._component_visits[index][int(value)] += 1
+                    parent._component_reward[index][int(value)] += reward
+            node = parent
 
 class PlayoutPolicy:
     """Which action a playout tries next, weighted by what the search has
@@ -486,6 +688,23 @@ class EnvironmentSimulator:
         # See enumerate_actions. `actions` narrows it further to a pruned pool.
         self.all_actions = [list(action) for action in
                             (actions if actions is not None else enumerate_actions(env))]
+        #: The same pool as a matrix, and the reverse lookup into it. Both
+        #: are for factored selection, which scores the whole pool at once
+        #: rather than walking the children a node happens to have - the
+        #: pool runs to 18,048 actions on the widest env measured, and a
+        #: per-iteration python loop over that is the cost the vectorised
+        #: form exists to avoid.
+        self.action_matrix = np.asarray(self.all_actions, dtype=np.int64).reshape(
+            len(self.all_actions), -1)
+        self.action_index = {tuple(int(x) for x in row): i
+                             for i, row in enumerate(self.action_matrix)}
+        #: How many distinct values each component of an action can take.
+        #: Read off the pool rather than the action space: a pruned pool
+        #: names fewer, and a component array sized to the space would
+        #: carry rows nothing can select.
+        self.component_dims = ([int(self.action_matrix[:, i].max()) + 1
+                                for i in range(self.action_matrix.shape[1])]
+                               if len(self.action_matrix) else [])
         # None keeps the playout sampling the raw action space, padded slots
         # and all - which is what it has always done, and is not the same
         # thing as sampling the pool the tree expands over.
@@ -593,37 +812,73 @@ class EnvironmentSimulator:
         return self.action_space.sample()
 
 class MCTS:
-    def __init__(self, env, max_iterations=1000, max_depth=10, c=1.414, actions=None):
+    def __init__(self, env, max_iterations=1000, max_depth=10, c=1.414, actions=None,
+                 policy=None):
         """`actions` narrows what the tree may expand into - the pool an
         iterative round has pruned down to (see rollout_preparation). None
-        means every action the env offers."""
+        means every action the env offers.
+
+        `policy` is a SearchPolicy saying how an iteration is spent; None
+        builds the plain UCB1 one this module has always run, at `c`.
+        """
         self.env_simulator = EnvironmentSimulator(env, actions=actions)
         self.max_iterations = max_iterations
         self.max_depth = max_depth
         self.c = c
+        self.policy = policy if policy is not None else SearchPolicy(c=c)
+        #: How far one iteration may descend. Bounded by the env's own
+        #: episode cap: simulate_action carries no step counter, so nothing
+        #: in a simulated path ends it except reaching the target, and a
+        #: descent through a tree that has grown deep would otherwise run
+        #: as long as the tree is tall.
+        self.max_tree_depth = int(getattr(env, "max_episode_len", 50) or 50)
+        self.transposition_table = {} if self.policy.transpositions else None
         self.all_actions = [tuple(action) for action in
                             (actions if actions is not None else enumerate_actions(env))]
+
+    def descend(self, root):
+        """One iteration's walk from the root to the node it will play out
+        from, expanding at most one new child on the way."""
+        node = root
+        table = self.transposition_table
+        for _ in range(self.max_tree_depth):
+            if node.is_terminal:
+                break
+            if self.policy.selection == 'factored':
+                # No untried-actions list and no full-expansion gate: the
+                # whole pool is scored every time, and an action that is
+                # already a child is descended into instead of re-expanded.
+                action = node.factored_action(self.env_simulator, self.policy, table)
+                if action is None:
+                    break
+                child = node.children.get(action)
+                if child is None:
+                    return node.expand_action(self.env_simulator, action)
+                node = child
+                continue
+            node.is_fully_expanded(self.env_simulator)  # builds untried_actions
+            if node.should_expand(self.policy):
+                return node.expand(self.env_simulator) or node
+            child = node.select_child(self.policy.c, self.policy.fpu, table)
+            if child is None:
+                break
+            node = child
+        return node
 
     def search(self, initial_state):
         """Perform MCTS search from an initial state snapshot (see
         EnvironmentSimulator/ARCGridWorld.simulate_action) - never mutates
         the real environment."""
         root = MCTSNode(initial_state, untried_actions=copy(self.all_actions))
+        if self.policy.widening is not None:
+            # The pool arrives in itertools.product order - every object
+            # pair of transform 0, then transform 1 - and widening only ever
+            # takes a prefix of it. A prefix of that order is one transform,
+            # not a sample of the vocabulary.
+            self.policy.rng.shuffle(root.untried_actions)
 
         for iteration in range(self.max_iterations):
-            # Selection - traverse tree using UCB1
-            node = root
-
-            while not node.is_terminal and node.is_fully_expanded(self.env_simulator):
-                node = node.select_child(self.c)
-                if node is None:
-                    break
-
-            # Expansion - add new child if possible
-            if not node.is_terminal and not node.is_fully_expanded(self.env_simulator):
-                child = node.expand(self.env_simulator)
-                if child:
-                    node = child
+            node = self.descend(root)
 
             # A node can already be sitting on the answer - selection and
             # expansion reach states in their own right, and a task solved
@@ -640,7 +895,7 @@ class MCTS:
                 total_reward = node.immediate_reward
 
             # Backpropagation - update all nodes in path
-            node.backpropagate(total_reward)
+            node.backpropagate(total_reward, self.transposition_table)
 
         return root
 
@@ -748,7 +1003,8 @@ def collect_mcts_rollouts(env,
                           mcts_iterations: int = 500,
                           max_episode_len: int = 50,
                           actions=None,
-                          c: float = 1.414) -> List[Dict[str, Any]]:
+                          c: float = 1.414,
+                          policy: "SearchPolicy" = None) -> List[Dict[str, Any]]:
     """Collect rollouts using MCTS for action selection. MCTS search itself
     runs entirely on a snapshot of the env's state (see
     EnvironmentSimulator) - only the action it settles on for each real
@@ -762,9 +1018,16 @@ def collect_mcts_rollouts(env,
     approach 2's rewards are 2.2x smaller against the same fixed c) and so
     moved exploration as a side effect of a setting that says nothing about
     exploration.
+
+    `policy` is a SearchPolicy (see there). One tree serves every real step
+    of every rollout, so a transposition table it carries is shared across
+    all of them - which is where it pays, since the tree is thrown away and
+    rebuilt after each real step and would otherwise re-derive the same
+    grids from nothing every time.
     """
     rollouts = []
-    mcts = MCTS(env, max_iterations=mcts_iterations, actions=actions, c=c)
+    mcts = MCTS(env, max_iterations=mcts_iterations, actions=actions, c=c,
+                policy=policy)
 
     print(f"Collecting {n_rollouts} MCTS-guided rollouts...")
 

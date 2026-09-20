@@ -964,3 +964,335 @@ class TestASolutionIsRecordedFromWhereItCanBeReplayed:
         assert seen[0] == []
         assert all(len(later) == len(earlier) + 1
                    for earlier, later in zip(seen, seen[1:])), seen
+
+
+class TestTheDefaultPolicyChangesNothing:
+    """Every selection setting is off unless asked for, and a search built
+    without one has to behave exactly as it did before they existed."""
+
+    def test_a_search_without_a_policy_gets_the_plain_one(self, env):
+        tree = mcts.MCTS(env, max_iterations=2, c=0.5)
+        assert tree.policy.selection == 'ucb1'
+        assert tree.policy.fpu is None
+        assert tree.policy.widening is None
+        assert tree.transposition_table is None
+        assert tree.policy.c == 0.5
+
+    def test_a_node_expands_while_anything_is_untried(self, env):
+        """Without widening, should_expand is the old rule read the other
+        way round: expand until the pool is exhausted, and only then
+        descend."""
+        simulator = mcts.EnvironmentSimulator(env)
+        policy = mcts.SearchPolicy()
+        root = mcts.MCTSNode(state=mcts.env_state_snapshot(env))
+        root.is_fully_expanded(simulator)
+
+        assert root.should_expand(policy)
+        while root.untried_actions:
+            root.expand(simulator)
+            root.visits += 1
+        assert not root.should_expand(policy)
+        assert root.is_fully_expanded(simulator)
+
+    def test_an_unknown_selection_is_refused(self):
+        with pytest.raises(ValueError):
+            mcts.SearchPolicy(selection='greedy')
+
+
+class TestFirstPlayUrgency:
+    """What an unvisited child is worth. Plain UCB1 says infinity, which is
+    an instruction to expand everything before descending anywhere."""
+
+    def _root_with(self, values):
+        """A root holding one child per value, visited once and carrying it,
+        plus one child nobody has visited."""
+        state = {'grid': np.zeros((2, 2), dtype=int), 'objects': [], 'max_int': 0,
+                 'prev_action': None}
+        root = mcts.MCTSNode(state=state)
+        root.visits = 10
+        root.total_reward = sum(values)
+        for index, value in enumerate(values):
+            child = mcts.MCTSNode(state=state, action=np.array([index, 0, 0]), parent=root)
+            child.visits, child.total_reward = 1, value
+            root.children[(index, 0, 0)] = child
+        fresh = mcts.MCTSNode(state=state, action=np.array([len(values), 0, 0]), parent=root)
+        root.children[(len(values), 0, 0)] = fresh
+        return root, fresh
+
+    def test_without_it_the_unvisited_child_always_wins(self):
+        root, fresh = self._root_with([100.0, -100.0])
+        assert root.select_child(c=1.0) is fresh
+
+    def test_with_it_a_proven_child_can_be_preferred(self):
+        """The whole point: a child worth far more than the node's own mean
+        is descended into rather than left for after the pool is exhausted."""
+        root, fresh = self._root_with([100.0, -100.0])
+        chosen = root.select_child(c=1.0, fpu=0.0)
+        assert chosen is not fresh
+        assert chosen.total_reward == 100.0
+
+    def test_the_unvisited_child_is_worth_the_parents_mean_less_the_reduction(self):
+        root, fresh = self._root_with([1.0, 1.0])
+        parent_mean = root.total_reward / root.visits
+        # A reduction large enough to sink the fresh child below both
+        # visited ones, which sit at 1.0 plus the same exploration term.
+        assert root.select_child(c=0.0, fpu=parent_mean + 10.0) is not fresh
+        # And small enough that it wins again.
+        assert root.select_child(c=0.0, fpu=parent_mean - 10.0) is fresh
+
+    def test_a_node_nobody_has_visited_does_not_divide_by_zero(self):
+        root, fresh = self._root_with([1.0])
+        root.visits, root.total_reward = 0, 0.0
+        assert root.select_child(c=1.0, fpu=0.0) is not None
+
+
+class TestProgressiveWidening:
+    """A node's child count is bounded by its visits, so the tree can
+    descend through what it has instead of first making all of it."""
+
+    def test_the_limit_grows_with_visits(self):
+        assert mcts.widening_limit(1, (2.0, 0.5)) == 2
+        assert mcts.widening_limit(100, (2.0, 0.5)) == 20
+        assert mcts.widening_limit(100, (2.0, 0.5)) < mcts.widening_limit(400, (2.0, 0.5))
+
+    def test_the_limit_is_never_zero(self):
+        assert mcts.widening_limit(0, (0.001, 0.5)) == 1
+
+    def test_a_node_at_its_limit_stops_expanding(self, wide_env):
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        policy = mcts.SearchPolicy(widening=(1.0, 0.5))
+        root = mcts.MCTSNode(state=mcts.env_state_snapshot(wide_env))
+        root.is_fully_expanded(simulator)
+        root.visits = 4  # limit 1 * sqrt(4) = 2
+
+        root.expand(simulator)
+        assert root.should_expand(policy)
+        root.expand(simulator)
+        assert not root.should_expand(policy)
+        assert root.untried_actions, "the pool is nowhere near exhausted"
+
+    def test_the_tree_gets_deeper_than_the_plain_one(self, wide_env):
+        """Measured, not assumed: on a pool larger than the budget the plain
+        search cannot leave the root at all."""
+        budget = len(mcts.enumerate_actions(wide_env)) // 2
+
+        def depth(root):
+            return 0 if not root.children else 1 + max(
+                depth(child) for child in root.children.values())
+
+        plain = mcts.MCTS(wide_env, max_iterations=budget)
+        widened = mcts.MCTS(wide_env, max_iterations=budget,
+                            policy=mcts.SearchPolicy(
+                                fpu=0.0, widening=(2.0, 0.5),
+                                rng=np.random.default_rng(0)))
+        state = mcts.env_state_snapshot(wide_env)
+
+        assert depth(plain.search(state)) == 1
+        assert depth(widened.search(mcts.env_state_snapshot(wide_env))) > 1
+
+    def test_the_expansion_order_is_shuffled(self, wide_env):
+        """A bounded prefix of itertools.product order is every object pair
+        of one transform, not a sample of the vocabulary."""
+        tree = mcts.MCTS(wide_env, max_iterations=12,
+                         policy=mcts.SearchPolicy(widening=(2.0, 0.5),
+                                                  rng=np.random.default_rng(0)))
+        root = tree.search(mcts.env_state_snapshot(wide_env))
+
+        pool = [tuple(action) for action in tree.all_actions]
+        expanded = list(root.children)
+        assert 1 < len(expanded) < len(pool), "nothing to compare orders over"
+        # The failure this catches: the children are exactly the pool's
+        # first few, which on a MultiDiscrete pool is one transform's
+        # object pairs and nothing else.
+        assert expanded != pool[:len(expanded)]
+        assert {a[0] for a in expanded} != {pool[0][0]}
+        # Still the same pool, only in another order.
+        assert sorted(expanded + [tuple(a) for a in root.untried_actions]) == sorted(pool)
+
+
+class TestFactoredSelection:
+    """An action is (transform, obj_1, obj_2), so what a node has learned
+    about one transform is a statement about every action naming it."""
+
+    def test_the_pool_is_carried_as_a_matrix_and_an_index(self, wide_env):
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        assert simulator.action_matrix.shape == (len(simulator.all_actions), 3)
+        for row, action in enumerate(simulator.all_actions):
+            assert simulator.action_index[tuple(action)] == row
+
+    def test_the_component_dims_come_from_the_pool_not_the_space(self, wide_env):
+        """A pruned pool names fewer values than the action space has, and a
+        component array sized to the space carries rows nothing can pick."""
+        pool = [[1, 0, 0], [1, 0, 1]]
+        simulator = mcts.EnvironmentSimulator(wide_env, actions=pool)
+        assert simulator.component_dims == [2, 1, 2]
+        assert list(wide_env.action_space.nvec) != simulator.component_dims
+
+    def test_a_components_record_comes_from_every_action_naming_it(self, wide_env):
+        """The point of factoring: one transform's record is built from all
+        of its object pairs together, not from each pair separately."""
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        policy = mcts.SearchPolicy(selection='factored')
+        root = mcts.MCTSNode(state=mcts.env_state_snapshot(wide_env))
+        root.component_scores(simulator, policy)
+
+        for pair in [(1, 0, 1), (1, 1, 0), (1, 1, 2)]:
+            child = root.expand_action(simulator, pair)
+            child.backpropagate(5.0)
+
+        assert root._component_visits[0][1] == 3, "one transform, three pairs"
+        assert root._component_reward[0][1] == 15.0
+
+    def test_an_untried_action_inherits_its_components_record(self, wide_env):
+        """The estimate that lets the search skip an action rather than try
+        it: sharing a transform with something that paid is worth more than
+        sharing one with something that did not."""
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        policy = mcts.SearchPolicy(selection='factored', c=0.0,
+                                   rng=np.random.default_rng(0))
+        root = mcts.MCTSNode(state=mcts.env_state_snapshot(wide_env))
+        root.component_scores(simulator, policy)
+        root.visits = 10
+
+        good = root.expand_action(simulator, (1, 0, 1))
+        good.backpropagate(50.0)
+        bad = root.expand_action(simulator, (2, 0, 1))
+        bad.backpropagate(-50.0)
+
+        scores = root.component_scores(simulator, policy)
+        assert scores[0][1] > scores[0][2]
+        # With no exploration term at all, the pick is the best-scoring
+        # untried action - which has to name the transform that paid.
+        chosen = root.factored_action(simulator, policy)
+        assert chosen[0] == 1
+
+    def test_ties_are_broken_at_random_not_by_product_order(self, wide_env):
+        """Nothing has been tried, so every action scores the same. argmax
+        would walk itertools.product order - every object pair of transform
+        one before transform two is ever reached."""
+        simulator = mcts.EnvironmentSimulator(wide_env)
+        picks = set()
+        for seed in range(20):
+            policy = mcts.SearchPolicy(selection='factored',
+                                       rng=np.random.default_rng(seed))
+            root = mcts.MCTSNode(state=mcts.env_state_snapshot(wide_env))
+            picks.add(root.factored_action(simulator, policy))
+        assert len(picks) > 1
+
+    def test_it_descends_instead_of_expanding_everything(self, wide_env):
+        """No untried-actions list and no full-expansion gate, so a budget
+        smaller than the pool still builds a tree."""
+        budget = len(mcts.enumerate_actions(wide_env)) // 2
+
+        def depth(root):
+            return 0 if not root.children else 1 + max(
+                depth(child) for child in root.children.values())
+
+        tree = mcts.MCTS(wide_env, max_iterations=budget,
+                         policy=mcts.SearchPolicy(selection='factored', c=0.05,
+                                                  rng=np.random.default_rng(0)))
+        root = tree.search(mcts.env_state_snapshot(wide_env))
+        assert depth(root) > 1
+        assert root.untried_actions is not None  # the root's own list, built by search
+
+    def test_a_descent_is_bounded_by_the_episode_cap(self, wide_env):
+        """simulate_action carries no step counter, so nothing ends a
+        simulated path but reaching the target - the walk needs its own
+        bound or it runs as long as the tree is tall."""
+        tree = mcts.MCTS(wide_env, max_iterations=1)
+        assert tree.max_tree_depth == wide_env.max_episode_len
+
+
+class TestTranspositions:
+    """Two action sequences ending on the same grid are the same position."""
+
+    def test_the_key_is_the_grid(self):
+        first = {'grid': np.array([[1, 2], [3, 4]]), 'max_int': 7}
+        same = {'grid': np.array([[1, 2], [3, 4]]), 'max_int': 7}
+        other = {'grid': np.array([[1, 2], [3, 5]]), 'max_int': 7}
+        assert mcts.state_key(first) == mcts.state_key(same)
+        assert mcts.state_key(first) != mcts.state_key(other)
+
+    def test_two_nodes_on_one_grid_share_a_record(self):
+        state = {'grid': np.zeros((2, 2), dtype=int), 'objects': [],
+                 'max_int': 0, 'prev_action': None}
+        table = {}
+        first = mcts.MCTSNode(state=state)
+        second = mcts.MCTSNode(state={**state, 'grid': state['grid'].copy()})
+
+        first.backpropagate(3.0, table)
+        second.backpropagate(5.0, table)
+
+        assert mcts._stats(first, table) == (2, 8.0)
+        assert mcts._stats(second, table) == (2, 8.0)
+        assert (first.visits, first.total_reward) == (1, 3.0), "own counters untouched"
+
+    def test_a_different_grid_keeps_its_own_record(self):
+        table = {}
+        first = mcts.MCTSNode(state={'grid': np.zeros((2, 2), dtype=int)})
+        other = mcts.MCTSNode(state={'grid': np.ones((2, 2), dtype=int)})
+        first.backpropagate(3.0, table)
+        other.backpropagate(5.0, table)
+        assert mcts._stats(first, table) == (1, 3.0)
+        assert mcts._stats(other, table) == (1, 5.0)
+
+    def test_without_a_table_nothing_is_shared(self):
+        state = {'grid': np.zeros((2, 2), dtype=int)}
+        first = mcts.MCTSNode(state=state)
+        second = mcts.MCTSNode(state=state)
+        first.backpropagate(3.0)
+        second.backpropagate(5.0)
+        assert mcts._stats(first, None) == (1, 3.0)
+        assert mcts._stats(second, None) == (1, 5.0)
+
+    def test_selection_reads_the_shared_record(self):
+        """A child visited once here but ten times elsewhere on the same
+        grid is not an unexplored move, and the exploration term has to say
+        so."""
+        state = {'grid': np.zeros((2, 2), dtype=int), 'objects': [],
+                 'max_int': 0, 'prev_action': None}
+        # A grid of its own: a root sharing one with a child would read that
+        # child's shared record as its own visit count.
+        root = mcts.MCTSNode(state={'grid': np.full((2, 2), 7)})
+        root.visits, root.total_reward = 20, 0.0
+        for index in (0, 1):
+            child = mcts.MCTSNode(state={**state, 'grid': np.full((2, 2), index)},
+                                  action=np.array([index, 0, 0]), parent=root)
+            child.visits, child.total_reward = 1, 1.0
+            root.children[(index, 0, 0)] = child
+
+        table = {mcts.state_key(child.state): [child.visits, child.total_reward]
+                 for child in root.children.values()}
+        # The same value seen 100 times elsewhere: same mean, far less
+        # exploration bonus, so the other child wins.
+        table[mcts.state_key(root.children[(0, 0, 0)].state)] = [100, 100.0]
+
+        assert root.select_child(c=1.0) is root.children[(0, 0, 0)], "by mean alone"
+        assert root.select_child(c=1.0, table=table) is root.children[(1, 0, 0)]
+
+    def test_a_search_with_the_table_on_still_finds_its_way(self, wide_env):
+        tree = mcts.MCTS(wide_env, max_iterations=30,
+                         policy=mcts.SearchPolicy(transpositions=True,
+                                                  rng=np.random.default_rng(0)))
+        tree.search(mcts.env_state_snapshot(wide_env))
+        assert tree.transposition_table
+        assert sum(entry[0] for entry in tree.transposition_table.values()) >= 30
+
+
+def test_backpropagation_does_not_recurse(env):
+    """A tree that descends reaches the episode cap, and a rollout stacks
+    that many searches' worth of depth behind it - deep enough that python's
+    recursion limit is a real bound rather than a theoretical one."""
+    import sys
+
+    state = mcts.env_state_snapshot(env)
+    node = mcts.MCTSNode(state=state)
+    for step in range(sys.getrecursionlimit() + 50):
+        node = mcts.MCTSNode(state=state, action=np.array([0, 0, 0]), parent=node)
+
+    node.backpropagate(1.0)
+
+    root = node
+    while root.parent is not None:
+        root = root.parent
+    assert root.visits == 1

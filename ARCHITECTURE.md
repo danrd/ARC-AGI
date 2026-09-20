@@ -132,16 +132,16 @@ graph TD
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (48)"]
+  tests["tests (49)"]
   utils["utils (3)"]
-  tests -->|45| rl
+  tests -->|52| rl
+  tests -->|25| symbolic
   tests -->|24| subsymbolic
-  tests -->|24| symbolic
-  rl -->|9| symbolic
-  tests -->|9| data
+  tests -->|11| data
+  rl -->|10| symbolic
   scripts -->|7| rl
   rl -->|6| data
-  tests -->|5| orchestration
+  tests -->|6| orchestration
   orchestration -->|4| subsymbolic
   rl -->|4| utils
   data -->|3| rl
@@ -164,27 +164,27 @@ graph TD
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
 | `data.configs.env_configs` | 7 |
-| `data.configs.rl_configs` | 7 |
+| `data.configs.rl_configs` | 9 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
-| `orchestration.graph` | 2 |
-| `rl.arc_env` | 9 |
+| `orchestration.graph` | 3 |
+| `rl.arc_env` | 10 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 17 |
+| `rl.arc_task` | 19 |
 | `rl.arc_transformators` | 4 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 1 |
 | `rl.evaluation` | 4 |
-| `rl.features` | 4 |
-| `rl.mcts` | 4 |
+| `rl.features` | 5 |
+| `rl.mcts` | 5 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 1 |
 | `rl.policy` | 2 |
-| `rl.rl_job` | 2 |
+| `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 7 |
-| `rl.training` | 6 |
+| `rl.training` | 7 |
 | `rl.utils` | 6 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
@@ -208,9 +208,9 @@ graph TD
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |
 | `symbolic.objects_analysis` | 16 |
-| `symbolic.patterns` | 4 |
+| `symbolic.patterns` | 5 |
 | `symbolic.summaries` | 10 |
-| `symbolic.symbolic_module` | 2 |
+| `symbolic.symbolic_module` | 3 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 6 |
 | `utils.utils` | 2 |
@@ -221,7 +221,7 @@ Packages that import each other:
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`
-- `symbolic` -> `rl` (1) against `rl` -> `symbolic` (9):
+- `symbolic` -> `rl` (1) against `rl` -> `symbolic` (10):
   - `symbolic.summaries imports rl.arc_task`
 - `data` -> `utils` (1) against `utils` -> `data` (1):
   - `data.datasets.ARC.arc_dataset imports utils.utils`

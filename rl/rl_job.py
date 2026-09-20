@@ -84,6 +84,35 @@ class RLJobHandle:
                 self.process.join()
 
 
+def slots_for_grids(grids, repr_level: int = 1) -> int:
+    """How many object slots these grids need, counted the way ARCGridWorld
+    counts them - a GridSummary over each grid at the configured level.
+
+    Separate from object_slots because the count is a property of grids, not
+    of an ARCTask: search_hints builds an env around a single (input,
+    output) pair and has no task to ask. Measured over the 400 training
+    tasks at repr_level 1, the busiest grid of a task holds a median of 2
+    objects against the fixed 16, so sizing to the grids shrinks the
+    (object, object) half of the action space by a median factor of 64.
+
+    At least two, because both the action space and the relation block are
+    defined over pairs. An action is (transform, object, object), and the
+    relations an observation carries are shaped
+    (slots, (slots - 1) * RELATION_DIM) - which at one slot is a block of
+    width zero, and every reader of it fails: measured over the arm sweep,
+    all eight tasks whose grids hold a single object crashed in all three
+    arms that carry relations, and only those. The spare slot names no
+    object, so an action reaching for it does nothing, exactly as a slot
+    past the objects always has.
+    """
+    from symbolic.summaries import GridSummary
+
+    return max(2, max(len(GridSummary(grid=grid, shape=grid.shape,
+                                      levels=[repr_level])
+                          .repr_levels[repr_level].objects)
+                      for grid in grids))
+
+
 def object_slots(task: Any, repr_level: int) -> int:
     """How many object slots this task's grids ever fill.
 
@@ -95,30 +124,19 @@ def object_slots(task: Any, repr_level: int) -> int:
     object) pairs name two real objects on the median task. Sizing the slots
     to the task shrinks that pair space by a median factor of 28.
 
-    Counted the way ARCGridWorld counts them - GridSummary over the example
-    input at the configured repr_level - and over the held-out input too,
-    since one agent is scored on that grid as well.
+    Counted over the example inputs at the configured repr_level - and over
+    the held-out input too, since one agent is scored on that grid as well.
+    The max over the task's grids rather than per grid, because one agent
+    trains across all of them and a gymnasium space cannot change shape
+    between subtasks. Measured over the 400 training tasks, the busiest
+    grid of a task holds a median of 1 object more than its emptiest, so
+    the padding a per-task size leaves behind is small.
     """
-    from symbolic.summaries import GridSummary
-
     grids = [subtask.train_inp for subtask in task.subtasks]
     test_subtask = getattr(task, "test_subtask", None)
     if test_subtask is not None:
         grids.append(test_subtask.train_inp)
-    held = max(len(GridSummary(grid=grid, shape=grid.shape,
-                               levels=[repr_level])
-                   .repr_levels[repr_level].objects)
-               for grid in grids)
-    # At least two, because both the action space and the relation block are
-    # defined over pairs. An action is (transform, object, object), and the
-    # relations an observation carries are shaped
-    # (slots, (slots - 1) * RELATION_DIM) - which at one slot is a block of
-    # width zero, and every reader of it fails: measured over the arm sweep,
-    # all eight tasks whose grids hold a single object crashed in all three
-    # arms that carry relations, and only those. The spare slot names no
-    # object, so an action reaching for it does nothing, exactly as a slot
-    # past the objects always has.
-    return max(2, held)
+    return slots_for_grids(grids, repr_level)
 
 
 def observation_shape(task: Any):

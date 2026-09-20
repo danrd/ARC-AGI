@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import rl.search_hints as hints
@@ -942,3 +943,58 @@ class TestNarrowingTheActionSpaceToWhatASearchCanUse:
 
         assert names
         assert "submit" not in names
+
+
+class TestTheSearchEnvIsSizedToItsGrid:
+    """ARCGridWorld's MAX_OBJECTS exists so one agent can train across a
+    task's subtasks without the observation changing shape. make_env holds a
+    single grid, so the fixed number bought nothing there.
+    """
+
+    @staticmethod
+    def _grid(count):
+        """One grid with `count` separated single-cell objects."""
+        side = 2 * int(np.ceil(np.sqrt(count))) + 1
+        grid = np.zeros((side, side), dtype=int)
+        placed = 0
+        for i in range(0, side, 2):
+            for j in range(0, side, 2):
+                if placed < count:
+                    grid[i, j] = 1 + placed % 9
+                    placed += 1
+        assert placed == count
+        return grid
+
+    def _env(self, grid):
+        return hints.make_env(("sized", grid, grid.copy()),
+                              {0: "submit", 1: "rotate90"}, 5)
+
+    def test_the_slots_are_the_objects_the_grid_holds(self):
+        from rl.arc_env import MAX_OBJECTS
+
+        env = self._env(self._grid(3))
+        assert env.max_objects == 3
+        assert env.max_objects < MAX_OBJECTS
+
+    def test_an_object_past_the_old_cap_is_addressable(self):
+        """What the fixed 16 cost: a slot past max_objects has no index in
+        the action space, so nothing in a search could name the object in
+        it. 13 of the 400 training tasks hold such a grid."""
+        from rl.arc_env import MAX_OBJECTS
+
+        count = MAX_OBJECTS + 5
+        env = self._env(self._grid(count))
+        assert env.visible_object_count() == count
+        assert int(env.action_space.nvec[1]) == count
+        assert int(env.action_space.nvec[2]) == count
+
+    def test_the_pool_a_search_enumerates_shrinks_with_the_slots(self):
+        from rl.mcts import enumerate_actions
+
+        assert len(enumerate_actions(self._env(self._grid(2)))) < \
+            len(enumerate_actions(self._env(self._grid(6))))
+
+    def test_a_single_object_grid_still_gets_a_pair_of_slots(self):
+        """The relation block is (slots, (slots - 1) * RELATION_DIM), which
+        at one slot is a block of width zero."""
+        assert self._env(self._grid(1)).max_objects == 2

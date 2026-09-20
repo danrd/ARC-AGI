@@ -173,11 +173,33 @@ def build_vocabulary(colours, directions):
 
 
 def make_env(task, actions, episode_len):
-    """A fresh env holding one (task_id, input, output) triple."""
+    """A fresh env holding one (task_id, input, output) triple.
+
+    Sized to the grid rather than left at ARCGridWorld's MAX_OBJECTS. The
+    fixed 16 is there so one agent can train across a task's subtasks
+    without the observation changing shape between them; this env holds a
+    single grid and has nothing to reconcile, so the fixed number bought
+    nothing here and cost twice.
+
+    It cost coverage: a slot past max_objects has no index in the action
+    space, so nothing can name the object in it. Measured over the 400
+    training tasks, 13 of them hold a grid with more than 16 objects at
+    repr_level 1 - up to 73 - and in those the search could not reach 176
+    objects at all.
+
+    And it cost search: the (object, object) half of the action space is
+    quadratic in the slots, the median task's busiest grid holds 2 objects,
+    and every pair naming an empty slot is an action the env scores as
+    doing nothing. This is the env MCTS faces first, before any narrowing
+    exists to narrow it.
+    """
+    from rl.rl_job import slots_for_grids
+
     task_id, inp, out = task
     env = ARCGridWorld(max_episode_len=episode_len, feasible_actions=actions,
                        reward_approach=2, repr_level=1, input_pattern="start",
-                       observation_space_elements=["objects_emb"])
+                       observation_space_elements=["objects_emb"],
+                       max_objects=slots_for_grids([inp], repr_level=1))
     env.set_subtask(ARCSubtask(f"{task_id}_0", inp, out))
     return env
 

@@ -19,6 +19,9 @@ ACTION_TYPES = {
                 "edit": ["copy", "copy_input", "paste", "cut"],
                 "alignment": ["x_alignment", "y_alignment"],
                 "connection": ["shortest_path", "background_shortest_path_left", "background_shortest_path_right", "contour_connection"],
+                # The one action addressed by position rather than by what
+                # is drawn - see arc_transformators.fill_rectangle.
+                "region": ["fill"],
 }
 TWO_OBJECTS_ACTION_TYPES = ["swap", "merge", "center_merge", "color_merge", "x_alignment", "y_alignment", "shortest_path", "background_shortest_path_left", "background_shortest_path_right", "contour_connection",
                             "color_swap", "shape_swap", "color_copy", "shape_copy", "gravity"]
@@ -33,7 +36,7 @@ COLOR_DEPENDENT_ACTIONS = ["recolor", "shortest_path", "background_shortest_path
                            "emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision",
                            "emission_with_recolor_collision", "emission_with_contour_collision", "color_inner_holes",
                            "color_outer_holes", "color_inner_part", "emission_with_collision_stop", "emission_with_object_recolor",
-                           "dense_outer_contour"
+                           "dense_outer_contour", "fill"
                           ]
 DOUBLE_COLOR_DEPENDENT_ACTIONS = ["contour_connection", "emission_with_object_recolor", "emission_with_recolor_collision", "emission_with_contour_collision"]
 DIRECTION_DEPENDENT_ACTIONS = ["emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision", "emission_with_object_recolor",
@@ -75,6 +78,7 @@ TRANSFORM_DESCRIPTIONS = {
 
     # One object, painting
     "recolor": "repaint every cell of the shape to {colour}",
+    "fill": "paint the whole rectangle spanning the shape and {other} {colour}",
     "color_inner_holes": "fill the enclosed empty regions inside the shape with {colour}",
     "color_outer_holes": "fill the concave notches along the shape's outline with {colour}",
     "color_inner_part": "paint the shape's interior - its cells other than its border - {colour}",

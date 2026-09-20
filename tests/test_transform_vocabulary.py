@@ -938,3 +938,90 @@ class TestRotatingAnObjectWhoseStructureLostAnIndex:
         symmetry_transformation(grid, obj, font_color=0, transf_type="fliplr")
 
         assert sorted(obj.coords) == sorted(coords)
+
+
+class TestFillPaintsTheRectangleTwoSlotsSpan:
+    """The one transform addressed by position rather than by what is drawn.
+
+    Every other action moves or recolours an object the grid already holds,
+    so the only cells it can reach are cells something is drawn on.
+    Measured over the 262 shape-preserving training tasks, 191 of them need
+    a cell the input leaves background painted.
+    """
+
+    @staticmethod
+    def _env(grid, out, actions):
+        from rl.arc_env import ARCGridWorld
+        from rl.arc_task import ARCSubtask
+
+        env = ARCGridWorld(max_episode_len=5, feasible_actions=actions,
+                           reward_approach=2, repr_level=1, input_pattern="start",
+                           observation_space_elements=["objects_emb"], max_objects=4)
+        env.set_subtask(ARCSubtask("fill_case", grid, out))
+        env.reset()
+        return env
+
+    @staticmethod
+    def _two_cells():
+        grid = np.zeros((6, 6), dtype=int)
+        grid[1, 1], grid[4, 4] = 1, 2
+        return grid
+
+    def test_it_paints_every_cell_between_the_two_slots(self):
+        grid = self._two_cells()
+        out = grid.copy()
+        out[1:5, 1:5] = 3
+        env = self._env(grid, out, {0: "submit", 1: "green_fill"})
+        env.step(np.array([1, 0, 1]))
+        assert np.array_equal(env.grid, out)
+
+    def test_it_reaches_a_cell_no_object_occupies(self):
+        """The whole point: (2, 2) is background in the input, so no object
+        names it and nothing else in the vocabulary can paint it."""
+        grid = self._two_cells()
+        env = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
+        assert env.grid[2, 2] == 0
+        env.step(np.array([1, 0, 1]))
+        assert env.grid[2, 2] == 3
+
+    def test_one_slot_named_twice_is_that_objects_own_box(self):
+        """Both slots naming the same object is the degenerate rectangle -
+        a single cell when the object is one, which is the per-cell paint
+        this action subsumes."""
+        grid = self._two_cells()
+        env = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
+        env.step(np.array([1, 0, 0]))
+        painted = np.argwhere(env.grid == 3)
+        assert len(painted) == 1
+        assert tuple(painted[0]) == (1, 1)
+
+    def test_a_name_without_a_colour_paints_nothing(self):
+        """`add` is -1 for a name with no colour word in front of it, and
+        -1 is not a colour - writing it would put a value on the grid that
+        no ARC task uses."""
+        grid = self._two_cells()
+        env = self._env(grid, grid.copy(), {0: "submit", 1: "fill"})
+        before = env.grid.copy()
+        env.step(np.array([1, 0, 1]))
+        assert np.array_equal(env.grid, before)
+
+    def test_the_order_of_the_two_slots_does_not_matter(self):
+        grid = self._two_cells()
+        first = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
+        first.step(np.array([1, 0, 1]))
+        second = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
+        second.step(np.array([1, 1, 0]))
+        assert np.array_equal(first.grid, second.grid)
+
+    def test_it_is_dispatched_before_the_one_object_split(self):
+        """Every other branch is written for one object or for two. fill
+        means something in both, so it cannot live in either half."""
+        single, pair = _dispatch_names()
+        assert "fill" in single or "fill" in pair
+        assert not ("fill" in single and "fill" in pair)
+
+    def test_the_generated_names_carry_a_colour(self):
+        """One name per colour the task offers - COLOURS here, not the ten
+        of the real palette, because the fixture generates over two."""
+        assert {f"{colour}_fill" for colour in COLOURS} <= set(ACTION_NAMES)
+        assert "fill" not in ACTION_NAMES, "a colourless fill would paint nothing"

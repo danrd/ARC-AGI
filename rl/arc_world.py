@@ -6,7 +6,8 @@ from rl.arc_transformators import (
 symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gravity, emission, emission_with_collision, color_inner_holes, color_outer_holes,
 shift_object, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
 find_path_through_background, perform_merge, objects_swap, center_merge, color_merge,
-symmetry_reflection, symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy, dense_outer_contour
+symmetry_reflection, symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy, dense_outer_contour,
+fill_rectangle
 )
 class World:
     def __init__(self, objects, actions_dict, font_color=0, ):
@@ -53,6 +54,15 @@ class World:
             # in maximal_intersection rather than here.
             return grid
         new_grid = grid.copy()
+
+        # BEFORE THE SPLIT, because the rectangle two slots span is defined
+        # whether or not they name the same thing: one slot twice is that
+        # object's own bounding box, which for a cell is a single cell.
+        # Every branch below is written for one object or for two, and fill
+        # is the only transform that means something in both.
+        if transform == "fill":
+            """Paint the rectangle spanned by the two slots."""
+            return fill_rectangle(new_grid, obj1, obj2, add)
 
         # 1 OBJECT
         if obj1.label == obj2.label:

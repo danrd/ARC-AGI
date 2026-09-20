@@ -501,8 +501,6 @@ class GridSummary():
         for level in self.levels:
             if level == 5:
                 repr_levels[level] = self.process_cell_level()
-            elif level == 6:
-                repr_levels[level] = self.process_anchor_level()
             else:
                 if level == 1:
                     objects = self.retrieve_connected_components_hetero(self.grid)
@@ -556,69 +554,6 @@ class GridSummary():
             relation_statistics=level_relation_statistics,
             distances=distances,
             relation_embeddings=relation_embeddings
-        )
-
-    def boundary_lines(self, axis: int) -> List[int]:
-        """Rows (axis 0) or columns (axis 1) where the grid's content
-        changes, plus the two edges - the lines a rectangle's side can
-        usefully fall on.
-
-        Both sides of each change are kept: a rectangle that stops before a
-        new colour begins ends on i - 1, and one that starts with it begins
-        on i, and the two are different edges.
-        """
-        lines = self.grid if axis == 0 else self.grid.T
-        marks = {0, lines.shape[0] - 1}
-        for i in range(1, lines.shape[0]):
-            if not np.array_equal(lines[i], lines[i - 1]):
-                marks |= {i - 1, i}
-        return sorted(marks)
-
-    def process_anchor_level(self) -> RepresentationLevel:
-        """Level 6: single cells to address a rectangle by, not objects.
-
-        The action space is (transform, slot, slot) and a rectangle is two
-        corners, so a slot has to name a point. Which points, measured over
-        the 400 training tasks against a greedy single-colour rectangle
-        cover of what each task changes: the bounding-box corners of the
-        level 1 objects contain both corners of 21.7% of the rectangles the
-        cover needs, and the intersections of these boundary lines contain
-        81.7% of them.
-
-        They cost more - a median of 65 slots against 8, p90 153 - and the
-        env's max_objects is what decides how many are reachable, exactly
-        as it does for objects.
-
-        Background cells are anchors here, unlike at level 5 where only ink
-        becomes an object. That is the whole point: 191 of the 400 training
-        tasks need a cell the input leaves background painted, and at every
-        other level there is nothing to name it by. Their embeddings are
-        still distinguishable from padding, because GridObject's size
-        fields are positive for any non-empty object.
-
-        No relations. The block is quadratic in the slots and these are
-        many: at the p90 of 153 anchors it is 561k floats per observation,
-        which is 13 GB of rollout buffer. It would also say nothing - the
-        relation between two cells is their offset, which the grid already
-        carries. An env at this level must leave "relations_emb" out of
-        observation_space_elements.
-
-        No cell2obj either, as at level 5. Transforms that read it -
-        emission_with_object_recolor - do not belong in an anchor
-        vocabulary.
-        """
-        ul = find_upper_left_corner(self.shape)
-        anchors = defaultdict(list)
-        for i in self.boundary_lines(0):
-            for j in self.boundary_lines(1):
-                cell = (ul[0] + i, ul[1] + j)
-                anchors['cell'].append(
-                    GridObject('cell', [cell], [self.grid[cell]],
-                               f'anchor_{i}_{j}', self.shape, self.font_color,
-                               self.grid))
-        return RepresentationLevel(
-            objects=tuple(dict_to_list(anchors)),
-            objects_summary=self.create_objects_summary(anchors),
         )
 
     def retrieve_shapes(self, shape_types:tuple)->typing.Dict[str, List[GridObject]]:

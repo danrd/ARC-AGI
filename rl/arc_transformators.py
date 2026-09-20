@@ -1862,26 +1862,30 @@ def dense_outer_contour(grid: np.array, obj1: GridObject, color: float, font_col
     return new_grid
 
 
-def fill_rectangle(grid: np.array, obj1: GridObject, obj2: GridObject, color: float):
-    """Paint the rectangle the two objects span, corner to corner.
+def fill_rectangle(grid: np.array, first, second, color: float):
+    """Paint the rectangle two points span, corner to corner.
 
-    The coordinate transform. Every other action in this module moves or
-    recolours an object that the grid already holds, so the only cells it
-    can reach are cells something is already drawn on. Measured over the
-    262 shape-preserving training tasks, 191 of them (47.8%) need a cell
-    the input leaves background painted - a median of 18 such cells, up to
-    638 - and nothing in the vocabulary can name one.
+    The coordinate transform, and the only one in this module that takes
+    points rather than a GridObject. Every other action here moves or
+    recolours an object the grid already holds, so the only cells any of
+    them can reach are cells something is already drawn on. Measured over
+    the 262 shape-preserving training tasks, 191 of them (47.8%) need a
+    cell the input leaves background painted - a median of 18 such cells,
+    up to 638 - and nothing else in the vocabulary can name one.
 
-    Two objects rather than a position and a size, because that is the
-    shape of the action space: (transform, slot, slot). With both slots
-    naming the same object the rectangle is that object's bounding box,
-    which is the one-cell case when the object is a cell.
+    Points and not objects because there is nothing object-like about a
+    corner. A caller holding objects passes their bounding-box corners; a
+    caller holding coordinates passes them unchanged. Making this take a
+    GridObject and handing it a one-cell stand-in was the earlier version
+    of this function, and it put the whole object vocabulary - size,
+    symmetry, holes, none of which a corner has - behind an argument that
+    only ever needed two integers.
 
     Why a rectangle and not a cell. The horizon is 25 actions, and the
     busiest training example of a task changes a median of 19 cells, p90
     57. Painted one at a time that fits 65% of the tasks and no more;
     covered by single-colour rectangles the median falls to 8 and 92% fit.
-    The cell is not lost - it is the 1x1 rectangle.
+    The cell is not lost - it is the 1x1 rectangle, both points the same.
 
     Nothing is written when the action carries no colour: `add` is -1 for a
     name with no colour word in front of it, and -1 is not a colour.
@@ -1889,11 +1893,22 @@ def fill_rectangle(grid: np.array, obj1: GridObject, obj2: GridObject, color: fl
     if color is None or color < 0:
         return grid
     new_grid = grid.copy()
+    (top_i, left_j), (bottom_i, right_j) = first, second
+    top, bottom = sorted((int(top_i), int(bottom_i)))
+    left, right = sorted((int(left_j), int(right_j)))
+    new_grid[top:bottom + 1, left:right + 1] = color
+    return new_grid
+
+
+def bounding_corners(obj1: GridObject, obj2: GridObject):
+    """The two opposite corners of the box two objects span.
+
+    Where an object-addressed caller turns its objects into the points
+    fill_rectangle wants. Empty coordinates give None, which is the caller's
+    signal that there is no rectangle to paint.
+    """
     rows = [i for obj in (obj1, obj2) for i, _ in obj.coords]
     cols = [j for obj in (obj1, obj2) for _, j in obj.coords]
     if not rows:
-        return new_grid
-    top, bottom = min(rows), max(rows)
-    left, right = min(cols), max(cols)
-    new_grid[top:bottom + 1, left:right + 1] = color
-    return new_grid
+        return None
+    return (min(rows), min(cols)), (max(rows), max(cols))

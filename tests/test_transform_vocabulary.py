@@ -98,9 +98,17 @@ PAIRWISE = {name for name, is_pair in VOCABULARY if is_pair}
 
 
 def _dispatch_names():
-    """Transform names read out of arc_world's own if/elif chain."""
+    """Transform names read out of arc_world's object if/elif chain.
+
+    apply_transform only. World grew a second entry point for transforms
+    addressed by points rather than objects, and reading to the end of the
+    file swept its names into the pair half - which then failed as
+    `dispatched in the pair block but not in TWO_OBJECTS_ACTION_TYPES`,
+    describing a chain the name is not in.
+    """
     source = (REPO_ROOT / "rl" / "arc_world.py").read_text()
     body = source.split("def apply_transform")[1]
+    body = re.split(r"\n    def ", body)[0]
     single, pair = body.split("elif obj1.label != obj2.label:")
     def names(chunk):
         return set(re.findall(r'transform == "([a-z_0-9]+)"', chunk)) | \
@@ -1015,10 +1023,33 @@ class TestFillPaintsTheRectangleTwoSlotsSpan:
 
     def test_it_is_dispatched_before_the_one_object_split(self):
         """Every other branch is written for one object or for two. fill
-        means something in both, so it cannot live in either half."""
+        means something in both - one slot twice is a degenerate rectangle -
+        so it sits ahead of the split rather than in either half."""
         single, pair = _dispatch_names()
-        assert "fill" in single or "fill" in pair
-        assert not ("fill" in single and "fill" in pair)
+        assert "fill" in single
+        assert "fill" not in pair
+
+    def test_the_coordinate_path_answers_to_it_too(self):
+        """An anchor-addressed env never reaches apply_transform: it has no
+        objects to hand it. The same name has to be answered there."""
+        from rl.arc_world import World
+
+        world = World(objects=[], actions_dict={0: "submit", 1: "red_fill"})
+        grid = np.zeros((5, 5), dtype=int)
+        painted = world.apply_coordinate_transform(2, "fill", (1, 1), (3, 3), grid)
+        assert painted[1:4, 1:4].tolist() == [[2, 2, 2]] * 3
+        assert np.array_equal(grid, np.zeros((5, 5), dtype=int)), "the caller's grid moved"
+
+    def test_the_coordinate_path_leaves_a_name_it_does_not_know(self):
+        """Scored as ineffective by the env, exactly as an object transform
+        with nothing to do is - not raised, which a search counts as a
+        dropped run rather than a refused action."""
+        from rl.arc_world import World
+
+        world = World(objects=[], actions_dict={0: "submit", 1: "rotate90"})
+        grid = np.arange(25).reshape(5, 5)
+        assert np.array_equal(
+            world.apply_coordinate_transform(2, "rotate90", (1, 1), (3, 3), grid), grid)
 
     def test_the_generated_names_carry_a_colour(self):
         """One name per colour the task offers - COLOURS here, not the ten
@@ -1033,8 +1064,8 @@ class TestAnchorsReachWhatObjectBoxesCannot:
 
     Measured over the 400 training tasks against a greedy single-colour
     rectangle cover: object bounding-box corners contain both corners of
-    21.7% of the rectangles a cover needs, the anchor level's boundary-line
-    intersections 81.7%.
+    21.7% of the rectangles a cover needs, the boundary-line intersections
+    an anchor-addressed env offers 81.7%.
     """
 
     @staticmethod
@@ -1048,51 +1079,60 @@ class TestAnchorsReachWhatObjectBoxesCannot:
         return inp, out
 
     @staticmethod
-    def _env(level, inp, out):
+    def _env(addressing, inp, out):
         from rl.arc_env import ARCGridWorld
         from rl.arc_task import ARCSubtask
 
+        element = "anchors_emb" if addressing == "anchors" else "objects_emb"
         env = ARCGridWorld(max_episode_len=5, feasible_actions={0: "submit", 1: "red_fill"},
-                           reward_approach=2, repr_level=level, input_pattern="start",
-                           observation_space_elements=["objects_emb"], max_objects=64)
+                           reward_approach=2, repr_level=1, input_pattern="start",
+                           addressing=addressing,
+                           observation_space_elements=[element], max_objects=64)
         env.set_subtask(ARCSubtask("anchor_case", inp, out))
         env.reset()
         return env
 
     @staticmethod
     def _solvable_in_one(env):
-        state = env.get_state()
-        slots = env.visible_object_count()
-        for first in range(slots):
-            for second in range(slots):
-                env.set_state(state)
-                env.step(np.array([1, first, second]))
-                if env.max_int == env.target_int:
+        """Through simulate_action, which mutates nothing - so the probe
+        does not need a state restore between candidates."""
+        grid, objects, reached = env.grid.copy(), env.objects, int(env.max_int)
+        for first in range(env.visible_object_count()):
+            for second in range(env.visible_object_count()):
+                _g, _o, after, _r, _d = env.simulate_action(
+                    np.array([1, first, second]), objects, grid, reached, None)
+                if after == int(env.target_int):
                     return True
         return False
 
-    def test_the_object_level_cannot_express_it(self):
+    def test_object_addressing_cannot_express_it(self):
         inp, out = self._case()
-        env = self._env(1, inp, out)
+        env = self._env("objects", inp, out)
         assert env.visible_object_count() == 2, "two ink cells, two objects"
         assert not self._solvable_in_one(env)
 
-    def test_the_anchor_level_solves_it_in_one_action(self):
+    def test_anchor_addressing_solves_it_in_one_action(self):
         inp, out = self._case()
-        env = self._env(6, inp, out)
+        env = self._env("anchors", inp, out)
         assert env.visible_object_count() > 2
         assert self._solvable_in_one(env)
 
-    def test_the_anchor_level_needs_no_relation_block(self):
-        """The level carries none, so asking for one is a configuration
-        error rather than an empty observation."""
-        from rl.arc_env import ARCGridWorld
-        from rl.arc_task import ARCSubtask
+    def test_the_two_addressings_carry_different_observation_keys(self):
+        """Not objects_emb with another meaning: a consumer reading one and
+        getting the other finds every field where it expected another."""
+        from rl.anchors import ANCHOR_DIM
+        from symbolic.objects_analysis import OBJECT_DIM
 
         inp, out = self._case()
-        env = ARCGridWorld(max_episode_len=5, feasible_actions={0: "submit", 1: "red_fill"},
-                           reward_approach=2, repr_level=6, input_pattern="start",
-                           observation_space_elements=["objects_emb"], max_objects=64)
-        env.set_subtask(ARCSubtask("anchor_case", inp, out))
-        env.reset()
-        assert "relations_emb" not in env.observation_space.spaces
+        objects = self._env("objects", inp, out).observation_space.spaces
+        anchors = self._env("anchors", inp, out).observation_space.spaces
+        assert "objects_emb" in objects and "anchors_emb" not in objects
+        assert "anchors_emb" in anchors and "objects_emb" not in anchors
+        assert anchors["anchors_emb"].shape[1] == ANCHOR_DIM
+        assert ANCHOR_DIM != OBJECT_DIM
+
+    def test_an_unknown_addressing_is_refused(self):
+        from rl.arc_env import ARCGridWorld
+
+        with pytest.raises(ValueError):
+            ARCGridWorld(addressing="cells")

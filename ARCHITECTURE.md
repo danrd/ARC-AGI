@@ -128,13 +128,13 @@ being read.
 graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
-  rl["rl (18)"]
+  rl["rl (19)"]
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (49)"]
+  tests["tests (50)"]
   utils["utils (3)"]
-  tests -->|52| rl
+  tests -->|54| rl
   tests -->|25| symbolic
   tests -->|24| subsymbolic
   tests -->|11| data
@@ -169,6 +169,7 @@ graph TD
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
 | `orchestration.graph` | 3 |
+| `rl.anchors` | 3 |
 | `rl.arc_env` | 10 |
 | `rl.arc_hp_search` | 1 |
 | `rl.arc_task` | 19 |

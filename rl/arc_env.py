@@ -3,6 +3,7 @@ import gymnasium
 from gymnasium import spaces
 from copy import copy, deepcopy
 from rl.utils import repad
+from rl.anchors import ANCHOR_DIM, anchor_embeddings, anchor_points
 from rl.arc_world import World
 from symbolic.utils import pad_grid
 from symbolic.objects_analysis import OBJECT_DIM
@@ -93,7 +94,16 @@ class ARCGridWorld(gymnasium.Env):
                 max_objects=MAX_OBJECTS,
                 observation_grid_shape=None,
                 action_whitelist=None,
+                addressing="objects",
                 ):
+        #: What a slot index names. "objects" is a connected component at
+        #: repr_level; "anchors" is a point a rectangle's corner can sit on
+        #: (see rl.anchors). Chosen once, at construction, and never per
+        #: transform: a slot whose meaning depended on which action was
+        #: taken would be the same overloading in a smaller place.
+        if addressing not in ("objects", "anchors"):
+            raise ValueError(f"unknown addressing: {addressing}")
+        self.addressing = addressing
         self.max_objects = max_objects
         self.step_no = 0
         self.right_placement_reward = right_placement_reward
@@ -358,6 +368,15 @@ class ARCGridWorld(gymnasium.Env):
         # The action space stays as __init__ built it: sized by max_objects,
         # the same for every subtask. Indices past this subtask's object
         # count address nothing and are handled in step().
+        #: The points slots name, when they name points. Taken from the
+        #: input grid and fixed for the episode: recomputing them as the
+        #: agent paints would move every slot under the policy mid-episode,
+        #: so slot 7 would mean one place on one step and another on the
+        #: next. Their embeddings are rebuilt per step, so the colour a
+        #: point carries is the live one - the addressing is fixed, what is
+        #: under it is not.
+        if self.addressing == "anchors":
+            self.anchor_points = anchor_points(self.initial_grid_summary.grid)
         if "objects_emb" in self.observation_space_elements:
             self.initial_objects_emb = self._pad_objects(
                 [obj.create_embedding() for obj in self.initial_objects])
@@ -376,8 +395,41 @@ class ARCGridWorld(gymnasium.Env):
         subtask holds, so anything enumerating actions (rl.mcts) needs to
         know where the real objects stop - the slots past this point are all
         the same no-op, and there are (max_objects/n)^2 of them.
+
+        Under anchor addressing it counts points instead, which are fixed
+        for the episode - so this is the one number that tells a caller how
+        much of the slot space names anything, whichever the slots are.
         """
+        if self.addressing == "anchors":
+            return min(len(self.anchor_points), self.max_objects)
         return min(len(self.objects) or len(self.initial_objects), self.max_objects)
+
+    def apply_slots(self, add, transform, action, grid, objects):
+        """The grid after this action, whichever the slots name.
+
+        The one place slot indices are resolved, so step() and
+        simulate_action() cannot come to disagree about what a slot is -
+        they already disagreed once about how many of them are visible, and
+        a search that values an action the real env does not is the kind of
+        bug that shows up as a bad policy rather than as a crash.
+        """
+        if self.addressing == "anchors":
+            return self.world.apply_coordinate_transform(
+                add, transform, self.anchor_points[int(action[1])],
+                self.anchor_points[int(action[2])], grid)
+        return self.world.step(
+            add, transform, objects[int(action[1])], objects[int(action[2])],
+            grid, objects,
+            self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
+
+    def slot_embeddings(self, grid) -> np.ndarray:
+        """The per-slot block an anchor-addressed observation carries,
+        padded to max_objects. Rebuilt from `grid`, so the colour each
+        point reports is the current one."""
+        block = anchor_embeddings(grid, self.anchor_points[:self.max_objects])
+        padded = np.zeros((self.max_objects, ANCHOR_DIM), dtype=EMBEDDING_DTYPE)
+        padded[:len(block)] = block
+        return padded
 
     def _pad_objects(self, embeddings) -> np.ndarray:
         """(max_objects, OBJECT_DIM), zero-padded. A real object's embedding
@@ -485,6 +537,14 @@ class ARCGridWorld(gymnasium.Env):
             # normalised into [0, 1], and zero rows are padding.
             self.observation_space['objects_emb'] = spaces.Box(
                 low=0, high=1, shape=(self.max_objects, OBJECT_DIM), dtype=EMBEDDING_DTYPE)
+        if "anchors_emb" in self.observation_space_elements:
+            # Its own key and its own width, not objects_emb with a
+            # different meaning: a consumer reading one and getting the
+            # other would find every field where it expected another.
+            # Bounded by [0, 1] because ANCHOR_SCHEMA is a normalised
+            # position, a one-hot and eight flags.
+            self.observation_space['anchors_emb'] = spaces.Box(
+                low=0, high=1, shape=(self.max_objects, ANCHOR_DIM), dtype=EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
             # One row per object slot, holding its vector against each of the
             # others - see GridSummary.get_relation_embeddings_as_numpy, which
@@ -594,6 +654,8 @@ class ARCGridWorld(gymnasium.Env):
         self._add_deltas(obs)
         if "objects_emb" in self.observation_space_elements:
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
+        if "anchors_emb" in self.observation_space_elements:
+            obs['anchors_emb'] = self.slot_embeddings(self.grid)
         if "relations_emb" in self.observation_space_elements:
             obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
         truncated = False
@@ -630,6 +692,8 @@ class ARCGridWorld(gymnasium.Env):
         if "objects_emb" in self.observation_space_elements:
             self.objects_emb = self.initial_objects_emb.copy()
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
+        if "anchors_emb" in self.observation_space_elements:
+            obs['anchors_emb'] = self.slot_embeddings(self.grid)
         if "relations_emb" in self.observation_space_elements:
             self.relations_emb = self.initial_relation_emb.copy()
             obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
@@ -671,10 +735,7 @@ class ARCGridWorld(gymnasium.Env):
             new_grid = self.grid
             eq_check = True
         else:
-            object_1 = self.objects[action[1]]
-            object_2 = self.objects[action[2]]
-            # Apply action and get modified grid if needed
-            new_grid = self.world.step(add, transform, object_1, object_2, self.grid, self.objects, self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
+            new_grid = self.apply_slots(add, transform, action, self.grid, self.objects)
             eq_check = np.array_equal(new_grid, self.grid)
 
         # Update grid if it was transformed
@@ -700,6 +761,8 @@ class ARCGridWorld(gymnasium.Env):
             # is one the policy sees two different things in.
             self.objects_emb = self._pad_objects([obj.create_embedding() for obj in self.objects])
             obs['objects_emb'] = self.objects_emb.copy()
+        if "anchors_emb" in self.observation_space_elements:
+            obs['anchors_emb'] = self.slot_embeddings(new_grid)
         if "relations_emb" in self.observation_space_elements:
             for obj_idx in list(set([action[1], action[2]])): # update involved objects relation embeddings
                 if obj_idx < visible:
@@ -765,14 +828,13 @@ class ARCGridWorld(gymnasium.Env):
         # max_objects of them whatever the subtask holds. Scored exactly as
         # step() scores it, or a simulated rollout would value an action the
         # real env does not.
-        visible = min(len(objects), self.max_objects)
+        visible = (min(len(self.anchor_points), self.max_objects)
+                   if self.addressing == "anchors"
+                   else min(len(objects), self.max_objects))
         if action[1] >= visible or action[2] >= visible:
             new_grid, eq_check = grid, True
         else:
-            object_1 = objects[action[1]]
-            object_2 = objects[action[2]]
-            cell2obj = self.initial_grid_summary.repr_levels[self.repr_level].cell2obj
-            new_grid = self.world.step(add, transform, object_1, object_2, grid, objects, cell2obj)
+            new_grid = self.apply_slots(add, transform, action, grid, objects)
             eq_check = np.array_equal(new_grid, grid)
 
         reward = -1 * self.action_penalty if (new_grid is not None and eq_check) else 0.0

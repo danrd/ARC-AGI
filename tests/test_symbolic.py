@@ -1582,3 +1582,77 @@ class TestATransformLeavesNothingDescribingTheOldPosition:
             f"the embedding does not carry the new colour: {embedding[:10]}"
         assert embedding[1] == 0, \
             f"the embedding still carries the old colour: {embedding[:10]}"
+
+
+class TestTheAnchorLevel:
+    """Level 6 holds single cells to address a rectangle by, not objects.
+
+    The action space is (transform, slot, slot) and a rectangle is two
+    corners, so a slot has to name a point - and the points have to be few
+    enough to be slots.
+    """
+
+    @staticmethod
+    def _summary(grid):
+        return GridSummary(grid=grid, shape=grid.shape, levels=[1, 6])
+
+    @staticmethod
+    def _banded():
+        """One colour change down and one across, so the boundary lines are
+        something other than the four edges."""
+        grid = np.zeros((6, 6), dtype=int)
+        grid[3, 2] = 1
+        return grid
+
+    def test_a_uniform_grid_offers_only_its_edges(self):
+        summary = self._summary(np.zeros((6, 6), dtype=int))
+        assert summary.boundary_lines(0) == [0, 5]
+        assert summary.boundary_lines(1) == [0, 5]
+        assert len(summary.repr_levels[6].objects) == 4
+
+    def test_both_sides_of_a_change_are_kept(self):
+        """A rectangle that stops before a new colour begins ends on i - 1,
+        and one that starts with it begins on i. Keeping only one of them
+        makes half the rectangles inexpressible."""
+        summary = self._summary(self._banded())
+        assert summary.boundary_lines(0) == [0, 2, 3, 4, 5]
+
+    def test_a_background_cell_becomes_an_anchor(self):
+        """The whole point of the level: 191 of the 400 training tasks need
+        a cell the input leaves background painted, and at every other
+        level there is nothing to name it by."""
+        grid = self._banded()
+        anchors = self._summary(grid).repr_levels[6].objects
+        background = [a for a in anchors if grid[a.coords[0]] == 0]
+        assert background, "every anchor sits on ink"
+        assert all(len(a.coords) == 1 for a in anchors)
+
+    def test_level_five_still_holds_ink_only(self):
+        """The difference from the cell level, which this one is not a
+        rename of."""
+        grid = self._banded()
+        cells = GridSummary(grid=grid, shape=grid.shape, levels=[5]).repr_levels[5].objects
+        assert [c.coords for c in cells] == [((3, 2),)]
+
+    def test_an_anchor_is_distinguishable_from_padding(self):
+        """The env reads an all-zero row as an empty slot. A background
+        anchor at the origin is the worst case - its colour and position
+        are all zero - and GridObject's size fields save it."""
+        grid = np.zeros((6, 6), dtype=int)
+        anchors = self._summary(grid).repr_levels[6].objects
+        origin = [a for a in anchors if a.coords == ((0, 0),)]
+        assert origin, "the origin is always a boundary line"
+        assert np.any(np.asarray(origin[0].create_embedding()))
+
+    def test_the_level_carries_no_relations(self):
+        """Quadratic in the slots and these are many - at the p90 of 153
+        anchors the block is 13 GB of rollout buffer - and it would say
+        nothing a grid of coordinates does not already carry."""
+        level = self._summary(self._banded()).repr_levels[6]
+        assert level.relation_embeddings is None
+        assert not level.triples.triples if hasattr(level.triples, "triples") else True
+        assert level.cell2obj is None
+
+    def test_there_are_more_anchors_than_objects(self):
+        summary = self._summary(self._banded())
+        assert len(summary.repr_levels[6].objects) > len(summary.repr_levels[1].objects)

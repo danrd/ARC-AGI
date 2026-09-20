@@ -1025,3 +1025,74 @@ class TestFillPaintsTheRectangleTwoSlotsSpan:
         of the real palette, because the fixture generates over two."""
         assert {f"{colour}_fill" for colour in COLOURS} <= set(ACTION_NAMES)
         assert "fill" not in ACTION_NAMES, "a colourless fill would paint nothing"
+
+
+class TestAnchorsReachWhatObjectBoxesCannot:
+    """fill spans two slots, so what the slots name decides which
+    rectangles exist at all.
+
+    Measured over the 400 training tasks against a greedy single-colour
+    rectangle cover: object bounding-box corners contain both corners of
+    21.7% of the rectangles a cover needs, the anchor level's boundary-line
+    intersections 81.7%.
+    """
+
+    @staticmethod
+    def _case():
+        """A rectangle whose corners are on boundary lines and on no
+        object's bounding box."""
+        inp = np.zeros((7, 7), dtype=int)
+        inp[3, 2], inp[5, 4] = 1, 1
+        out = inp.copy()
+        out[2:5, 0:3] = 2
+        return inp, out
+
+    @staticmethod
+    def _env(level, inp, out):
+        from rl.arc_env import ARCGridWorld
+        from rl.arc_task import ARCSubtask
+
+        env = ARCGridWorld(max_episode_len=5, feasible_actions={0: "submit", 1: "red_fill"},
+                           reward_approach=2, repr_level=level, input_pattern="start",
+                           observation_space_elements=["objects_emb"], max_objects=64)
+        env.set_subtask(ARCSubtask("anchor_case", inp, out))
+        env.reset()
+        return env
+
+    @staticmethod
+    def _solvable_in_one(env):
+        state = env.get_state()
+        slots = env.visible_object_count()
+        for first in range(slots):
+            for second in range(slots):
+                env.set_state(state)
+                env.step(np.array([1, first, second]))
+                if env.max_int == env.target_int:
+                    return True
+        return False
+
+    def test_the_object_level_cannot_express_it(self):
+        inp, out = self._case()
+        env = self._env(1, inp, out)
+        assert env.visible_object_count() == 2, "two ink cells, two objects"
+        assert not self._solvable_in_one(env)
+
+    def test_the_anchor_level_solves_it_in_one_action(self):
+        inp, out = self._case()
+        env = self._env(6, inp, out)
+        assert env.visible_object_count() > 2
+        assert self._solvable_in_one(env)
+
+    def test_the_anchor_level_needs_no_relation_block(self):
+        """The level carries none, so asking for one is a configuration
+        error rather than an empty observation."""
+        from rl.arc_env import ARCGridWorld
+        from rl.arc_task import ARCSubtask
+
+        inp, out = self._case()
+        env = ARCGridWorld(max_episode_len=5, feasible_actions={0: "submit", 1: "red_fill"},
+                           reward_approach=2, repr_level=6, input_pattern="start",
+                           observation_space_elements=["objects_emb"], max_objects=64)
+        env.set_subtask(ARCSubtask("anchor_case", inp, out))
+        env.reset()
+        assert "relations_emb" not in env.observation_space.spaces

@@ -381,3 +381,55 @@ class TestWhatCountsAsASolution:
 
         assert result["solution"] is None
         assert result["module_results"]["train_metrics"]["test_acc"] == 0.99
+
+
+class TestTheAddressingReachesTheEnvsTrainingBuilds:
+    """narrowed_for_task decides whether a slot names an object or a point,
+    and the decision is worth nothing if the env never hears it.
+
+    It did not: addressing was threaded into create_env, which is the
+    gymnasium entry point, while training builds its envs through
+    create_vec_env -> create_ARC_env. So a task narrowed to coordinates
+    trained on objects, and the config carried a setting nothing read.
+    """
+
+    def test_create_vec_env_passes_it_down(self, task, config):
+        from rl.training import create_vec_env
+
+        for addressing, element in (("anchors", "anchors_emb"),
+                                    ("objects", "objects_emb")):
+            vec_env = create_vec_env(
+                [task.subtasks[0]], n_envs=1,
+                max_episode_len=4, feasible_actions={0: "submit", 1: "red_fill"},
+                observation_space_elements=[element], max_objects=8,
+                repr_level=1, input_pattern="start", addressing=addressing)
+            try:
+                assert all(env.unwrapped.addressing == addressing
+                           for env in vec_env.envs)
+            finally:
+                vec_env.close()
+
+    def test_both_call_sites_read_it_from_the_config(self):
+        """Structural, and both of them: the second builds the env a
+        trained policy is scored in, and a policy scored under an
+        addressing it was not trained on reads every slot index as
+        something else."""
+        import inspect
+
+        from rl.training import evaluate_on_subtask, train_on_subtasks
+
+        for function in (train_on_subtasks, evaluate_on_subtask):
+            source = inspect.getsource(function)
+            assert "addressing=rl_config" in source, function.__name__
+
+    def test_every_env_building_helper_accepts_it(self):
+        """create_env, create_ARC_env and create_vec_env are three doors to
+        the same env and the setting has to fit all of them."""
+        import inspect
+
+        from rl.arc_env import create_env
+        from rl.training import create_ARC_env, create_vec_env
+
+        for function in (create_env, create_ARC_env, create_vec_env):
+            assert "addressing" in inspect.signature(function).parameters, \
+                function.__name__

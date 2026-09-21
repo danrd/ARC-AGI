@@ -162,6 +162,56 @@ def observation_shape(task: Any):
             max(shape[1] for shape in shapes))
 
 
+def slot_elements(elements, addressing: str) -> list:
+    """The observation keys that go with this addressing.
+
+    The slot block has to follow the slots. An anchor-addressed env holds
+    no objects, so objects_emb would be a block of padding and
+    relations_emb a block of padding squared - and the relation block is
+    sized by max_objects, which for anchors runs to 900.
+
+    Everything that is not a slot block - deltas, the target, the input
+    plane - is left exactly as the caller asked for it.
+    """
+    slot_keys = {"objects_emb", "relations_emb", "anchors_emb"}
+    kept = [key for key in elements if key not in slot_keys]
+    return kept + (["anchors_emb"] if addressing == "anchors"
+                   else [key for key in elements if key in slot_keys])
+
+
+def addressing_for(agent) -> str:
+    """Which kind of slot this task's actions address.
+
+    Read off the agent's label rather than off the task, because the label
+    already says what kind of change the task makes and the two
+    vocabularies do not overlap - see AGENT2ADDRESSING for the measurement
+    behind each entry. An unlabelled task, or one whose agent is not in the
+    map, gets objects: what every task got before coordinates existed.
+    """
+    from data.configs.env_configs import AGENT2ADDRESSING
+
+    return AGENT2ADDRESSING.get(agent, "objects")
+
+
+def slots_for_addressing(task: Any, addressing: str, repr_level: int) -> int:
+    """How many slots this task needs, whichever the slots are.
+
+    Objects are counted by GridSummary; anchors by rl.anchors, which is a
+    property of the grid's shape and content and has nothing to do with a
+    representation level.
+    """
+    if addressing != "anchors":
+        return object_slots(task, repr_level)
+
+    from rl.anchors import anchor_points
+
+    grids = [subtask.train_inp for subtask in task.subtasks]
+    test_subtask = getattr(task, "test_subtask", None)
+    if test_subtask is not None:
+        grids.append(test_subtask.train_inp)
+    return max(2, max(len(anchor_points(grid)) for grid in grids))
+
+
 def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
                       settings: Any = None) -> Dict[str, Any]:
     """`rl_config` cut down to the space this task actually needs.
@@ -192,14 +242,18 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     """
     from rl.search_hints import SearchSettings, feasible_from_search
 
+    agent = getattr(task, "agent", None)
     narrowed = dict(rl_config)
-    narrowed["max_objects"] = object_slots(
-        task, rl_config.get("repr_level", 1))
+    narrowed["addressing"] = addressing_for(agent)
+    narrowed["observation_space_elements"] = slot_elements(
+        rl_config.get("observation_space_elements") or [],
+        narrowed["addressing"])
+    narrowed["max_objects"] = slots_for_addressing(
+        task, narrowed["addressing"], rl_config.get("repr_level", 1))
     narrowed["observation_grid_shape"] = observation_shape(task)
     try:
         narrowed["feasible_actions"] = feasible_from_search(
-            task, settings or SearchSettings(),
-            agent=getattr(task, "agent", None))
+            task, settings or SearchSettings(), agent=agent)
     except Exception:  # noqa: BLE001 - a failed search must not fail the run
         pass
     return narrowed

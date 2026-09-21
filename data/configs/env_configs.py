@@ -57,6 +57,44 @@ AGENT2ACTIONS = {
               "emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision",
               "emission_with_recolor_collision", "emission_with_contour_collision",
               "emission_with_collision_stop", "emission_with_object_recolor",],
+    # The largest label in idx2agent.pkl - 232 of 800 tasks - and until now
+    # the only one with no roster at all, which left a quarter of the
+    # labelled set with nothing but submit. Its role is to colour
+    # background cells, and no object-addressed action can name one.
+    'constructor': ["submit", "fill"],
+}
+
+#: Which kind of slot a task's actions address, by the agent it is labelled
+#: with. The base case is decided here rather than per task: an agent's
+#: label already says what kind of change the task makes, and the two
+#: vocabularies do not overlap.
+#:
+#: Measured over the 800 labelled tasks, as the share of a task's changed
+#: cells that the input left background - cells no object-addressed action
+#: can reach:
+#:
+#:   agent        tasks  median share   reading
+#:   constructor    232        1.00     every changed cell was background
+#:   connector       95        1.00     paths drawn across empty space
+#:   mapper          24        0.58     mixed, and mostly subsymbolic
+#:   shifter         75        0.50     the fingerprint of translation: a
+#:                                      moved object vacates as many cells
+#:                                      as it fills, so half of what changed
+#:                                      was background without any of it
+#:                                      being painted
+#:   modifier       112        0.00     but p75 0.94 - genuinely bimodal
+#:   highlighter     74        0.00     1 of its 14 shape-preserving tasks
+#:
+#: modifier is the case where both could serve, and it is left on objects
+#: until something measures the split. An agent absent from this map gets
+#: objects, which is what every task got before coordinates existed.
+AGENT2ADDRESSING = {
+    'constructor': 'anchors',
+    'connector': 'anchors',
+    'connector_extended': 'anchors',
+    'highlighter': 'objects',
+    'modifier': 'objects',
+    'shifter': 'objects',
 }
 
 

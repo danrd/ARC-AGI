@@ -134,13 +134,13 @@ graph TD
   symbolic["symbolic (9)"]
   tests["tests (50)"]
   utils["utils (3)"]
-  tests -->|54| rl
+  tests -->|55| rl
   tests -->|25| symbolic
   tests -->|24| subsymbolic
-  tests -->|11| data
+  tests -->|12| data
   rl -->|10| symbolic
+  rl -->|7| data
   scripts -->|7| rl
-  rl -->|6| data
   tests -->|6| orchestration
   orchestration -->|4| subsymbolic
   rl -->|4| utils
@@ -163,13 +163,13 @@ graph TD
 | module | imported by |
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
-| `data.configs.env_configs` | 7 |
+| `data.configs.env_configs` | 9 |
 | `data.configs.rl_configs` | 9 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
 | `orchestration.graph` | 3 |
-| `rl.anchors` | 3 |
+| `rl.anchors` | 5 |
 | `rl.arc_env` | 10 |
 | `rl.arc_hp_search` | 1 |
 | `rl.arc_task` | 19 |
@@ -218,7 +218,7 @@ graph TD
 
 Packages that import each other:
 
-- `data` -> `rl` (3) against `rl` -> `data` (6):
+- `data` -> `rl` (3) against `rl` -> `data` (7):
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`

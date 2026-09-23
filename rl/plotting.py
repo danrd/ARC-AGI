@@ -306,3 +306,59 @@ def plot_evaluation(trace, title=None, max_columns=6, cell_inches=2.2):
         fig.suptitle(f"{headline}: closed {trace['accuracy']:+.3f} of the distance "
                      f"in {len(trace['steps'])} steps", fontsize=11)
     return fig
+
+
+def plot_overview(traces, title=None, cell_inches=1.8, max_lines=8):
+    """Several evaluated episodes at a glance, one row each: start, target,
+    result, and what the policy did, folded as collapsed_steps folds it.
+
+    The compact counterpart of plot_evaluation, for when there is one
+    episode per training example and an evaluation every few thousand
+    steps: a filmstrip for every example at every evaluation is dozens of
+    figures a run. Runs past `max_lines` are elided in the middle - the
+    first actions and the last are the ones that say what the policy
+    settled on.
+
+    `traces` is the list evaluate_ARC_policy fills; None entries (an env
+    that finished no episode) are skipped. Returns the figure.
+    """
+    traces = [trace for trace in traces if trace]
+    rows = max(len(traces), 1)
+    fig = plt.figure(figsize=(cell_inches * 3 + 5.5, rows * cell_inches * 1.1),
+                     layout="constrained")
+    gs = GridSpec(rows, 4, figure=fig, width_ratios=[1, 1, 1, 5.5 / cell_inches])
+    for row, trace in enumerate(traces):
+        runs = collapsed_steps(trace)
+        target = trace.get("target")
+        start = crop_pad(grid_formatting(trace["start"]))
+        final = crop_pad(grid_formatting(runs[-1][3])) if runs else start
+        target_grid = crop_pad(grid_formatting(target)) if target is not None else None
+        for column, (grid, name) in enumerate([(start, "start"), (target_grid, "target"),
+                                               (final, "result")]):
+            ax = fig.add_subplot(gs[row, column])
+            if grid is not None:
+                ax.imshow(grid, cmap=ARC_CMAP_HIGHLIGHT, norm=ARC_NORM_HIGHLIGHT)
+            match = _match_pct(grid, target) if (grid is not None and name != "target") else None
+            heading = name + (f" {match:.0%}" if match is not None else "")
+            if column == 0:
+                heading = f"{trace.get('subtask') or ''}\n{heading}"
+            ax.set_title(heading, fontsize=8)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        lines = [f"{_step_span(first, last)}. {label}  ({reward:+.2f})"
+                 for first, last, label, _grid, reward in runs]
+        if len(lines) > max_lines:
+            keep = max_lines // 2
+            lines = lines[:keep] + [f"... {len(lines) - 2 * keep} more ..."] + lines[-keep:]
+        ax = fig.add_subplot(gs[row, 3])
+        ax.axis("off")
+        ax.text(0, 1, f"closed {trace['accuracy']:+.3f} in {len(trace['steps'])} steps\n"
+                # Wrapped, not shortened: the second object of a
+                # two-object action is at the end of the line.
+                + "\n".join(textwrap.fill(line, 90, subsequent_indent="      ")
+                            for line in lines),
+                va="top", ha="left", fontsize=7, family="monospace",
+                transform=ax.transAxes)
+    if title:
+        fig.suptitle(title, fontsize=11)
+    return fig

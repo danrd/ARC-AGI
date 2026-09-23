@@ -263,14 +263,36 @@ class TestWhatTheEvaluationsShow:
         out = capsys.readouterr().out
         assert f"{task.test_subtask.label}: closed" in out
         assert ". submit" in out
+        for subtask in task.subtasks:
+            assert f"{subtask.label}: closed" in out
 
-    def test_the_monitor_keeps_one_trace_per_evaluation(self, task, config, ppo):
+    def test_the_monitor_keeps_every_example_of_every_evaluation(self, task, config, ppo):
         _, _, _, callback, _ = train_on_subtasks(task.subtasks, rl_config=config,
                                                  PPO_config=ppo)
 
         assert callback.episode_accs
         assert len(callback.episode_traces) == len(callback.episode_accs)
-        assert all(trace["steps"] for trace in callback.episode_traces)
+        for traces in callback.episode_traces:
+            assert [trace["subtask"] for trace in traces] == [s.label for s in task.subtasks]
+            assert callback.episode_accs[0] is not None
+
+    def test_the_monitor_accuracy_is_the_mean_over_the_examples(self, task, config, ppo):
+        _, _, _, callback, _ = train_on_subtasks(task.subtasks, rl_config=config,
+                                                 PPO_config=ppo)
+
+        for acc, traces in zip(callback.episode_accs, callback.episode_traces):
+            assert acc == pytest.approx(np.mean([trace["accuracy"] for trace in traces]))
+
+    @pytest.mark.parametrize("mode", ["mixed", "sequential"])
+    def test_every_training_example_comes_back_with_its_episode(self, task, config, ppo,
+                                                                mode):
+        accs, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo, mode=mode)
+
+        traces = metrics["train_traces"]
+        assert sorted(traces) == sorted(accs)
+        for idx, trace in traces.items():
+            assert trace["subtask"] == task.subtasks[idx].label
+            assert trace["accuracy"] == accs[idx]
 
     def test_a_verbose_run_draws_every_evaluation_and_the_held_out_one(
             self, task, config, ppo, monkeypatch):
@@ -285,6 +307,7 @@ class TestWhatTheEvaluationsShow:
 
         titles = [fig._suptitle.get_text() for fig in drawn if fig._suptitle]
         assert any(title.startswith("held-out") for title in titles)
+        assert sum(title.startswith("training example") for title in titles) == len(task.subtasks)
         assert any("% of training" in title for title in titles)
 
 

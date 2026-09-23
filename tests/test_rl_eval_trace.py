@@ -23,13 +23,15 @@ from stable_baselines3.common.vec_env import DummyVecEnv  # noqa: E402
 from rl.arc_env import ARCGridWorld  # noqa: E402
 from rl.arc_task import ARCSubtask  # noqa: E402
 from rl.evaluation import describe_slot, evaluate_ARC_policy, step_label  # noqa: E402
-from rl.plotting import collapsed_steps, describe_trace, plot_evaluation  # noqa: E402
+from rl.plotting import (collapsed_steps, describe_trace, plot_evaluation,  # noqa: E402
+                         plot_overview)
 
 COORDINATE_ACTIONS = {0: "submit", 1: "red_fill", 2: "red_line", 3: "red_triangle"}
 
 
 class Scripted:
-    """A model whose predict plays a fixed list of actions, then submits."""
+    """A model whose predict plays a fixed list of actions, then submits -
+    the same action in every env of the vector."""
 
     def __init__(self, actions, submit):
         self.actions = [np.asarray(a) for a in actions]
@@ -40,7 +42,8 @@ class Scripted:
         action = (self.actions[self.calls] if self.calls < len(self.actions)
                   else self.submit)
         self.calls += 1
-        return action[None, :], state
+        n_envs = len(observations["grid"])
+        return np.repeat(action[None, :], n_envs, axis=0), state
 
 
 def coordinate_case():
@@ -118,10 +121,11 @@ class TestTheTraceOfAnEvaluation:
     def _evaluate(self, actions, submit=(0, 0, 0, 0, 0), max_episode_len=5):
         inp, out = coordinate_case()
         vec_env = DummyVecEnv([lambda: coordinate_env(inp, out, max_episode_len)])
-        trace = {}
+        traces = []
         acc, length, _grid = evaluate_ARC_policy(Scripted(actions, submit), vec_env,
-                                                 n_eval_episodes=1, trace=trace)
-        return trace, acc, length, inp, out
+                                                 n_eval_episodes=1, traces=traces)
+        assert len(traces) == 1
+        return traces[0], acc, length, inp, out
 
     def test_it_holds_every_step_with_the_grid_after_it(self):
         """Two rows of the block, then all three - the episode ends on
@@ -165,6 +169,27 @@ class TestTheTraceOfAnEvaluation:
         result = evaluate_ARC_policy(Scripted([[1, 2, 0, 4, 2]], (0, 0, 0, 0, 0)), vec_env,
                                      n_eval_episodes=1)
         assert result[0] == 1.0 and result[1] == 1
+
+
+class TestOneTracePerExample:
+    """Training puts one env per example in the vector; an evaluation
+    traces each of them, so the training examples can be looked at, not
+    only the held-out pair."""
+
+    def test_every_env_gets_its_own_trace(self):
+        inp, out = coordinate_case()
+        other = out.copy()
+        other[6, 6] = 3
+        vec_env = DummyVecEnv([lambda: coordinate_env(inp, out),
+                               lambda: coordinate_env(inp, other)])
+        vec_env.envs[1].unwrapped.set_subtask(ARCSubtask("other_case", inp, other))
+        traces = []
+        evaluate_ARC_policy(Scripted([[1, 2, 0, 4, 2]], (0, 0, 0, 0, 0)), vec_env,
+                            n_eval_episodes=1, traces=traces)
+        assert [trace["subtask"] for trace in traces] == ["fill_case", "other_case"]
+        assert traces[0]["accuracy"] == 1.0 and traces[0]["steps"][-1][0] != "submit"
+        assert traces[1]["accuracy"] < 1.0 and traces[1]["steps"][-1][0] == "submit"
+        assert np.array_equal(traces[1]["target"], other)
 
 
 def trace_of(steps, start=None):
@@ -218,6 +243,30 @@ class TestReadingItBack:
             assert "red fill (0,0)-(2,2)" in titles[3]
             assert titles[4].startswith("2-4 (x3)")
             assert "closed +0.250" in fig._suptitle.get_text()
+        finally:
+            plt.close(fig)
+
+    def test_the_overview_is_a_row_per_example(self):
+        once = np.eye(3, dtype=int)
+        traces = [trace_of([("red fill (0,0)-(2,2)", once, 0.5)]), None,
+                  dict(trace_of([("submit", once, 0.0)]), subtask="other")]
+        fig = plot_overview(traces, title="50% of training")
+        try:
+            assert len(fig.axes) == 2 * 4
+            texts = [text.get_text() for ax in fig.axes for text in ax.texts]
+            assert any("red fill (0,0)-(2,2)" in text for text in texts)
+            assert any("1. submit" in text for text in texts)
+            assert fig.axes[4].get_title().startswith("other")
+        finally:
+            plt.close(fig)
+
+    def test_a_long_episode_is_elided_in_the_middle(self):
+        steps = [(f"step{index}", np.full((3, 3), index), 0.0) for index in range(20)]
+        fig = plot_overview([trace_of(steps)], max_lines=6)
+        try:
+            text = fig.axes[3].texts[0].get_text()
+            assert "step0" in text and "step19" in text and "step10" not in text
+            assert "14 more" in text
         finally:
             plt.close(fig)
 

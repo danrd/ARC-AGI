@@ -5,7 +5,7 @@ from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import sync_envs_normalization
 from stable_baselines3.common.logger import Logger, KVWriter, make_output_format
 from rl.evaluation import evaluate_ARC_policy
-from rl.plotting import describe_trace, plot_evaluation
+from rl.plotting import describe_trace, plot_overview
 class MonitorCallback(EvalCallback):
     def __init__(
             self,
@@ -35,9 +35,10 @@ class MonitorCallback(EvalCallback):
         self.episode_accs = []
         self.episode_mean_lens = []
         self.episode_grid_preds = []
-        # One per evaluation: the episode behind the accuracy, step by step
-        # (see evaluate_ARC_policy's trace), so a number in episode_accs can
-        # be looked at rather than taken on trust.
+        # One list per evaluation, one trace per env in it - one per
+        # training example: the episodes behind the accuracy, step by step
+        # (see evaluate_ARC_policy's traces), so a number in episode_accs
+        # can be looked at rather than taken on trust.
         self.episode_traces = []
         if self.debug:
             #values to track
@@ -122,29 +123,34 @@ class MonitorCallback(EvalCallback):
                     "see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
                     "and warning above."
                 )
-        trace = {}
+        traces = []
         acc, mean_len, grid_pred = evaluate_ARC_policy(
                                                         self.model,
                                                         self.eval_env,
                                                         n_eval_episodes=self.n_eval_episodes,
                                                         deterministic=self.deterministic,
                                                         callback=self._log_success_callback,
-                                                        trace=trace,
+                                                        traces=traces,
                                                       )
 
         self.episode_accs.append(acc)
         self.episode_mean_lens.append(mean_len)
         self.episode_grid_preds.append(grid_pred)
-        self.episode_traces.append(trace)
+        self.episode_traces.append(traces)
 
         if self.verbose:
             share = self.num_timesteps / self.model._total_timesteps
             print(f'After {share*100:.2f}% of training: Accuracy: {acc:.2f}, Mean episode length: {mean_len:.2f}')
-            # What the policy did, not only where it ended: the decoded
-            # actions of the last evaluated episode, and the same as a
-            # picture - start, target, result, then every step.
-            print(describe_trace(trace))
-            fig = plot_evaluation(trace, title=f'{share*100:.0f}% of training')
+            # What the policy did on every example, not only where it
+            # ended: the decoded actions as text, and one row per example
+            # as a picture - start, target, result and the actions. The
+            # compact form, since this runs `evaluations` times a run;
+            # train_on_task draws the full filmstrips once at the end.
+            for trace in traces:
+                if trace:
+                    print(describe_trace(trace))
+            fig = plot_overview(traces, title=f'{share*100:.0f}% of training: '
+                                              f'accuracy {acc:+.3f}')
             plt.show()
             plt.close(fig)
 

@@ -422,21 +422,44 @@ class TestWhatACoordinateTaskIsNarrowedTo:
                           out_shapes=[(3, 7), (5, 2)])
         assert coordinate_shape(task) == (5, 7)
 
-    def test_the_vocabulary_is_the_coordinate_one_in_the_outputs_colours(self, monkeypatch):
-        """No object search - its findings are object actions and none of
-        them belongs here."""
+    def test_a_failed_search_keeps_the_whole_coordinate_vocabulary(self, monkeypatch):
+        """Every coordinate transform in every colour the outputs use - and
+        never the object search, whose findings are object actions."""
+        import rl.coordinate_search as coordinate_search
         import rl.search_hints as hints
 
         def refuse(*_a, **_k):
             raise AssertionError("the object search ran for a coordinate task")
 
+        def fail(*_a, **_k):
+            raise RuntimeError("search broke")
+
         monkeypatch.setattr(hints, "feasible_from_search", refuse)
+        monkeypatch.setattr(coordinate_search, "feasible_from_coordinate_search", fail)
         config = narrowed_for_task(self._task("constructor"),
                                    dict(CONFIG, observation_space_elements=["objects_emb"]))
         names = set(config["feasible_actions"].values())
         assert names == {"submit", "black_fill", "red_fill", "black_line", "red_line",
                          "black_triangle", "red_triangle"}
         assert config["feasible_actions"][0] == "submit"
+
+    def test_the_search_narrows_it_to_what_the_pairs_are_painted_with(self):
+        """Two real pairs: a red block and a red diagonal on black. The
+        search paints them with one fill and one line, so those two are
+        kept and black - in the outputs, but never painted - is not."""
+        from rl.arc_task import ARCSubtask
+
+        block_in, diagonal_in = np.zeros((5, 5), dtype=int), np.zeros((5, 5), dtype=int)
+        block_out = block_in.copy()
+        block_out[1:3, 1:4] = 2
+        diagonal_out = diagonal_in.copy()
+        for k in range(5):
+            diagonal_out[k, k] = 2
+        task = self._task("constructor")
+        task.subtasks = [ARCSubtask("block", block_in, block_out),
+                         ARCSubtask("diagonal", diagonal_in, diagonal_out)]
+        config = narrowed_for_task(task, dict(CONFIG))
+        assert set(config["feasible_actions"].values()) == {"submit", "red_fill", "red_line"}
 
     def test_the_observation_is_padded_to_the_action_space(self, monkeypatch):
         """Even with every grid one size: the heads score the observed

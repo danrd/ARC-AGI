@@ -865,15 +865,26 @@ class EnvironmentSimulator:
 
 class MCTS:
     def __init__(self, env, max_iterations=1000, max_depth=10, c=1.414, actions=None,
-                 policy=None):
+                 policy=None, playout="default"):
         """`actions` narrows what the tree may expand into - the pool an
         iterative round has pruned down to (see rollout_preparation). None
         means every action the env offers.
 
         `policy` is a SearchPolicy saying how an iteration is spent; None
         builds the plain UCB1 one this module has always run, at `c`.
+
+        `playout` is how a playout picks its actions: 'default' samples the
+        raw action space, 'weighted' draws from the pool by measured effect
+        (PlayoutPolicy, at the settings search_hints runs it with). Named
+        here because search_hints reaches it by patching
+        EnvironmentSimulator, and a second caller should not have to.
         """
         self.env_simulator = EnvironmentSimulator(env, actions=actions)
+        if playout == "weighted":
+            self.env_simulator.policy = PlayoutPolicy(
+                self.env_simulator.all_actions, temperature=0.2, floor=0.02)
+        elif playout != "default":
+            raise ValueError(f"playout={playout!r}: expected 'default' or 'weighted'")
         self.max_iterations = max_iterations
         self.max_depth = max_depth
         self.c = c
@@ -1061,7 +1072,8 @@ def collect_mcts_rollouts(env,
                           max_episode_len: int = 50,
                           actions=None,
                           c: float = 1.414,
-                          policy: "SearchPolicy" = None) -> List[Dict[str, Any]]:
+                          policy: "SearchPolicy" = None,
+                          playout: str = "default") -> List[Dict[str, Any]]:
     """Collect rollouts using MCTS for action selection. MCTS search itself
     runs entirely on a snapshot of the env's state (see
     EnvironmentSimulator) - only the action it settles on for each real
@@ -1084,7 +1096,7 @@ def collect_mcts_rollouts(env,
     """
     rollouts = []
     mcts = MCTS(env, max_iterations=mcts_iterations, actions=actions, c=c,
-                policy=policy)
+                policy=policy, playout=playout)
 
     print(f"Collecting {n_rollouts} MCTS-guided rollouts...")
 

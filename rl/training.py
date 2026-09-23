@@ -78,6 +78,10 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                      # answer always among them (ANSWER_KEYS).
                      'critic_only_keys': critic_only(vec_env.observation_space,
                                                      PPO_config['critic_only_keys']),
+                     # How the five coordinate choices relate - see
+                     # AutoregressiveCoordinateDistribution. Read only under
+                     # coordinate addressing.
+                     'coordinate_heads': PPO_config['coordinate_heads'],
                      'features_extractor_kwargs':{
                          'extr_arch': PPO_config['extr_arch'],
                          'pointer_dim': PPO_config['pointer_dim'],

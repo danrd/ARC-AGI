@@ -91,6 +91,16 @@ rl_config = {
     # more than one seed: the same script on the same tasks moved 178fcbfb
     # from -0.187 to 0.000 between two runs, because search_task is bounded
     # by wall clock and handed the agent 39 actions once and 40 the next.
+    #
+    # All of the above was measured before the scale was fixed: a submit
+    # was paid raw, up to 4.0, while the steps of a whole solve summed to
+    # 0.2, and the solve's own submit reward was never paid because a
+    # solve ends the episode before any submit. Under 3 that only means a
+    # solve paid 0.2 where it now pays 1.0 (an incomplete submit pays 0
+    # either way); under 2 the charge for giving up was -4.0 against step
+    # rewards a hundredth of that, so the comparison above set 3 against
+    # a reward dominated by its submit. See ARCGridWorld.paid_submit_reward
+    # - worth measuring again rather than trusting.
     'reward_approach': 3,
     'pad_val': 10,
     'feasible_actions': {0:'submit'},

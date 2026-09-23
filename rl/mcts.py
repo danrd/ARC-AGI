@@ -284,9 +284,10 @@ def collect_random_rollouts(env,
         # done answers the second. The env's own counters answer it directly.
         rollout['solved'] = bool(env.max_int == env.target_int)
         # Progress, alongside the reward. total_reward is denominated in
-        # whichever reward_approach the env was built with, and the
-        # approaches do not share a scale - approach 1 runs -4..+4 over the
-        # milestones where approach 2 runs -4..+10 - so rewards from two of
+        # whichever reward_approach the env was built with, and while a
+        # solve pays 1.0 under all of them, what they pay short of it
+        # differs - approach 1 charges for an incomplete submit that 3
+        # pays nothing for and 4 pays a share of - so rewards from two of
         # them cannot be compared, and a search that is doing better can
         # score lower. The intersection is the same count of cells whatever
         # the approach, which makes these three the comparable record.
@@ -1023,7 +1024,10 @@ def replay_solution(env, actions, submit_index=None) -> Dict[str, Any]:
         # As wide as the action space: three entries under object
         # addressing, five under coordinates.
         rollout['actions'].append([submit_index] + [0] * (len(env.action_space.nvec) - 1))
-        rollout['rewards'].append(env._submit_reward(env.max_int))
+        # Nothing: the solving step already paid the solve's submit reward
+        # (ARCGridWorld.step), and paying it again here would count it
+        # twice in total_reward.
+        rollout['rewards'].append(0.0)
         rollout['dones'].append(True)
         rollout['infos'].append({'appended_submit': True})
         total_reward += rollout['rewards'][-1]
@@ -1156,9 +1160,10 @@ def collect_mcts_rollouts(env,
         # because the trace now ends at the peak - see the cut above.
         rollout['solved'] = bool(peak == env.target_int)
         # Progress, alongside the reward. total_reward is denominated in
-        # whichever reward_approach the env was built with, and the
-        # approaches do not share a scale - approach 1 runs -4..+4 over the
-        # milestones where approach 2 runs -4..+10 - so rewards from two of
+        # whichever reward_approach the env was built with, and while a
+        # solve pays 1.0 under all of them, what they pay short of it
+        # differs - approach 1 charges for an incomplete submit that 3
+        # pays nothing for and 4 pays a share of - so rewards from two of
         # them cannot be compared, and a search that is doing better can
         # score lower. The intersection is the same count of cells whatever
         # the approach, which makes these three the comparable record. The

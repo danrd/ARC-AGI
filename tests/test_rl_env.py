@@ -1120,9 +1120,9 @@ class TestTheMonotonicReward:
     def test_the_two_approaches_put_a_step_on_the_same_scale(self):
         """Asked of an ordinary action, not of a submit.
 
-        Only step rewards are divided by max_reward - a submit's is
-        returned raw, so a solve pays 4.0 while a wasted step pays
-        -1/max_reward, around -0.005 on these tasks. Each approach builds
+        A wasted step pays -1/max_reward, around -0.005 on these tasks,
+        and a submit is paid on the same scale (paid_submit_reward; see
+        tests/test_rl_reward_scale.py for whole episodes). Each approach builds
         max_reward for itself, and approach 4 used to double it, which
         would have halved every step penalty under it. A sweep between 3
         and 4 would then have compared two reward scales as well as two

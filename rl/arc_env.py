@@ -587,6 +587,11 @@ class ARCGridWorld(gymnasium.Env):
             self.milestones = {int(self.max_int + milestone_step * (step+1)):self.max_reward * self.milestones_rewards[step] for step in range(len(self.milestones_rewards)-1)}
             self.milestones[self.target_int] = self.max_reward * self.milestones_rewards[-1]
         self.base_int = copy(self.max_int)
+        # What the milestone rewards are counted in: the whole distance
+        # closed cell by cell, before max_reward grows by the milestones.
+        # _submit_reward returns multiples of milestones_rewards, which are
+        # multiples of this - see paid_submit_reward.
+        self.reward_unit = self.max_reward
         if self.reward_approach == 2:
             self.max_reward += sum(self.milestones.values())
         elif self.reward_approach == 4:
@@ -597,6 +602,31 @@ class ARCGridWorld(gymnasium.Env):
             self.max_reward += self.milestones[self.target_int]
         elif self.reward_approach in [1,3]:
             self.max_reward += self.milestones[self.target_int]
+
+    def paid_submit_reward(self, max_int):
+        """What a submit - or a solve - actually pays: _submit_reward on the
+        scale every step is paid on.
+
+        A step is divided by max_reward, and _submit_reward used to be
+        paid raw. max_reward counts the milestones as well as the cells,
+        so the steps of a whole solve summed to 0.2 under approaches 1, 3
+        and 4 while a submit paid up to 4.0 - and under 4, which pays by
+        the share of the distance closed, stopping halfway and submitting
+        (0.1 + 2.0) was worth ten times solving (0.2). The milestones are
+        in reward_unit, the cells' own scale, so this is them divided by
+        the same max_reward: 0.8 for a solve under 1, 3 and 4, making a
+        solve worth 1.0 in all, and a submit short of it the share each
+        approach gives it.
+
+        A subtask whose input already is its output has no cells to pay
+        for, and initialize_targets builds its milestones differently - one
+        of them, which approach 2 pays a quarter for. There the solve alone
+        is the whole reward, so everything is divided by what it pays.
+        """
+        reward = self._submit_reward(max_int)
+        if self.target_int == self.base_int:
+            return reward / self._submit_reward(self.target_int)
+        return reward * self.reward_unit / self.max_reward
 
     def _submit_reward(self, max_int):
         """Milestone-based reward for a submit action, parameterized on
@@ -676,7 +706,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
         truncated = False
         info = {}
-        reward = self._submit_reward(self.max_int)
+        reward = self.paid_submit_reward(self.max_int)
         done = True
         return obs, reward, done, truncated, info
 
@@ -806,6 +836,13 @@ class ARCGridWorld(gymnasium.Env):
         # learns from nothing else, and was being trained on a signal that
         # was zero almost everywhere.
         reward = reward / self.max_reward
+        # A solve ends the episode on this step, so the submit that would
+        # have paid for it never comes: the solved grid's submit reward is
+        # paid here instead. Without it a solve was worth the cells alone,
+        # 0.2, and under approach 4 less than stopping halfway and
+        # submitting - see paid_submit_reward.
+        if done:
+            reward += self.paid_submit_reward(self.max_int)
 
         truncated = (self.step_no >= self.max_episode_len)
         info = {
@@ -835,7 +872,7 @@ class ARCGridWorld(gymnasium.Env):
         ones the caller should hold onto for the next simulated step).
         """
         if self.actions_dict[action[0]] == 'submit':
-            return grid, objects, max_int, self._submit_reward(max_int), True
+            return grid, objects, max_int, self.paid_submit_reward(max_int), True
 
         add, transform = self.world.parse_action(action)
         # An index can name a slot no object occupies, or a cell past the
@@ -869,6 +906,9 @@ class ARCGridWorld(gymnasium.Env):
         # learns from nothing else, and was being trained on a signal that
         # was zero almost everywhere.
         reward = reward / self.max_reward
+        # As step() pays it: the solve's submit reward on the solving step.
+        if done:
+            reward += self.paid_submit_reward(new_max_int)
         return new_grid, objects, new_max_int, reward, done
 
     def get_state(self):

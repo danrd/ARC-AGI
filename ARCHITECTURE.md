@@ -132,9 +132,9 @@ graph TD
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (52)"]
+  tests["tests (53)"]
   utils["utils (3)"]
-  tests -->|65| rl
+  tests -->|68| rl
   tests -->|25| symbolic
   tests -->|24| subsymbolic
   tests -->|13| data
@@ -169,15 +169,15 @@ graph TD
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
 | `orchestration.graph` | 3 |
-| `rl.arc_env` | 12 |
+| `rl.arc_env` | 13 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 22 |
+| `rl.arc_task` | 23 |
 | `rl.arc_transformators` | 4 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 1 |
 | `rl.evaluation` | 5 |
 | `rl.features` | 6 |
-| `rl.mcts` | 6 |
+| `rl.mcts` | 7 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 4 |
 | `rl.policy` | 3 |

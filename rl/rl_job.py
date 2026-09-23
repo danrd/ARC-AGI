@@ -263,12 +263,25 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
         rl_config.get("observation_space_elements") or [],
         narrowed["addressing"])
     if narrowed["addressing"] == "coordinates":
-        # No search: the object search's findings are object actions, and
-        # none of them belongs to this vocabulary. What a coordinate agent
-        # can paint is every coordinate transform in every colour the
-        # outputs use - a handful of names, which is small already.
-        narrowed["feasible_actions"] = coordinate_vocabulary(
+        # Not the object search: its findings are object actions, and none
+        # of them belongs to this vocabulary. The coordinate search reads
+        # strokes off each training pair's answer (rl.coordinate_search)
+        # and keeps the colours and strokes its covers used - of every
+        # coordinate transform in every colour the outputs use. A search
+        # that fails keeps them all, as the object branch does.
+        from rl.coordinate_search import (CoordinateSearchSettings,
+                                          feasible_from_coordinate_search)
+
+        vocabulary = coordinate_vocabulary(
             output_colours(*[subtask.train_out for subtask in task.subtasks]))
+        narrowed["feasible_actions"] = vocabulary
+        try:
+            coordinate_settings = (settings if isinstance(settings, CoordinateSearchSettings)
+                                   else CoordinateSearchSettings())
+            narrowed["feasible_actions"], _found = feasible_from_coordinate_search(
+                task, vocabulary, coordinate_settings)
+        except Exception:  # noqa: BLE001 - a failed search must not fail the run
+            pass
         narrowed["coordinate_shape"] = coordinate_shape(task)
         # Always padded to it, even when every grid is one size: the
         # coordinate heads score the rows and columns of the observed grid,

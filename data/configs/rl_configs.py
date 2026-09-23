@@ -172,6 +172,13 @@ def load_PPO_config():
     # 'coordinates', where action_heads is five whatever the line above
     # says - the action space decides that, not this file.
     'coordinate_dim': 32,
+    # How the coordinate heads choose: 'autoregressive' draws the action,
+    # then i1 knowing it, j1 knowing both, and so on (see
+    # rl.policy.AutoregressiveCoordinateDistribution); 'independent' draws
+    # all five from the state alone, which cannot want one box or another
+    # without also wanting the box spanning both. Unmeasured - kept
+    # switchable so the two can be compared.
+    'coordinate_heads': 'autoregressive',
     # The object branch's architecture, the way extr_arch is the grid's:
     # keyword arguments for ObjectSetProcessor - dropout, self_attention,
     # grouped, cross_attention, use_position. None is what this shipped as.

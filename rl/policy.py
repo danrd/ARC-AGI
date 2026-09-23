@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from typing import Callable, Dict, List, Optional, Tuple
-from stable_baselines3.common.distributions import MultiCategoricalDistribution
+from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
+from stable_baselines3.common.distributions import Distribution, MultiCategoricalDistribution
+from torch.distributions import Categorical
 from stable_baselines3.common.policies import ActorCriticPolicy
 from gymnasium import spaces
 from rl.features import ARCCombinedExtractor, ARCGNNExtractor, ARCSeparateExtractor
@@ -51,6 +52,110 @@ class PointerHead(nn.Module):
         return logits.masked_fill(~mask.bool(), -1e9)
 
 
+class CoordinateLatent(NamedTuple):
+    """What forward_actor hands the distribution under autoregressive
+    coordinate heads: not logits, which cannot be computed before the
+    earlier choices are made, but what computing them needs."""
+    context: torch.Tensor
+    rows: torch.Tensor
+    row_mask: torch.Tensor
+    cols: torch.Tensor
+    col_mask: torch.Tensor
+
+
+class AutoregressiveCoordinateDistribution(Distribution):
+    """(action, i1, j1, i2, j2), each chosen knowing the ones before it.
+
+    MultiCategoricalDistribution draws the five independently given the
+    state, and a joint over cells cannot be written that way: a policy
+    torn between the box (0,0)-(2,2) and the box (5,5)-(7,7) puts its mass
+    on both corners of each, and drawn independently those make
+    (0,0)-(7,7) as often as either box - a stroke over both, which it
+    wanted neither of. Here each choice is drawn from a head whose context
+    carries the earlier ones: the action's embedding first, then the
+    embedding of the row chosen for i1, the column for j1, the row for i2.
+    The joint is exactly the product of those conditionals, so its log
+    probability is their sum.
+
+    Sampling walks the heads in order. Scoring given actions - PPO's
+    evaluate_actions, on actions from the buffer - runs the same walk with
+    the given choices in place of draws. The entropy is the sum of the
+    conditionals' entropies along the path walked last, whose expectation
+    is the joint's entropy; the joint's own is a sum over every path and
+    not computable here.
+    """
+
+    def __init__(self, network: "ARCCustomNetwork"):
+        super().__init__()
+        self.network = network
+        self.latent: Optional[CoordinateLatent] = None
+        #: (actions, per-dimension Categoricals) of the last walk, so the
+        #: log_prob of what sample() just drew costs no second pass.
+        self._last = None
+
+    def proba_distribution_net(self, *args, **kwargs):
+        raise NotImplementedError("built by ARCCustomNetwork, not from a latent width")
+
+    def proba_distribution(self, latent: CoordinateLatent) -> "AutoregressiveCoordinateDistribution":
+        self.latent = latent
+        self._last = None
+        return self
+
+    def _walk(self, given: Optional[torch.Tensor] = None, deterministic: bool = False):
+        network, latent = self.network, self.latent
+        action_head, *cell_heads = network.policy_nets
+        batch = torch.arange(latent.context.shape[0], device=latent.context.device)
+        grids = [(latent.rows, latent.row_mask), (latent.cols, latent.col_mask)] * 2
+
+        def pick(distribution, index):
+            if given is not None:
+                return given[:, index].long()
+            if deterministic:
+                return distribution.probs.argmax(dim=-1)
+            return distribution.sample()
+
+        context = latent.context
+        distribution = Categorical(logits=action_head(context))
+        chosen = [pick(distribution, 0)]
+        dists = [distribution]
+        context = context + network.action_embedding(chosen[0])
+        for index, (head, (embeddings, mask)) in enumerate(zip(cell_heads, grids)):
+            distribution = Categorical(logits=head(context, embeddings, mask))
+            choice = pick(distribution, index + 1)
+            chosen.append(choice)
+            dists.append(distribution)
+            if index < len(network.cell_feedback):
+                context = context + network.cell_feedback[index](embeddings[batch, choice])
+        return torch.stack(chosen, dim=1), dists
+
+    def sample(self) -> torch.Tensor:
+        self._last = self._walk()
+        return self._last[0]
+
+    def mode(self) -> torch.Tensor:
+        self._last = self._walk(deterministic=True)
+        return self._last[0]
+
+    def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        if self._last is None or self._last[0] is not actions:
+            self._last = (actions, self._walk(given=actions)[1])
+        _actions, dists = self._last
+        return sum(d.log_prob(actions[:, i].long()) for i, d in enumerate(dists))
+
+    def entropy(self) -> torch.Tensor:
+        if self._last is None:
+            self.sample()
+        return sum(d.entropy() for d in self._last[1])
+
+    def actions_from_params(self, latent: CoordinateLatent, deterministic: bool = False):
+        self.proba_distribution(latent)
+        return self.get_actions(deterministic=deterministic)
+
+    def log_prob_from_params(self, latent: CoordinateLatent):
+        actions = self.actions_from_params(latent)
+        return actions, self.log_prob(actions)
+
+
 class ARCCustomNetwork(nn.Module):
     """Custom network for policy and value function.
 
@@ -77,8 +182,16 @@ class ARCCustomNetwork(nn.Module):
         pointer_dim: Optional[int] = None,
         coordinate_shape: Optional[Tuple[int, int]] = None,
         coordinate_dim: Optional[int] = None,
+        coordinate_heads: str = "autoregressive",
     ):
         super().__init__()
+        if coordinate_heads not in ("autoregressive", "independent"):
+            raise ValueError(f"coordinate_heads={coordinate_heads!r}: expected "
+                             "'autoregressive' or 'independent'")
+        #: Whether each coordinate is chosen knowing the action and the
+        #: cells chosen before it (AutoregressiveCoordinateDistribution) or
+        #: all five independently given the state, as the object heads are.
+        self.coordinate_heads = coordinate_heads
         #: Under coordinate addressing the features end in one embedding per
         #: row and one per column of the grid (see ARCCombinedExtractor's
         #: coordinate_rows), and the four coordinate heads score those
@@ -196,6 +309,15 @@ class ARCCustomNetwork(nn.Module):
             self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
             for _ in range(4):
                 self.policy_nets.append(PointerHead(self.latent_dim_pi, coordinate_dim))
+            if coordinate_heads == "autoregressive":
+                # What each choice adds to the context the next head reads:
+                # the action as a learned vector, then the embedding of the
+                # row or column chosen, projected into the latent - the
+                # row for i1, the column for j1, the row for i2. j2 is last
+                # and feeds nothing.
+                self.action_embedding = nn.Embedding(action_dims[0], self.latent_dim_pi)
+                self.cell_feedback = nn.ModuleList(
+                    nn.Linear(coordinate_dim, self.latent_dim_pi) for _ in range(3))
         elif action_heads == 5:
             # Separate head for each dimension
             for dim in action_dims:
@@ -251,6 +373,10 @@ class ARCCustomNetwork(nn.Module):
         coordinates = self.split_coordinate_tail(features)
         if coordinates is not None:
             rows, row_mask, cols, col_mask = coordinates
+            if self.coordinate_heads == "autoregressive":
+                # No logits yet: each head's context depends on what the
+                # heads before it chose. The distribution walks them.
+                return CoordinateLatent(shared_features, rows, row_mask, cols, col_mask)
             action_head, *cell_heads = self.policy_nets
             # i1 and i2 score rows, j1 and j2 columns.
             grids = [(rows, row_mask), (cols, col_mask)] * 2
@@ -291,11 +417,13 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         features_extractor_kwargs: Optional[Dict] = None,
         action_heads: int = 1,
         critic_only_keys: Tuple[str, ...] = (),
+        coordinate_heads: str = "autoregressive",
         *args,
         **kwargs,
     ):
         # Save action_heads before passing to parent class
         self.action_heads = action_heads
+        self.coordinate_heads = coordinate_heads
         self.critic_only_keys = tuple(critic_only_keys)
         if self.critic_only_keys:
             # Two extractors, or there is nothing to route between.
@@ -351,6 +479,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             pointer_dim=getattr(self._actor_extractor(), "pointer_dim", None),
             coordinate_shape=self._coordinate_shape(),
             coordinate_dim=self._coordinate_dim(),
+            coordinate_heads=self.coordinate_heads,
         )
 
     def _coordinate_shape(self):
@@ -367,6 +496,9 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
 
     def _get_action_dist_from_latent(self, latent_pi: List[torch.Tensor]):
         """Create action distributions based on the number of action heads."""
+        if isinstance(latent_pi, CoordinateLatent):
+            return AutoregressiveCoordinateDistribution(self.mlp_extractor).proba_distribution(
+                latent_pi)
         action_dims = self.action_space.nvec.tolist()
         logits = torch.hstack(latent_pi)
         distribution = MultiCategoricalDistribution(action_dims)

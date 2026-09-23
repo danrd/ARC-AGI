@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 import torch
 from gymnasium import spaces
+from torch.distributions import Categorical
 
 from rl.arc_task import ARCSubtask
 from rl.features import ARCCombinedExtractor, CoordinateRows
@@ -219,3 +220,163 @@ class TestTheAnswerIsTheCriticsAlone:
     def test_an_answer_the_observation_lacks_is_not_invented(self):
         space = spaces.Dict({"grid": spaces.Box(0, 1, shape=(1,))})
         assert critic_only(space, ()) == ()
+
+
+def small_network(heads="autoregressive", actions=2, rows=3, cols=3, dim=4, latent=16):
+    from rl.policy import ARCCustomNetwork
+    return ARCCustomNetwork(feature_dim=8 + (rows + cols) * (dim + 1),
+                            action_dims=[actions, rows, cols, rows, cols],
+                            net_arch={"pi": [latent], "vf": [latent]}, action_heads=5,
+                            coordinate_shape=(rows, cols), coordinate_dim=dim,
+                            coordinate_heads=heads)
+
+
+def latent_for(network, batch=1, seed=0, rows=3, cols=3, dim=4, latent=16):
+    from rl.policy import CoordinateLatent
+    generator = torch.Generator().manual_seed(seed)
+    return CoordinateLatent(torch.randn(batch, latent, generator=generator),
+                            torch.randn(batch, rows, dim, generator=generator),
+                            torch.ones(batch, rows),
+                            torch.randn(batch, cols, dim, generator=generator),
+                            torch.ones(batch, cols))
+
+
+def every_action(actions=2, rows=3, cols=3):
+    import itertools
+    return torch.tensor(list(itertools.product(range(actions), range(rows), range(cols),
+                                               range(rows), range(cols))))
+
+
+class TestAutoregressiveCoordinateHeads:
+    """Each coordinate chosen knowing the action and the cells before it -
+    see AutoregressiveCoordinateDistribution."""
+
+    def _distribution(self, network, latent):
+        from rl.policy import AutoregressiveCoordinateDistribution
+        return AutoregressiveCoordinateDistribution(network).proba_distribution(latent)
+
+    def test_it_is_the_default(self, built):
+        from rl.policy import AutoregressiveCoordinateDistribution
+        agent, vec_env = built
+        obs = vec_env.reset()
+        obs_tensor, _ = agent.policy.obs_to_tensor(obs)
+        assert isinstance(agent.policy.get_distribution(obs_tensor),
+                          AutoregressiveCoordinateDistribution)
+
+    def test_the_joint_is_a_distribution(self):
+        """Summed over every one of the 162 actions, the probabilities the
+        walk assigns come to one - the conditionals multiply into a joint,
+        not into something that only looks like one."""
+        network = small_network()
+        everything = every_action()
+        latent = latent_for(network)
+        repeated = type(latent)(*(t.expand(len(everything), *t.shape[1:]) for t in latent))
+        total = self._distribution(network, repeated).log_prob(everything).exp().sum()
+        assert total.item() == pytest.approx(1.0, abs=1e-5)
+
+    def test_a_later_choice_depends_on_an_earlier_one(self):
+        network = small_network()
+        latent = latent_for(network)
+        distribution = self._distribution(network, latent)
+        _, first = distribution._walk(given=torch.tensor([[0, 0, 0, 0, 0]]))
+        _, other_action = distribution._walk(given=torch.tensor([[1, 0, 0, 0, 0]]))
+        _, other_row = distribution._walk(given=torch.tensor([[0, 2, 0, 0, 0]]))
+        _, other_column = distribution._walk(given=torch.tensor([[0, 0, 2, 0, 0]]))
+        # i1 reads the action; j1 the row chosen for i1, the action held;
+        # i2 the column chosen for j1.
+        assert not torch.allclose(first[1].logits, other_action[1].logits)
+        assert not torch.allclose(first[2].logits, other_row[2].logits)
+        assert not torch.allclose(first[3].logits, other_column[3].logits)
+
+    def test_a_sample_is_scored_as_a_fresh_walk_would_score_it(self):
+        """sample() keeps its walk so log_prob costs nothing; PPO later
+        scores the same actions from the buffer on a new distribution,
+        and the two have to agree or the ratio starts off wrong."""
+        network = small_network()
+        latent = latent_for(network, batch=64)
+        torch.manual_seed(0)
+        distribution = self._distribution(network, latent)
+        actions = distribution.sample()
+        kept = distribution.log_prob(actions)
+        fresh = self._distribution(network, latent).log_prob(actions.clone().float())
+        assert torch.allclose(kept, fresh, atol=1e-6)
+
+    def test_the_mode_is_the_greedy_walk(self):
+        network = small_network()
+        distribution = self._distribution(network, latent_for(network))
+        mode = distribution.mode()
+        _, dists = distribution._walk(given=mode)
+        assert all(int(mode[0, i]) == int(d.probs.argmax()) for i, d in enumerate(dists))
+
+    @pytest.mark.parametrize("heads,crossed_at_most,crossed_at_least",
+                             [("autoregressive", 0.05, 0.0), ("independent", 1.0, 0.3)])
+    def test_two_boxes_are_wanted_without_the_one_spanning_both(
+            self, heads, crossed_at_most, crossed_at_least):
+        """The reason for all this. Fitted by maximum likelihood to two
+        strokes, (0,0)-(1,1) and (1,1)-(2,2), independent heads can only
+        learn each coordinate's marginal, and half of what they then draw
+        mixes the two - (0,0)-(2,2), (1,1)-(1,1) and the rest. The
+        autoregressive heads learn the pair."""
+        torch.manual_seed(0)
+        network = small_network(heads)
+        latent = latent_for(network, batch=1)
+        wanted = torch.tensor([[1, 0, 0, 1, 1], [1, 1, 1, 2, 2]])
+        batch = type(latent)(*(t.expand(2, *t.shape[1:]) for t in latent))
+        optimiser = torch.optim.Adam(network.parameters(), lr=0.05)
+        for _ in range(300):
+            optimiser.zero_grad()
+            loss = -self._log_prob(network, batch, wanted, heads).mean()
+            loss.backward()
+            optimiser.step()
+        everything = every_action()
+        spread = type(latent)(*(t.expand(len(everything), *t.shape[1:]) for t in latent))
+        probs = self._log_prob(network, spread, everything, heads).exp()
+        is_wanted = (everything[:, None, :] == wanted[None]).all(-1).any(-1)
+        crossed = probs[~is_wanted].sum().item()
+        assert crossed_at_least <= crossed <= crossed_at_most
+
+    def _log_prob(self, network, latent, actions, heads):
+        if heads == "autoregressive":
+            return self._distribution(network, latent).log_prob(actions)
+        # The independent heads as forward_actor runs them, on the same
+        # context, so both arms start from the same latent.
+        action_head, *cell_heads = network.policy_nets
+        grids = [(latent.rows, latent.row_mask), (latent.cols, latent.col_mask)] * 2
+        logits = [action_head(latent.context)] + [
+            head(latent.context, rows, mask) for head, (rows, mask) in zip(cell_heads, grids)]
+        return sum(Categorical(logits=scores).log_prob(actions[:, i])
+                   for i, scores in enumerate(logits))
+
+    def test_independent_heads_are_still_there_when_asked_for(self):
+        from stable_baselines3.common.distributions import MultiCategoricalDistribution
+        agent, vec_env = coordinate_agent_with({"coordinate_heads": "independent"})
+        try:
+            obs_tensor, _ = agent.policy.obs_to_tensor(vec_env.reset())
+            assert isinstance(agent.policy.get_distribution(obs_tensor),
+                              MultiCategoricalDistribution)
+        finally:
+            vec_env.close()
+
+    def test_ppo_trains_through_it(self):
+        agent, vec_env = coordinate_agent_with({})
+        try:
+            agent.learn(32)
+        finally:
+            vec_env.close()
+
+    def test_an_unknown_setting_is_refused(self):
+        with pytest.raises(ValueError, match="coordinate_heads"):
+            small_network("sideways")
+
+
+def coordinate_agent_with(extra):
+    vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4,
+                             feasible_actions=ACTIONS,
+                             observation_space_elements=["delta_input", "delta_target"],
+                             observation_grid_shape=(7, 7), repr_level=1,
+                             input_pattern="start", addressing="coordinates",
+                             coordinate_shape=(7, 7))
+    agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                         {"n_steps": 16, "batch_size": 8, "verbose": 0,
+                          "coordinate_dim": 8, **extra})
+    return agent, vec_env

@@ -143,7 +143,10 @@ def solution_description(actions, env):
     idx2name = {v:k for k,v in actions_dict.items()}
     description = ""
     for idx, action in enumerate(actions):
-        if action[1] == action[2]:
+        if len(action) == 5:
+            description += (f'{idx2name[action[0]].replace("_", " ")} from '
+                            f'({action[1]}, {action[2]}) to ({action[3]}, {action[4]})')
+        elif action[1] == action[2]:
             description += f'{idx2name[action[0]].replace("_", " ")} for object_{action[1]}'
         else:
             description += f'{idx2name[action[0]].replace("_", " ")} for object_{action[1]} and object_{action[2]}'
@@ -186,8 +189,9 @@ def get_action_description(action, action_mapping):
     """Generate a textual description of an action.
 
     Args:
-        action (array-like): 5-dimensional action array [action_type, row, col, offset_row, offset_col].
-        action_mapping (dict): dictionary mapping action numbers to action names, e.g., {'copy': 0}.
+        action (array-like): [action_type, object_1, object_2] under object
+            addressing, [action_type, i1, j1, i2, j2] under coordinates.
+        action_mapping (dict): dictionary mapping action numbers to action names, e.g., {0: 'submit'}.
 
     Returns:
         str: Textual description of the action
@@ -195,6 +199,10 @@ def get_action_description(action, action_mapping):
     if action is None:
         return "Unknown action"
 
+    action = [int(value) for value in action]
+    if len(action) == 5:
+        action_type, i1, j1, i2, j2 = action
+        return f"{action_mapping[action_type]} from ({i1}, {j1}) to ({i2}, {j2})"
     action_type, object_1_idx, object_2_idx = action
     action_type = action_mapping[action_type]
     if object_1_idx == object_2_idx:

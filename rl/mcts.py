@@ -85,6 +85,8 @@ def enumerate_actions(env, include_submit: bool = False) -> List[List[int]]:
     down. `include_submit` is for measuring the submit reward itself, which
     only reaches the tree through those children.
     """
+    if getattr(env, "addressing", "objects") == "coordinates":
+        return coordinate_actions(env, include_submit)
     visible = env.visible_object_count() if hasattr(env, "visible_object_count") else None
     dims = list(env.action_space.nvec)
     if visible:
@@ -95,6 +97,52 @@ def enumerate_actions(env, include_submit: bool = False) -> List[List[int]]:
         return actions
     index = submit_index(env)
     return actions if index is None else [a for a in actions if a[0] != index]
+
+
+def coordinate_actions(env, include_submit: bool = False) -> List[List[int]]:
+    """Every coordinate action worth trying on `env`, one per distinct
+    stroke, as [action, i1, j1, i2, j2] lists.
+
+    Not the product of the four coordinate axes. That product names each
+    rectangle eight ways, each line twice and every cell past the grid in
+    hand, and on a 10x10 grid it is 10,000 pairs a transform where the
+    distinct strokes are:
+
+      fill      one per box - top-left and bottom-right corner - 3,025
+      line      one per straight segment, either end first, straight
+                meaning along a row, a column or at 45 degrees - 1,570
+      triangle  one per ordered pair of cells in different rows and
+                columns, since the order picks which corner keeps the
+                right angle - 8,100
+
+    Only cells of the grid the env is holding now, which may be smaller
+    than coordinate_shape. Submit is left out for the reason
+    enumerate_actions gives, unless asked for.
+    """
+    rows, cols = np.asarray(env.grid).shape
+    cells = [(i, j) for i in range(rows) for j in range(cols)]
+    actions = []
+    for index in sorted(env.actions_dict):
+        _colour, transform = env.world.parse_action([index])
+        if transform == "submit":
+            if include_submit:
+                actions.append([int(index), 0, 0, 0, 0])
+            continue
+        if transform == "fill":
+            actions.extend([int(index), top, left, bottom, right]
+                           for top in range(rows) for bottom in range(top, rows)
+                           for left in range(cols) for right in range(left, cols))
+        elif transform == "line":
+            for position, (i0, j0) in enumerate(cells):
+                for i1, j1 in cells[position:]:
+                    down, across = i1 - i0, j1 - j0
+                    if down == 0 or across == 0 or abs(down) == abs(across):
+                        actions.append([int(index), i0, j0, i1, j1])
+        elif transform == "triangle":
+            actions.extend([int(index), i0, j0, i1, j1]
+                           for i0, j0 in cells for i1, j1 in cells
+                           if i0 != i1 and j0 != j1)
+    return actions
 
 
 def test_individual_actions(env, max_actions: int = None) -> Dict[int, Dict[str, Any]]:
@@ -785,6 +833,9 @@ class EnvironmentSimulator:
         transform_name = self.env.actions_dict.get(int(action[0]), '')
         if transform_name == 'submit':
             return objects
+        # A coordinate transform paints the grid and touches no object.
+        if getattr(self.env, "addressing", "objects") == "coordinates":
+            return objects
         # Matching simulate_action's own bound, which is max_objects rather
         # than len(objects): objects past that are in the list but have no
         # index in the action space and nothing can name them.
@@ -969,7 +1020,9 @@ def replay_solution(env, actions, submit_index=None) -> Dict[str, Any]:
         return None
 
     if submit_index is not None:
-        rollout['actions'].append([submit_index, 0, 0])
+        # As wide as the action space: three entries under object
+        # addressing, five under coordinates.
+        rollout['actions'].append([submit_index] + [0] * (len(env.action_space.nvec) - 1))
         rollout['rewards'].append(env._submit_reward(env.max_int))
         rollout['dones'].append(True)
         rollout['infos'].append({'appended_submit': True})

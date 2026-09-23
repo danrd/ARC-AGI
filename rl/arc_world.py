@@ -7,7 +7,7 @@ symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gra
 shift_object, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
 find_path_through_background, perform_merge, objects_swap, center_merge, color_merge,
 symmetry_reflection, symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy, dense_outer_contour,
-fill_rectangle, bounding_corners
+fill_rectangle, draw_line, fill_triangle
 )
 class World:
     def __init__(self, objects, actions_dict, font_color=0, ):
@@ -54,17 +54,6 @@ class World:
             # in maximal_intersection rather than here.
             return grid
         new_grid = grid.copy()
-
-        # BEFORE THE SPLIT, because the rectangle two slots span is defined
-        # whether or not they name the same thing: one slot twice is that
-        # object's own bounding box, which for a cell is a single cell.
-        # Every branch below is written for one object or for two, and fill
-        # is the only transform that means something in both.
-        if transform == "fill":
-            """Paint the rectangle spanned by the two slots."""
-            corners = bounding_corners(obj1, obj2)
-            return new_grid if corners is None else \
-                fill_rectangle(new_grid, *corners, add)
 
         # 1 OBJECT
         if obj1.label == obj2.label:
@@ -310,21 +299,22 @@ class World:
 
     def apply_coordinate_transform(self, add:int, transform:str, first, second,
                                    grid:np.array):
-        """One step for a transform addressed by points rather than by
-        objects. `first` and `second` are (row, column).
+        """One step for a transform addressed by cells rather than objects.
+        `first` and `second` are (row, column).
 
         A second entry point rather than a flag inside apply_transform,
         because the two take different arguments and share no branch: an
         object transform needs the object's cells, its colours and its
-        neighbours, and a coordinate transform needs two integers. Passing
-        a one-cell GridObject to the object path so that one signature
-        could serve both was the earlier version of this, and what it cost
-        is recorded in rl/anchors.py.
+        neighbours, and a coordinate transform needs two cells.
         """
         if grid is None or transform is None:
             return grid
         if transform == "fill":
-            return fill_rectangle(grid.copy(), first, second, add)
+            return fill_rectangle(grid, first, second, add)
+        if transform == "line":
+            return draw_line(grid, first, second, add)
+        if transform == "triangle":
+            return fill_triangle(grid, first, second, add)
         # A name the coordinate vocabulary does not answer to. Returned
         # untouched, exactly as an object transform with nothing to do is -
         # the env scores it as ineffective rather than raising.

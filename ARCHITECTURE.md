@@ -128,24 +128,24 @@ being read.
 graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
-  rl["rl (19)"]
+  rl["rl (18)"]
   scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (50)"]
+  tests["tests (52)"]
   utils["utils (3)"]
-  tests -->|55| rl
+  tests -->|65| rl
   tests -->|25| symbolic
   tests -->|24| subsymbolic
-  tests -->|12| data
+  tests -->|13| data
   rl -->|10| symbolic
-  rl -->|7| data
+  rl -->|8| data
   scripts -->|7| rl
   tests -->|6| orchestration
   orchestration -->|4| subsymbolic
-  rl -->|4| utils
   data -->|3| rl
   orchestration -->|3| rl
+  rl -->|3| utils
   scripts -->|2| data
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
@@ -163,30 +163,29 @@ graph TD
 | module | imported by |
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
-| `data.configs.env_configs` | 9 |
-| `data.configs.rl_configs` | 9 |
+| `data.configs.env_configs` | 10 |
+| `data.configs.rl_configs` | 10 |
 | `data.datasets.ARC.arc_dataset` | 3 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
 | `orchestration.graph` | 3 |
-| `rl.anchors` | 5 |
-| `rl.arc_env` | 10 |
+| `rl.arc_env` | 12 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 19 |
+| `rl.arc_task` | 22 |
 | `rl.arc_transformators` | 4 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 1 |
-| `rl.evaluation` | 4 |
-| `rl.features` | 5 |
-| `rl.mcts` | 5 |
+| `rl.evaluation` | 5 |
+| `rl.features` | 6 |
+| `rl.mcts` | 6 |
 | `rl.optimization` | 2 |
-| `rl.plotting` | 1 |
-| `rl.policy` | 2 |
+| `rl.plotting` | 4 |
+| `rl.policy` | 3 |
 | `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 7 |
-| `rl.training` | 7 |
-| `rl.utils` | 6 |
+| `rl.training` | 8 |
+| `rl.utils` | 9 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
 | `scripts.harvest_traces` | 0 |
@@ -213,12 +212,12 @@ graph TD
 | `symbolic.summaries` | 10 |
 | `symbolic.symbolic_module` | 3 |
 | `symbolic.utils` | 10 |
-| `utils.plotting` | 6 |
+| `utils.plotting` | 5 |
 | `utils.utils` | 2 |
 
 Packages that import each other:
 
-- `data` -> `rl` (3) against `rl` -> `data` (7):
+- `data` -> `rl` (3) against `rl` -> `data` (8):
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`

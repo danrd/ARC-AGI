@@ -1,3 +1,4 @@
+import textwrap
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -192,4 +193,116 @@ def plot_rollout_grid_trace(rollout, num_steps_to_plot=None, action_mapping=None
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
 
+    return fig
+
+
+def collapsed_steps(trace):
+    """An episode's steps with each run of repeats folded into one.
+
+    A repeat is the same action again leaving the grid as it was - which is
+    how an untrained or collapsed policy spends most of a 25-step horizon,
+    and 24 identical panels say it less clearly than one marked x24. A
+    repeat that changes the grid is a step of its own and stays.
+
+    Yields (first, last, label, grid, reward), step numbers from 1, reward
+    summed over the run.
+    """
+    runs = []
+    previous = trace.get("start") if trace else None
+    for number, (label, grid, reward) in enumerate(trace.get("steps", []) if trace else [],
+                                                   start=1):
+        unchanged = previous is not None and np.array_equal(grid, previous)
+        if runs and unchanged and runs[-1][2] == label:
+            first, _last, _label, _grid, total = runs[-1]
+            runs[-1] = (first, number, label, grid, total + reward)
+        else:
+            runs.append((number, number, label, grid, reward))
+        previous = grid
+    return runs
+
+
+def _step_span(first, last):
+    return f"{first}" if first == last else f"{first}-{last} (x{last - first + 1})"
+
+
+def describe_trace(trace) -> str:
+    """An evaluated episode as lines: where it ended and what it did, one
+    step a line in the words step_label gives them, repeats folded as
+    collapsed_steps folds them."""
+    if not trace:
+        return "no episode recorded"
+    head = (f"{trace.get('subtask') or 'episode'}: closed {trace['accuracy']:+.3f} "
+            f"of the distance in {len(trace['steps'])} steps")
+    lines = [f"  {_step_span(first, last):>11}. {label}  (reward {reward:+.3f})"
+             for first, last, label, _grid, reward in collapsed_steps(trace)]
+    return "\n".join([head] + lines)
+
+
+def plot_evaluation(trace, title=None, max_columns=6, cell_inches=2.2):
+    """An evaluated episode as a picture: what it started from, what it had
+    to reach and where it ended, then every step with what it did.
+
+    The accuracy a run prints is a fraction of a distance and says nothing
+    about what the policy did to get it - a submit on step one and a
+    twenty-step detour that ends in the same place score alike. Each step
+    here is the grid after it, titled with the action as step_label reads
+    it - colour and cells for a coordinate action, colour, size and extent
+    for an object - with the cells it changed outlined in red, and the
+    share of the grid that matches the target.
+
+    Repeats are folded into one panel (see collapsed_steps), so a policy
+    that spends the horizon on one action draws as one panel marked with
+    how many times.
+
+    `trace` is what evaluate_ARC_policy fills when handed one. Returns the
+    figure; showing or saving it is the caller's business.
+    """
+    steps = collapsed_steps(trace)
+    columns = max(3, min(max_columns, max(len(steps), 1)))
+    step_rows = (len(steps) + columns - 1) // columns
+    # Constrained rather than tight_layout: it makes room for three-line
+    # panel titles and for the suptitle, where tight_layout let the titles
+    # of one row run into the panels of the row above.
+    fig = plt.figure(figsize=(columns * cell_inches, (1 + step_rows) * cell_inches * 1.3),
+                     layout="constrained")
+    gs = GridSpec(1 + step_rows, columns, figure=fig)
+    target = trace.get("target") if trace else None
+
+    start = crop_pad(grid_formatting(trace["start"])) if trace else None
+    final = crop_pad(grid_formatting(steps[-1][3])) if steps else start
+    target_grid = crop_pad(grid_formatting(target)) if target is not None else None
+    for column, (grid, name) in enumerate([(start, "start"), (target_grid, "target"),
+                                           (final, "result")]):
+        ax = fig.add_subplot(gs[0, column])
+        if grid is not None:
+            ax.imshow(grid, cmap=ARC_CMAP_HIGHLIGHT, norm=ARC_NORM_HIGHLIGHT)
+        match = _match_pct(grid, target) if (grid is not None and name != "target") else None
+        ax.set_title(name + (f" - {match:.0%} match" if match is not None else ""), fontsize=9)
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    previous = start
+    for index, (first, last, label, grid, reward) in enumerate(steps):
+        row, column = divmod(index, columns)
+        ax = fig.add_subplot(gs[1 + row, column])
+        grid = crop_pad(grid_formatting(grid))
+        ax.imshow(grid, cmap=ARC_CMAP_HIGHLIGHT, norm=ARC_NORM_HIGHLIGHT)
+        _highlight_changed_cells(ax, grid, previous)
+        match = _match_pct(grid, target)
+        # Wrapped by hand: matplotlib's own wrap=True measures against the
+        # figure rather than the panel. An object label runs to eighty
+        # characters.
+        heading = textwrap.fill(f"{_step_span(first, last)}. {label}",
+                                width=int(cell_inches * 14))
+        if match is not None:
+            heading += f"\n{match:.0%} match, reward {reward:+.3f}"
+        ax.set_title(heading, fontsize=7)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        previous = grid
+
+    if trace:
+        headline = title or trace.get("subtask") or "evaluation"
+        fig.suptitle(f"{headline}: closed {trace['accuracy']:+.3f} of the distance "
+                     f"in {len(trace['steps'])} steps", fontsize=11)
     return fig

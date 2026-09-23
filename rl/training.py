@@ -7,9 +7,30 @@ from rl.evaluation import evaluate_ARC_policy
 from stable_baselines3.common.callbacks import CallbackList
 from rl.callbacks import MonitorCallback, ARCLogger
 from rl.mcts import rollout_preparation, extract_promising_actions
+from rl.utils import calculate_eval_freq
 from utils.utils import seed_everything
 from utils.plotting import plot_grid
+from rl.plotting import describe_trace, plot_evaluation
+import matplotlib.pyplot as plt
 from data.configs.rl_configs import load_PPO_config
+
+#: Observations that are the answer. The critic may read them - it only
+#: runs during training, to turn returns into advantages - and the actor may
+#: not: at inference there is no target, and in this harness the held-out
+#: pair's target is its test output, so an actor reading it would be scored
+#: on an answer it had been shown. Under coordinate addressing the step from
+#: delta_target to the right action is nearly nothing - paint the box of the
+#: cells still wrong - which is why this is enforced rather than configured.
+ANSWER_KEYS = ('target', 'delta_target')
+
+
+def critic_only(observation_space, configured) -> tuple:
+    """critic_only_keys as configured, with every answer key the
+    observation carries added to it."""
+    present = set(getattr(observation_space, 'spaces', {}) or {})
+    keys = list(configured) + [key for key in ANSWER_KEYS if key in present]
+    return tuple(dict.fromkeys(keys))
+
 
 def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretrained:str=None, agent_init=None):
     """Build the agent to train with: a caller-supplied one, one restored
@@ -45,15 +66,25 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
     if model_config:
         PPO_config.update(model_config)
     policy = PPO_config['policy'] if PPO_config['policy'] != 'default' else "MultiInputPolicy"
+    # Five heads under coordinate addressing - the action, and a row and a
+    # column for each of two cells - because that is the action space, and
+    # a config that said three would build heads for a space that is not
+    # there.
+    coordinates = rl_config.get('addressing', 'objects') == 'coordinates'
     policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
-                     'action_heads':PPO_config['action_heads'],
+                     'action_heads': 5 if coordinates else PPO_config['action_heads'],
                      # Observations the critic may read and the actor may
-                     # not - see ARCCustomActorCriticPolicy. Empty by
-                     # default, and then the two see the same thing.
-                     'critic_only_keys':PPO_config['critic_only_keys'],
+                     # not - see ARCCustomActorCriticPolicy - with the
+                     # answer always among them (ANSWER_KEYS).
+                     'critic_only_keys': critic_only(vec_env.observation_space,
+                                                     PPO_config['critic_only_keys']),
                      'features_extractor_kwargs':{
                          'extr_arch': PPO_config['extr_arch'],
                          'pointer_dim': PPO_config['pointer_dim'],
+                         # Per-row and per-column embeddings for the
+                         # coordinate heads - see CoordinateRows. 0 builds
+                         # none, which is what object addressing wants.
+                         'coordinate_dim': PPO_config['coordinate_dim'] if coordinates else 0,
                          'object_arch': PPO_config['object_arch'],
                          # How relations enter when the observation has
                          # them - see ARCCombinedExtractor. Ignored when it
@@ -77,7 +108,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
-                   action_whitelist=None, addressing="objects",
+                   action_whitelist=None, addressing="objects", coordinate_shape=None,
                   ):
     """Auxiliary function for creating environments to create vectorized environment."""
     gym.envs.register(
@@ -92,6 +123,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    observation_grid_shape=observation_grid_shape,
                    max_objects=max_objects,
                    action_whitelist=action_whitelist, addressing=addressing,
+                   coordinate_shape=coordinate_shape,
                   )
     # .unwrapped: gym.make() wraps env in OrderEnforcing/PassiveEnvChecker,
     # and current gymnasium no longer forwards custom methods through
@@ -105,7 +137,7 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
-                   action_whitelist=None, addressing="objects"):
+                   action_whitelist=None, addressing="objects", coordinate_shape=None):
     """Auxiliary function for creating vectorized environment."""
     envs = [functools.partial(create_ARC_env, subtask=subtask, max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                               action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
@@ -115,6 +147,7 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                               observation_grid_shape=observation_grid_shape,
                               max_objects=max_objects,
                               action_whitelist=action_whitelist, addressing=addressing,
+                              coordinate_shape=coordinate_shape,
                               feasible_actions=feasible_actions) for subtask in subtasks for i in range(n_envs)]
     vec_env = VecMonitor(DummyVecEnv(envs))
     return vec_env
@@ -146,11 +179,19 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
                              observation_grid_shape=rl_config.get('observation_grid_shape'),
                              max_objects=rl_config.get('max_objects', MAX_OBJECTS),
                              action_whitelist=rl_config.get('action_whitelist'),
-                             addressing=rl_config.get('addressing', 'objects'))
+                             addressing=rl_config.get('addressing', 'objects'),
+                             coordinate_shape=rl_config.get('coordinate_shape'))
     # verbose passed through: the callback's own default is True, and a
-    # verbose evaluation prints and calls plot_grid - at rl_config's
-    # eval_freq that is a figure every few steps of training.
-    callback = MonitorCallback(vec_env, eval_freq=rl_config['eval_freq'], n_eval_episodes=rl_config['n_eval_episodes'],
+    # verbose evaluation prints and calls plot_grid - a figure per
+    # evaluation.
+    #
+    # The interval is derived rather than configured: MonitorCallback counts
+    # it in callback calls, one per step of the whole vector, so a fixed
+    # number meant a different number of evaluations for every budget and
+    # every subtask count. rl_config names how many evaluations a run gets.
+    eval_freq = max(1, calculate_eval_freq(vec_env.num_envs, rl_config['total_steps'],
+                                           rl_config['evaluations']))
+    callback = MonitorCallback(vec_env, eval_freq=eval_freq, n_eval_episodes=rl_config['n_eval_episodes'],
                                    log_path=rl_config['log_path'], debug=debug, verbose=verbose)
     agent = create_agent(rl_config=rl_config, vec_env=vec_env, model_config=PPO_config,
                      path_to_pretrained=path_to_pretrained, agent_init=agent_init)
@@ -182,12 +223,13 @@ def train_on_subtask(subtask, rl_config:dict, PPO_config:dict=None, agent_init=N
                              extra_callback=extra_callback)
 
 
-def evaluate_on_subtask(agent, subtask, rl_config:dict):
+def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None):
     """Score a trained agent on a subtask it was not trained on.
 
     An env of its own, built the same way as the training ones and thrown
     away afterwards: evaluate_ARC_policy takes the vec env to step in as an
-    argument, so nothing about the agent's own env changes.
+    argument, so nothing about the agent's own env changes. `trace` is
+    passed through to it - a dict to fill with the episode, step by step.
     """
     vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=rl_config['max_episode_len'],
                              repr_level=rl_config['repr_level'],
@@ -206,9 +248,11 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict):
                              # on: an index into a different whitelist names
                              # a different triple.
                              action_whitelist=rl_config.get('action_whitelist'),
-                             addressing=rl_config.get('addressing', 'objects'))
+                             addressing=rl_config.get('addressing', 'objects'),
+                             coordinate_shape=rl_config.get('coordinate_shape'))
     try:
-        return evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'])
+        return evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'],
+                                   trace=trace)
     finally:
         vec_env.close()
 
@@ -336,7 +380,9 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
             accs_for_subtasks[idx] = acc
             lens_for_subtasks[idx] = mean_len
             expl_vars[idx] = round(callback.explained_variances[-1], 3)
-    test_acc, test_len, test_grid = evaluate_on_subtask(agent, task.test_subtask, rl_config)
+    test_trace = {}
+    test_acc, test_len, test_grid = evaluate_on_subtask(agent, task.test_subtask, rl_config,
+                                                        trace=test_trace)
     print(f'Explaines variances for subtasks: {expl_vars}')
     train_metrics['expl_vars'] = list(expl_vars.values())
     # Alongside the accuracies, not instead: a subtask whose input already
@@ -351,8 +397,17 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     train_metrics['test_acc'] = test_acc
     train_metrics['test_len'] = test_len
     train_metrics['test_grid'] = test_grid
+    # The held-out episode itself - rl.plotting.plot_evaluation draws it.
+    train_metrics['test_trace'] = test_trace
     print(f'Accuracies for task: {list(accs_for_subtasks.values())}, Mean episode lengths for task: {list(lens_for_subtasks.values())}')
     print(f'Held-out accuracy for {task.test_subtask.label}: {test_acc:.3f}')
+    # Always printed: a handful of lines, and the only place the held-out
+    # number can be checked against what the policy actually did.
+    print(describe_trace(test_trace))
+    if verbose or plot_grid_pred:
+        fig = plot_evaluation(test_trace, title=f'held-out {task.test_subtask.label}')
+        plt.show()
+        plt.close(fig)
     return accs_for_subtasks, lens_for_subtasks, agent, train_metrics
 
 def actions_exploration(subtask, rl_config: dict, n_rollouts: int = 500,

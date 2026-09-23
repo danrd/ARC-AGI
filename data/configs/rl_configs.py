@@ -30,11 +30,32 @@ rl_config = {
     # very small budgets never worked. 100_000 to 150_000 is enough for a
     # trial sweep; 300_000 for a result worth keeping. Economise on how many
     # configurations are compared, never on this.
-    'total_steps': 1000000,
+    #
+    # The value stayed at 1_000_000 under that paragraph until the curve was
+    # measured - six tasks, three seeds, held-out accuracy every 25k steps of
+    # one 600k run each:
+    #
+    #    25k  50k  75k  100k  150k  200k  300k  400k  500k  600k
+    #   .005 .122 .089  .244  .303  .383  .322  .301  .302  .278   (mean)
+    #
+    # The mean peaks at 200k and falls after it, and the best checkpoint of a
+    # run came at a median of 188k (p75 312k). The final policy is what a run
+    # returns, and past the peak it wanders off: 4093f84a was at +0.444 on
+    # the held-out pair at 100k and at +0.056 by 600k. So a million steps
+    # cost five times the time of this and bought a worse policy. At the
+    # measured 209 steps/s that is 16 minutes a task instead of 80.
+    'total_steps': 200_000,
     'n_eval_episodes': 1,
     'n_envs': 1,
     'seed' : 42,
-    'eval_freq': 5,
+    # How many times MonitorCallback evaluates during one run, from which
+    # the step interval is derived (rl.utils.calculate_eval_freq) - so it
+    # scales with total_steps instead of being counted in raw callback
+    # calls. It was eval_freq: 5, an evaluation episode every five steps of
+    # training, which measured 2.4x the wall clock of the same run with
+    # evaluation every 5000 (87 steps/s against 213) for nothing the
+    # training uses: these evaluations only feed the plots.
+    'evaluations': 20,
     'log_path': ".data/logs/rl/",
     'max_episode_len': 25,
     'right_placement_reward': 5.0,
@@ -81,6 +102,14 @@ rl_config = {
     # sake and carries the true shape alongside, so the policy crops it back
     # off - see ARCGridWorld.observed_grid.
     'observation_grid_shape': None,
+    # What an action names: 'objects' or 'coordinates' (see
+    # ARCGridWorld.addressing). rl.rl_job.narrowed_for_task decides it per
+    # task from the agent's label, together with coordinate_shape - the
+    # grid size the coordinate half of the action space spans - and the
+    # observation that goes with it. These are the defaults a run gets when
+    # it is not narrowed.
+    'addressing': 'objects',
+    'coordinate_shape': None,
     # Object slots, and so the two object indices of every action. Sized by
     # this rather than by the task, so a slot past the objects a grid has is
     # a legal action that does nothing: on the median shape-preserving task
@@ -118,13 +147,21 @@ def load_PPO_config():
     # time, while the actor, which is all that runs on a held-out pair,
     # never sees it. ('target',) alongside 'target' in
     # observation_space_elements is the asymmetric case; empty means both
-    # halves see the same observation.
+    # halves see the same observation. 'target' and 'delta_target' are
+    # added whenever the observation carries them, whatever this says -
+    # see rl.training.ANSWER_KEYS.
     'critic_only_keys': (),
     # Width of the per-object rows ARCCombinedExtractor carries for the
     # pointer heads, or 0 for the Linear object heads that preceded them -
     # which is the control the pointer head is measured against rather than
     # a setting anyone should want. See rl.policy.PointerHead.
     'pointer_dim': 32,
+    # The same for coordinate addressing: the width of the per-row and
+    # per-column embeddings the four coordinate heads score, one row of the
+    # grid (or one column) each. Read only when rl_config's addressing is
+    # 'coordinates', where action_heads is five whatever the line above
+    # says - the action space decides that, not this file.
+    'coordinate_dim': 32,
     # The object branch's architecture, the way extr_arch is the grid's:
     # keyword arguments for ObjectSetProcessor - dropout, self_attention,
     # grouped, cross_attention, use_position. None is what this shipped as.

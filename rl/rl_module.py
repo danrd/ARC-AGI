@@ -27,11 +27,11 @@ class RlConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
 
     model_type: str = "PPO"
-    total_steps: int = 1000000
+    total_steps: int = 200000  # see data.configs.rl_configs.rl_config
     n_eval_episodes: int = 1
     n_envs: int = 1
     seed: int = 42
-    eval_freq: int = 5
+    evaluations: int = 20
     log_path: str = ".data/logs/rl/"
     max_episode_len: int = 25
     right_placement_reward: float = 5.0
@@ -48,6 +48,8 @@ class RlConfig(BaseModel):
     observation_space_elements: List[str] = ["objects_emb"]  # ["objects_emb", "relations_emb"]
     observation_grid_shape: Optional[Tuple[int, int]] = None
     max_objects: int = 16
+    addressing: str = "objects"
+    coordinate_shape: Optional[Tuple[int, int]] = None
 
 
 class RLModule:

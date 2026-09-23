@@ -19,10 +19,14 @@ ACTION_TYPES = {
                 "edit": ["copy", "copy_input", "paste", "cut"],
                 "alignment": ["x_alignment", "y_alignment"],
                 "connection": ["shortest_path", "background_shortest_path_left", "background_shortest_path_right", "contour_connection"],
-                # The one action addressed by position rather than by what
-                # is drawn - see arc_transformators.fill_rectangle.
-                "region": ["fill"],
 }
+
+#: The vocabulary of coordinate addressing - an action (transform, i1, j1,
+#: i2, j2) naming two cells rather than two objects. Kept out of
+#: ACTION_TYPES and every roster on purpose: an object-addressed env has no
+#: cells to hand these, and the two vocabularies do not overlap. See
+#: rl.arc_transformators.fill_rectangle, draw_line and fill_triangle.
+COORDINATE_ACTIONS = ["fill", "line", "triangle"]
 TWO_OBJECTS_ACTION_TYPES = ["swap", "merge", "center_merge", "color_merge", "x_alignment", "y_alignment", "shortest_path", "background_shortest_path_left", "background_shortest_path_right", "contour_connection",
                             "color_swap", "shape_swap", "color_copy", "shape_copy", "gravity"]
 COLORS_MAPPING = {0: 'black', 1: 'blue', 2: 'red', 3: 'green', 4: 'yellow',
@@ -36,7 +40,7 @@ COLOR_DEPENDENT_ACTIONS = ["recolor", "shortest_path", "background_shortest_path
                            "emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision",
                            "emission_with_recolor_collision", "emission_with_contour_collision", "color_inner_holes",
                            "color_outer_holes", "color_inner_part", "emission_with_collision_stop", "emission_with_object_recolor",
-                           "dense_outer_contour", "fill"
+                           "dense_outer_contour", "fill", "line", "triangle"
                           ]
 DOUBLE_COLOR_DEPENDENT_ACTIONS = ["contour_connection", "emission_with_object_recolor", "emission_with_recolor_collision", "emission_with_contour_collision"]
 DIRECTION_DEPENDENT_ACTIONS = ["emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision", "emission_with_object_recolor",
@@ -57,44 +61,35 @@ AGENT2ACTIONS = {
               "emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision",
               "emission_with_recolor_collision", "emission_with_contour_collision",
               "emission_with_collision_stop", "emission_with_object_recolor",],
-    # The largest label in idx2agent.pkl - 232 of 800 tasks - and until now
-    # the only one with no roster at all, which left a quarter of the
-    # labelled set with nothing but submit. Its role is to colour
-    # background cells, and no object-addressed action can name one.
-    'constructor': ["submit", "fill"],
 }
 
-#: Which kind of slot a task's actions address, by the agent it is labelled
-#: with. The base case is decided here rather than per task: an agent's
-#: label already says what kind of change the task makes, and the two
-#: vocabularies do not overlap.
+#: What a task's actions address, by the agent it is labelled with. The base
+#: case is decided here rather than per task: the label already says what
+#: kind of change the task makes, and the two vocabularies do not overlap.
+#: An agent absent from this map gets objects, which is what every task got
+#: before coordinates existed.
 #:
-#: Measured over the 800 labelled tasks, as the share of a task's changed
-#: cells that the input left background - cells no object-addressed action
-#: can reach:
+#: Only constructor is sent to coordinates. Measured on 121 labelled tasks
+#: as whether any single action of each vocabulary moves the grid towards
+#: the target at all:
 #:
-#:   agent        tasks  median share   reading
-#:   constructor    232        1.00     every changed cell was background
-#:   connector       95        1.00     paths drawn across empty space
-#:   mapper          24        0.58     mixed, and mostly subsymbolic
-#:   shifter         75        0.50     the fingerprint of translation: a
-#:                                      moved object vacates as many cells
-#:                                      as it fills, so half of what changed
-#:                                      was background without any of it
-#:                                      being painted
-#:   modifier       112        0.00     but p75 0.94 - genuinely bimodal
-#:   highlighter     74        0.00     1 of its 14 shape-preserving tasks
+#:   agent        tasks  objects move it  only the coordinate one does
+#:   constructor     43        24             19 (44%)
+#:   connector       16        11              5 (31%)
+#:   modifier        28        23              5 (18%)
+#:   shifter         21        20              1
+#:   highlighter      5         5              0
 #:
-#: modifier is the case where both could serve, and it is left on objects
-#: until something measures the split. An agent absent from this map gets
-#: objects, which is what every task got before coordinates existed.
+#: constructor's role is to colour background cells, it has no object
+#: roster, and nearly half its tasks cannot be moved by any object action.
+#: connector was on coordinates too, decided by the share of changed cells
+#: that were background (a median of 1.00, like constructor) - which is not
+#: the criterion: its own roster paints background by construction, as
+#: paths between objects, and object actions move 69% of its tasks. It has
+#: the better claim on generalising, too - a path between two objects
+#: transfers to the held-out grid, a pair of absolute cells does not.
 AGENT2ADDRESSING = {
-    'constructor': 'anchors',
-    'connector': 'anchors',
-    'connector_extended': 'anchors',
-    'highlighter': 'objects',
-    'modifier': 'objects',
-    'shifter': 'objects',
+    'constructor': 'coordinates',
 }
 
 
@@ -116,7 +111,6 @@ TRANSFORM_DESCRIPTIONS = {
 
     # One object, painting
     "recolor": "repaint every cell of the shape to {colour}",
-    "fill": "paint the whole rectangle spanning the shape and {other} {colour}",
     "color_inner_holes": "fill the enclosed empty regions inside the shape with {colour}",
     "color_outer_holes": "fill the concave notches along the shape's outline with {colour}",
     "color_inner_part": "paint the shape's interior - its cells other than its border - {colour}",

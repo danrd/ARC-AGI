@@ -228,8 +228,9 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None):
 
     An env of its own, built the same way as the training ones and thrown
     away afterwards: evaluate_ARC_policy takes the vec env to step in as an
-    argument, so nothing about the agent's own env changes. `trace` is
-    passed through to it - a dict to fill with the episode, step by step.
+    argument, so nothing about the agent's own env changes. `trace`, a
+    dict, is filled with the episode step by step (evaluate_ARC_policy's
+    traces, of which there is one here).
     """
     vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=rl_config['max_episode_len'],
                              repr_level=rl_config['repr_level'],
@@ -251,8 +252,13 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None):
                              addressing=rl_config.get('addressing', 'objects'),
                              coordinate_shape=rl_config.get('coordinate_shape'))
     try:
-        return evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'],
-                                   trace=trace)
+        traces = [] if trace is not None else None
+        result = evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'],
+                                     traces=traces)
+        if trace is not None:
+            trace.clear()
+            trace.update(traces[0] or {})
+        return result
     finally:
         vec_env.close()
 
@@ -357,6 +363,7 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     accs_for_subtasks = {}
     lens_for_subtasks = {}
     expl_vars = {}
+    train_traces = {}
     subtasks = task.subtasks
     if mode == 'mixed':
         _acc, _len, agent, callback, _vec_env = train_on_subtasks(
@@ -365,9 +372,11 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
             extra_callback=extra_callback)
         expl_vars['all'] = round(callback.explained_variances[-1], 3)
         for idx, subtask in enumerate(subtasks):
-            acc, mean_len, _grid = evaluate_on_subtask(agent, subtask, rl_config)
+            trace = {}
+            acc, mean_len, _grid = evaluate_on_subtask(agent, subtask, rl_config, trace=trace)
             accs_for_subtasks[idx] = acc
             lens_for_subtasks[idx] = mean_len
+            train_traces[idx] = trace
     else:
         agent = agent_init
         share = dict(rl_config)
@@ -379,6 +388,12 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
                 extra_callback=extra_callback)
             accs_for_subtasks[idx] = acc
             lens_for_subtasks[idx] = mean_len
+            # The subtask's episode as the agent left it, one more
+            # deterministic episode - later subtasks train over it, so it
+            # is not the final policy's, the same as the accuracy above.
+            trace = {}
+            evaluate_on_subtask(agent, subtask, share, trace=trace)
+            train_traces[idx] = trace
             expl_vars[idx] = round(callback.explained_variances[-1], 3)
     test_trace = {}
     test_acc, test_len, test_grid = evaluate_on_subtask(agent, task.test_subtask, rl_config,
@@ -397,17 +412,25 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
     train_metrics['test_acc'] = test_acc
     train_metrics['test_len'] = test_len
     train_metrics['test_grid'] = test_grid
-    # The held-out episode itself - rl.plotting.plot_evaluation draws it.
+    # The episodes themselves, per training example and held out -
+    # rl.plotting.plot_evaluation draws one, plot_overview several.
+    train_metrics['train_traces'] = train_traces
     train_metrics['test_trace'] = test_trace
     print(f'Accuracies for task: {list(accs_for_subtasks.values())}, Mean episode lengths for task: {list(lens_for_subtasks.values())}')
     print(f'Held-out accuracy for {task.test_subtask.label}: {test_acc:.3f}')
-    # Always printed: a handful of lines, and the only place the held-out
-    # number can be checked against what the policy actually did.
+    # Always printed: a few lines an example, folded, and the only place
+    # the numbers can be checked against what the policy actually did.
+    for idx, trace in train_traces.items():
+        if trace:
+            print(describe_trace(trace))
     print(describe_trace(test_trace))
     if verbose or plot_grid_pred:
-        fig = plot_evaluation(test_trace, title=f'held-out {task.test_subtask.label}')
-        plt.show()
-        plt.close(fig)
+        for trace, name in ([(trace, f'training example {idx}')
+                             for idx, trace in train_traces.items() if trace]
+                            + [(test_trace, f'held-out {task.test_subtask.label}')]):
+            fig = plot_evaluation(trace, title=name)
+            plt.show()
+            plt.close(fig)
     return accs_for_subtasks, lens_for_subtasks, agent, train_metrics
 
 def actions_exploration(subtask, rl_config: dict, n_rollouts: int = 500,

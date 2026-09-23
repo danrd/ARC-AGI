@@ -124,6 +124,30 @@ class TestEvaluating:
 
         assert accuracy == 0.5
 
+    def test_every_environment_finishes_its_episodes(self):
+        """Counted in total, the first env to finish was the whole
+        evaluation - with one env per training example, the example the
+        policy gave up on soonest. Each env is scored."""
+        envs = [_Env(), _Env()]
+        vec = _VecEnv([([1.0, 0.0], [True, False], [_done([2]), {}]),
+                       ([0.0, 0.0], [False, False], [{}, {}]),
+                       ([0.0, 1.0], [False, True], [{}, _done([8])])], envs)
+
+        accuracy, mean_length, _ = evaluate_ARC_policy(_Model(), vec, n_eval_episodes=1)
+
+        assert vec.steps == 3
+        assert accuracy == 0.5
+        assert mean_length == 2
+
+    def test_an_env_past_its_share_is_not_counted_again(self):
+        envs = [_Env(), _Env()]
+        vec = _VecEnv([([1.0, 0.0], [True, False], [_done([2]), {}]),
+                       ([1.0, 1.0], [True, True], [_done([10]), _done([8])])], envs)
+
+        accuracy, _, _ = evaluate_ARC_policy(_Model(), vec, n_eval_episodes=1)
+
+        assert accuracy == 0.5
+
     def test_the_callback_sees_each_step(self):
         """MonitorCallback's success logging reads `reward`, `done` and
         `info` out of this function's local scope - an odd contract, but a

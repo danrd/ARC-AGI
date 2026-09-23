@@ -18,7 +18,7 @@ is measured by:
 policy and a search comparable without either of them being scored in the
 other's units.
 """
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from stable_baselines3.common import base_class
@@ -99,21 +99,32 @@ def evaluate_ARC_policy(
     n_eval_episodes: int = 10,
     deterministic: bool = True,
     callback: Optional[Callable[[Dict[str, Any], Dict[str, Any]], None]] = None,
-    trace: Optional[Dict[str, Any]] = None,
+    traces: Optional[List[Optional[Dict[str, Any]]]] = None,
 ) -> Tuple[float, float, Any]:
-    """Run the policy until `n_eval_episodes` episodes have finished.
+    """Run the policy until every env has finished `n_eval_episodes`
+    episodes.
 
-    Returns the mean accuracy over those episodes, their mean length, and
-    the grid the last finished episode produced - what the caller prints
-    and plots.
+    Every env, not `n_eval_episodes` in total. Training puts one env per
+    example in the vector, and all of them step together: counted in
+    total, one episode was one example - whichever ended first, so the one
+    the policy gave up on soonest - and every accuracy MonitorCallback
+    recorded during training was that example's alone. Per env, the mean
+    is over the examples, the same thing the per-example accuracies
+    train_on_task reports at the end average to. An env that has done its
+    share keeps stepping with the rest and its further episodes are not
+    counted.
+
+    Returns the mean accuracy over the counted episodes, their mean length,
+    and the grid the last one produced - what the caller prints and plots.
 
     `callback` is invoked after each step with the local scope, which is
     how MonitorCallback's success logging reads `reward`, `done` and
     `info`. Kept because that contract is used, odd as it is.
 
-    `trace`, when a dict is passed, is filled with the episode the returned
-    grid came from - what rl.plotting.plot_evaluation draws - so an
-    accuracy can be read against what the policy actually did:
+    `traces`, when a list is passed, is filled with one trace per env - the
+    last episode counted in it - which is what rl.plotting.plot_evaluation
+    draws, so an accuracy can be read against what the policy actually
+    did:
 
       start     the grid the episode began on
       steps     one (label, grid after it, reward) per step, the label
@@ -125,50 +136,57 @@ def evaluate_ARC_policy(
     n_envs = vec_env.num_envs
     accuracies, lengths = [], []
     last_grid = None
+    finished = np.zeros(n_envs, dtype=int)
     current_lengths = np.zeros(n_envs, dtype=int)
     observations = vec_env.reset()
     states = None
-    # Per env, the episode in progress - only kept when a trace is wanted.
+    tracing = traces is not None
+    if tracing:
+        traces[:] = [None] * n_envs
+    # Per env, the episode in progress - only kept when traces are wanted.
     episodes = [None] * n_envs
-    if trace is not None:
+    if tracing:
         episodes = [{"start": np.array(observations["grid"][index]), "steps": []}
                     for index in range(n_envs)]
 
-    while len(accuracies) < n_eval_episodes:
+    while (finished < n_eval_episodes).any():
         actions, states = model.predict(observations, state=states,
                                         deterministic=deterministic)
         labels = ([step_label(vec_env.envs[index], actions[index]) for index in range(n_envs)]
-                  if trace is not None else None)
+                  if tracing else None)
         observations, rewards, dones, infos = vec_env.step(actions)
         current_lengths += 1
         for index in range(n_envs):
             reward, done, info = rewards[index], dones[index], infos[index]
             if callback is not None:
                 callback(locals(), globals())
-            if trace is not None:
+            if tracing:
                 after = ((info.get("terminal_observation") or {}).get("grid")
                          if done else observations["grid"][index])
                 episodes[index]["steps"].append((labels[index], np.array(after),
                                                  float(reward)))
             if not done:
                 continue
+            length = int(current_lengths[index])
+            current_lengths[index] = 0
+            episode = episodes[index]
+            if tracing:
+                episodes[index] = {"start": np.array(observations["grid"][index]),
+                                   "steps": []}
+            if finished[index] >= n_eval_episodes:
+                continue
+            finished[index] += 1
             terminal = info.get("terminal_observation") or {}
             grid = terminal.get("grid")
             if grid is not None:
                 last_grid = grid
             accuracies.append(closed_fraction(vec_env.envs[index], grid))
-            lengths.append(int(current_lengths[index]))
-            current_lengths[index] = 0
-            if trace is not None:
+            lengths.append(length)
+            if tracing:
                 env = getattr(vec_env.envs[index], "unwrapped", vec_env.envs[index])
-                trace.clear()
-                trace.update(episodes[index], target=np.array(env.train_out),
-                             accuracy=accuracies[-1],
-                             subtask=getattr(env, "subtask_label", None))
-                episodes[index] = {"start": np.array(observations["grid"][index]),
-                                   "steps": []}
-            if len(accuracies) >= n_eval_episodes:
-                break
+                traces[index] = dict(episode, target=np.array(env.train_out),
+                                     accuracy=accuracies[-1],
+                                     subtask=getattr(env, "subtask_label", None))
 
     return (float(np.mean(accuracies)) if accuracies else 0.0,
             float(np.mean(lengths)) if lengths else 0.0,

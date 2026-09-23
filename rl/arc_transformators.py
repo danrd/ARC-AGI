@@ -1863,29 +1863,24 @@ def dense_outer_contour(grid: np.array, obj1: GridObject, color: float, font_col
 
 
 def fill_rectangle(grid: np.array, first, second, color: float):
-    """Paint the rectangle two points span, corner to corner.
+    """Paint the rectangle two cells span, corner to corner.
 
-    The coordinate transform, and the only one in this module that takes
-    points rather than a GridObject. Every other action here moves or
-    recolours an object the grid already holds, so the only cells any of
-    them can reach are cells something is already drawn on. Measured over
-    the 262 shape-preserving training tasks, 191 of them (47.8%) need a
-    cell the input leaves background painted - a median of 18 such cells,
-    up to 638 - and nothing else in the vocabulary can name one.
-
-    Points and not objects because there is nothing object-like about a
-    corner. A caller holding objects passes their bounding-box corners; a
-    caller holding coordinates passes them unchanged. Making this take a
-    GridObject and handing it a one-cell stand-in was the earlier version
-    of this function, and it put the whole object vocabulary - size,
-    symmetry, holes, none of which a corner has - behind an argument that
-    only ever needed two integers.
+    One of the three coordinate transforms (with draw_line and
+    fill_triangle), which take cells rather than GridObjects. Every other
+    action in this module moves or recolours an object the grid already
+    holds, so the only cells any of them can reach are cells something is
+    already drawn on. Measured over the 262 shape-preserving training
+    tasks, 191 of them (47.8%) need a cell the input leaves background
+    painted - a median of 18 such cells, up to 638.
 
     Why a rectangle and not a cell. The horizon is 25 actions, and the
     busiest training example of a task changes a median of 19 cells, p90
     57. Painted one at a time that fits 65% of the tasks and no more;
     covered by single-colour rectangles the median falls to 8 and 92% fit.
-    The cell is not lost - it is the 1x1 rectangle, both points the same.
+    The cell is not lost - it is the 1x1 rectangle, both cells the same.
+
+    The two cells are opposite corners in either order, so the eight ways
+    of naming one rectangle all paint it.
 
     Nothing is written when the action carries no colour: `add` is -1 for a
     name with no colour word in front of it, and -1 is not a colour.
@@ -1900,15 +1895,64 @@ def fill_rectangle(grid: np.array, first, second, color: float):
     return new_grid
 
 
-def bounding_corners(obj1: GridObject, obj2: GridObject):
-    """The two opposite corners of the box two objects span.
+def draw_line(grid: np.array, first, second, color: float):
+    """Paint the straight line from one cell to another.
 
-    Where an object-addressed caller turns its objects into the points
-    fill_rectangle wants. Empty coordinates give None, which is the caller's
-    signal that there is no rectangle to paint.
+    Straight in the grid's own sense: along a row, along a column, or at
+    45 degrees. That is where a diagonal comes from, which no rectangle can
+    make short of one per cell - and measured over 74 shape-preserving
+    tasks against a greedy cover of what each changes, adding lines to
+    rectangles made the cover shorter on 22 and longer on one.
+
+    Any other pair of cells is not a line on a grid - a segment at some
+    other slope becomes a staircase that ARC grids do not draw - and paints
+    nothing, scored like any other action that changes nothing.
     """
-    rows = [i for obj in (obj1, obj2) for i, _ in obj.coords]
-    cols = [j for obj in (obj1, obj2) for _, j in obj.coords]
-    if not rows:
-        return None
-    return (min(rows), min(cols)), (max(rows), max(cols))
+    if color is None or color < 0:
+        return grid
+    (i0, j0), (i1, j1) = (int(first[0]), int(first[1])), (int(second[0]), int(second[1]))
+    down, across = i1 - i0, j1 - j0
+    if down and across and abs(down) != abs(across):
+        return grid
+    steps = max(abs(down), abs(across))
+    step_i = (down > 0) - (down < 0)
+    step_j = (across > 0) - (across < 0)
+    new_grid = grid.copy()
+    for k in range(steps + 1):
+        new_grid[i0 + step_i * k, j0 + step_j * k] = color
+    return new_grid
+
+
+def fill_triangle(grid: np.array, first, second, color: float):
+    """Paint the right triangle whose hypotenuse runs from `first` to
+    `second` and whose right angle sits at (first's row, second's column).
+
+    The box two cells span, cut along the line between them and kept on
+    one side. The order of the two cells picks the side, so the four
+    triangles a box holds - right angle at each of its corners - are all
+    reachable with one action name and no variant suffix: swapping the
+    cells moves the right angle to the opposite corner, and naming the box
+    by its other diagonal gives the remaining two.
+
+    The hypotenuse's own cells belong to the triangle. A box one row or one
+    column wide has no second side, and the triangle is the segment.
+
+    Measured against rectangles and lines over the same 74 tasks: 12 more
+    covers came out shorter with triangles available, none longer.
+    """
+    if color is None or color < 0:
+        return grid
+    (i0, j0), (i1, j1) = (int(first[0]), int(first[1])), (int(second[0]), int(second[1]))
+    top, bottom = sorted((i0, i1))
+    left, right = sorted((j0, j1))
+    rows = np.arange(top, bottom + 1)[:, None]
+    cols = np.arange(left, right + 1)[None, :]
+    # Which side of the line first -> second a cell is on: the sign of the
+    # cross product, compared with the corner the right angle is at.
+    side = (i1 - i0) * (cols - j0) - (j1 - j0) * (rows - i0)
+    corner = (i1 - i0) * (j1 - j0)
+    keep = (side == 0) | (np.sign(side) == np.sign(corner))
+    new_grid = grid.copy()
+    region = new_grid[top:bottom + 1, left:right + 1]
+    region[keep] = color
+    return new_grid

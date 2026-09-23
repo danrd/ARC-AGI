@@ -47,7 +47,7 @@ def task():
 def config(tmp_path):
     return {
         "model_type": "PPO", "total_steps": 64, "n_eval_episodes": 1, "n_envs": 1,
-        "seed": 42, "eval_freq": 10_000, "log_path": str(tmp_path), "max_episode_len": 5,
+        "seed": 42, "evaluations": 2, "log_path": str(tmp_path), "max_episode_len": 5,
         "right_placement_reward": 5.0, "action_penalty": 1.0,
         "repetitive_actions_penalty": 1.0, "font_color": 0.0, "padding": False,
         "input_pattern": "start", "milestones_rewards": [1, 2, 3, 4],
@@ -243,6 +243,79 @@ class TestWatchingARun:
         assert metrics["expl_vars"]
 
 
+class TestWhatTheEvaluationsShow:
+    """An accuracy alone says nothing about what the policy did. Each
+    evaluation keeps the episode behind its number, and the held-out one
+    is printed step by step - see tests/test_rl_eval_trace.py for what a
+    trace holds."""
+
+    def test_the_held_out_episode_comes_back_with_the_metrics(self, task, config, ppo):
+        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
+
+        trace = metrics["test_trace"]
+        assert trace["subtask"] == task.test_subtask.label
+        assert trace["accuracy"] == metrics["test_acc"]
+        assert trace["steps"] and trace["steps"][-1][0] == "submit"
+
+    def test_it_is_printed_where_the_held_out_score_is(self, task, config, ppo, capsys):
+        train_on_task(task, rl_config=config, PPO_config=ppo)
+
+        out = capsys.readouterr().out
+        assert f"{task.test_subtask.label}: closed" in out
+        assert ". submit" in out
+
+    def test_the_monitor_keeps_one_trace_per_evaluation(self, task, config, ppo):
+        _, _, _, callback, _ = train_on_subtasks(task.subtasks, rl_config=config,
+                                                 PPO_config=ppo)
+
+        assert callback.episode_accs
+        assert len(callback.episode_traces) == len(callback.episode_accs)
+        assert all(trace["steps"] for trace in callback.episode_traces)
+
+    def test_a_verbose_run_draws_every_evaluation_and_the_held_out_one(
+            self, task, config, ppo, monkeypatch):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        drawn = []
+        monkeypatch.setattr(plt, "show", lambda *a, **k: drawn.append(plt.gcf()))
+
+        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo,
+                                         verbose=True)
+
+        titles = [fig._suptitle.get_text() for fig in drawn if fig._suptitle]
+        assert any(title.startswith("held-out") for title in titles)
+        assert any("% of training" in title for title in titles)
+
+
+class TestHowOftenARunIsEvaluated:
+    """rl_config names how many evaluations a run gets, and the interval is
+    derived from it - it used to be a raw callback count (eval_freq: 5),
+    which meant an evaluation every five steps whatever the budget, and
+    2.4x the wall clock of the run."""
+
+    def test_the_interval_comes_from_the_budget(self, task, config, ppo):
+        from rl.utils import calculate_eval_freq
+
+        _, _, _, callback, vec_env = train_on_subtasks(task.subtasks, rl_config=config,
+                                                       PPO_config=ppo)
+        assert callback.eval_freq == calculate_eval_freq(
+            vec_env.num_envs, config["total_steps"], config["evaluations"])
+
+    def test_a_bigger_budget_evaluates_as_many_times_not_more(self, task, config, ppo):
+        counts = []
+        for steps in (96, 192):
+            _, _, _, callback, _ = train_on_subtasks(
+                task.subtasks, rl_config={**config, "total_steps": steps}, PPO_config=ppo)
+            counts.append(len(callback.episode_accs))
+        assert counts[0] == counts[1] == config["evaluations"]
+
+    def test_the_config_says_evaluations_not_eval_freq(self):
+        from data.configs.rl_configs import rl_config
+
+        assert "evaluations" in rl_config and "eval_freq" not in rl_config
+
+
 class TestExamplesOfDifferentSizes:
     """Half the shape-preserving training split shows the rule at several
     grid sizes, and one agent cannot span those while the observation
@@ -396,16 +469,20 @@ class TestTheAddressingReachesTheEnvsTrainingBuilds:
     def test_create_vec_env_passes_it_down(self, task, config):
         from rl.training import create_vec_env
 
-        for addressing, element in (("anchors", "anchors_emb"),
-                                    ("objects", "objects_emb")):
+        shape = task.subtasks[0].train_inp.shape
+        for addressing, element, coordinate_shape, width in (
+                ("coordinates", "delta_input", shape, 5),
+                ("objects", "objects_emb", None, 3)):
             vec_env = create_vec_env(
                 [task.subtasks[0]], n_envs=1,
                 max_episode_len=4, feasible_actions={0: "submit", 1: "red_fill"},
                 observation_space_elements=[element], max_objects=8,
-                repr_level=1, input_pattern="start", addressing=addressing)
+                repr_level=1, input_pattern="start", addressing=addressing,
+                coordinate_shape=coordinate_shape)
             try:
                 assert all(env.unwrapped.addressing == addressing
                            for env in vec_env.envs)
+                assert len(vec_env.action_space.nvec) == width
             finally:
                 vec_env.close()
 
@@ -421,6 +498,7 @@ class TestTheAddressingReachesTheEnvsTrainingBuilds:
         for function in (train_on_subtasks, evaluate_on_subtask):
             source = inspect.getsource(function)
             assert "addressing=rl_config" in source, function.__name__
+            assert "coordinate_shape=rl_config" in source, function.__name__
 
     def test_every_env_building_helper_accepts_it(self):
         """create_env, create_ARC_env and create_vec_env are three doors to
@@ -431,5 +509,6 @@ class TestTheAddressingReachesTheEnvsTrainingBuilds:
         from rl.training import create_ARC_env, create_vec_env
 
         for function in (create_env, create_ARC_env, create_vec_env):
-            assert "addressing" in inspect.signature(function).parameters, \
-                function.__name__
+            for name in ("addressing", "coordinate_shape"):
+                assert name in inspect.signature(function).parameters, \
+                    (function.__name__, name)

@@ -3,7 +3,6 @@ import gymnasium
 from gymnasium import spaces
 from copy import copy, deepcopy
 from rl.utils import repad
-from rl.anchors import ANCHOR_DIM, anchor_embeddings, anchor_points
 from rl.arc_world import World
 from symbolic.utils import pad_grid
 from symbolic.objects_analysis import OBJECT_DIM
@@ -95,15 +94,33 @@ class ARCGridWorld(gymnasium.Env):
                 observation_grid_shape=None,
                 action_whitelist=None,
                 addressing="objects",
+                coordinate_shape=None,
                 ):
-        #: What a slot index names. "objects" is a connected component at
-        #: repr_level; "anchors" is a point a rectangle's corner can sit on
-        #: (see rl.anchors). Chosen once, at construction, and never per
-        #: transform: a slot whose meaning depended on which action was
-        #: taken would be the same overloading in a smaller place.
-        if addressing not in ("objects", "anchors"):
+        #: What the action names, fixed at construction and never per
+        #: transform. "objects": (transform, object, object), each object a
+        #: connected component at repr_level. "coordinates": (transform, i1,
+        #: j1, i2, j2), two cells of the grid named by row and column - the
+        #: action space the coordinate vocabulary (fill, line, triangle)
+        #: lives in, where there are no objects to name.
+        if addressing not in ("objects", "coordinates"):
             raise ValueError(f"unknown addressing: {addressing}")
+        if addressing == "coordinates":
+            if coordinate_shape is None:
+                raise ValueError(
+                    "addressing='coordinates' needs coordinate_shape: the "
+                    "action space is sized by it, and it has to be the same "
+                    "for every subtask one agent trains across")
+            if action_whitelist is not None:
+                raise ValueError(
+                    "action_whitelist lists (transform, object, object) "
+                    "triples and has no meaning under coordinate addressing")
         self.addressing = addressing
+        #: (rows, cols) the coordinate dimensions of the action space span.
+        #: The largest grid any subtask of the task works on, so one action
+        #: space fits all of them; a coordinate past the grid in hand names
+        #: no cell and is scored like any other action that changes nothing.
+        self.coordinate_shape = (tuple(int(v) for v in coordinate_shape)
+                                 if coordinate_shape is not None else None)
         self.max_objects = max_objects
         self.step_no = 0
         self.right_placement_reward = right_placement_reward
@@ -204,15 +221,23 @@ class ARCGridWorld(gymnasium.Env):
         self.action_whitelist = ([tuple(int(i) for i in triple)
                                   for triple in action_whitelist]
                                  if action_whitelist is not None else None)
-        # Sized by max_objects rather than by the subtask, and so identical
-        # for every subtask - set_subtask only fills in the action count.
-        self.action_space = spaces.MultiDiscrete(
-            [len(self.action_whitelist), 1, 1] if self.action_whitelist
-            else [
+        # Sized by max_objects - or by coordinate_shape - rather than by the
+        # subtask, and so identical for every subtask one agent trains on.
+        if self.addressing == "coordinates":
+            rows, cols = self.coordinate_shape
+            self.action_space = spaces.MultiDiscrete([
                 len(self.actions_dict),  # Action types
-                self.max_objects,        # Object 1 index
-                self.max_objects,        # Object 2 index
+                rows, cols,              # First cell
+                rows, cols,              # Second cell
             ])
+        else:
+            self.action_space = spaces.MultiDiscrete(
+                [len(self.action_whitelist), 1, 1] if self.action_whitelist
+                else [
+                    len(self.actions_dict),  # Action types
+                    self.max_objects,        # Object 1 index
+                    self.max_objects,        # Object 2 index
+                ])
         # Initialize observation space
         self.observation_space = {
             'grid': spaces.Box(low=self.low_val, high=self.max_val, shape=(30, 30), dtype=self.grid_dtype),
@@ -368,15 +393,6 @@ class ARCGridWorld(gymnasium.Env):
         # The action space stays as __init__ built it: sized by max_objects,
         # the same for every subtask. Indices past this subtask's object
         # count address nothing and are handled in step().
-        #: The points slots name, when they name points. Taken from the
-        #: input grid and fixed for the episode: recomputing them as the
-        #: agent paints would move every slot under the policy mid-episode,
-        #: so slot 7 would mean one place on one step and another on the
-        #: next. Their embeddings are rebuilt per step, so the colour a
-        #: point carries is the live one - the addressing is fixed, what is
-        #: under it is not.
-        if self.addressing == "anchors":
-            self.anchor_points = anchor_points(self.initial_grid_summary.grid)
         if "objects_emb" in self.observation_space_elements:
             self.initial_objects_emb = self._pad_objects(
                 [obj.create_embedding() for obj in self.initial_objects])
@@ -396,40 +412,48 @@ class ARCGridWorld(gymnasium.Env):
         know where the real objects stop - the slots past this point are all
         the same no-op, and there are (max_objects/n)^2 of them.
 
-        Under anchor addressing it counts points instead, which are fixed
-        for the episode - so this is the one number that tells a caller how
-        much of the slot space names anything, whichever the slots are.
+        Object addressing only: under coordinates an action names cells, and
+        which of them exist is names_nothing's question.
         """
-        if self.addressing == "anchors":
-            return min(len(self.anchor_points), self.max_objects)
         return min(len(self.objects) or len(self.initial_objects), self.max_objects)
 
-    def apply_slots(self, add, transform, action, grid, objects):
-        """The grid after this action, whichever the slots name.
+    def names_nothing(self, action, grid, objects) -> bool:
+        """Whether this action's indices address nothing at all.
 
-        The one place slot indices are resolved, so step() and
-        simulate_action() cannot come to disagree about what a slot is -
-        they already disagreed once about how many of them are visible, and
-        a search that values an action the real env does not is the kind of
+        The action space is sized for the largest subtask, so an index can
+        point past what the one in hand holds: a slot no object occupies, or
+        a row or column past the grid's edge. Either way it is an action
+        that does nothing, scored like any other ineffective one - not an
+        error, and not silently redirected somewhere else, which would teach
+        the policy that a wrong index still works.
+
+        One function for step() and simulate_action() both, which used to
+        count the visible slots separately and did not always agree.
+        """
+        if self.addressing == "coordinates":
+            rows, cols = np.asarray(grid).shape
+            return not (int(action[1]) < rows and int(action[3]) < rows
+                        and int(action[2]) < cols and int(action[4]) < cols)
+        visible = min(len(objects), self.max_objects)
+        return int(action[1]) >= visible or int(action[2]) >= visible
+
+    def apply_slots(self, add, transform, action, grid, objects):
+        """The grid after this action, whatever its indices name.
+
+        The one place an action's indices are resolved, so step() and
+        simulate_action() cannot come to disagree about what they mean - a
+        search that values an action the real env does not is the kind of
         bug that shows up as a bad policy rather than as a crash.
         """
-        if self.addressing == "anchors":
+        if self.addressing == "coordinates":
+            first = (int(action[1]), int(action[2]))
+            second = (int(action[3]), int(action[4]))
             return self.world.apply_coordinate_transform(
-                add, transform, self.anchor_points[int(action[1])],
-                self.anchor_points[int(action[2])], grid)
+                add, transform, first, second, grid)
         return self.world.step(
             add, transform, objects[int(action[1])], objects[int(action[2])],
             grid, objects,
             self.initial_grid_summary.repr_levels[self.repr_level].cell2obj)
-
-    def slot_embeddings(self, grid) -> np.ndarray:
-        """The per-slot block an anchor-addressed observation carries,
-        padded to max_objects. Rebuilt from `grid`, so the colour each
-        point reports is the current one."""
-        block = anchor_embeddings(grid, self.anchor_points[:self.max_objects])
-        padded = np.zeros((self.max_objects, ANCHOR_DIM), dtype=EMBEDDING_DTYPE)
-        padded[:len(block)] = block
-        return padded
 
     def _pad_objects(self, embeddings) -> np.ndarray:
         """(max_objects, OBJECT_DIM), zero-padded. A real object's embedding
@@ -490,10 +514,12 @@ class ARCGridWorld(gymnasium.Env):
             # describe.
             self.observation_space['grid_shape'] = spaces.Box(
                 low=1, high=max(self.obs_grid_shape), shape=(2,), dtype=np.int64)
-        # Flat, matching np.array(self.action_space.nvec) - the three entries
-        # are action count, object slots, object slots. Bounded by 900
-        # because a 30x30 grid cannot hold more objects than cells.
-        self.observation_space['action_space'] = spaces.Box(low=0, high=900, shape=(3,), dtype=np.int64)
+        # Flat, matching np.array(self.action_space.nvec): action count and
+        # two object slots, or action count and the rows and columns of two
+        # cells. Bounded by 900 because a 30x30 grid cannot hold more objects
+        # than cells.
+        self.observation_space['action_space'] = spaces.Box(
+            low=0, high=900, shape=(len(self.action_space.nvec),), dtype=np.int64)
         if shows_input(self.input_pattern):
             self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val,
                 shape=self.obs_grid_shape or (shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
@@ -537,14 +563,6 @@ class ARCGridWorld(gymnasium.Env):
             # normalised into [0, 1], and zero rows are padding.
             self.observation_space['objects_emb'] = spaces.Box(
                 low=0, high=1, shape=(self.max_objects, OBJECT_DIM), dtype=EMBEDDING_DTYPE)
-        if "anchors_emb" in self.observation_space_elements:
-            # Its own key and its own width, not objects_emb with a
-            # different meaning: a consumer reading one and getting the
-            # other would find every field where it expected another.
-            # Bounded by [0, 1] because ANCHOR_SCHEMA is a normalised
-            # position, a one-hot and eight flags.
-            self.observation_space['anchors_emb'] = spaces.Box(
-                low=0, high=1, shape=(self.max_objects, ANCHOR_DIM), dtype=EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
             # One row per object slot, holding its vector against each of the
             # others - see GridSummary.get_relation_embeddings_as_numpy, which
@@ -654,8 +672,6 @@ class ARCGridWorld(gymnasium.Env):
         self._add_deltas(obs)
         if "objects_emb" in self.observation_space_elements:
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
-        if "anchors_emb" in self.observation_space_elements:
-            obs['anchors_emb'] = self.slot_embeddings(self.grid)
         if "relations_emb" in self.observation_space_elements:
             obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
         truncated = False
@@ -692,8 +708,6 @@ class ARCGridWorld(gymnasium.Env):
         if "objects_emb" in self.observation_space_elements:
             self.objects_emb = self.initial_objects_emb.copy()
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
-        if "anchors_emb" in self.observation_space_elements:
-            obs['anchors_emb'] = self.slot_embeddings(self.grid)
         if "relations_emb" in self.observation_space_elements:
             self.relations_emb = self.initial_relation_emb.copy()
             obs['relations_emb'] = self.relations_emb.copy().astype(EMBEDDING_DTYPE)
@@ -730,8 +744,7 @@ class ARCGridWorld(gymnasium.Env):
         # that does nothing, scored like any other ineffective one - not an
         # error, and not silently redirected to some other object, which
         # would teach the policy that a wrong index still works.
-        visible = self.visible_object_count()
-        if action[1] >= visible or action[2] >= visible:
+        if self.names_nothing(action, self.grid, self.objects):
             new_grid = self.grid
             eq_check = True
         else:
@@ -761,10 +774,11 @@ class ARCGridWorld(gymnasium.Env):
             # is one the policy sees two different things in.
             self.objects_emb = self._pad_objects([obj.create_embedding() for obj in self.objects])
             obs['objects_emb'] = self.objects_emb.copy()
-        if "anchors_emb" in self.observation_space_elements:
-            obs['anchors_emb'] = self.slot_embeddings(new_grid)
         if "relations_emb" in self.observation_space_elements:
-            for obj_idx in list(set([action[1], action[2]])): # update involved objects relation embeddings
+            # Only the objects the action named, and only the ones that
+            # exist: an index past them named nothing and moved nothing.
+            visible = self.visible_object_count()
+            for obj_idx in list(set([action[1], action[2]])):
                 if obj_idx < visible:
                     self.grid_summary.update_representation_level(self.repr_level, self.objects[obj_idx])
             self.relations_emb = self._pad_relations(
@@ -824,14 +838,11 @@ class ARCGridWorld(gymnasium.Env):
             return grid, objects, max_int, self._submit_reward(max_int), True
 
         add, transform = self.world.parse_action(action)
-        # An index can name a slot no object occupies - the action space has
-        # max_objects of them whatever the subtask holds. Scored exactly as
-        # step() scores it, or a simulated rollout would value an action the
-        # real env does not.
-        visible = (min(len(self.anchor_points), self.max_objects)
-                   if self.addressing == "anchors"
-                   else min(len(objects), self.max_objects))
-        if action[1] >= visible or action[2] >= visible:
+        # An index can name a slot no object occupies, or a cell past the
+        # grid in hand - the action space is sized for the largest subtask.
+        # Scored exactly as step() scores it, or a simulated rollout would
+        # value an action the real env does not.
+        if self.names_nothing(action, grid, objects):
             new_grid, eq_check = grid, True
         else:
             new_grid = self.apply_slots(add, transform, action, grid, objects)
@@ -916,6 +927,7 @@ def create_env(
                 pad_val=10, reward_approach=1, repr_level=1, observation_space_elements = ["objects_emb", "relations_emb"],
                 feasible_actions={0:"submit"}, observation_grid_shape=None,
                 max_objects=MAX_OBJECTS, action_whitelist=None, addressing="objects",
+                coordinate_shape=None,
                ):
     env = ARCGridWorld(
         max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
@@ -925,6 +937,7 @@ def create_env(
         feasible_actions=feasible_actions,observation_space_elements=observation_space_elements,
         observation_grid_shape=observation_grid_shape, max_objects=max_objects,
         action_whitelist=action_whitelist, addressing=addressing,
+        coordinate_shape=coordinate_shape,
         )
     return env
 

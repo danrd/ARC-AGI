@@ -224,7 +224,7 @@ def test_one_trial_runs_end_to_end():
                   for i, pair in enumerate(entry["train"])],
         test_inp=np.array(entry["test"][0]["input"]),
         test_out=np.array(solutions[label][0]))
-    config = dict(rl_config, total_steps=2000, eval_freq=20_000, seed=42,
+    config = dict(rl_config, total_steps=2000, evaluations=1, seed=42,
                   feasible_actions={0: "submit", 1: "gravity"})
 
     score = arc_objective(optuna.create_study().ask(), task, config)

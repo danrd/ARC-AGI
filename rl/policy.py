@@ -75,8 +75,19 @@ class ARCCustomNetwork(nn.Module):
         feature_dim_vf: Optional[int] = None,
         pointer_slots: Optional[int] = None,
         pointer_dim: Optional[int] = None,
+        coordinate_shape: Optional[Tuple[int, int]] = None,
+        coordinate_dim: Optional[int] = None,
     ):
         super().__init__()
+        #: Under coordinate addressing the features end in one embedding per
+        #: row and one per column of the grid (see ARCCombinedExtractor's
+        #: coordinate_rows), and the four coordinate heads score those
+        #: rather than reading a fixed Linear over the shared latent.
+        self.coordinate_shape = (tuple(coordinate_shape)
+                                 if coordinate_shape is not None else None)
+        self.coordinate_dim = coordinate_dim
+        self.coordinate_width = (0 if coordinate_shape is None
+                                 else sum(coordinate_shape) * (coordinate_dim + 1))
         #: When the features carry per-object rows (see
         #: ARCCombinedExtractor.pointer_tail), the object heads score each
         #: slot from its own row. Without them they stay as they were.
@@ -101,8 +112,8 @@ class ARCCustomNetwork(nn.Module):
         # moved every logit rather than swapping two of them. The value is a
         # property of the state and not of the ordering either, so the
         # critic drops it as well.
-        feature_dim = feature_dim - self.pointer_width
-        feature_dim_vf = feature_dim_vf - self.pointer_width
+        feature_dim = feature_dim - self.pointer_width - self.coordinate_width
+        feature_dim_vf = feature_dim_vf - self.pointer_width - self.coordinate_width
 
         # Get network architecture
         policy = net_arch['pi']
@@ -165,6 +176,26 @@ class ARCCustomNetwork(nn.Module):
                         "many objects there are")
                 self.policy_nets.append(
                     PointerHead(self.latent_dim_pi, self.pointer_dim))
+        elif action_heads == 5 and self.coordinate_shape is not None:
+            # (action, i1, j1, i2, j2): the action from the shared latent,
+            # and each coordinate by scoring the rows - or the columns - of
+            # the grid from their own embeddings. Four heads, not two
+            # shared: the first cell and the second play different parts
+            # (a triangle's right angle sits on the first's row), and one
+            # head for both would have to score a row the same way for each.
+            if self.n_action_dims != 5:
+                raise ValueError(
+                    f"coordinate heads need the five-dimensional action space "
+                    f"(action, i1, j1, i2, j2); this one has {self.n_action_dims}")
+            rows, cols = self.coordinate_shape
+            if list(action_dims[1:]) != [rows, cols, rows, cols]:
+                raise ValueError(
+                    f"the action space spans {list(action_dims[1:])} and the "
+                    f"observed grid is {rows}x{cols}: the coordinate heads "
+                    "score the grid's rows and columns, so the two must agree")
+            self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
+            for _ in range(4):
+                self.policy_nets.append(PointerHead(self.latent_dim_pi, coordinate_dim))
         elif action_heads == 5:
             # Separate head for each dimension
             for dim in action_dims:
@@ -189,19 +220,43 @@ class ARCCustomNetwork(nn.Module):
         if self.pointer_slots is None:
             return None, None
         width = self.pointer_dim + 1
-        tail = features[:, -self.pointer_slots * width:]
+        end = features.shape[1] - self.coordinate_width
+        tail = features[:, end - self.pointer_slots * width:end]
         tail = tail.view(-1, self.pointer_slots, width)
         return tail[..., :-1], tail[..., -1]
 
+    def split_coordinate_tail(self, features: torch.Tensor):
+        """(rows, row_mask, cols, col_mask) off the very end of the
+        feature vector, or None - the layout CoordinateRows.tail writes."""
+        if self.coordinate_shape is None:
+            return None
+        rows, cols = self.coordinate_shape
+        width = self.coordinate_dim + 1
+        tail = features[:, features.shape[1] - self.coordinate_width:]
+        row_block = tail[:, :rows * width].view(-1, rows, width)
+        col_block = tail[:, rows * width:].view(-1, cols, width)
+        return (row_block[..., :-1], row_block[..., -1],
+                col_block[..., :-1], col_block[..., -1])
+
     def without_pointer_tail(self, features: torch.Tensor) -> torch.Tensor:
         """The features the shared and value networks read - everything the
-        pointer tail is not."""
-        if not self.pointer_width:
+        object and coordinate tails are not."""
+        cut = self.pointer_width + self.coordinate_width
+        if not cut:
             return features
-        return features[:, :-self.pointer_width]
+        return features[:, :-cut]
 
     def forward_actor(self, features: torch.Tensor) -> List[torch.Tensor]:
         shared_features = self.shared_net(self.without_pointer_tail(features))
+        coordinates = self.split_coordinate_tail(features)
+        if coordinates is not None:
+            rows, row_mask, cols, col_mask = coordinates
+            action_head, *cell_heads = self.policy_nets
+            # i1 and i2 score rows, j1 and j2 columns.
+            grids = [(rows, row_mask), (cols, col_mask)] * 2
+            return [action_head(shared_features)] + [
+                head(shared_features, embeddings, mask)
+                for head, (embeddings, mask) in zip(cell_heads, grids)]
         rows, mask = self.split_pointer_tail(features)
         return [net(shared_features, rows, mask)
                 if isinstance(net, PointerHead) else net(shared_features)
@@ -294,7 +349,17 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             # different objects built over different observations.
             pointer_slots=getattr(self._actor_extractor(), "pointer_slots", None),
             pointer_dim=getattr(self._actor_extractor(), "pointer_dim", None),
+            coordinate_shape=self._coordinate_shape(),
+            coordinate_dim=self._coordinate_dim(),
         )
+
+    def _coordinate_shape(self):
+        rows = getattr(self._actor_extractor(), "coordinate_rows", None)
+        return None if rows is None else (rows.rows, rows.cols)
+
+    def _coordinate_dim(self):
+        rows = getattr(self._actor_extractor(), "coordinate_rows", None)
+        return None if rows is None else rows.dim
 
     def _actor_extractor(self):
         return (self.pi_features_extractor if self.critic_only_keys

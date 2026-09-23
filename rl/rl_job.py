@@ -15,6 +15,8 @@ import multiprocessing as mp
 import queue
 from typing import Any, Callable, Dict, Optional
 
+import numpy as np
+
 
 def _rl_worker_entrypoint(worker_fn: Callable[[Any], Dict[str, Any]], task: Any,
                            result_queue: "mp.Queue") -> None:
@@ -162,25 +164,35 @@ def observation_shape(task: Any):
             max(shape[1] for shape in shapes))
 
 
-def slot_elements(elements, addressing: str) -> list:
+#: What the observation of a coordinate-addressed env carries besides the
+#: grid. delta_input is what the agent has painted so far, legal at
+#: inference; delta_target is what is still wrong - the answer, which only
+#: the critic may read (ARCCustomActorCriticPolicy.critic_only_keys, and
+#: rl.training.answer_keys enforces it whatever the config says).
+COORDINATE_OBSERVATION = ("delta_input", "delta_target")
+
+#: The observation keys that describe objects, and so mean nothing where
+#: there are no objects to describe.
+OBJECT_KEYS = ("objects_emb", "relations_emb")
+
+
+def observation_for(elements, addressing: str) -> list:
     """The observation keys that go with this addressing.
 
-    The slot block has to follow the slots. An anchor-addressed env holds
-    no objects, so objects_emb would be a block of padding and
-    relations_emb a block of padding squared - and the relation block is
-    sized by max_objects, which for anchors runs to 900.
-
-    Everything that is not a slot block - deltas, the target, the input
-    plane - is left exactly as the caller asked for it.
+    Object addressing keeps what the caller asked for. Coordinate
+    addressing drops the object blocks - no action names an object, and the
+    coordinate heads read rows and columns of the grid instead - and adds
+    the two deltas, which are what makes a row or a column worth choosing.
+    Everything else the caller asked for is left as it is.
     """
-    slot_keys = {"objects_emb", "relations_emb", "anchors_emb"}
-    kept = [key for key in elements if key not in slot_keys]
-    return kept + (["anchors_emb"] if addressing == "anchors"
-                   else [key for key in elements if key in slot_keys])
+    if addressing != "coordinates":
+        return list(elements)
+    kept = [key for key in elements if key not in OBJECT_KEYS]
+    return kept + [key for key in COORDINATE_OBSERVATION if key not in kept]
 
 
 def addressing_for(agent) -> str:
-    """Which kind of slot this task's actions address.
+    """What this task's actions address: 'objects' or 'coordinates'.
 
     Read off the agent's label rather than off the task, because the label
     already says what kind of change the task makes and the two
@@ -193,23 +205,24 @@ def addressing_for(agent) -> str:
     return AGENT2ADDRESSING.get(agent, "objects")
 
 
-def slots_for_addressing(task: Any, addressing: str, repr_level: int) -> int:
-    """How many slots this task needs, whichever the slots are.
+def coordinate_shape(task: Any):
+    """(rows, cols) the coordinate dimensions of the action space span.
 
-    Objects are counted by GridSummary; anchors by rl.anchors, which is a
-    property of the grid's shape and content and has nothing to do with a
-    representation level.
+    The largest grid any subtask works on. The working grid is the input
+    padded out to the output's size where the output is larger (see
+    ARCGridWorld.initialize_observation_space), so both shapes of every
+    pair count - and the held-out pair's, since one agent is scored on it
+    too. One action space has to serve all of them; a cell past the grid in
+    hand names nothing and is scored as an action that changes nothing.
     """
-    if addressing != "anchors":
-        return object_slots(task, repr_level)
-
-    from rl.anchors import anchor_points
-
-    grids = [subtask.train_inp for subtask in task.subtasks]
-    test_subtask = getattr(task, "test_subtask", None)
-    if test_subtask is not None:
-        grids.append(test_subtask.train_inp)
-    return max(2, max(len(anchor_points(grid)) for grid in grids))
+    shapes = []
+    for subtask in list(task.subtasks) + [getattr(task, "test_subtask", None)]:
+        if subtask is None:
+            continue
+        shapes.append(np.asarray(subtask.train_inp).shape)
+        if getattr(subtask, "train_out", None) is not None:
+            shapes.append(np.asarray(subtask.train_out).shape)
+    return (max(shape[0] for shape in shapes), max(shape[1] for shape in shapes))
 
 
 def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
@@ -240,16 +253,29 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     around 16) against the minutes a training run takes, and
     SearchSettings.timeout bounds the tail.
     """
-    from rl.search_hints import SearchSettings, feasible_from_search
+    from rl.search_hints import (SearchSettings, coordinate_vocabulary,
+                                 feasible_from_search, output_colours)
 
     agent = getattr(task, "agent", None)
     narrowed = dict(rl_config)
     narrowed["addressing"] = addressing_for(agent)
-    narrowed["observation_space_elements"] = slot_elements(
+    narrowed["observation_space_elements"] = observation_for(
         rl_config.get("observation_space_elements") or [],
         narrowed["addressing"])
-    narrowed["max_objects"] = slots_for_addressing(
-        task, narrowed["addressing"], rl_config.get("repr_level", 1))
+    if narrowed["addressing"] == "coordinates":
+        # No search: the object search's findings are object actions, and
+        # none of them belongs to this vocabulary. What a coordinate agent
+        # can paint is every coordinate transform in every colour the
+        # outputs use - a handful of names, which is small already.
+        narrowed["feasible_actions"] = coordinate_vocabulary(
+            output_colours(*[subtask.train_out for subtask in task.subtasks]))
+        narrowed["coordinate_shape"] = coordinate_shape(task)
+        # Always padded to it, even when every grid is one size: the
+        # coordinate heads score the rows and columns of the observed grid,
+        # and those have to line up with the action space's.
+        narrowed["observation_grid_shape"] = narrowed["coordinate_shape"]
+        return narrowed
+    narrowed["max_objects"] = object_slots(task, rl_config.get("repr_level", 1))
     narrowed["observation_grid_shape"] = observation_shape(task)
     try:
         narrowed["feasible_actions"] = feasible_from_search(

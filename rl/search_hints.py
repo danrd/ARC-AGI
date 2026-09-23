@@ -38,6 +38,7 @@ import numpy as np
 import rl.mcts as mcts
 from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS, ALL_DIRECTIONS,
                                       COLOR_DEPENDENT_ACTIONS, COLORS_MAPPING,
+                                      COORDINATE_ACTIONS,
                                       DIRECTION_DEPENDENT_ACTIONS,
                                       DOUBLE_COLOR_DEPENDENT_ACTIONS,
                                       TRANSFORM_DESCRIPTIONS,
@@ -151,6 +152,24 @@ def output_colours(*grids):
     digits = sorted({int(value) for grid in grids
                      for value in np.asarray(grid).ravel()})
     return tuple(COLORS_MAPPING[d] for d in digits if d in COLORS_MAPPING)
+
+
+def coordinate_vocabulary(colours):
+    """The action names a coordinate-addressed env is configured with.
+
+    Each coordinate transform once per colour the task's outputs use - and
+    nothing else, because the object vocabulary is not the other half of
+    this one: an env addressing cells has no objects to hand an object
+    transform. No direction decorates them either; the two cells an action
+    names are where it goes.
+    """
+    names = []
+    for base in COORDINATE_ACTIONS:
+        generated = define_feasible_actions(
+            [base], list(colours), [], COLOR_DEPENDENT_ACTIONS,
+            DOUBLE_COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS)
+        names.extend(n for n in generated.values() if n != "submit")
+    return {0: "submit", **{i + 1: n for i, n in enumerate(names)}}
 
 
 def build_vocabulary(colours, directions):

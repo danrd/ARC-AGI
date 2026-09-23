@@ -948,191 +948,205 @@ class TestRotatingAnObjectWhoseStructureLostAnIndex:
         assert sorted(obj.coords) == sorted(coords)
 
 
-class TestFillPaintsTheRectangleTwoSlotsSpan:
-    """The one transform addressed by position rather than by what is drawn.
-
-    Every other action moves or recolours an object the grid already holds,
-    so the only cells it can reach are cells something is drawn on.
-    Measured over the 262 shape-preserving training tasks, 191 of them need
-    a cell the input leaves background painted.
+class TestTheCoordinateVocabulary:
+    """fill, line and triangle take two cells, not two objects, and are
+    dispatched by World.apply_coordinate_transform. Every other action
+    moves or recolours an object the grid already holds; these are the only
+    ones that reach a cell nothing is drawn on - which 191 of the 262
+    shape-preserving training tasks need.
     """
 
     @staticmethod
-    def _env(grid, out, actions):
-        from rl.arc_env import ARCGridWorld
-        from rl.arc_task import ARCSubtask
+    def _paint(transform, first, second, colour=3, shape=(7, 7)):
+        from rl.arc_world import World
 
-        env = ARCGridWorld(max_episode_len=5, feasible_actions=actions,
-                           reward_approach=2, repr_level=1, input_pattern="start",
-                           observation_space_elements=["objects_emb"], max_objects=4)
-        env.set_subtask(ARCSubtask("fill_case", grid, out))
-        env.reset()
-        return env
+        world = World(objects=[], actions_dict={0: "submit"})
+        return world.apply_coordinate_transform(
+            colour, transform, first, second, np.zeros(shape, dtype=int))
 
     @staticmethod
-    def _two_cells():
-        grid = np.zeros((6, 6), dtype=int)
-        grid[1, 1], grid[4, 4] = 1, 2
-        return grid
+    def _cells(grid):
+        return {tuple(cell) for cell in np.argwhere(grid != 0)}
 
-    def test_it_paints_every_cell_between_the_two_slots(self):
-        grid = self._two_cells()
-        out = grid.copy()
-        out[1:5, 1:5] = 3
-        env = self._env(grid, out, {0: "submit", 1: "green_fill"})
-        env.step(np.array([1, 0, 1]))
-        assert np.array_equal(env.grid, out)
+    # fill
 
-    def test_it_reaches_a_cell_no_object_occupies(self):
-        """The whole point: (2, 2) is background in the input, so no object
-        names it and nothing else in the vocabulary can paint it."""
-        grid = self._two_cells()
-        env = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
-        assert env.grid[2, 2] == 0
-        env.step(np.array([1, 0, 1]))
-        assert env.grid[2, 2] == 3
+    def test_fill_paints_the_box_two_cells_span(self):
+        painted = self._paint("fill", (1, 2), (3, 5))
+        assert self._cells(painted) == {(i, j) for i in range(1, 4) for j in range(2, 6)}
 
-    def test_one_slot_named_twice_is_that_objects_own_box(self):
-        """Both slots naming the same object is the degenerate rectangle -
-        a single cell when the object is one, which is the per-cell paint
-        this action subsumes."""
-        grid = self._two_cells()
-        env = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
-        env.step(np.array([1, 0, 0]))
-        painted = np.argwhere(env.grid == 3)
-        assert len(painted) == 1
-        assert tuple(painted[0]) == (1, 1)
+    def test_fill_does_not_care_which_corners_or_in_which_order(self):
+        """Eight ways to name one box, one box."""
+        expected = self._paint("fill", (1, 2), (3, 5))
+        for first, second in [((3, 5), (1, 2)), ((1, 5), (3, 2)), ((3, 2), (1, 5))]:
+            assert np.array_equal(self._paint("fill", first, second), expected)
 
-    def test_a_name_without_a_colour_paints_nothing(self):
-        """`add` is -1 for a name with no colour word in front of it, and
-        -1 is not a colour - writing it would put a value on the grid that
-        no ARC task uses."""
-        grid = self._two_cells()
-        env = self._env(grid, grid.copy(), {0: "submit", 1: "fill"})
-        before = env.grid.copy()
-        env.step(np.array([1, 0, 1]))
-        assert np.array_equal(env.grid, before)
+    def test_one_cell_named_twice_is_that_cell(self):
+        assert self._cells(self._paint("fill", (4, 4), (4, 4))) == {(4, 4)}
 
-    def test_the_order_of_the_two_slots_does_not_matter(self):
-        grid = self._two_cells()
-        first = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
-        first.step(np.array([1, 0, 1]))
-        second = self._env(grid, grid.copy(), {0: "submit", 1: "green_fill"})
-        second.step(np.array([1, 1, 0]))
-        assert np.array_equal(first.grid, second.grid)
+    def test_fill_reaches_background(self):
+        """The point of the vocabulary: the box is empty grid."""
+        assert self._paint("fill", (0, 0), (2, 2))[1, 1] == 3
 
-    def test_it_is_dispatched_before_the_one_object_split(self):
-        """Every other branch is written for one object or for two. fill
-        means something in both - one slot twice is a degenerate rectangle -
-        so it sits ahead of the split rather than in either half."""
-        single, pair = _dispatch_names()
-        assert "fill" in single
-        assert "fill" not in pair
+    # line
 
-    def test_the_coordinate_path_answers_to_it_too(self):
-        """An anchor-addressed env never reaches apply_transform: it has no
-        objects to hand it. The same name has to be answered there."""
+    def test_a_line_along_a_row_a_column_and_both_diagonals(self):
+        assert self._cells(self._paint("line", (2, 1), (2, 4))) == {(2, j) for j in range(1, 5)}
+        assert self._cells(self._paint("line", (0, 3), (3, 3))) == {(i, 3) for i in range(4)}
+        assert self._cells(self._paint("line", (1, 1), (4, 4))) == {(k, k) for k in range(1, 5)}
+        assert self._cells(self._paint("line", (4, 0), (1, 3))) == {(4, 0), (3, 1), (2, 2), (1, 3)}
+
+    def test_a_line_is_the_same_from_either_end(self):
+        assert np.array_equal(self._paint("line", (1, 1), (4, 4)),
+                              self._paint("line", (4, 4), (1, 1)))
+
+    def test_any_other_slope_is_not_a_line_and_paints_nothing(self):
+        """A segment at 1:2 would be a staircase, which ARC grids do not
+        draw - so it is an action that changes nothing."""
+        assert not self._paint("line", (0, 0), (2, 4)).any()
+
+    # triangle
+
+    def test_the_right_angle_sits_at_first_row_second_column(self):
+        # (0,0) -> (2,2): hypotenuse on the main diagonal, right angle at (0,2)
+        upper = self._cells(self._paint("triangle", (0, 0), (2, 2)))
+        assert upper == {(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)}
+
+    def test_all_four_corners_are_reachable_by_order_and_diagonal(self):
+        corners = {
+            ((0, 0), (2, 2)): (0, 2),
+            ((2, 2), (0, 0)): (2, 0),
+            ((0, 2), (2, 0)): (0, 0),
+            ((2, 0), (0, 2)): (2, 2),
+        }
+        seen = set()
+        for (first, second), corner in corners.items():
+            cells = self._cells(self._paint("triangle", first, second))
+            assert corner in cells, (first, second)
+            assert len(cells) == 6, (first, second)
+            opposite = (2 - corner[0], 2 - corner[1])
+            assert opposite not in cells, (first, second)
+            seen.add(frozenset(cells))
+        assert len(seen) == 4, "four different triangles"
+
+    def test_the_hypotenuse_belongs_to_the_triangle(self):
+        cells = self._cells(self._paint("triangle", (0, 0), (3, 3)))
+        assert {(k, k) for k in range(4)} <= cells
+
+    def test_a_box_one_row_high_is_the_segment(self):
+        cells = self._cells(self._paint("triangle", (2, 1), (2, 5)))
+        assert cells == {(2, j) for j in range(1, 6)}
+
+    # all three
+
+    @pytest.mark.parametrize("transform", ["fill", "line", "triangle"])
+    def test_a_name_without_a_colour_paints_nothing(self, transform):
+        """add is -1 for a name with no colour word, and -1 is not a colour."""
+        assert not self._paint(transform, (0, 0), (2, 2), colour=-1).any()
+
+    @pytest.mark.parametrize("transform", ["fill", "line", "triangle"])
+    def test_the_callers_grid_is_left_alone(self, transform):
         from rl.arc_world import World
 
-        world = World(objects=[], actions_dict={0: "submit", 1: "red_fill"})
         grid = np.zeros((5, 5), dtype=int)
-        painted = world.apply_coordinate_transform(2, "fill", (1, 1), (3, 3), grid)
-        assert painted[1:4, 1:4].tolist() == [[2, 2, 2]] * 3
-        assert np.array_equal(grid, np.zeros((5, 5), dtype=int)), "the caller's grid moved"
+        World(objects=[], actions_dict={0: "submit"}).apply_coordinate_transform(
+            2, transform, (0, 0), (3, 3), grid)
+        assert not grid.any()
 
-    def test_the_coordinate_path_leaves_a_name_it_does_not_know(self):
-        """Scored as ineffective by the env, exactly as an object transform
-        with nothing to do is - not raised, which a search counts as a
-        dropped run rather than a refused action."""
+    def test_an_unknown_name_is_left_untouched_rather_than_raised(self):
+        """Scored as ineffective by the env, as an object transform with
+        nothing to do is - not raised, which a search counts as a dropped
+        run rather than a refused action."""
+        grid = np.arange(25).reshape(5, 5)
         from rl.arc_world import World
 
-        world = World(objects=[], actions_dict={0: "submit", 1: "rotate90"})
-        grid = np.arange(25).reshape(5, 5)
+        world = World(objects=[], actions_dict={0: "submit"})
         assert np.array_equal(
             world.apply_coordinate_transform(2, "rotate90", (1, 1), (3, 3), grid), grid)
 
-    def test_the_generated_names_carry_a_colour(self):
-        """One name per colour the task offers - COLOURS here, not the ten
-        of the real palette, because the fixture generates over two."""
-        assert {f"{colour}_fill" for colour in COLOURS} <= set(ACTION_NAMES)
-        assert "fill" not in ACTION_NAMES, "a colourless fill would paint nothing"
+    def test_none_of_them_is_in_the_object_dispatch(self):
+        """The two vocabularies do not overlap: an object env has no cells
+        to hand these."""
+        from data.configs.env_configs import COORDINATE_ACTIONS
+
+        single, pair = _dispatch_names()
+        assert not (single | pair) & set(COORDINATE_ACTIONS)
+        assert not {name for name in ACTION_NAMES
+                    if name.split("_", 1)[-1] in COORDINATE_ACTIONS}
 
 
-class TestAnchorsReachWhatObjectBoxesCannot:
-    """fill spans two slots, so what the slots name decides which
-    rectangles exist at all.
+class TestACoordinateAddressedEnv:
+    """ARCGridWorld with addressing='coordinates': (action, i1, j1, i2, j2)."""
 
-    Measured over the 400 training tasks against a greedy single-colour
-    rectangle cover: object bounding-box corners contain both corners of
-    21.7% of the rectangles a cover needs, the boundary-line intersections
-    an anchor-addressed env offers 81.7%.
-    """
+    ACTIONS = {0: "submit", 1: "red_fill", 2: "red_line", 3: "red_triangle"}
 
     @staticmethod
     def _case():
-        """A rectangle whose corners are on boundary lines and on no
-        object's bounding box."""
+        """A rectangle of background to paint: no object can name it."""
         inp = np.zeros((7, 7), dtype=int)
         inp[3, 2], inp[5, 4] = 1, 1
         out = inp.copy()
         out[2:5, 0:3] = 2
         return inp, out
 
-    @staticmethod
-    def _env(addressing, inp, out):
-        from rl.arc_env import ARCGridWorld
-        from rl.arc_task import ARCSubtask
-
-        element = "anchors_emb" if addressing == "anchors" else "objects_emb"
-        env = ARCGridWorld(max_episode_len=5, feasible_actions={0: "submit", 1: "red_fill"},
+    def _env(self, inp, out, shape=(7, 7), elements=("delta_input",)):
+        env = ARCGridWorld(max_episode_len=5, feasible_actions=self.ACTIONS,
                            reward_approach=2, repr_level=1, input_pattern="start",
-                           addressing=addressing,
-                           observation_space_elements=[element], max_objects=64)
-        env.set_subtask(ARCSubtask("anchor_case", inp, out))
+                           addressing="coordinates", coordinate_shape=shape,
+                           observation_space_elements=list(elements))
+        env.set_subtask(ARCSubtask("coordinate_case", inp, out))
         env.reset()
         return env
 
-    @staticmethod
-    def _solvable_in_one(env):
-        """Through simulate_action, which mutates nothing - so the probe
-        does not need a state restore between candidates."""
-        grid, objects, reached = env.grid.copy(), env.objects, int(env.max_int)
-        for first in range(env.visible_object_count()):
-            for second in range(env.visible_object_count()):
-                _g, _o, after, _r, _d = env.simulate_action(
-                    np.array([1, first, second]), objects, grid, reached, None)
-                if after == int(env.target_int):
-                    return True
-        return False
+    def test_the_action_space_is_the_action_and_two_cells(self):
+        env = self._env(*self._case(), shape=(9, 8))
+        assert list(env.action_space.nvec) == [4, 9, 8, 9, 8]
 
-    def test_object_addressing_cannot_express_it(self):
+    def test_one_fill_solves_what_no_object_action_can_name(self):
         inp, out = self._case()
-        env = self._env("objects", inp, out)
-        assert env.visible_object_count() == 2, "two ink cells, two objects"
-        assert not self._solvable_in_one(env)
+        env = self._env(inp, out)
+        env.step(np.array([1, 2, 0, 4, 2]))
+        assert np.array_equal(env.grid, out)
+        assert env.max_int == env.target_int
 
-    def test_anchor_addressing_solves_it_in_one_action(self):
+    def test_a_cell_past_the_grid_names_nothing(self):
+        """The action space is sized for the task's largest grid; on a
+        smaller one a row past the edge is an action that changes nothing,
+        scored as one - not an IndexError."""
         inp, out = self._case()
-        env = self._env("anchors", inp, out)
-        assert env.visible_object_count() > 2
-        assert self._solvable_in_one(env)
+        env = self._env(inp, out, shape=(9, 9))
+        before = env.grid.copy()
+        _obs, reward, *_ = env.step(np.array([1, 0, 0, 8, 8]))
+        assert np.array_equal(env.grid, before)
+        assert reward < 0
 
-    def test_the_two_addressings_carry_different_observation_keys(self):
-        """Not objects_emb with another meaning: a consumer reading one and
-        getting the other finds every field where it expected another."""
-        from rl.anchors import ANCHOR_DIM
-        from symbolic.objects_analysis import OBJECT_DIM
-
+    def test_the_simulator_and_the_env_agree(self):
+        """step() and simulate_action() resolve an action in one place."""
         inp, out = self._case()
-        objects = self._env("objects", inp, out).observation_space.spaces
-        anchors = self._env("anchors", inp, out).observation_space.spaces
-        assert "objects_emb" in objects and "anchors_emb" not in objects
-        assert "anchors_emb" in anchors and "objects_emb" not in anchors
-        assert anchors["anchors_emb"].shape[1] == ANCHOR_DIM
-        assert ANCHOR_DIM != OBJECT_DIM
+        env = self._env(inp, out)
+        for action in ([1, 2, 0, 4, 2], [2, 0, 0, 6, 6], [3, 6, 0, 0, 6], [1, 0, 0, 8, 8]):
+            grid, objects, reached = env.grid.copy(), env.objects, int(env.max_int)
+            simulated, _o, simulated_int, _r, _d = env.simulate_action(
+                np.array(action), objects, grid, reached, None)
+            env_copy = self._env(inp, out, shape=(9, 9) if max(action) > 6 else (7, 7))
+            env_copy.step(np.array(action))
+            assert np.array_equal(simulated, env_copy.grid), action
+
+    def test_it_needs_a_shape(self):
+        with pytest.raises(ValueError):
+            ARCGridWorld(addressing="coordinates")
+
+    def test_a_whitelist_of_object_triples_is_refused(self):
+        with pytest.raises(ValueError):
+            ARCGridWorld(addressing="coordinates", coordinate_shape=(5, 5),
+                         action_whitelist=[(1, 0, 0)])
 
     def test_an_unknown_addressing_is_refused(self):
-        from rl.arc_env import ARCGridWorld
-
         with pytest.raises(ValueError):
-            ARCGridWorld(addressing="cells")
+            ARCGridWorld(addressing="anchors")
+
+    def test_the_observation_carries_no_object_block(self):
+        env = self._env(*self._case(), elements=("delta_input", "delta_target"))
+        spaces = env.observation_space.spaces
+        assert "objects_emb" not in spaces and "relations_emb" not in spaces
+        assert {"grid", "delta_input", "delta_target"} <= set(spaces)
+        assert spaces["action_space"].shape == (5,)

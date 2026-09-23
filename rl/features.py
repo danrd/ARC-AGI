@@ -999,6 +999,88 @@ def default_grid_arch():
     )
 
 
+class CoordinateRows(nn.Module):
+    """One embedding per row of the grid and one per column - what the
+    coordinate heads score when they choose a row or a column.
+
+    The pooled grid encoder answers what the grid holds and, at its 3x3
+    resolution, roughly where; a head choosing among thirty rows needs to
+    know what is in each of them. So every row is read whole - its cells'
+    colours and, when the observation carries them, its cells' deltas - and
+    encoded on its own, with its position, into one vector. Columns the
+    same way. A head then scores each row from its own vector, the way
+    PointerHead scores objects, and "the row where the painting stopped"
+    becomes a score over a field that row carries rather than a weight tied
+    to a row number that means a different place on the next grid.
+
+    Rows past the grid's true size - the observation is padded to the
+    largest grid of the task - are masked, and the heads never pick them.
+    """
+
+    def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64):
+        super().__init__()
+        self.rows, self.cols = rows, cols
+        self.delta_keys = tuple(delta_keys)
+        channels = 10 + len(self.delta_keys)
+        self.row_encoder = nn.Sequential(
+            nn.Linear(cols * channels + 1, hidden), nn.ReLU(), nn.Linear(hidden, dim))
+        self.col_encoder = nn.Sequential(
+            nn.Linear(rows * channels + 1, hidden), nn.ReLU(), nn.Linear(hidden, dim))
+        self.dim = dim
+
+    def planes(self, observation):
+        """(batch, channels, rows, cols): ten colour planes and one per
+        delta, zero wherever the observation is padding."""
+        grid = observation["grid"].to(torch.int64)
+        # The padding value is not a colour: one class past the ten and
+        # then dropped, so a padded cell is all zeros.
+        colours = torch.nn.functional.one_hot(grid.clamp(0, 10), num_classes=11)[..., :10]
+        stacked = [colours.permute(0, 3, 1, 2).float()]
+        for key in self.delta_keys:
+            stacked.append(observation[key].float().unsqueeze(1))
+        return torch.cat(stacked, dim=1)
+
+    def masks(self, observation):
+        """(batch, rows), (batch, cols): which rows and columns are grid."""
+        batch = observation["grid"].shape[0]
+        device = observation["grid"].device
+        shape = observation.get("grid_shape")
+        if shape is None:
+            return (torch.ones(batch, self.rows, device=device),
+                    torch.ones(batch, self.cols, device=device))
+        shape = shape.to(torch.int64)
+        rows = torch.arange(self.rows, device=device).unsqueeze(0) < shape[:, :1]
+        cols = torch.arange(self.cols, device=device).unsqueeze(0) < shape[:, 1:2]
+        return rows.float(), cols.float()
+
+    def forward(self, observation):
+        """(row_embeddings, row_mask, col_embeddings, col_mask)."""
+        planes = self.planes(observation)
+        batch = planes.shape[0]
+        row_mask, col_mask = self.masks(observation)
+        where_row = torch.linspace(0, 1, self.rows, device=planes.device)
+        where_col = torch.linspace(0, 1, self.cols, device=planes.device)
+        rows = planes.permute(0, 2, 1, 3).reshape(batch, self.rows, -1)
+        rows = torch.cat([rows, where_row.view(1, -1, 1).expand(batch, -1, 1)], dim=2)
+        cols = planes.permute(0, 3, 1, 2).reshape(batch, self.cols, -1)
+        cols = torch.cat([cols, where_col.view(1, -1, 1).expand(batch, -1, 1)], dim=2)
+        return (self.row_encoder(rows), row_mask,
+                self.col_encoder(cols), col_mask)
+
+    @property
+    def width(self) -> int:
+        """How much of the feature vector the rows and columns take."""
+        return (self.rows + self.cols) * (self.dim + 1)
+
+    def tail(self, observation):
+        """The rows and columns as one flat block, each followed by its
+        mask bit - the layout ARCCustomNetwork.split_coordinate_tail reads."""
+        rows, row_mask, cols, col_mask = self(observation)
+        return torch.cat([
+            torch.cat([rows, row_mask.unsqueeze(-1)], dim=2).flatten(1),
+            torch.cat([cols, col_mask.unsqueeze(-1)], dim=2).flatten(1)], dim=1)
+
+
 class ARCCombinedExtractor(BaseFeaturesExtractor):
     """The grid-shaped observations get one encoder each, of the shape
     `extr_arch` describes; the object and relation embeddings get their own.
@@ -1015,7 +1097,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
 
     def __init__(self, observation_space: spaces.Dict, extr_arch=None,
                  pointer_dim: int = 32, object_arch=None,
-                 relation_mode: str = "flat", relation_arch=None):
+                 relation_mode: str = "flat", relation_arch=None,
+                 coordinate_dim: int = 0):
         """`relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
 
@@ -1133,6 +1216,23 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         if self.pointer_slots is not None:
             self.pointer_projection = nn.Linear(
                 extractors["objects_emb"].processor.hidden_dim, pointer_dim)
+        #: The rows and columns the coordinate heads score, or None. Built
+        #: over the observation's own grid shape - which coordinate
+        #: addressing pads to the action space's - from the colours and
+        #: whichever deltas this observation carries: the actor's has
+        #: delta_input, the critic's delta_target as well.
+        self.coordinate_rows = None
+        if coordinate_dim:
+            if "grid" not in observation_space.spaces:
+                raise ValueError(
+                    "coordinate heads score the rows and columns of the "
+                    "grid, and this observation has no grid")
+            rows, cols = observation_space.spaces["grid"].shape
+            self.coordinate_rows = CoordinateRows(
+                rows, cols,
+                [key for key in DELTA_KEYS if key in observation_space.spaces],
+                dim=coordinate_dim)
+            total_concat_size += self.coordinate_rows.width
         # print(f'total_concat_size: {total_concat_size}')
         self._features_dim = total_concat_size
 
@@ -1179,6 +1279,10 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             encoded_tensor_list[object_slot] = self.pass_messages(observation)
         if self.pointer_slots is not None:
             encoded_tensor_list.append(self.pointer_tail())
+        # Last, after the object tail: ARCCustomNetwork cuts the two off the
+        # end in that order.
+        if self.coordinate_rows is not None:
+            encoded_tensor_list.append(self.coordinate_rows.tail(observation))
         return torch.cat(encoded_tensor_list, dim=1)
 
     def pass_messages(self, observation) -> torch.Tensor:

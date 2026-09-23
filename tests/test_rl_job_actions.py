@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 
 
-from rl.rl_job import narrowed_for_task, slots_for_addressing
+from rl.rl_job import narrowed_for_task
 
 
 class _Subtask:
@@ -344,112 +344,125 @@ class TestATaskWhoseGridsHoldOneObject:
         assert object_slots(task, 1) == 3
 
 
-class TestTheAgentDecidesWhatASlotNames:
-    """Object actions address connected components, coordinate actions
-    address points, and a task needs one kind or the other. The label
-    already says which: measured over the 800 tasks idx2agent labels, as
-    the share of a task's changed cells the input left background,
-    constructor sits at a median of 1.00 and highlighter at 0.00.
-
-    Not a claim that the share is the criterion - it is not. 00d62c1b has
-    a share of 1.00 and is solved by one object action, because
-    color_inner_holes paints background inside an object. The label is the
-    criterion; the share is how the labels were checked against each other.
+class TestTheAgentDecidesWhatTheActionsName:
+    """Object actions name connected components, coordinate actions name
+    cells, and a task needs one or the other. The label decides the base
+    case - see AGENT2ADDRESSING for the measurement behind it.
     """
 
-    def test_the_agents_that_paint_empty_space_get_coordinates(self):
+    def test_constructor_gets_coordinates(self):
+        """44% of its tasks cannot be moved by any single object action."""
         from rl.rl_job import addressing_for
 
-        assert addressing_for("constructor") == "anchors"
-        assert addressing_for("connector") == "anchors"
+        assert addressing_for("constructor") == "coordinates"
 
-    def test_the_agents_that_move_and_recolour_things_get_objects(self):
+    def test_connector_stays_on_objects(self):
+        """Its roster paints background by construction - paths between
+        objects - and object actions move 69% of its tasks. Deciding it by
+        the share of changed cells that were background put it on the wrong
+        side once already."""
         from rl.rl_job import addressing_for
 
-        for agent in ("highlighter", "modifier", "shifter"):
+        assert addressing_for("connector") == "objects"
+
+    def test_every_other_agent_and_no_agent_get_objects(self):
+        from rl.rl_job import addressing_for
+
+        for agent in ("highlighter", "modifier", "shifter", "generalizer", None):
             assert addressing_for(agent) == "objects"
 
-    def test_an_unlabelled_task_gets_what_every_task_got_before(self):
-        from rl.rl_job import addressing_for
+    def test_no_roster_carries_a_coordinate_action(self):
+        """An object-addressed env has no cells to hand these, so one in a
+        roster would reach the object dispatch and do nothing - a slot in
+        every search that enumerates the vocabulary, wasted."""
+        from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS,
+                                              COORDINATE_ACTIONS)
 
-        assert addressing_for(None) == "objects"
-        assert addressing_for("generalizer") == "objects"
-
-    def test_the_constructor_roster_is_not_empty(self):
-        """It was, and constructor is the largest label in idx2agent.pkl -
-        232 of 800 tasks - so a quarter of the labelled set reached
-        training able to submit and nothing else."""
-        from data.configs.env_configs import AGENT2ACTIONS
-
-        assert set(AGENT2ACTIONS["constructor"]) - {"submit"}
-
-    def test_every_addressed_agent_has_a_roster(self):
-        from data.configs.env_configs import AGENT2ACTIONS, AGENT2ADDRESSING
-
-        assert set(AGENT2ADDRESSING) <= set(AGENT2ACTIONS)
+        rostered = {a for roster in AGENT2ACTIONS.values() for a in roster}
+        typed = {a for group in ACTION_TYPES.values() for a in group}
+        assert not (rostered | typed) & set(COORDINATE_ACTIONS)
 
 
-class TestTheObservationFollowsTheSlots:
+class TestWhatACoordinateTaskIsNarrowedTo:
 
-    def test_coordinates_drop_the_object_blocks(self):
-        """An anchor-addressed env holds no objects, so objects_emb would
-        be a block of padding and relations_emb a block of padding squared
-        - and the relation block is sized by max_objects, which for anchors
-        runs to 900."""
-        from rl.rl_job import slot_elements
+    @staticmethod
+    def _task(agent, shapes=((5, 5), (5, 5)), test_shape=(5, 5), out_shapes=None):
+        task = _Task(agent=agent, shapes=shapes, test_shape=test_shape)
+        for index, subtask in enumerate(task.subtasks):
+            subtask.train_out = np.zeros(
+                out_shapes[index] if out_shapes else subtask.train_inp.shape, dtype=int)
+            subtask.train_out[0, 0] = 2
+        task.test_subtask.train_out = np.zeros(test_shape, dtype=int)
+        return task
 
-        kept = slot_elements(["objects_emb", "relations_emb"], "anchors")
-        assert kept == ["anchors_emb"]
+    def test_the_observation_drops_objects_and_carries_both_deltas(self):
+        from rl.rl_job import observation_for
 
-    def test_objects_keep_theirs(self):
-        from rl.rl_job import slot_elements
+        assert observation_for(["objects_emb", "relations_emb"], "coordinates") == \
+            ["delta_input", "delta_target"]
 
-        assert slot_elements(["objects_emb", "relations_emb"], "objects") == \
-            ["objects_emb", "relations_emb"]
+    def test_object_addressing_keeps_what_was_asked_for(self):
+        from rl.rl_job import observation_for
 
-    def test_everything_that_is_not_a_slot_block_is_left_alone(self):
-        from rl.rl_job import slot_elements
+        asked = ["objects_emb", "relations_emb", "target"]
+        assert observation_for(asked, "objects") == asked
 
-        for addressing in ("objects", "anchors"):
-            kept = slot_elements(["delta_input", "objects_emb", "target"], addressing)
-            assert kept[:2] == ["delta_input", "target"]
+    def test_whatever_else_was_asked_for_is_kept(self):
+        from rl.rl_job import observation_for
 
-    def test_the_slots_are_counted_the_way_the_addressing_counts_them(self):
-        from rl.anchors import anchor_points
-        from rl.rl_job import object_slots, slots_for_addressing
+        kept = observation_for(["input_pattern", "objects_emb", "delta_input"], "coordinates")
+        assert kept == ["input_pattern", "delta_input", "delta_target"]
 
-        grid = np.zeros((6, 6), dtype=int)
-        grid[1, 1] = 1
-        grid[4, 4] = 2
-        task = _Task()
-        for subtask in task.subtasks + [task.test_subtask]:
-            subtask.train_inp = grid
-            subtask.train_inp_shape = grid.shape
+    def test_the_shape_is_the_largest_grid_any_pair_works_on(self):
+        """Input and output both, since an output larger than its input is
+        what the working grid is padded out to - and the held-out pair."""
+        from rl.rl_job import coordinate_shape
 
-        assert slots_for_addressing(task, "objects", 1) == object_slots(task, 1)
-        assert slots_for_addressing(task, "anchors", 1) == len(anchor_points(grid))
-        assert slots_for_addressing(task, "anchors", 1) > \
-            slots_for_addressing(task, "objects", 1)
+        task = self._task("constructor", shapes=((3, 4), (5, 2)), test_shape=(4, 6),
+                          out_shapes=[(3, 7), (5, 2)])
+        assert coordinate_shape(task) == (5, 7)
 
-    def test_the_narrowed_config_carries_all_three_together(self, monkeypatch):
-        """The three have to agree: an anchor addressing with object slots
-        or an object block is not a runnable env."""
+    def test_the_vocabulary_is_the_coordinate_one_in_the_outputs_colours(self, monkeypatch):
+        """No object search - its findings are object actions and none of
+        them belongs here."""
         import rl.search_hints as hints
-        from rl.rl_job import narrowed_for_task
+
+        def refuse(*_a, **_k):
+            raise AssertionError("the object search ran for a coordinate task")
+
+        monkeypatch.setattr(hints, "feasible_from_search", refuse)
+        config = narrowed_for_task(self._task("constructor"),
+                                   dict(CONFIG, observation_space_elements=["objects_emb"]))
+        names = set(config["feasible_actions"].values())
+        assert names == {"submit", "black_fill", "red_fill", "black_line", "red_line",
+                         "black_triangle", "red_triangle"}
+        assert config["feasible_actions"][0] == "submit"
+
+    def test_the_observation_is_padded_to_the_action_space(self, monkeypatch):
+        """Even with every grid one size: the heads score the observed
+        grid's rows and columns, and those have to be the action space's."""
+        config = narrowed_for_task(self._task("constructor"), dict(CONFIG))
+        assert config["addressing"] == "coordinates"
+        assert config["coordinate_shape"] == (5, 5)
+        assert config["observation_grid_shape"] == config["coordinate_shape"]
+
+    def test_the_narrowed_config_is_one_the_worker_accepts(self, monkeypatch):
+        """RlConfig forbids keys it does not declare, and _rl_training_worker
+        builds one out of whatever narrowed_for_task returns. Adding a key
+        to one and not the other broke every task the orchestration sent to
+        RL - and the worker test above did not see it, because it replaces
+        narrowed_for_task with a stub."""
+        import rl.search_hints as hints
+        from data.configs.rl_configs import rl_config
+        from rl.rl_module import RlConfig
 
         monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "red_fill"})
-        grid = np.zeros((5, 5), dtype=int)
-        grid[2, 2] = 1
-        for agent, addressing, element in (("constructor", "anchors", "anchors_emb"),
-                                           ("highlighter", "objects", "objects_emb")):
-            task = _Task(agent=agent)
-            for subtask in task.subtasks + [task.test_subtask]:
-                subtask.train_inp = grid
-                subtask.train_inp_shape = grid.shape
-            config = narrowed_for_task(task, dict(CONFIG,
-                                                  observation_space_elements=["objects_emb"]))
-            assert config["addressing"] == addressing
-            assert config["observation_space_elements"] == [element]
-            assert config["max_objects"] == slots_for_addressing(
-                task, addressing, 1)
+                            lambda *a, **k: {0: "submit", 1: "red_recolor"})
+        for agent in ("constructor", "highlighter"):
+            RlConfig(**narrowed_for_task(self._task(agent), rl_config))
+
+    def test_the_config_and_its_pydantic_twin_declare_the_same_keys(self):
+        from data.configs.rl_configs import rl_config
+        from rl.rl_module import RlConfig
+
+        assert set(rl_config) == set(RlConfig.model_fields)

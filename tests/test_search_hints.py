@@ -1004,3 +1004,53 @@ class TestTheSearchEnvIsSizedToItsGrid:
         """The relation block is (slots, (slots - 1) * RELATION_DIM), which
         at one slot is a block of width zero."""
         assert self._env(self._grid(1)).max_objects == 2
+
+
+class TestALineFromATriangle:
+    """25d487eb: a stepped triangle with a dot of another colour at its
+    base, and the answer is one emission from the dot the way the triangle
+    points - east on the first pair, north on the second, south on the
+    third, north on the held-out one, each in the dot's colour.
+
+    The search looks at the first pair. Kept by name, what it found was
+    blue emission east and nothing else of emission, so the other three
+    were one action away in an env that did not have that action. Kept by
+    type, every one of them is in the vocabulary."""
+
+    @pytest.fixture(scope="class")
+    def task(self):
+        import json
+
+        from rl.arc_task import ARCSubtask, ARCTask
+
+        root = REPO_ROOT / "data" / "datasets" / "ARC"
+        challenge = json.loads((root / "training_challenges.json").read_text())["25d487eb"]
+        solution = json.loads((root / "training_solutions.json").read_text())["25d487eb"]
+        return ARCTask(
+            label="25d487eb",
+            subtasks=[ARCSubtask(f"25d487eb_{i}", np.array(p["input"]), np.array(p["output"]))
+                      for i, p in enumerate(challenge["train"])],
+            test_inp=np.array(challenge["test"][0]["input"]),
+            test_out=np.array(solution[0]))
+
+    def test_every_pair_is_one_action_in_the_vocabulary(self, task):
+        from rl.arc_env import ARCGridWorld
+
+        found = {"actions": {0: "submit", 1: "blue_emission_E", 2: "blue_emission_N",
+                             3: "red_recolor"},
+                 "effective": {"blue_emission_E": 16}, "solutions": [], "partials": [],
+                 "peak": 1.0}
+        vocabulary = hints.feasible_from_search(task, hints.SearchSettings(),
+                                                agent="connector", found=found)
+        index = {name: i for i, name in vocabulary.items()}
+        for subtask, answer in zip(task.subtasks + [task.test_subtask],
+                                   ("blue_emission_E", "green_emission_N",
+                                    "red_emission_S", "sky_emission_N")):
+            assert answer in index, answer
+            env = ARCGridWorld(max_episode_len=5, feasible_actions=vocabulary,
+                               reward_approach=3, repr_level=1, input_pattern="start",
+                               observation_space_elements=["objects_emb"], max_objects=2)
+            env.set_subtask(subtask)
+            env.reset()
+            env.step(np.array([index[answer], 0, 0]))
+            assert env.max_int == env.target_int, subtask.label

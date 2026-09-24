@@ -139,7 +139,8 @@ class TestTheObjectiveIsTheCallersChoice:
 
         seen = {}
 
-        def fake_train(task, rl_config, PPO_config, mode, extra_callback):
+        def fake_train(task, rl_config, PPO_config, mode, extra_callback, show_plots):
+            assert show_plots is False  # a sweep never draws
             seen["arc"] = rl_config
             seen["ppo"] = PPO_config
             return {"t": 0.4}, {"t": 3.0}, SimpleNamespace(ep_info_buffer=[]), \
@@ -158,7 +159,8 @@ class TestTheObjectiveIsTheCallersChoice:
     def test_the_metric_is_an_argument(self, monkeypatch):
         import rl.arc_hp_search as hp
 
-        def fake_train(task, rl_config, PPO_config, mode, extra_callback):
+        def fake_train(task, rl_config, PPO_config, mode, extra_callback, show_plots):
+            assert show_plots is False  # a sweep never draws
             return {"t": 0.4}, {"t": 3.0}, SimpleNamespace(ep_info_buffer=[]), \
                 {"test_acc": 0.7}
 

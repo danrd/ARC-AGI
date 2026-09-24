@@ -294,21 +294,62 @@ class TestWhatTheEvaluationsShow:
             assert trace["subtask"] == task.subtasks[idx].label
             assert trace["accuracy"] == accs[idx]
 
-    def test_a_verbose_run_draws_every_evaluation_and_the_held_out_one(
-            self, task, config, ppo, monkeypatch):
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+    @staticmethod
+    def _drawn(monkeypatch):
+        """Every figure display_figure is handed, instead of shown."""
+        import rl.callbacks
+        import rl.training
         drawn = []
-        monkeypatch.setattr(plt, "show", lambda *a, **k: drawn.append(plt.gcf()))
+        for module in (rl.training, rl.callbacks):
+            monkeypatch.setattr(module, "display_figure", drawn.append)
+        return drawn
 
-        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo,
-                                         verbose=True)
+    def test_asked_for_it_draws_every_evaluation_every_example_and_the_held_out_one(
+            self, task, config, ppo, monkeypatch):
+        drawn = self._drawn(monkeypatch)
+
+        train_on_task(task, rl_config=config, PPO_config=ppo, show_plots=True)
 
         titles = [fig._suptitle.get_text() for fig in drawn if fig._suptitle]
         assert any(title.startswith("held-out") for title in titles)
         assert sum(title.startswith("training example") for title in titles) == len(task.subtasks)
         assert any("% of training" in title for title in titles)
+
+    def test_pictures_do_not_wait_for_verbose(self, task, config, ppo, monkeypatch):
+        """They used to: a run without SB3's tables and the per-step text
+        got no pictures either, which is how they came to not show at all
+        in a notebook calling train_on_task with its defaults."""
+        drawn = self._drawn(monkeypatch)
+
+        train_on_task(task, rl_config=config, PPO_config=ppo, verbose=False, show_plots=True)
+
+        assert drawn
+
+    def test_left_to_decide_it_draws_where_figures_are_seen(
+            self, task, config, ppo, monkeypatch):
+        import rl.training
+        drawn = self._drawn(monkeypatch)
+        monkeypatch.setattr(rl.training, "showing_figures", lambda: True)
+
+        train_on_task(task, rl_config=config, PPO_config=ppo)
+
+        assert drawn
+
+    def test_and_nothing_where_they_are_not(self, task, config, ppo, monkeypatch):
+        import rl.training
+        drawn = self._drawn(monkeypatch)
+        monkeypatch.setattr(rl.training, "showing_figures", lambda: False)
+
+        train_on_task(task, rl_config=config, PPO_config=ppo, verbose=True)
+
+        assert drawn == []
+
+    def test_a_sweep_never_draws(self):
+        import inspect
+
+        from rl import arc_hp_search
+
+        assert "show_plots=False" in inspect.getsource(arc_hp_search)
 
 
 class TestHowOftenARunIsEvaluated:

@@ -1,5 +1,6 @@
 import textwrap
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
@@ -362,3 +363,43 @@ def plot_overview(traces, title=None, cell_inches=1.8, max_lines=8):
     if title:
         fig.suptitle(title, fontsize=11)
     return fig
+
+
+#: Backends that draw to a file or to nothing. Anything else - a notebook's
+#: inline backend, ipympl, a GUI window - puts a figure where someone sees it.
+_FILE_BACKENDS = {"agg", "cairo", "pdf", "pgf", "ps", "svg", "template"}
+
+
+def _in_notebook() -> bool:
+    try:
+        from IPython import get_ipython
+    except ImportError:
+        return False
+    shell = get_ipython()
+    return shell is not None and "IPKernelApp" in getattr(shell, "config", {})
+
+
+def showing_figures() -> bool:
+    """Whether a figure drawn now would be seen: in a notebook kernel, or
+    under a backend that opens windows. Not under Agg - a test, a script
+    on a server, the subprocess rl_job trains in - where drawing costs a
+    second a figure and shows nothing."""
+    if _in_notebook():
+        return True
+    return matplotlib.get_backend().lower() not in _FILE_BACKENDS
+
+
+def display_figure(fig):
+    """Put `fig` in front of the reader and let go of it.
+
+    Through IPython's display in a notebook rather than plt.show(): show()
+    only draws when the backend is the inline one, and a notebook whose
+    backend something switched to Agg shows nothing and warns about it,
+    where display() renders the figure whatever the backend is.
+    """
+    if _in_notebook():
+        from IPython.display import display
+        display(fig)
+    else:
+        plt.show()
+    plt.close(fig)

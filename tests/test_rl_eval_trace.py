@@ -281,3 +281,64 @@ class TestReadingItBack:
             assert "100% match" in fig.axes[3].get_title()
         finally:
             plt.close(fig)
+
+
+class TestWhereAFigureGoes:
+    def test_not_under_agg_outside_a_notebook(self):
+        from rl.plotting import showing_figures
+
+        assert matplotlib.get_backend().lower() == "agg"
+        assert not showing_figures()
+
+    def test_in_a_notebook_whatever_the_backend(self, monkeypatch):
+        import rl.plotting
+
+        monkeypatch.setattr(rl.plotting, "_in_notebook", lambda: True)
+        assert rl.plotting.showing_figures()
+
+    def test_under_a_backend_that_draws(self, monkeypatch):
+        import rl.plotting
+
+        monkeypatch.setattr(rl.plotting.matplotlib, "get_backend",
+                            lambda: "module://matplotlib_inline.backend_inline")
+        assert rl.plotting.showing_figures()
+
+    def test_a_notebook_gets_it_through_display_and_it_is_let_go(self, monkeypatch):
+        """display() renders whatever the backend; plt.show() only under
+        the inline one."""
+        import sys
+        import types
+
+        import rl.plotting
+
+        shown = []
+        # A stand-in, so this runs where IPython is not installed - which is
+        # everywhere but a notebook.
+        ipython = types.ModuleType("IPython")
+        ipython.display = types.ModuleType("IPython.display")
+        ipython.display.display = shown.append
+        # matplotlib asks it for a shell when a figure is made.
+        ipython.get_ipython = lambda: None
+        monkeypatch.setitem(sys.modules, "IPython", ipython)
+        monkeypatch.setitem(sys.modules, "IPython.display", ipython.display)
+        monkeypatch.setattr(rl.plotting, "_in_notebook", lambda: True)
+        fig = plt.figure()
+        rl.plotting.display_figure(fig)
+        assert shown == [fig]
+        assert not plt.fignum_exists(fig.number)
+
+    def test_a_notebook_is_a_kernel(self, monkeypatch):
+        import sys
+        import types
+
+        from rl.plotting import _in_notebook
+
+        ipython = types.ModuleType("IPython")
+        monkeypatch.setitem(sys.modules, "IPython", ipython)
+        ipython.get_ipython = lambda: types.SimpleNamespace(config={"IPKernelApp": {}})
+        assert _in_notebook()
+        # A terminal IPython is not one: nothing renders a figure inline there.
+        ipython.get_ipython = lambda: types.SimpleNamespace(config={})
+        assert not _in_notebook()
+        ipython.get_ipython = lambda: None
+        assert not _in_notebook()

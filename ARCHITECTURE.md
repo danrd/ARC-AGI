@@ -134,7 +134,7 @@ graph TD
   symbolic["symbolic (9)"]
   tests["tests (53)"]
   utils["utils (3)"]
-  tests -->|71| rl
+  tests -->|72| rl
   tests -->|25| symbolic
   tests -->|24| subsymbolic
   tests -->|14| data
@@ -174,7 +174,7 @@ graph TD
 | `rl.arc_task` | 23 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
-| `rl.callbacks` | 1 |
+| `rl.callbacks` | 2 |
 | `rl.coordinate_search` | 3 |
 | `rl.evaluation` | 5 |
 | `rl.features` | 6 |

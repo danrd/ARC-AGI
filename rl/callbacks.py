@@ -5,7 +5,7 @@ from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.vec_env import sync_envs_normalization
 from stable_baselines3.common.logger import Logger, KVWriter, make_output_format
 from rl.evaluation import evaluate_ARC_policy
-from rl.plotting import describe_trace, plot_overview
+from rl.plotting import describe_trace, display_figure, plot_overview
 class MonitorCallback(EvalCallback):
     def __init__(
             self,
@@ -19,6 +19,7 @@ class MonitorCallback(EvalCallback):
             max_rewards: dict = {},
             log_path:str = None,
             debug:bool = False,
+            show_plots: bool = False,
             **kwargs,
     ):
         super().__init__(eval_env, **kwargs)
@@ -29,6 +30,11 @@ class MonitorCallback(EvalCallback):
         self.last_eval: int = -1
         self.n_eval = 0
         self.verbose = verbose
+        #: Draw each evaluation (plot_overview) - apart from verbose, which
+        #: is the text: pictures used to come only with it, so a run that
+        #: did not want SB3's tables and the per-step lines got no pictures
+        #: either.
+        self.show_plots = show_plots
         self.n_envs = eval_env.num_envs if hasattr(eval_env, 'envs') else 1
         self.log_path = log_path
         self.debug = debug
@@ -138,21 +144,20 @@ class MonitorCallback(EvalCallback):
         self.episode_grid_preds.append(grid_pred)
         self.episode_traces.append(traces)
 
+        share = self.num_timesteps / self.model._total_timesteps
         if self.verbose:
-            share = self.num_timesteps / self.model._total_timesteps
             print(f'After {share*100:.2f}% of training: Accuracy: {acc:.2f}, Mean episode length: {mean_len:.2f}')
             # What the policy did on every example, not only where it
-            # ended: the decoded actions as text, and one row per example
-            # as a picture - start, target, result and the actions. The
-            # compact form, since this runs `evaluations` times a run;
-            # train_on_task draws the full filmstrips once at the end.
+            # ended: the decoded actions, one line a step.
             for trace in traces:
                 if trace:
                     print(describe_trace(trace))
-            fig = plot_overview(traces, title=f'{share*100:.0f}% of training: '
-                                              f'accuracy {acc:+.3f}')
-            plt.show()
-            plt.close(fig)
+        if self.show_plots:
+            # One row per example - start, target, result and the actions.
+            # The compact form, since this runs `evaluations` times a run;
+            # train_on_task draws the full filmstrips once at the end.
+            display_figure(plot_overview(traces, title=f'{share*100:.0f}% of training: '
+                                                       f'accuracy {acc:+.3f}'))
 
         try:
             self.env.stop_evaluation()

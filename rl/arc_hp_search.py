@@ -180,5 +180,8 @@ def arc_objective(trial, task, config: dict, *,
     )
     accuracies, lens, agent, metrics = train_on_task(
         task=task, rl_config=run_config, PPO_config=PPO_config, mode=mode,
-        extra_callback=pruning_callback)
+        extra_callback=pruning_callback,
+        # Not in a sweep: dozens of trials, each drawing every evaluation,
+        # would bury the study's own output in figures.
+        show_plots=False)
     return scorer(accuracies, lens, agent, metrics)

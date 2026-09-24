@@ -5,7 +5,10 @@ from stable_baselines3.common.distributions import Distribution, MultiCategorica
 from torch.distributions import Categorical
 from stable_baselines3.common.policies import ActorCriticPolicy
 from gymnasium import spaces
+from rl.action_structure import (DIRECTION_STEPS, N_COLOURS, N_DIRECTIONS, ActionStructure)
+from data.configs.env_configs import ALL_DIRECTIONS
 from rl.features import ARCCombinedExtractor, ARCGNNExtractor, ARCSeparateExtractor
+from symbolic.objects_analysis import OBJECT_SCHEMA
 
 class PointerHead(nn.Module):
     """Logits over object slots, each scored from that slot's own row.
@@ -156,6 +159,216 @@ class AutoregressiveCoordinateDistribution(Distribution):
         return actions, self.log_prob(actions)
 
 
+class ObjectLatent(NamedTuple):
+    """What forward_actor hands the distribution under factored object
+    heads: the context, the rows the object heads score, and the raw
+    material the colour and direction heads build their keys from."""
+    context: torch.Tensor
+    rows: torch.Tensor
+    row_mask: torch.Tensor
+    objects: torch.Tensor
+    colour_shares: torch.Tensor
+
+
+def _field(name: str) -> int:
+    """Where one scalar field of the object embedding sits."""
+    position = 0
+    for field, _group, arity in OBJECT_SCHEMA:
+        if field == name:
+            return position
+        position += arity
+    raise KeyError(name)
+
+
+_POSITION_FIELDS = [_field(name) for name in
+                    ("i_center", "j_center", "min_i", "min_j", "max_i", "max_j")]
+_STEPS = torch.tensor([DIRECTION_STEPS[d] for d in ALL_DIRECTIONS], dtype=torch.float32)
+
+
+def colour_features(shares, objects, first, second):
+    """(batch, N_COLOURS, 5): per colour, its share of the grid, its share
+    of each chosen object, and whether it is a minority in each - present
+    but under half. The last row, "no colour", is zeros.
+
+    Relative to the observation rather than a colour's identity: "paint in
+    the colour of the dot on the chosen object" is a score over these, the
+    same on a grid where the dot is blue and one where it is sky.
+    """
+    batch = torch.arange(objects.shape[0], device=objects.device)
+    in_first = objects[batch, first, :10]
+    in_second = objects[batch, second, :10]
+    minority = lambda share: ((share > 0) & (share < 0.5)).float()  # noqa: E731
+    features = torch.stack([shares, in_first, in_second, minority(in_first),
+                            minority(in_second)], dim=-1)
+    return torch.cat([features, features.new_zeros(features.shape[0], 1, 5)], dim=1)
+
+
+def direction_features(objects, chosen):
+    """(batch, N_DIRECTIONS, 4): per direction, where the chosen object's
+    mass sits along it within its box, how much of the grid lies beyond the
+    box that way, and the direction's own step. The last row, "no
+    direction", is zeros.
+
+    "Emit away from the heavy end" - a triangle's base - is a score over
+    the first of these on every grid, pointing whichever way the triangle
+    does.
+    """
+    batch = torch.arange(objects.shape[0], device=objects.device)
+    ic, jc, min_i, min_j, max_i, max_j = objects[batch, chosen][:, _POSITION_FIELDS].unbind(-1)
+    mass_i = (ic - (min_i + max_i) / 2) / (max_i - min_i + 1e-3)
+    mass_j = (jc - (min_j + max_j) / 2) / (max_j - min_j + 1e-3)
+    steps = _STEPS.to(objects.device)
+    di, dj = steps[:, 0], steps[:, 1]
+    mass = mass_i[:, None] * di + mass_j[:, None] * dj
+    room_i = torch.where(di > 0, 1 - max_i[:, None], torch.where(di < 0, min_i[:, None],
+                                                                   torch.ones_like(mass)))
+    room_j = torch.where(dj > 0, 1 - max_j[:, None], torch.where(dj < 0, min_j[:, None],
+                                                                   torch.ones_like(mass)))
+    features = torch.stack([mass, torch.minimum(room_i, room_j),
+                            di.expand_as(mass), dj.expand_as(mass)], dim=-1)
+    return torch.cat([features, features.new_zeros(features.shape[0], 1, 4)], dim=1)
+
+
+class FactoredObjectDistribution(Distribution):
+    """(action, object, object) chosen as parts: the type, the first
+    object, the second, the colour, the second colour, the direction - each
+    knowing the ones before it, each from a head shared by every name that
+    has that part (see rl.action_structure).
+
+    The flat vocabulary gave every name its own logit, so a held-out pair
+    needing a name no training pair used could not be answered: on
+    25d487eb the pairs need blue emission east, green north, red south, and
+    the test sky north. Here the type is one choice, the colour another -
+    scored from what the observation says about each colour and the chosen
+    objects - and the direction a third, scored from where the chosen
+    object's mass sits. None of the three has to have been seen together.
+
+    A part the type does not have is not chosen: submit takes no objects,
+    a single-object transform takes its first object twice (World runs one
+    object when the two slots agree), a two-object one two different ones,
+    and a colour or direction the type's names lack is masked. A forced
+    choice has probability one, so it adds nothing to the log probability
+    or the entropy.
+    """
+
+    def __init__(self, network: "ARCCustomNetwork"):
+        super().__init__()
+        self.network = network
+        self.latent: Optional[ObjectLatent] = None
+        self._last = None
+
+    def proba_distribution_net(self, *args, **kwargs):
+        raise NotImplementedError("built by ARCCustomNetwork, not from a latent width")
+
+    def proba_distribution(self, latent: ObjectLatent) -> "FactoredObjectDistribution":
+        self.latent = latent
+        self._last = None
+        return self
+
+    def _walk(self, given: Optional[torch.Tensor] = None, deterministic: bool = False):
+        net, latent = self.network, self.latent
+        heads = net.factored_heads
+        type_head, first_head, second_head = net.policy_nets
+        batch_size, slots = latent.row_mask.shape
+        batch = torch.arange(batch_size, device=latent.context.device)
+        slot_ids = torch.arange(slots, device=latent.context.device)
+        if given is not None:
+            parts = net.action_components[given[:, 0].long()]
+            wanted = [parts[:, 0], given[:, 1].long(), given[:, 2].long(),
+                      parts[:, 1], parts[:, 2], parts[:, 3]]
+
+        def pick(logits, allowed, index):
+            distribution = Categorical(logits=logits.masked_fill(~allowed, -1e9))
+            if given is not None:
+                return distribution, wanted[index]
+            if deterministic:
+                return distribution, distribution.probs.argmax(dim=-1)
+            return distribution, distribution.sample()
+
+        context = latent.context
+        dists = []
+        dist, action_type = pick(type_head(context), torch.ones(
+            batch_size, len(net.action_structure.types), dtype=torch.bool,
+            device=context.device), 0)
+        dists.append(dist)
+        context = context + heads["type_feedback"](action_type)
+        takes = net.objects_taken[action_type]
+
+        visible = latent.row_mask.bool()
+        slot_zero = slot_ids.unsqueeze(0) == 0
+        allowed = torch.where((takes == 0).unsqueeze(1), slot_zero, visible)
+        allowed = torch.where(allowed.any(dim=1, keepdim=True), allowed, slot_zero)
+        dist, first = pick(first_head(context, latent.rows, torch.ones_like(visible)), allowed, 1)
+        dists.append(dist)
+        context = context + heads["first_feedback"](latent.rows[batch, first])
+
+        same = slot_ids.unsqueeze(0) == first.unsqueeze(1)
+        allowed = torch.where((takes == 0).unsqueeze(1), slot_zero,
+                              torch.where((takes == 1).unsqueeze(1), same, visible & ~same))
+        allowed = torch.where(allowed.any(dim=1, keepdim=True), allowed, same)
+        dist, second = pick(second_head(context, latent.rows, torch.ones_like(visible)), allowed, 2)
+        dists.append(dist)
+        context = context + heads["second_feedback"](latent.rows[batch, second])
+
+        colours = colour_features(latent.colour_shares, latent.objects, first, second)
+        keys = heads["colour_key"](colours) + heads["colour_id"].weight.unsqueeze(0)
+        scale = keys.shape[-1] ** 0.5
+        logits = (heads["colour_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+        dist, colour = pick(logits, net.valid_colour[action_type], 3)
+        dists.append(dist)
+        context = context + heads["colour_feedback"](colour)
+
+        logits = (heads["second_colour_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+        dist, second_colour = pick(logits, net.valid_second_colour[action_type, colour], 4)
+        dists.append(dist)
+        context = context + heads["second_colour_feedback"](second_colour)
+
+        directions = direction_features(latent.objects, first)
+        if net.direction_keys == "relative":
+            # Mass and room only: nothing that says which way is which, so a
+            # direction no example pointed can still be chosen (see
+            # ARCCustomNetwork's direction_keys).
+            keys = heads["direction_key"](directions[..., :2])
+        else:
+            keys = heads["direction_key"](directions) + heads["direction_id"].weight.unsqueeze(0)
+        logits = (heads["direction_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+        dist, direction = pick(logits, net.valid_direction[action_type, colour, second_colour], 5)
+        dists.append(dist)
+
+        flat = net.action_index[action_type, colour, second_colour, direction]
+        return torch.stack([flat, first, second], dim=1), dists
+
+    def sample(self) -> torch.Tensor:
+        self._last = self._walk()
+        return self._last[0]
+
+    def mode(self) -> torch.Tensor:
+        self._last = self._walk(deterministic=True)
+        return self._last[0]
+
+    def log_prob(self, actions: torch.Tensor) -> torch.Tensor:
+        if self._last is None or self._last[0] is not actions:
+            self._last = (actions, self._walk(given=actions)[1])
+        dists = self._last[1]
+        parts = self.network.action_components[actions[:, 0].long()]
+        chosen = [parts[:, 0], actions[:, 1].long(), actions[:, 2].long(),
+                  parts[:, 1], parts[:, 2], parts[:, 3]]
+        return sum(d.log_prob(value) for d, value in zip(dists, chosen))
+
+    def entropy(self) -> torch.Tensor:
+        if self._last is None:
+            self.sample()
+        return sum(d.entropy() for d in self._last[1])
+
+    def actions_from_params(self, latent: ObjectLatent, deterministic: bool = False):
+        self.proba_distribution(latent)
+        return self.get_actions(deterministic=deterministic)
+
+    def log_prob_from_params(self, latent: ObjectLatent):
+        actions = self.actions_from_params(latent)
+        return actions, self.log_prob(actions)
+
+
 class ARCCustomNetwork(nn.Module):
     """Custom network for policy and value function.
 
@@ -183,8 +396,30 @@ class ARCCustomNetwork(nn.Module):
         coordinate_shape: Optional[Tuple[int, int]] = None,
         coordinate_dim: Optional[int] = None,
         coordinate_heads: str = "autoregressive",
+        action_structure: Optional[ActionStructure] = None,
+        factored_width: int = 0,
+        direction_keys: str = "relative",
     ):
         super().__init__()
+        if direction_keys not in ("relative", "both"):
+            raise ValueError(f"direction_keys={direction_keys!r}: expected 'relative' or 'both'")
+        #: What the factored heads score a direction from. 'relative': where
+        #: the chosen object's mass sits along it and how much room lies that
+        #: way - nothing that tells north from west, so a direction no
+        #: training example used is as reachable as any. 'both' adds each
+        #: direction's own step and a learned embedding, which is what "always
+        #: north" needs and what kills the other: trained on three examples
+        #: emitting east, north and south, each away from the triangle's
+        #: heavy end, the relative keys emitted west on a fourth with
+        #: probability 1.0 on three seeds and 'both' with 0.0 - west was only
+        #: ever a wrong answer, and its own embedding learned exactly that.
+        self.direction_keys = direction_keys
+        #: Set, the object heads choose an action by its parts
+        #: (FactoredObjectDistribution) rather than one logit per name; the
+        #: features then end in the raw object rows and the grid's colour
+        #: shares (ARCCombinedExtractor.factored_tail).
+        self.action_structure = action_structure
+        self.factored_width = factored_width if action_structure is not None else 0
         if coordinate_heads not in ("autoregressive", "independent"):
             raise ValueError(f"coordinate_heads={coordinate_heads!r}: expected "
                              "'autoregressive' or 'independent'")
@@ -213,6 +448,10 @@ class ARCCustomNetwork(nn.Module):
         self.action_dims = action_dims
         self.action_heads = action_heads
         self.n_action_dims = len(action_dims)
+        #: Everything past what the shared and value networks read: the
+        #: object rows, the coordinate rows and columns, the factored heads'
+        #: raw material - in that order, at the very end of the features.
+        self.tail_width = self.pointer_width + self.coordinate_width + self.factored_width
         # The critic can be fed a wider observation than the actor - see
         # ARCCustomActorCriticPolicy's critic_only_keys - and then the two
         # halves start from different widths.
@@ -225,8 +464,8 @@ class ARCCustomNetwork(nn.Module):
         # moved every logit rather than swapping two of them. The value is a
         # property of the state and not of the ordering either, so the
         # critic drops it as well.
-        feature_dim = feature_dim - self.pointer_width - self.coordinate_width
-        feature_dim_vf = feature_dim_vf - self.pointer_width - self.coordinate_width
+        feature_dim = feature_dim - self.tail_width
+        feature_dim_vf = feature_dim_vf - self.tail_width
 
         # Get network architecture
         policy = net_arch['pi']
@@ -255,7 +494,9 @@ class ARCCustomNetwork(nn.Module):
         # Create policy networks based on action_heads
         self.policy_nets = nn.ModuleList()
 
-        if action_heads == 1:
+        if action_structure is not None:
+            self._build_factored_heads(action_dims, action_structure)
+        elif action_heads == 1:
             # One head for all 5 dimensions combined
             self.policy_nets.append(nn.Linear(self.latent_dim_pi, sum(action_dims)))
         elif action_heads == 2:
@@ -325,6 +566,57 @@ class ARCCustomNetwork(nn.Module):
         else:
             raise ValueError(f"Unsupported number of action heads: {action_heads}")
 
+    def _build_factored_heads(self, action_dims, structure: ActionStructure):
+        """The heads FactoredObjectDistribution walks: a Linear over action
+        types and the two pointer heads in policy_nets, as the flat heads
+        have them, and around them what carries each choice into the next
+        and what scores colours and directions."""
+        if self.n_action_dims != 3 or self.pointer_slots is None:
+            raise ValueError("factored heads choose (type, object, object) and score "
+                             "the objects from their rows: they need the three-part "
+                             "object action space and a pointer tail")
+        if action_dims[0] != len(structure):
+            raise ValueError(f"the action space has {action_dims[0]} actions and the "
+                             f"vocabulary the heads were built from {len(structure)}")
+        if not self.factored_width:
+            raise ValueError("factored heads read the raw objects and colour shares "
+                             "at the end of the features; this extractor has none")
+        latent, hidden = self.latent_dim_pi, 32
+        self.policy_nets.append(nn.Linear(latent, len(structure.types)))
+        self.policy_nets.append(PointerHead(latent, self.pointer_dim))
+        self.policy_nets.append(PointerHead(latent, self.pointer_dim))
+        self.factored_heads = nn.ModuleDict({
+            "type_feedback": nn.Embedding(len(structure.types), latent),
+            "first_feedback": nn.Linear(self.pointer_dim, latent),
+            "second_feedback": nn.Linear(self.pointer_dim, latent),
+            "colour_key": nn.Sequential(nn.Linear(5, hidden), nn.ReLU(), nn.Linear(hidden, hidden)),
+            "colour_id": nn.Embedding(N_COLOURS, hidden),
+            "colour_query": nn.Linear(latent, hidden),
+            "second_colour_query": nn.Linear(latent, hidden),
+            "colour_feedback": nn.Embedding(N_COLOURS, latent),
+            "second_colour_feedback": nn.Embedding(N_COLOURS, latent),
+            "direction_key": nn.Sequential(
+                nn.Linear(2 if self.direction_keys == "relative" else 4, hidden), nn.ReLU(),
+                nn.Linear(hidden, hidden)),
+            "direction_id": nn.Embedding(N_DIRECTIONS, hidden),
+            "direction_query": nn.Linear(latent, hidden),
+        })
+        # Buffers, so they follow the network to its device.
+        self.register_buffer("action_components", torch.as_tensor(structure.components))
+        self.register_buffer("action_index", torch.as_tensor(structure.flat))
+        self.register_buffer("valid_colour", torch.as_tensor(structure.valid_colour))
+        self.register_buffer("valid_second_colour",
+                             torch.as_tensor(structure.valid_second_colour))
+        self.register_buffer("valid_direction", torch.as_tensor(structure.valid_direction))
+        self.register_buffer("objects_taken", torch.as_tensor(structure.objects))
+
+    def split_factored_tail(self, features: torch.Tensor):
+        """(objects, colour_shares) off the very end of the features - the
+        layout ARCCombinedExtractor.factored_tail writes."""
+        tail = features[:, features.shape[1] - self.factored_width:]
+        objects = tail[:, :-10].view(features.shape[0], self.pointer_slots, -1)
+        return objects, tail[:, -10:]
+
     def forward(self, features: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
         """Returns:
             List of latent_policy outputs (one for each action head), and
@@ -342,7 +634,7 @@ class ARCCustomNetwork(nn.Module):
         if self.pointer_slots is None:
             return None, None
         width = self.pointer_dim + 1
-        end = features.shape[1] - self.coordinate_width
+        end = features.shape[1] - self.coordinate_width - self.factored_width
         tail = features[:, end - self.pointer_slots * width:end]
         tail = tail.view(-1, self.pointer_slots, width)
         return tail[..., :-1], tail[..., -1]
@@ -354,7 +646,8 @@ class ARCCustomNetwork(nn.Module):
             return None
         rows, cols = self.coordinate_shape
         width = self.coordinate_dim + 1
-        tail = features[:, features.shape[1] - self.coordinate_width:]
+        end = features.shape[1] - self.factored_width
+        tail = features[:, end - self.coordinate_width:end]
         row_block = tail[:, :rows * width].view(-1, rows, width)
         col_block = tail[:, rows * width:].view(-1, cols, width)
         return (row_block[..., :-1], row_block[..., -1],
@@ -363,10 +656,9 @@ class ARCCustomNetwork(nn.Module):
     def without_pointer_tail(self, features: torch.Tensor) -> torch.Tensor:
         """The features the shared and value networks read - everything the
         object and coordinate tails are not."""
-        cut = self.pointer_width + self.coordinate_width
-        if not cut:
+        if not self.tail_width:
             return features
-        return features[:, :-cut]
+        return features[:, :-self.tail_width]
 
     def forward_actor(self, features: torch.Tensor) -> List[torch.Tensor]:
         shared_features = self.shared_net(self.without_pointer_tail(features))
@@ -384,6 +676,9 @@ class ARCCustomNetwork(nn.Module):
                 head(shared_features, embeddings, mask)
                 for head, (embeddings, mask) in zip(cell_heads, grids)]
         rows, mask = self.split_pointer_tail(features)
+        if self.action_structure is not None:
+            objects, shares = self.split_factored_tail(features)
+            return ObjectLatent(shared_features, rows, mask, objects, shares)
         return [net(shared_features, rows, mask)
                 if isinstance(net, PointerHead) else net(shared_features)
                 for net in self.policy_nets]
@@ -418,12 +713,25 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         action_heads: int = 1,
         critic_only_keys: Tuple[str, ...] = (),
         coordinate_heads: str = "autoregressive",
+        object_heads: str = "flat",
+        action_names: Optional[Dict[int, str]] = None,
+        direction_keys: str = "relative",
         *args,
         **kwargs,
     ):
         # Save action_heads before passing to parent class
         self.action_heads = action_heads
         self.coordinate_heads = coordinate_heads
+        if object_heads not in ("flat", "factored"):
+            raise ValueError(f"object_heads={object_heads!r}: expected 'flat' or 'factored'")
+        if object_heads == "factored" and action_names is None:
+            raise ValueError("factored object heads need the vocabulary's names to take "
+                             "apart - pass action_names")
+        #: The vocabulary as parts when the object heads choose by them
+        #: (FactoredObjectDistribution), None for one logit per name.
+        self.action_structure = (ActionStructure(action_names) if object_heads == "factored"
+                                 else None)
+        self.direction_keys = direction_keys
         self.critic_only_keys = tuple(critic_only_keys)
         if self.critic_only_keys:
             # Two extractors, or there is nothing to route between.
@@ -480,6 +788,9 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             coordinate_shape=self._coordinate_shape(),
             coordinate_dim=self._coordinate_dim(),
             coordinate_heads=self.coordinate_heads,
+            action_structure=self.action_structure,
+            factored_width=getattr(self._actor_extractor(), "factored_width", 0),
+            direction_keys=self.direction_keys,
         )
 
     def _coordinate_shape(self):
@@ -496,6 +807,8 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
 
     def _get_action_dist_from_latent(self, latent_pi: List[torch.Tensor]):
         """Create action distributions based on the number of action heads."""
+        if isinstance(latent_pi, ObjectLatent):
+            return FactoredObjectDistribution(self.mlp_extractor).proba_distribution(latent_pi)
         if isinstance(latent_pi, CoordinateLatent):
             return AutoregressiveCoordinateDistribution(self.mlp_extractor).proba_distribution(
                 latent_pi)

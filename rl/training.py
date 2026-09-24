@@ -70,6 +70,12 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
     # a config that said three would build heads for a space that is not
     # there.
     coordinates = rl_config.get('addressing', 'objects') == 'coordinates'
+    # Choosing an object action by its parts needs the names to take apart
+    # and the three-part (action, object, object) space; a whitelist turns
+    # the space into an index into a list of triples, which has no parts.
+    factored = (PPO_config['object_heads'] == 'factored' and not coordinates
+                and not rl_config.get('action_whitelist'))
+    action_names = vec_env.envs[0].unwrapped.actions_dict if factored else None
     policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
                      'action_heads': 5 if coordinates else PPO_config['action_heads'],
                      # Observations the critic may read and the actor may
@@ -81,6 +87,11 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                      # AutoregressiveCoordinateDistribution. Read only under
                      # coordinate addressing.
                      'coordinate_heads': PPO_config['coordinate_heads'],
+                     # One logit per name, or the name's parts chosen one
+                     # after another - see FactoredObjectDistribution.
+                     'object_heads': 'factored' if factored else 'flat',
+                     'action_names': action_names,
+                     'direction_keys': PPO_config['direction_keys'],
                      'features_extractor_kwargs':{
                          'extr_arch': PPO_config['extr_arch'],
                          'pointer_dim': PPO_config['pointer_dim'],
@@ -88,6 +99,7 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                          # coordinate heads - see CoordinateRows. 0 builds
                          # none, which is what object addressing wants.
                          'coordinate_dim': PPO_config['coordinate_dim'] if coordinates else 0,
+                         'factored_tail': factored,
                          'object_arch': PPO_config['object_arch'],
                          # How relations enter when the observation has
                          # them - see ARCCombinedExtractor. Ignored when it

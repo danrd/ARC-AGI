@@ -1098,7 +1098,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, extr_arch=None,
                  pointer_dim: int = 32, object_arch=None,
                  relation_mode: str = "flat", relation_arch=None,
-                 coordinate_dim: int = 0):
+                 coordinate_dim: int = 0, factored_tail: bool = False):
         """`relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
 
@@ -1233,6 +1233,20 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
                 dim=coordinate_dim)
             total_concat_size += self.coordinate_rows.width
+        #: What the factored object heads read besides the rows: each
+        #: slot's raw embedding - its colour shares and where its mass sits
+        #: in its box, which the rows have been through attention and a
+        #: projection to lose - and the grid's own colour shares. See
+        #: rl.policy.FactoredObjectDistribution. Last of all, after the
+        #: pointer and coordinate tails.
+        self.factored_width = 0
+        if factored_tail:
+            if "objects_emb" not in observation_space.spaces:
+                raise ValueError("factored object heads read the objects, and this "
+                                 "observation has none")
+            slots, object_dim = observation_space.spaces["objects_emb"].shape
+            self.factored_width = slots * object_dim + 10
+            total_concat_size += self.factored_width
         # print(f'total_concat_size: {total_concat_size}')
         self._features_dim = total_concat_size
 
@@ -1283,7 +1297,27 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         # end in that order.
         if self.coordinate_rows is not None:
             encoded_tensor_list.append(self.coordinate_rows.tail(observation))
+        if self.factored_width:
+            encoded_tensor_list.append(self.factored_tail(observation))
         return torch.cat(encoded_tensor_list, dim=1)
+
+    def factored_tail(self, observation) -> torch.Tensor:
+        """The raw object rows, flattened, and the share of the grid each
+        of the ten colours covers - counted over the true grid, so the
+        observation's padding is not a colour."""
+        objects = observation["objects_emb"].float().flatten(1)
+        grid = observation["grid"].to(torch.int64)
+        valid = grid < 10
+        shape = observation.get("grid_shape")
+        if shape is not None:
+            shape = shape.to(torch.int64)
+            rows = torch.arange(grid.shape[1], device=grid.device).view(1, -1, 1)
+            cols = torch.arange(grid.shape[2], device=grid.device).view(1, 1, -1)
+            valid = valid & (rows < shape[:, :1, None]) & (cols < shape[:, 1:2, None])
+        colours = torch.nn.functional.one_hot(grid.clamp(0, 9), num_classes=10).float()
+        counts = (colours * valid.unsqueeze(-1).float()).sum(dim=(1, 2))
+        shares = counts / counts.sum(dim=1, keepdim=True).clamp(min=1)
+        return torch.cat([objects, shares], dim=1)
 
     def pass_messages(self, observation) -> torch.Tensor:
         """Let each object see its relations, and re-pool what comes out.

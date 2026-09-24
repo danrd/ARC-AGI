@@ -773,20 +773,33 @@ def roster_for(agent, colours, directions):
 
 
 def feasible_from_search(task, settings=None, agent=None, found=None):
-    """The action set to train on, narrowed to what a search could use.
+    """The action set to train on: the action types a search could use, in
+    every colour of the task's outputs and every direction.
 
-    An env is configured with a vocabulary generated from the task's
-    palette, and that is 137 to 607 actions on the measured tasks - a space
-    the agent explores by sampling. The search has already walked it and
-    knows which actions ever moved the grid: 20 to 135 of them. Training on
-    that subset is the same task over a space two to five times smaller.
+    Only the types are narrowed. An env is configured with a vocabulary
+    generated from the task's palette, 137 to 607 names on the measured
+    tasks, and the search knows which of them ever moved the grid. What it
+    knows is about types - that emission helps here and gravity does not -
+    and not about directions or colours:
 
-    `agent` narrows further, to the actions that agent's bases generate -
-    measured at 9 to 13 once intersected. It is optional and it is a
-    suggestion: an agent with no roster, or one whose roster misses
-    everything the search found, falls back to the search's own set rather
-    than to nothing. Handing ARCGridWorld an empty vocabulary leaves it able
-    to submit and nothing else, which is not a narrower version of the task.
+    - directions: the search tries a few (settings.directions) on one
+      training pair, and the direction a pair needs is the pair's, not the
+      task's. The held-out pair can need the one no training pair did, and
+      a name the vocabulary lacks is an action the agent cannot take.
+      This used to keep the names the search moved the grid with, direction
+      and all, so on a search over north and east - the default - no
+      southward or westward action ever reached training. So every
+      direction dependent type comes back in all of ALL_DIRECTIONS.
+    - colours: the palette of every training output, the only colours worth
+      painting in (output_colours) - rather than those the search's one
+      pair happened to use.
+
+    `agent` narrows the types further, to the ones in that agent's roster.
+    It is a suggestion: an agent with no roster, or one whose roster misses
+    every type the search found, leaves the search's types as they are
+    rather than nothing - an empty vocabulary leaves an env able to submit
+    and nothing else, which is not a narrower version of the task. A search
+    that found nothing keeps every type it was given.
 
     `found` passes in an already-computed search_task result, since a run
     that also builds a prompt has paid for one already (see HintCache).
@@ -795,13 +808,26 @@ def feasible_from_search(task, settings=None, agent=None, found=None):
     """
     settings = settings or SearchSettings()
     found = found if found is not None else search_task(task, settings)
-    vocabulary = set(found["actions"].values()) - {"submit"}
-    kept = set(found["effective"]) & vocabulary or vocabulary
+    searched = {split_name(name)[0] for name in found["actions"].values()} - {"submit"}
+    types = {split_name(name)[0] for name in found["effective"]} & searched or searched
     if agent is not None:
-        colours = settings.colours or output_colours(as_triple(task)[2])
-        narrowed = kept & roster_for(agent, colours, settings.directions)
-        kept = narrowed or kept
-    return {0: "submit", **{i: name for i, name in enumerate(sorted(kept), start=1)}}
+        roster = set(AGENT2ACTIONS.get(agent) or ()) - UNIMPLEMENTED_ACTIONS
+        types = types & roster or types
+    colours = settings.colours or output_colours(*_training_outputs(task))
+    generated = define_feasible_actions(
+        sorted(types), list(colours), list(ALL_DIRECTIONS), COLOR_DEPENDENT_ACTIONS,
+        DOUBLE_COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS)
+    names = sorted(name for name in generated.values() if name != "submit")
+    return {0: "submit", **{i: name for i, name in enumerate(names, start=1)}}
+
+
+def _training_outputs(task):
+    """Every training output of a task, or the one output a triple or a
+    subtask carries."""
+    subtasks = getattr(task, "subtasks", None)
+    if subtasks:
+        return [subtask.train_out for subtask in subtasks]
+    return [as_triple(task)[2]]
 
 
 def hints_for(task, settings=None):

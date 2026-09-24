@@ -103,6 +103,11 @@ rl_config = {
     # - worth measuring again rather than trusting.
     'reward_approach': 3,
     'pad_val': 10,
+    # {0: 'submit'} and None below mean "decide per task":
+    # rl.rl_job.narrowed_for_task fills them in from the task, and keeps
+    # whatever is set to anything else - here or in a notebook - as set.
+    # This one is the search's: action types that moved the grid, in every
+    # output colour and every direction.
     'feasible_actions': {0:'submit'},
     'repr_level': 1,
     'observation_space_elements': ["objects_emb"], # ["objects_emb", "relations_emb"]
@@ -113,18 +118,19 @@ rl_config = {
     # off - see ARCGridWorld.observed_grid.
     'observation_grid_shape': None,
     # What an action names: 'objects' or 'coordinates' (see
-    # ARCGridWorld.addressing). rl.rl_job.narrowed_for_task decides it per
-    # task from the agent's label, together with coordinate_shape - the
-    # grid size the coordinate half of the action space spans - and the
-    # observation that goes with it. These are the defaults a run gets when
-    # it is not narrowed.
-    'addressing': 'objects',
+    # ARCGridWorld.addressing). None: narrowed_for_task reads it off the
+    # agent's label; a run that is not narrowed gets objects.
+    'addressing': None,
+    # The grid size the coordinate half of the action space spans. None:
+    # the task's largest grid.
     'coordinate_shape': None,
-    # Object slots, and so the two object indices of every action. Sized by
-    # this rather than by the task, so a slot past the objects a grid has is
-    # a legal action that does nothing: on the median shape-preserving task
-    # only 3.5% of the (object, object) pairs name two real objects.
-    'max_objects': 16,
+    # Object slots, and so the two object indices of every action - a slot
+    # past the objects a grid has is a legal action that does nothing. None:
+    # the slots the task's grids fill (a median 3 on the shape-preserving
+    # tasks, where only 3.5% of the (object, object) pairs of a fixed 16
+    # name two real objects); a run that is not narrowed gets
+    # rl.arc_env.MAX_OBJECTS.
+    'max_objects': None,
     }
 
 def load_PPO_config():

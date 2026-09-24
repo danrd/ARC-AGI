@@ -847,93 +847,99 @@ class TestTheDefaultsAreTheMeasuredOnes:
 
 class TestNarrowingTheActionSpaceToWhatASearchCanUse:
     """A task's generated vocabulary is 137 to 607 actions on the measured
-    tasks and the agent explores it by sampling; the search has already
-    walked it and knows which 20 to 135 ever moved the grid. Narrowing to
-    those is the same task over a space two to five times smaller, and
-    intersecting with the roster of the agent a task is labelled with takes
-    it to 9 to 13.
+    tasks, and the search knows which ever moved the grid. What that says
+    is which action *types* help - not which directions or colours: the
+    search tries a few directions on one pair, and the held-out pair can
+    need the one no training pair did. So the types are narrowed, and each
+    kept type comes back in every colour of the outputs and every
+    direction. It used to keep the search's names, direction and all, and a
+    search over north and east - the default - never let a southward
+    action reach training.
 
-    The roster is where this gets dangerous. AGENT2ACTIONS covers five agent
-    names; idx2agent.pkl labels tasks with nine, and the four it does not
-    cover account for 444 of the 800 labelled tasks. An empty roster means
-    "no roster written", never "this agent may do nothing" - and an empty
-    feasible_actions leaves ARCGridWorld able to submit and nothing else,
-    which is not a narrower version of the task.
+    The roster narrows types further, and is where this gets dangerous.
+    AGENT2ACTIONS covers five agent names; idx2agent.pkl labels tasks with
+    nine. An agent without a roster, or one whose roster misses every type
+    found, keeps the search's types - an empty feasible_actions leaves
+    ARCGridWorld able to submit and nothing else, which is not a narrower
+    version of the task.
     """
 
     VOCABULARY = {0: "submit", 1: "red_recolor", 2: "blue_recolor",
-                  3: "red_gravity", 4: "blue_emission_N"}
+                  3: "gravity", 4: "red_emission_N", 5: "blue_emission_E"}
+    COLOURS = hints.SearchSettings(colours=("red", "blue"))
 
     def _found(self, effective):
         return {"actions": dict(self.VOCABULARY), "effective": effective,
                 "solutions": [], "partials": [], "peak": 0.0}
 
-    def test_only_the_actions_the_search_moved_the_grid_with_are_kept(self):
-        found = self._found({"red_recolor": 8, "red_gravity": 2})
+    def _names(self, effective, agent=None, settings=None):
+        actions = hints.feasible_from_search("task", settings or self.COLOURS, agent=agent,
+                                             found=self._found(effective))
+        return set(actions.values())
 
-        actions = hints.feasible_from_search("task", found=found)
+    def test_a_type_is_kept_in_every_colour(self):
+        assert self._names({"red_recolor": 8}) == {"submit", "red_recolor", "blue_recolor"}
 
-        assert set(actions.values()) == {"submit", "red_recolor", "red_gravity"}
-        assert actions[0] == "submit"
+    def test_and_in_every_direction(self):
+        """The search moved the grid with red emission north; the type is
+        emission, and the held-out pair may need it pointing anywhere."""
+        from data.configs.env_configs import ALL_DIRECTIONS
+
+        names = self._names({"red_emission_N": 3})
+        assert names == {"submit"} | {f"{colour}_emission_{direction}"
+                                      for colour in ("red", "blue")
+                                      for direction in ALL_DIRECTIONS}
 
     def test_the_indices_are_dense_and_start_after_submit(self):
         """ARCGridWorld sizes its action space from len(feasible_actions)
         and looks actions up by index, so a gap is an index that names
         nothing."""
-        found = self._found({"red_recolor": 8, "red_gravity": 2})
-
-        actions = hints.feasible_from_search("task", found=found)
-
+        actions = hints.feasible_from_search("task", self.COLOURS,
+                                             found=self._found({"red_recolor": 8, "gravity": 2}))
         assert sorted(actions) == list(range(len(actions)))
+        assert actions[0] == "submit"
 
-    def test_a_search_that_found_nothing_leaves_the_whole_vocabulary(self):
+    def test_a_search_that_found_nothing_keeps_every_type(self):
         """Rather than an agent that can only submit."""
-        actions = hints.feasible_from_search("task", found=self._found({}))
+        names = self._names({})
+        assert {"red_recolor", "blue_recolor", "gravity", "red_emission_S",
+                "blue_emission_N"} <= names
 
-        assert set(actions.values()) == set(self.VOCABULARY.values())
+    def test_an_agent_with_a_roster_narrows_the_types(self):
+        """highlighter's roster is recolor and color_inversion."""
+        assert self._names({"red_recolor": 8, "gravity": 2}, agent="highlighter") == \
+            {"submit", "red_recolor", "blue_recolor"}
 
-    def test_an_agent_with_a_roster_narrows_further(self, monkeypatch):
-        monkeypatch.setattr(hints, "roster_for",
-                            lambda *a: {"red_recolor", "blue_recolor"})
-        found = self._found({"red_recolor": 8, "red_gravity": 2})
-
-        actions = hints.feasible_from_search(
-            "task", hints.SearchSettings(colours=("red", "blue")),
-            agent="modifier", found=found)
-
-        assert set(actions.values()) == {"submit", "red_recolor"}
-
-    def test_an_agent_with_no_roster_keeps_what_the_search_found(self,
-                                                                monkeypatch):
+    def test_an_agent_with_no_roster_keeps_what_the_search_found(self):
         """constructor, generalizer, extrapolator, mixer and mapper have no
         roster and carry 444 of the 800 labelled tasks between them."""
-        monkeypatch.setattr(hints, "roster_for", lambda *a: set())
-        found = self._found({"red_recolor": 8, "red_gravity": 2})
+        assert self._names({"red_recolor": 8, "gravity": 2}, agent="generalizer") == \
+            {"submit", "red_recolor", "blue_recolor", "gravity"}
 
-        actions = hints.feasible_from_search(
-            "task", hints.SearchSettings(colours=("red", "blue")),
-            agent="constructor", found=found)
-
-        assert set(actions.values()) == {"submit", "red_recolor", "red_gravity"}
-
-    def test_a_roster_that_misses_everything_keeps_what_the_search_found(
-            self, monkeypatch):
-        monkeypatch.setattr(hints, "roster_for", lambda *a: {"blue_emission_N"})
-        found = self._found({"red_recolor": 8, "red_gravity": 2})
-
-        actions = hints.feasible_from_search(
-            "task", hints.SearchSettings(colours=("red", "blue")),
-            agent="shifter", found=found)
-
-        assert set(actions.values()) == {"submit", "red_recolor", "red_gravity"}
+    def test_a_roster_that_misses_everything_keeps_what_the_search_found(self):
+        assert self._names({"gravity": 2}, agent="highlighter") == {"submit", "gravity"}
 
     def test_an_effective_name_outside_the_vocabulary_is_dropped(self):
         """The env can only run what its own vocabulary names."""
-        found = self._found({"red_recolor": 8, "not_a_real_action": 9})
+        assert self._names({"red_recolor": 8, "not_a_real_action": 9}) == \
+            {"submit", "red_recolor", "blue_recolor"}
 
-        actions = hints.feasible_from_search("task", found=found)
+    def test_the_colours_are_every_training_output_s(self):
+        """Not the first pair's, which is all the search looks at: on
+        91714a58 each pair's output has its own colour."""
+        from rl.arc_task import ARCSubtask, ARCTask
 
-        assert set(actions.values()) == {"submit", "red_recolor"}
+        grids = []
+        for colour in (2, 6, 7):
+            out = np.zeros((3, 3), dtype=int)
+            out[1, 1] = colour
+            grids.append(ARCSubtask(f"t_{colour}", np.zeros((3, 3), dtype=int), out))
+        task = ARCTask(label="t", subtasks=grids, test_inp=grids[0].train_inp,
+                       test_out=grids[0].train_out)
+        actions = hints.feasible_from_search(task, hints.SearchSettings(),
+                                             found=self._found({"red_recolor": 1}))
+        assert set(actions.values()) == {"submit", "black_recolor", "red_recolor",
+                                         "magenta_recolor", "orange_recolor"}
 
     def test_the_roster_of_an_unknown_agent_is_empty_rather_than_raising(self):
         assert hints.roster_for("no_such_agent", ("red",), ("N",)) == set()

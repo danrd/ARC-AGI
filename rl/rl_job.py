@@ -225,95 +225,144 @@ def coordinate_shape(task: Any):
     return (max(shape[0] for shape in shapes), max(shape[1] for shape in shapes))
 
 
+#: The feasible_actions a config carries when nobody chose any: submit
+#: alone, which trains an agent whose only move is to give up.
+PLACEHOLDER_ACTIONS = {0: "submit"}
+
+
+def _chosen(rl_config: Dict[str, Any], key: str, placeholder=None) -> bool:
+    """Whether the caller set `key` to something of their own, rather than
+    leaving it to be decided per task."""
+    value = rl_config.get(key)
+    return value is not None and value != placeholder
+
+
 def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
                       settings: Any = None) -> Dict[str, Any]:
-    """`rl_config` cut down to the space this task actually needs.
+    """`rl_config` with what it leaves open decided for this task.
 
-    The shipped config is written to be task-independent, and each of those
-    defaults is a placeholder that costs a run:
+    Only what it leaves open. A key the caller set is kept as set - an
+    override in a notebook or in rl_configs.py itself is a decision, and
+    this used to overwrite every one of them, so a run with max_objects,
+    addressing or an action list of its own trained on the search's instead
+    and said nothing. Left open means:
 
-    - feasible_actions is {0: 'submit'}, so a run started from it trains an
-      agent whose only move is to give up. The search narrows it: 137 to 607
-      actions in a task's generated vocabulary, 20 to 135 the search ever
-      moved the grid with, 9 to 13 once intersected with the roster of the
-      agent the task is labelled with (`task.agent`, when it has one).
-    - max_objects is 16 for every task, and the median task holds 3.
-    - observation_grid_shape is None, which refuses any task whose examples
-      differ in size - 133 of the 262 shape-preserving training tasks, so
-      more than half of them never reached their first step.
+    - addressing None: read off the agent's label (addressing_for).
+    - feasible_actions {0: 'submit'}: the search's. The shipped placeholder,
+      which trains an agent whose only move is to give up. The object
+      search narrows the action types - 137 to 607 names in a task's
+      generated vocabulary, the ones that ever moved the grid, intersected
+      with the roster of the agent the task is labelled with - and never
+      the directions (feasible_from_search); the coordinate search narrows
+      colours and strokes (rl.coordinate_search).
+    - max_objects None: the slots the task's grids fill, a median 3
+      against the 16 the action space would otherwise carry.
+    - observation_grid_shape None: the task's largest grid when its
+      examples differ in size, which a fixed-shape buffer needs - 133 of the
+      262 shape-preserving training tasks never reached their first step
+      without it.
+    - coordinate_shape None: the task's largest grid, under coordinates.
 
-    Every measurement in this repository set these by hand instead, which is
-    why a script's numbers and the pipeline's were never about the same
-    thing.
+    observation_space_elements is always passed through observation_for,
+    which only drops what the addressing cannot use and adds what it needs;
+    and under coordinates the observation is padded to coordinate_shape
+    whatever observation_grid_shape says, because the coordinate heads
+    score the observed grid's rows and columns, which have to be the action
+    space's.
 
-    A search that fails leaves the actions alone rather than taking the
-    pipeline down with it - training over a wider space is a worse run, not
-    a broken one. The slots and the shape are read off the task and cannot
-    fail that way. The search costs 0.7 to 116 seconds per task (median
-    around 16) against the minutes a training run takes, and
-    SearchSettings.timeout bounds the tail.
+    A search that fails leaves the placeholder's vocabulary as the full one
+    rather than taking the pipeline down - training over a wider space is a
+    worse run, not a broken one. The search costs seconds to a couple of
+    minutes a task against the minutes training takes, and its settings'
+    timeout bounds the tail.
     """
+    from data.configs.env_configs import MAIN_DIRECTIONS
     from rl.search_hints import (SearchSettings, coordinate_vocabulary,
                                  feasible_from_search, output_colours)
 
     agent = getattr(task, "agent", None)
     narrowed = dict(rl_config)
-    narrowed["addressing"] = addressing_for(agent)
+    narrowed["addressing"] = (rl_config["addressing"] if _chosen(rl_config, "addressing")
+                              else addressing_for(agent))
     narrowed["observation_space_elements"] = observation_for(
         rl_config.get("observation_space_elements") or [],
         narrowed["addressing"])
+    search_actions = not _chosen(rl_config, "feasible_actions", PLACEHOLDER_ACTIONS)
     if narrowed["addressing"] == "coordinates":
-        # Not the object search: its findings are object actions, and none
-        # of them belongs to this vocabulary. The coordinate search reads
-        # strokes off each training pair's answer (rl.coordinate_search)
-        # and keeps the colours and strokes its covers used - of every
-        # coordinate transform in every colour the outputs use. A search
-        # that fails keeps them all, as the object branch does.
-        from rl.coordinate_search import (CoordinateSearchSettings,
-                                          feasible_from_coordinate_search)
+        if search_actions:
+            # Not the object search: its findings are object actions, and
+            # none of them belongs to this vocabulary. The coordinate
+            # search reads strokes off each training pair's answer and
+            # keeps the colours and strokes its covers used.
+            from rl.coordinate_search import (CoordinateSearchSettings,
+                                              feasible_from_coordinate_search)
 
-        vocabulary = coordinate_vocabulary(
-            output_colours(*[subtask.train_out for subtask in task.subtasks]))
-        narrowed["feasible_actions"] = vocabulary
+            vocabulary = coordinate_vocabulary(
+                output_colours(*[subtask.train_out for subtask in task.subtasks]))
+            narrowed["feasible_actions"] = vocabulary
+            try:
+                coordinate_settings = (settings if isinstance(settings, CoordinateSearchSettings)
+                                       else CoordinateSearchSettings())
+                narrowed["feasible_actions"], _found = feasible_from_coordinate_search(
+                    task, vocabulary, coordinate_settings)
+            except Exception:  # noqa: BLE001 - a failed search must not fail the run
+                pass
+        if not _chosen(rl_config, "coordinate_shape"):
+            narrowed["coordinate_shape"] = coordinate_shape(task)
+        narrowed["observation_grid_shape"] = tuple(narrowed["coordinate_shape"])
+        return narrowed
+    if not _chosen(rl_config, "max_objects"):
+        narrowed["max_objects"] = object_slots(task, rl_config.get("repr_level", 1))
+    if not _chosen(rl_config, "observation_grid_shape"):
+        narrowed["observation_grid_shape"] = observation_shape(task)
+    if search_actions:
+        # All four main directions for the search itself: it decides which
+        # action types move the grid, and a type that only works southwards
+        # is invisible to a search that only tries north and east - the
+        # scan's default, which SearchSettings keeps for the hints.
+        settings = settings or SearchSettings(directions=tuple(MAIN_DIRECTIONS))
         try:
-            coordinate_settings = (settings if isinstance(settings, CoordinateSearchSettings)
-                                   else CoordinateSearchSettings())
-            narrowed["feasible_actions"], _found = feasible_from_coordinate_search(
-                task, vocabulary, coordinate_settings)
+            narrowed["feasible_actions"] = feasible_from_search(
+                task, settings, agent=agent)
         except Exception:  # noqa: BLE001 - a failed search must not fail the run
             pass
-        narrowed["coordinate_shape"] = coordinate_shape(task)
-        # Always padded to it, even when every grid is one size: the
-        # coordinate heads score the rows and columns of the observed grid,
-        # and those have to line up with the action space's.
-        narrowed["observation_grid_shape"] = narrowed["coordinate_shape"]
-        return narrowed
-    narrowed["max_objects"] = object_slots(task, rl_config.get("repr_level", 1))
-    narrowed["observation_grid_shape"] = observation_shape(task)
-    try:
-        narrowed["feasible_actions"] = feasible_from_search(
-            task, settings or SearchSettings(), agent=agent)
-    except Exception:  # noqa: BLE001 - a failed search must not fail the run
-        pass
     return narrowed
 
 
-def _rl_training_worker(task: Any) -> Dict[str, Any]:
+def _rl_training_worker(task: Any, rl_config: Optional[Dict[str, Any]] = None
+                        ) -> Dict[str, Any]:
     """Runs in the child process. Must be a module-level function (not
     nested) since the spawn context pickles the target. Imports
     rl.rl_module lazily, here rather than at module level, so that
     importing rl_job.py itself (e.g. from orchestration) never requires
-    torch/stable-baselines3 just to manage a subprocess handle."""
-    from data.configs.rl_configs import rl_config, load_PPO_config
+    torch/stable-baselines3 just to manage a subprocess handle.
+
+    `rl_config` is the parent's, handed over by default_rl_start_fn: a
+    spawned child imports data.configs.rl_configs afresh, so reading it
+    here gets the file's values and not a notebook's changes to them."""
+    from data.configs.rl_configs import load_PPO_config
     from rl.rl_module import RLModule, RlConfig
 
+    if rl_config is None:
+        from data.configs.rl_configs import rl_config
     return RLModule(RlConfig(**narrowed_for_task(task, rl_config)),
                     load_PPO_config()).solve(task)
 
 
 def default_rl_start_fn(task: Any) -> RLJobHandle:
     """Starts RL training (rl.rl_module.RLModule, i.e. rl.training.train_on_task)
-    for `task` as a background subprocess, using the default rl_config /
-    PPO config. Pass a different rl_start_fn to solve_task() to use a
-    non-default config or a previously-trained policy instead."""
-    return RLJobHandle(task, _rl_training_worker)
+    for `task` as a background subprocess, using rl_config as it stands in
+    this process when the job starts - edits made to it in a notebook
+    included - and the default PPO config. Pass a different rl_start_fn to
+    solve_task() to use another config or a previously-trained policy.
+
+    The PPO config is not carried across: it holds a learning-rate schedule
+    that is a closure, and a closure does not pickle. The child loads its
+    own."""
+    import copy
+    from functools import partial
+
+    from data.configs.rl_configs import rl_config
+
+    return RLJobHandle(task, partial(_rl_training_worker,
+                                     rl_config=copy.deepcopy(rl_config)))

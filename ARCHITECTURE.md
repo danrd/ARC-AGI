@@ -134,10 +134,10 @@ graph TD
   symbolic["symbolic (9)"]
   tests["tests (53)"]
   utils["utils (3)"]
-  tests -->|72| rl
+  tests -->|74| rl
   tests -->|25| symbolic
   tests -->|24| subsymbolic
-  tests -->|14| data
+  tests -->|15| data
   rl -->|10| symbolic
   rl -->|9| data
   scripts -->|7| rl
@@ -169,9 +169,9 @@ graph TD
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
 | `orchestration.graph` | 3 |
-| `rl.arc_env` | 14 |
+| `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 23 |
+| `rl.arc_task` | 24 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |

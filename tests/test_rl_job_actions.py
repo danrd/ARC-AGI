@@ -37,8 +37,10 @@ class _Task:
         self.test_subtask = _Subtask(test_shape)
 
 
+#: What the shipped config leaves to be decided per task.
 CONFIG = {"feasible_actions": {0: "submit"}, "seed": 42, "repr_level": 1,
-          "max_objects": 16, "observation_grid_shape": None}
+          "max_objects": None, "observation_grid_shape": None, "addressing": None,
+          "coordinate_shape": None}
 
 
 class TestWhatThePipelineTrainsOn:
@@ -489,3 +491,139 @@ class TestWhatACoordinateTaskIsNarrowedTo:
         from rl.rl_module import RlConfig
 
         assert set(rl_config) == set(RlConfig.model_fields)
+
+
+class TestWhatTheCallerSetIsKept:
+    """narrowed_for_task decides what the config leaves open - None, or the
+    submit-only placeholder for the actions - and nothing else. It used to
+    overwrite every one of these, so an override in a notebook or in
+    rl_configs.py itself trained on the search's values instead."""
+
+    @staticmethod
+    def _quiet(monkeypatch):
+        import rl.search_hints as hints
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: {0: "submit", 1: "searched"})
+
+    def test_object_slots(self, monkeypatch):
+        self._quiet(monkeypatch)
+        config = narrowed_for_task(_Task(), dict(CONFIG, max_objects=7))
+        assert config["max_objects"] == 7
+
+    def test_the_observation_shape(self, monkeypatch):
+        self._quiet(monkeypatch)
+        config = narrowed_for_task(_Task(), dict(CONFIG, observation_grid_shape=(9, 9)))
+        assert config["observation_grid_shape"] == (9, 9)
+
+    def test_the_actions_and_then_no_search_runs(self, monkeypatch):
+        import rl.search_hints as hints
+
+        # Counted rather than raised: narrowed_for_task keeps the actions
+        # it has when a search fails, which would hide a search it ran.
+        calls = []
+        monkeypatch.setattr(hints, "feasible_from_search",
+                            lambda *a, **k: calls.append(a) or {0: "submit", 1: "searched"})
+        chosen = {0: "submit", 1: "red_recolor", 2: "gravity"}
+        config = narrowed_for_task(_Task(), dict(CONFIG, feasible_actions=chosen))
+        assert config["feasible_actions"] == chosen
+        assert calls == []
+
+    def test_the_addressing_against_the_label(self, monkeypatch):
+        self._quiet(monkeypatch)
+        config = narrowed_for_task(_Task(agent="constructor"),
+                                   dict(CONFIG, addressing="objects",
+                                        observation_space_elements=["objects_emb"]))
+        assert config["addressing"] == "objects"
+        assert config["observation_space_elements"] == ["objects_emb"]
+
+    def test_and_coordinates_for_an_agent_labelled_otherwise(self, monkeypatch):
+        import rl.coordinate_search as coordinate_search
+        monkeypatch.setattr(coordinate_search, "feasible_from_coordinate_search",
+                            lambda task, vocabulary, settings: (vocabulary, {}))
+        task = TestWhatACoordinateTaskIsNarrowedTo._task("highlighter")
+        config = narrowed_for_task(task, dict(CONFIG, addressing="coordinates"))
+        assert config["addressing"] == "coordinates"
+        assert config["coordinate_shape"] == (5, 5)
+
+    def test_the_coordinate_shape_and_the_observation_follows_it(self, monkeypatch):
+        import rl.coordinate_search as coordinate_search
+        monkeypatch.setattr(coordinate_search, "feasible_from_coordinate_search",
+                            lambda task, vocabulary, settings: (vocabulary, {}))
+        task = TestWhatACoordinateTaskIsNarrowedTo._task("constructor")
+        config = narrowed_for_task(task, dict(CONFIG, coordinate_shape=(8, 9)))
+        assert config["coordinate_shape"] == (8, 9)
+        assert config["observation_grid_shape"] == (8, 9)
+
+    def test_the_shipped_config_leaves_them_open(self):
+        from data.configs.rl_configs import rl_config
+        from rl.rl_job import PLACEHOLDER_ACTIONS
+
+        assert rl_config["feasible_actions"] == PLACEHOLDER_ACTIONS
+        for key in ("addressing", "max_objects", "observation_grid_shape", "coordinate_shape"):
+            assert rl_config[key] is None, key
+
+    def test_a_config_nobody_narrowed_still_trains_on_objects_and_the_fixed_slots(self):
+        from rl.arc_env import MAX_OBJECTS
+        from rl.rl_module import RlConfig
+
+        config = RlConfig()
+        assert config.addressing is None and config.max_objects is None
+        assert (config.max_objects or MAX_OBJECTS) == MAX_OBJECTS
+
+
+class TestTheSearchTriesEveryMainDirection:
+    def test_narrowing_searches_north_east_south_and_west(self, monkeypatch):
+        """A type that only works southward is invisible to a search over
+        north and east, SearchSettings' default for the hints."""
+        import rl.search_hints as hints
+
+        seen = {}
+
+        def record(task, settings, agent=None):
+            seen["directions"] = settings.directions
+            return {0: "submit"}
+
+        monkeypatch.setattr(hints, "feasible_from_search", record)
+        narrowed_for_task(_Task(), dict(CONFIG))
+        assert set(seen["directions"]) == {"N", "E", "S", "W"}
+
+
+class TestTheWorkerTrainsOnTheParentsConfig:
+    """A spawned child imports data.configs.rl_configs afresh, so the
+    worker reading it there got the file's values and not a notebook's
+    edits to them."""
+
+    def test_the_config_as_it_stands_is_handed_over(self, monkeypatch):
+        import rl.rl_job as rl_job
+        from data.configs import rl_configs
+
+        started = {}
+        monkeypatch.setattr(rl_job, "RLJobHandle",
+                            lambda task, worker: started.update(worker=worker))
+        monkeypatch.setitem(rl_configs.rl_config, "total_steps", 1234)
+
+        rl_job.default_rl_start_fn("task")
+
+        handed = started["worker"].keywords["rl_config"]
+        assert handed["total_steps"] == 1234
+        assert handed is not rl_configs.rl_config
+
+    def test_the_worker_trains_on_what_it_is_handed(self, monkeypatch):
+        import rl.rl_job as rl_job
+        import rl.rl_module as rl_module
+
+        seen = {}
+
+        class FakeModule:
+            def __init__(self, config, ppo):
+                seen["config"] = config
+
+            def solve(self, task):
+                return {}
+
+        monkeypatch.setattr(rl_module, "RLModule", FakeModule)
+        monkeypatch.setattr(rl_job, "narrowed_for_task", lambda task, config: config)
+        from data.configs.rl_configs import rl_config
+
+        rl_job._rl_training_worker("task", dict(rl_config, total_steps=4321))
+        assert seen["config"].total_steps == 4321

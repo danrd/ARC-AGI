@@ -47,8 +47,8 @@ class RlConfig(BaseModel):
     repr_level: int = 1
     observation_space_elements: List[str] = ["objects_emb"]  # ["objects_emb", "relations_emb"]
     observation_grid_shape: Optional[Tuple[int, int]] = None
-    max_objects: int = 16
-    addressing: str = "objects"
+    max_objects: Optional[int] = None  # None: per task, see rl_config
+    addressing: Optional[str] = None  # None: per task, see rl_config
     coordinate_shape: Optional[Tuple[int, int]] = None
 
 

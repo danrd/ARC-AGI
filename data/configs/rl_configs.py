@@ -185,6 +185,19 @@ def load_PPO_config():
     # without also wanting the box spanning both. Unmeasured - kept
     # switchable so the two can be compared.
     'coordinate_heads': 'autoregressive',
+    # How an object action is chosen: 'flat', one logit per name of the
+    # vocabulary, or 'factored', the name's parts one after another - type,
+    # objects, colour, second colour, direction - each from a head shared
+    # by every name with that part, colours and directions scored from the
+    # observation (rl.policy.FactoredObjectDistribution). Flat cannot
+    # choose a name no training pair used; factored is built to.
+    'object_heads': 'flat',
+    # Under factored heads, what a direction is scored from: 'relative' -
+    # where the chosen object's mass sits along it and the room that way,
+    # which carries to a direction no training pair used - or 'both', which
+    # adds the direction itself and can learn "always north" at the price of
+    # never choosing a direction training did not (rl.policy.ARCCustomNetwork).
+    'direction_keys': 'relative',
     # The object branch's architecture, the way extr_arch is the grid's:
     # keyword arguments for ObjectSetProcessor - dropout, self_attention,
     # grouped, cross_attention, use_position. None is what this shipped as.

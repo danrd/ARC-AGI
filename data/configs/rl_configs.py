@@ -191,13 +191,31 @@ def load_PPO_config():
     # by every name with that part, colours and directions scored from the
     # observation (rl.policy.FactoredObjectDistribution). Flat cannot
     # choose a name no training pair used; factored is built to.
+    #
+    # Measured on 15 tasks (the 9 whose every pair is one object action,
+    # and the 6 of the budget curve), three seeds, 200k steps, one narrowed
+    # vocabulary for all arms:
+    #
+    #                              held-out  tests    vs flat, paired
+    #                              mean      solved   better/worse of 45
+    #   flat                       0.450     16
+    #   factored, relative dirs    0.210     11       13 / 16
+    #   factored, both             0.443     17       13 / 8
+    #
+    # So factored is level with flat once directions keep their identity,
+    # at 35% more wall clock, and the transfer it is built for did not show:
+    # 25d487eb, whose test needs a name no pair used, was solved by no arm.
+    # Flat stays until something moves that.
     'object_heads': 'flat',
     # Under factored heads, what a direction is scored from: 'relative' -
     # where the chosen object's mass sits along it and the room that way,
     # which carries to a direction no training pair used - or 'both', which
-    # adds the direction itself and can learn "always north" at the price of
-    # never choosing a direction training did not (rl.policy.ARCCustomNetwork).
-    'direction_keys': 'relative',
+    # adds the direction itself (rl.policy.ARCCustomNetwork). Relative
+    # alone cannot say "always down": on 25ff71a9, shift the object one row
+    # down, it scored -1.0 on the held-out pair on all three seeds where
+    # both scored 1.0 on two - and -0.240 against flat over the 15 tasks
+    # above, where both is -0.007.
+    'direction_keys': 'both',
     # The object branch's architecture, the way extr_arch is the grid's:
     # keyword arguments for ObjectSetProcessor - dropout, self_attention,
     # grouped, cross_attention, use_position. None is what this shipped as.

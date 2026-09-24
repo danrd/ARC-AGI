@@ -398,7 +398,7 @@ class ARCCustomNetwork(nn.Module):
         coordinate_heads: str = "autoregressive",
         action_structure: Optional[ActionStructure] = None,
         factored_width: int = 0,
-        direction_keys: str = "relative",
+        direction_keys: str = "both",
     ):
         super().__init__()
         if direction_keys not in ("relative", "both"):
@@ -413,6 +413,9 @@ class ARCCustomNetwork(nn.Module):
         #: heavy end, the relative keys emitted west on a fourth with
         #: probability 1.0 on three seeds and 'both' with 0.0 - west was only
         #: ever a wrong answer, and its own embedding learned exactly that.
+        #: In training the other side of it cost more: over 15 tasks
+        #: relative scored -0.240 on the held-out pair against the flat
+        #: heads and both -0.007 (see rl_configs), so both is the default.
         self.direction_keys = direction_keys
         #: Set, the object heads choose an action by its parts
         #: (FactoredObjectDistribution) rather than one logit per name; the
@@ -715,7 +718,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         coordinate_heads: str = "autoregressive",
         object_heads: str = "flat",
         action_names: Optional[Dict[int, str]] = None,
-        direction_keys: str = "relative",
+        direction_keys: str = "both",
         *args,
         **kwargs,
     ):

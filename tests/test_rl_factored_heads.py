@@ -329,3 +329,46 @@ class TestEachChoiceKnowsTheOnesBefore:
             logits = dists[2].logits[0]
             odds.append((logits[3] - logits[2]).item())
         assert abs(odds[0] - odds[1]) > 1e-4
+
+
+class TestAFreshPolicyTriesEverything:
+    """stable-baselines3 initialises the mlp_extractor at gain sqrt(2) and
+    nn.Embedding at N(0, 1); the chained heads add embeddings to the context
+    and score by dot products, and on 25d487eb that left the action solving
+    two of the three pairs at probability 1e-7 - never tried, never learned.
+    start_near_uniform puts every part's first distribution at about
+    uniform over what is valid."""
+
+    def test_every_part_starts_at_about_uniform(self):
+        import math
+
+        from rl.arc_task import ARCSubtask
+        from rl.training import create_agent, create_vec_env
+
+        challenge = json.loads((REPO_ROOT / "data/datasets/ARC/training_challenges.json")
+                               .read_text())["25d487eb"]
+        subtasks = [ARCSubtask(f"s{i}", np.array(p["input"]), np.array(p["output"]))
+                    for i, p in enumerate(challenge["train"])]
+        colours = ("black", "blue", "red", "green", "sky")
+        names = ["submit"] + [f"{c}_emission_{d}" for c in colours for d in ("N", "S", "E", "W")] \
+            + [f"{c}_recolor" for c in colours]
+        vocabulary = dict(enumerate(names))
+        vec_env = create_vec_env(subtasks, n_envs=1, max_episode_len=4,
+                                 feasible_actions=vocabulary,
+                                 observation_space_elements=["objects_emb"],
+                                 observation_grid_shape=(15, 15), repr_level=1,
+                                 input_pattern="start", max_objects=2)
+        try:
+            agent = create_agent({"model_type": "PPO", "addressing": "objects"}, vec_env,
+                                 {"n_steps": 16, "batch_size": 8, "verbose": 0,
+                                  "object_heads": "factored"})
+            obs, _ = agent.policy.obs_to_tensor(vec_env.reset())
+            d = agent.policy.get_distribution(obs)
+            emission_n = {n: i for i, n in vocabulary.items()}["green_emission_N"]
+            _, dists = d._walk(given=torch.tensor([[emission_n, 0, 0]] * len(subtasks)))
+            type_, _first, _second, colour, _second_colour, direction = dists
+            assert type_.entropy().min().item() > 0.98 * math.log(3)   # submit, emission, recolor
+            assert colour.entropy().min().item() > 0.98 * math.log(len(colours))
+            assert direction.entropy().min().item() > 0.98 * math.log(4)
+        finally:
+            vec_env.close()

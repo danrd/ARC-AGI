@@ -410,3 +410,47 @@ class TestAFreshPolicyTriesEverything:
             assert direction.entropy().min().item() > 0.98 * math.log(4)
         finally:
             vec_env.close()
+
+
+class TestACueThatFitsByAccident:
+    """25ff71a9 in miniature: every example a shift down of a bar at the
+    top, where down is also where the room is; on the test the room lies
+    east. A key built from the room beyond the object learned "towards the
+    room" and shifted east on the real task on every seed; the keys read
+    the object's own asymmetry only, and a symmetric bar has none, so the
+    task-level bias carries "down"."""
+
+    def test_the_constant_wins(self):
+        names = {0: "submit", **{i + 1: f"shift_object_{d}" for i, d in enumerate("NSEW")}}
+        index = {n: i for i, n in names.items()}
+
+        def bar(min_i, max_i, min_j, max_j):
+            row = torch.zeros(OBJECT_DIM)
+            row[2] = 1.0
+            for name, value in (("min_i", min_i), ("max_i", max_i), ("min_j", min_j),
+                                ("max_j", max_j), ("i_center", (min_i + max_i) / 2),
+                                ("j_center", (min_j + max_j) / 2)):
+                _set(row, name, value)
+            return row
+
+        torch.manual_seed(0)
+        net = network(names, direction_keys="both")
+        lat = latent(batch=1, visible=1)
+        objects = torch.zeros(3, SLOTS, OBJECT_DIM)
+        objects[:, 0] = torch.stack([bar(0.0, 0.1, 0.0, 0.9), bar(0.0, 0.1, 0.2, 0.9),
+                                     bar(0.1, 0.2, 0.0, 1.0)])
+        shares = torch.zeros(3, 10)
+        shares[:, 2] = 0.1
+        batch = type(lat)(lat.context.expand(3, -1), lat.rows.expand(3, -1, -1),
+                          lat.row_mask.expand(3, -1), objects, shares)
+        down = torch.tensor([[index["shift_object_S"], 0, 0]])
+        optimiser = torch.optim.Adam(net.parameters(), lr=0.02)
+        for _ in range(400):
+            optimiser.zero_grad()
+            (-distribution(net, batch).log_prob(down.expand(3, -1)).mean()).backward()
+            optimiser.step()
+        test = torch.zeros(1, SLOTS, OBJECT_DIM)
+        test[0, 0] = bar(0.0, 0.6, 0.0, 0.1)
+        probability = distribution(net, type(lat)(lat.context, lat.rows, lat.row_mask, test,
+                                                  shares[:1])).log_prob(down).exp().item()
+        assert probability > 0.5

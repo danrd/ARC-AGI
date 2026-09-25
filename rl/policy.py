@@ -328,10 +328,15 @@ class FactoredObjectDistribution(Distribution):
         dists.append(dist)
         context = context + heads["second_colour_feedback"](second_colour)
 
-        # Mass and room only in the keys: nothing that says which way is
-        # which. Which way is which enters as a bias that does not see the
-        # observation, when direction_keys asks for it.
-        keys = heads["direction_key"](direction_features(latent.objects, first)[..., :2])
+        # Mass alone in the keys: nothing that says which way is which, and
+        # nothing about where the object stands. Which way is which enters as
+        # a bias that does not see the observation, when direction_keys asks
+        # for it. The room beyond the object was a key too, and it is the
+        # kind of cue that fits training by accident: on 25ff71a9 every pair
+        # is a shift down of an object at the top, where down is also the
+        # side with the most room - the heads learned "towards the room" and
+        # on the test, whose room lies east, shifted east on every seed.
+        keys = heads["direction_key"](direction_features(latent.objects, first)[..., :1])
         logits = (heads["direction_query"](context).unsqueeze(1) * keys).sum(-1) / scale
         if net.direction_keys == "both":
             logits = logits + net.direction_bias
@@ -605,7 +610,7 @@ class ARCCustomNetwork(nn.Module):
             "second_colour_query": nn.Linear(latent, hidden),
             "colour_feedback": nn.Embedding(N_COLOURS, latent),
             "second_colour_feedback": nn.Embedding(N_COLOURS, latent),
-            "direction_key": nn.Sequential(nn.Linear(2, hidden), nn.ReLU(),
+            "direction_key": nn.Sequential(nn.Linear(1, hidden), nn.ReLU(),
                                            nn.Linear(hidden, hidden)),
             "direction_query": nn.Linear(latent, hidden),
         })

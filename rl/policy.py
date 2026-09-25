@@ -613,6 +613,49 @@ class ARCCustomNetwork(nn.Module):
         self.register_buffer("valid_direction", torch.as_tensor(structure.valid_direction))
         self.register_buffer("objects_taken", torch.as_tensor(structure.objects))
 
+    def start_near_uniform(self):
+        """Start the chained heads choosing their parts about uniformly.
+
+        stable-baselines3 initialises the mlp_extractor orthogonally at a
+        gain of sqrt(2) and gives only its own action_net the small 0.01
+        that keeps a fresh policy's choices even; nn.Embedding is left at
+        PyTorch's N(0, 1). The flat heads live with that - one Linear over
+        the latent - but the chained ones add embeddings to the context and
+        score by dot products of two projections, and there it compounds.
+        Measured on a fresh factored policy for 25d487eb: the type embedding
+        had norm 16 against a context of 14, the second pair's colour came
+        out at probability ~0 and its direction at 0.0007, so the action
+        that solves the pair had probability 1e-7 against 1e-2 under the
+        flat heads - never tried, and that pair never learned (0.44 over
+        the training pairs where flat reached 1.0).
+
+        So: embeddings at a small scale, and the layers that produce a
+        head's logits - the type Linear, every query - at the 0.01 gain
+        stable-baselines3 gives action_net. The keys and the feedback keep
+        their size, so what the heads can come to express is unchanged.
+
+        The autoregressive coordinate heads chain the same way and were
+        checked: a fresh one's choices come out within 0.01 nats of uniform
+        without this, so they are left as they are.
+        """
+        def small(module):
+            if isinstance(module, nn.Embedding):
+                nn.init.normal_(module.weight, std=0.01)
+            elif isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, gain=0.01)
+                nn.init.zeros_(module.bias)
+
+        with torch.no_grad():
+            if self.action_structure is not None:
+                heads = self.factored_heads
+                for name in ("type_feedback", "colour_id", "colour_feedback",
+                             "second_colour_feedback", "direction_id", "colour_query",
+                             "second_colour_query", "direction_query"):
+                    small(heads[name])
+                small(self.policy_nets[0])
+                for pointer in self.policy_nets[1:]:
+                    small(pointer.query)
+
     def split_factored_tail(self, features: torch.Tensor):
         """(objects, colour_shares) off the very end of the features - the
         layout ARCCombinedExtractor.factored_tail writes."""
@@ -752,6 +795,9 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             *args,
             **kwargs,
         )
+        # After the parent's _build, whose orthogonal initialisation is the
+        # thing being corrected - see ARCCustomNetwork.start_near_uniform.
+        self.mlp_extractor.start_near_uniform()
 
     def _actor_observation_space(self) -> spaces.Space:
         """What the actor is allowed to see."""

@@ -1320,3 +1320,48 @@ class TestWhatASearchSpendsItsTimeOn:
                             lambda *a, **k: calls.append(1) or {})
         mcts.rollout_preparation(env, method="random", n_initial_rollouts=1)
         assert calls == [1]
+
+
+class TestCopyingOnlyWhatARayReaches:
+    """Emission with object recolour paints whichever object its ray
+    reaches. The simulator used to deep-copy every object on the grid for
+    it; CopyOnAccess copies the ones the transform reads."""
+
+    @staticmethod
+    def _env():
+        from rl.arc_env import ARCGridWorld
+        from rl.arc_task import ARCSubtask
+
+        grid = np.zeros((5, 5), dtype=int)
+        grid[2, 0], grid[2, 4], grid[0, 2] = 2, 1, 4
+        env = ARCGridWorld(max_episode_len=5, reward_approach=3, repr_level=1,
+                           input_pattern="start", observation_space_elements=["objects_emb"],
+                           feasible_actions={0: "submit",
+                                             1: "red_emission_with_green_object_recolor_E"},
+                           max_objects=4)
+        env.set_subtask(ARCSubtask("ray", grid, grid))
+        env.reset()
+        return env
+
+    def test_the_state_it_started_from_is_left_alone(self):
+        from rl.mcts import EnvironmentSimulator, env_state_snapshot
+
+        env = self._env()
+        red = next(i for i, o in enumerate(env.objects) if 2 in o.color_numbers)
+        blue = next(i for i, o in enumerate(env.objects) if 1 in o.color_numbers)
+        simulator = EnvironmentSimulator(env)
+        state = env_state_snapshot(env)
+        next_state, *_ = simulator.simulate_step(state, [1, red, red])
+        assert 3 in next_state["objects"][blue].color_numbers
+        assert tuple(state["objects"][blue].color_numbers) == (1,)
+
+    def test_what_nothing_read_is_shared(self):
+        from rl.mcts import CopyOnAccess
+
+        objects = [object(), object(), object()]
+        lazy = CopyOnAccess(objects)
+        lazy[1]
+        out = lazy.materialised()
+        assert out[0] is objects[0] and out[2] is objects[2]
+        assert out[1] is not objects[1]
+        assert lazy[1] is lazy[1]

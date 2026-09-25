@@ -716,6 +716,43 @@ class PlayoutPolicy:
         return list(self.actions[int(np.searchsorted(self._cumulative, position))])
 
 
+class CopyOnAccess(list):
+    """The objects of a state, each deep-copied the first time something
+    reads it and shared until then.
+
+    For the transforms that may change an object the action does not name -
+    emission with object recolour paints whichever object its ray reaches,
+    found through cell2obj - the simulator used to copy every object on the
+    grid before the step, since it cannot know in advance which one. That
+    was most of what copying cost a search: on 6cdd2623, 11 of the 15
+    seconds of deep copies. The transform reaches that object by index, so
+    copying on access copies exactly the objects it could have changed.
+
+    `materialised()` is the plain list afterwards: copies where something
+    looked, the originals everywhere else.
+    """
+
+    def __init__(self, objects):
+        super().__init__(objects)
+        self._copied = set()
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
+        position = index if index >= 0 else len(self) + index
+        if position not in self._copied:
+            super().__setitem__(position, deepcopy(super().__getitem__(position)))
+            self._copied.add(position)
+        return super().__getitem__(position)
+
+    def __iter__(self):
+        for position in range(len(self)):
+            yield self[position]
+
+    def materialised(self):
+        return [super(CopyOnAccess, self).__getitem__(i) for i in range(len(self))]
+
+
 class EnvironmentSimulator:
     """Runs functional (non-mutating) simulated steps against an
     ARCGridWorld for MCTS tree search.
@@ -799,6 +836,8 @@ class EnvironmentSimulator:
         new_grid, new_objects, new_max_int, reward, done = self.env.simulate_action(
             action, objects, state['grid'], state['max_int'], state['prev_action'],
         )
+        if isinstance(new_objects, CopyOnAccess):
+            new_objects = new_objects.materialised()
         next_state = {
             'grid': new_grid, 'objects': new_objects, 'max_int': new_max_int,
             'prev_action': np.asarray(action),
@@ -846,7 +885,9 @@ class EnvironmentSimulator:
             return objects
 
         if 'object_recolor' in transform_name:
-            return [deepcopy(obj) for obj in objects]
+            # Any object the ray reaches may be recoloured; copy those it
+            # does reach, on access - see CopyOnAccess.
+            return CopyOnAccess(objects)
         objects = list(objects)
         for idx in {first, second}:
             objects[idx] = deepcopy(objects[idx])

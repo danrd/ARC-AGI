@@ -1251,14 +1251,19 @@ def rollout_preparation(env,
     Returns:
         The selected rollouts from every round, best first
     """
-    # Step 1: Test individual actions
-    print("Phase 1: Testing individual actions...")
-    action_results = test_individual_actions(env)
-
-    # Step 2: Identify promising actions
-    print("Phase 2: Identifying promising actions...")
-    promising_actions = identify_promising_actions(action_results, reward_threshold,
-                                                   keep_best=keep_best_actions)
+    # Steps 1-2: which single actions look promising - for the random
+    # method only, which samples from them. MCTS never reads the list, and
+    # building it was most of what a search cost: every action through a
+    # full env.reset() and env.step(), deep copies of the objects and a
+    # fresh observation each time. Measured on 6cdd2623, 127 of the 137
+    # seconds a search took, for a list nothing used.
+    promising_actions = []
+    if method == "random":
+        print("Phase 1: Testing individual actions...")
+        action_results = test_individual_actions(env)
+        print("Phase 2: Identifying promising actions...")
+        promising_actions = identify_promising_actions(action_results, reward_threshold,
+                                                       keep_best=keep_best_actions)
 
     # Step 3: Collect rollouts, narrowing the pool between rounds.
     pool = enumerate_actions(env)

@@ -311,27 +311,30 @@ class FactoredObjectDistribution(Distribution):
         context = context + heads["second_feedback"](latent.rows[batch, second])
 
         colours = colour_features(latent.colour_shares, latent.objects, first, second)
-        keys = heads["colour_key"](colours) + heads["colour_id"].weight.unsqueeze(0)
+        # Relative keys scored by a query that reads the context, plus a
+        # bias per colour that reads nothing - see ARCCustomNetwork's
+        # direction_keys for why the absolute part cannot sit in the keys.
+        keys = heads["colour_key"](colours)
         scale = keys.shape[-1] ** 0.5
-        logits = (heads["colour_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+        logits = ((heads["colour_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+                  + net.colour_bias)
         dist, colour = pick(logits, net.valid_colour[action_type], 3)
         dists.append(dist)
         context = context + heads["colour_feedback"](colour)
 
-        logits = (heads["second_colour_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+        logits = ((heads["second_colour_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+                  + net.second_colour_bias)
         dist, second_colour = pick(logits, net.valid_second_colour[action_type, colour], 4)
         dists.append(dist)
         context = context + heads["second_colour_feedback"](second_colour)
 
-        directions = direction_features(latent.objects, first)
-        if net.direction_keys == "relative":
-            # Mass and room only: nothing that says which way is which, so a
-            # direction no example pointed can still be chosen (see
-            # ARCCustomNetwork's direction_keys).
-            keys = heads["direction_key"](directions[..., :2])
-        else:
-            keys = heads["direction_key"](directions) + heads["direction_id"].weight.unsqueeze(0)
+        # Mass and room only in the keys: nothing that says which way is
+        # which. Which way is which enters as a bias that does not see the
+        # observation, when direction_keys asks for it.
+        keys = heads["direction_key"](direction_features(latent.objects, first)[..., :2])
         logits = (heads["direction_query"](context).unsqueeze(1) * keys).sum(-1) / scale
+        if net.direction_keys == "both":
+            logits = logits + net.direction_bias
         dist, direction = pick(logits, net.valid_direction[action_type, colour, second_colour], 5)
         dists.append(dist)
 
@@ -403,19 +406,24 @@ class ARCCustomNetwork(nn.Module):
         super().__init__()
         if direction_keys not in ("relative", "both"):
             raise ValueError(f"direction_keys={direction_keys!r}: expected 'relative' or 'both'")
-        #: What the factored heads score a direction from. 'relative': where
-        #: the chosen object's mass sits along it and how much room lies that
-        #: way - nothing that tells north from west, so a direction no
-        #: training example used is as reachable as any. 'both' adds each
-        #: direction's own step and a learned embedding, which is what "always
-        #: north" needs and what kills the other: trained on three examples
-        #: emitting east, north and south, each away from the triangle's
-        #: heavy end, the relative keys emitted west on a fourth with
-        #: probability 1.0 on three seeds and 'both' with 0.0 - west was only
-        #: ever a wrong answer, and its own embedding learned exactly that.
-        #: In training the other side of it cost more: over 15 tasks
-        #: relative scored -0.240 on the held-out pair against the flat
-        #: heads and both -0.007 (see rl_configs), so both is the default.
+        #: What the factored heads score a direction from. The keys are
+        #: relative either way - where the chosen object's mass sits along
+        #: the direction and how much room lies that way - scored by a query
+        #: that reads the context. 'both' adds a bias per direction that
+        #: reads nothing: one absolute preference for the whole task.
+        #:
+        #: Where the absolute part sits is the whole question. As a
+        #: direction's embedding or step in the keys, the context-dependent
+        #: query could use it to give each training pair its own direction,
+        #: and it did: on 25d487eb (east, north, south in the three pairs)
+        #: training reached 1.0 on the pairs by remembering them, and the
+        #: test got east - while with the absolute part made small at start,
+        #: 25ff71a9 (every pair a shift down) was fitted by a relative cue
+        #: that missed the test. Which one won was a matter of
+        #: initialisation. A bias that sees no observation cannot remember
+        #: pairs: it answers "down" only when down answers every pair, and
+        #: otherwise the relative keys have to carry it. Colours get the
+        #: same treatment, always on (colour_bias).
         self.direction_keys = direction_keys
         #: Set, the object heads choose an action by its parts
         #: (FactoredObjectDistribution) rather than one logit per name; the
@@ -593,17 +601,22 @@ class ARCCustomNetwork(nn.Module):
             "first_feedback": nn.Linear(self.pointer_dim, latent),
             "second_feedback": nn.Linear(self.pointer_dim, latent),
             "colour_key": nn.Sequential(nn.Linear(5, hidden), nn.ReLU(), nn.Linear(hidden, hidden)),
-            "colour_id": nn.Embedding(N_COLOURS, hidden),
             "colour_query": nn.Linear(latent, hidden),
             "second_colour_query": nn.Linear(latent, hidden),
             "colour_feedback": nn.Embedding(N_COLOURS, latent),
             "second_colour_feedback": nn.Embedding(N_COLOURS, latent),
-            "direction_key": nn.Sequential(
-                nn.Linear(2 if self.direction_keys == "relative" else 4, hidden), nn.ReLU(),
-                nn.Linear(hidden, hidden)),
-            "direction_id": nn.Embedding(N_DIRECTIONS, hidden),
+            "direction_key": nn.Sequential(nn.Linear(2, hidden), nn.ReLU(),
+                                           nn.Linear(hidden, hidden)),
             "direction_query": nn.Linear(latent, hidden),
         })
+        #: The absolute half of the colour and direction choices: a number
+        #: per colour (per direction) that reads no observation, so it is one
+        #: preference for the whole task - "paint red", "shift down" - and
+        #: cannot be a different answer per pair. Zero, so each part still
+        #: starts uniform.
+        self.colour_bias = nn.Parameter(torch.zeros(N_COLOURS))
+        self.second_colour_bias = nn.Parameter(torch.zeros(N_COLOURS))
+        self.direction_bias = nn.Parameter(torch.zeros(N_DIRECTIONS))
         # Buffers, so they follow the network to its device.
         self.register_buffer("action_components", torch.as_tensor(structure.components))
         self.register_buffer("action_index", torch.as_tensor(structure.flat))

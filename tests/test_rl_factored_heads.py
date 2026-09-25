@@ -229,13 +229,51 @@ class TestANameNoExampleUsed:
         """West: never emitted in training, only ever a wrong answer."""
         assert self._trained("relative")("yellow", "sky", "W") > 0.5
 
-    def test_which_absolute_directions_cannot_reach(self):
-        """What 'both' costs: the direction's own embedding learns that west
-        was always wrong. Pinned so the trade in direction_keys stays a
-        measured one."""
+    def test_the_absolute_half_does_not_take_it_away(self):
+        """With 'both' the absolute part is a bias that reads no
+        observation: it cannot give each example its own direction, so it
+        cannot make west a direction learned to be wrong."""
         probability = self._trained("both")
         assert probability("yellow", "sky", "N") > 0.5
-        assert probability("yellow", "sky", "W") < 0.1
+        assert probability("yellow", "sky", "W") > 0.5
+
+
+class TestAnAbsoluteRule:
+    """The other side: every example the same colour or the same direction,
+    and nothing relative that explains it - the objects' mass points
+    somewhere different each time and red is nobody's dot. 'both' learns
+    the constant; the relative keys alone cannot."""
+
+    COLOURS = TestANameNoExampleUsed.COLOURS
+
+    def _trained(self, direction_keys):
+        torch.manual_seed(0)
+        names = TestANameNoExampleUsed()._vocabulary()
+        index = {n: i for i, n in names.items()}
+        net = network(names, direction_keys=direction_keys)
+        case = TestANameNoExampleUsed()._case
+        train = [("green", "blue", "E"), ("sky", "green", "N"), ("blue", "yellow", "W")]
+        cases = [case(*c) for c in train]
+        lat = latent(batch=1, visible=1)
+        batch = type(lat)(lat.context.expand(3, -1), lat.rows.expand(3, -1, -1),
+                          lat.row_mask.expand(3, -1), torch.cat([c[0] for c in cases]),
+                          torch.cat([c[1] for c in cases]))
+        wanted = torch.tensor([[index["red_emission_S"], 0, 0]] * 3)
+        optimiser = torch.optim.Adam(net.parameters(), lr=0.02)
+        for _ in range(400):
+            optimiser.zero_grad()
+            (-distribution(net, batch).log_prob(wanted).mean()).backward()
+            optimiser.step()
+        objects, shares = case("yellow", "blue", "N")
+        test = type(lat)(lat.context, lat.rows, lat.row_mask, objects, shares)
+        action = torch.tensor([[index["red_emission_S"], 0, 0]])
+        return distribution(net, test).log_prob(action).exp().item()
+
+    def test_both_learns_always_red_always_down(self):
+        assert self._trained("both") > 0.5
+
+    def test_relative_alone_cannot(self):
+        assert self._trained("relative") < 0.5
 
 
 class TestAnAgentBuiltWithThem:

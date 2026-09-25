@@ -648,8 +648,8 @@ class ARCCustomNetwork(nn.Module):
         with torch.no_grad():
             if self.action_structure is not None:
                 heads = self.factored_heads
-                for name in ("type_feedback", "colour_id", "colour_feedback",
-                             "second_colour_feedback", "direction_id", "colour_query",
+                for name in ("type_feedback", "colour_feedback",
+                             "second_colour_feedback", "colour_query",
                              "second_colour_query", "direction_query"):
                     small(heads[name])
                 small(self.policy_nets[0])

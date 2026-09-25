@@ -1296,3 +1296,27 @@ def test_backpropagation_does_not_recurse(env):
     while root.parent is not None:
         root = root.parent
     assert root.visits == 1
+
+
+class TestWhatASearchSpendsItsTimeOn:
+    """rollout_preparation tested every action through a full env.reset()
+    and env.step() before searching - 127 of the 137 seconds a search took
+    on 6cdd2623 - to build a list only the random method reads."""
+
+    def test_mcts_does_not_test_every_action_first(self, env, monkeypatch):
+        import rl.mcts as mcts
+
+        calls = []
+        monkeypatch.setattr(mcts, "test_individual_actions",
+                            lambda *a, **k: calls.append(1) or {})
+        mcts.rollout_preparation(env, method="mcts", n_initial_rollouts=1, mcts_iterations=2)
+        assert calls == []
+
+    def test_the_random_method_still_does(self, env, monkeypatch):
+        import rl.mcts as mcts
+
+        calls = []
+        monkeypatch.setattr(mcts, "test_individual_actions",
+                            lambda *a, **k: calls.append(1) or {})
+        mcts.rollout_preparation(env, method="random", n_initial_rollouts=1)
+        assert calls == [1]

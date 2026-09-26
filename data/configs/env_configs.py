@@ -109,6 +109,27 @@ AGENT2ADDRESSING = {
 #: another roster did not.
 SEARCH_BRANCHES = ('highlighter', 'modifier', 'connector', 'shifter', None)
 
+#: A staged search (rl.search_hints.staged_search): the action types each
+#: stage adds, the base ones first. A stage that does not solve the pair
+#: hands its furthest grids to the next, which searches on from them - and
+#: from the input again - with the larger vocabulary; None adds every type.
+#:
+#: The first stage is the four types that appeared in the most solutions
+#: on 120 shape-preserving training tasks: recolor (12 tasks),
+#: color_inner_part (7), color_outer_holes (4), outer_contour (3) - 21 of
+#: the 32 tasks any branch solved need nothing else. The second is the rest
+#: of the four searched rosters. Not ranked by how often a type moves the
+#: grid: contour_connection gave the largest single-step gain on 28 of
+#: those tasks and was in none of their solutions.
+SEARCH_TIERS = (
+    ('recolor', 'color_inner_part', 'color_outer_holes', 'outer_contour'),
+    ('color_inversion', 'color_inner_holes', 'emission', 'background_shortest_path_left',
+     'background_shortest_path_right', 'contour_connection', 'shift_object', 'shortest_path',
+     'center_merge', 'color_merge', 'edge_gravity', 'edge_gravity_bottom', 'gravity', 'merge',
+     'swap', 'x_alignment', 'y_alignment'),
+    None,
+)
+
 
 #: What each transform does, in words, for a reader who has never seen the
 #: vocabulary. Not derived from the names: several of them mislead. Read

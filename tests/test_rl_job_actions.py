@@ -44,63 +44,46 @@ CONFIG = {"feasible_actions": {0: "submit"}, "seed": 42, "repr_level": 1,
 
 
 class TestWhatThePipelineTrainsOn:
-    def test_the_placeholder_vocabulary_is_replaced(self, monkeypatch):
+    @staticmethod
+    def _searched(monkeypatch, seen=None):
+        """feasible_from_branches replaced by one that records its call."""
         import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "red_recolor"})
 
+        def fake(task, settings=None, results=None):
+            if seen is not None:
+                seen["settings"] = settings
+                seen["calls"] = seen.get("calls", 0) + 1
+            return {0: "submit", 1: "red_recolor"}, {}
+
+        monkeypatch.setattr(hints, "feasible_from_branches", fake)
+
+    def test_the_placeholder_vocabulary_is_replaced(self, monkeypatch):
+        self._searched(monkeypatch)
         config = narrowed_for_task(_Task(), CONFIG)
-
         assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
 
     def test_the_rest_of_the_config_is_carried_through(self, monkeypatch):
-        import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "red_recolor"})
-
+        self._searched(monkeypatch)
         config = narrowed_for_task(_Task(), CONFIG)
-
         assert config["seed"] == 42
 
     def test_the_config_it_was_given_is_not_mutated(self, monkeypatch):
         """The shipped rl_config is a module-level dict: writing into it
         would change the vocabulary of every later run in the process."""
-        import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "red_recolor"})
-
+        self._searched(monkeypatch)
         narrowed_for_task(_Task(), CONFIG)
-
         assert CONFIG["feasible_actions"] == {0: "submit"}
 
-    def test_the_task_s_agent_label_reaches_the_search(self, monkeypatch):
-        import rl.search_hints as hints
-        seen = {}
-
-        def capture(task, settings, agent=None):
-            seen["agent"] = agent
-            return {0: "submit", 1: "red_recolor"}
-
-        monkeypatch.setattr(hints, "feasible_from_search", capture)
-
-        narrowed_for_task(_Task(agent="connector"), CONFIG)
-
-        assert seen["agent"] == "connector"
-
-    def test_a_task_with_no_agent_label_still_searches(self, monkeypatch):
-        import rl.search_hints as hints
-        seen = {}
-
-        def capture(task, settings, agent=None):
-            seen["agent"] = agent
-            return {0: "submit", 1: "red_recolor"}
-
-        monkeypatch.setattr(hints, "feasible_from_search", capture)
-
-        config = narrowed_for_task(_Task(), CONFIG)
-
-        assert seen["agent"] is None
-        assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
+    def test_labelled_or_not_the_branches_are_searched(self, monkeypatch):
+        """The label used to intersect one search with one roster; every
+        roster is searched now, so a task without one is searched the
+        same way."""
+        for task in (_Task(agent="connector"), _Task()):
+            seen = {}
+            self._searched(monkeypatch, seen)
+            config = narrowed_for_task(task, CONFIG)
+            assert seen["calls"] == 1
+            assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
 
     def test_a_failed_search_leaves_the_config_alone(self, monkeypatch):
         """Training over a wider space is a worse run; taking the pipeline
@@ -110,10 +93,8 @@ class TestWhatThePipelineTrainsOn:
         def explode(*a, **k):
             raise RuntimeError("search died")
 
-        monkeypatch.setattr(hints, "feasible_from_search", explode)
-
+        monkeypatch.setattr(hints, "feasible_from_branches", explode)
         config = narrowed_for_task(_Task(), CONFIG)
-
         assert config["feasible_actions"] == {0: "submit"}
 
 
@@ -194,8 +175,8 @@ class TestSizingTheObjectSlots:
         import pytest
 
         monkeypatch = pytest.MonkeyPatch()
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "x"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "x"}, {}))
         four = [[5, 0, 5], [0, 0, 0], [5, 0, 5]]
         try:
             config = narrowed_for_task(self._task(four, four), CONFIG)
@@ -217,8 +198,8 @@ class TestSizingTheObservation:
         """A shape here would only make the observation bigger than the
         task: ARC's 30x30 maximum is 7 times the median task's need."""
         import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "x"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "x"}, {}))
 
         config = narrowed_for_task(_Task(shapes=((3, 3), (3, 3)),
                                          test_shape=(3, 3)), CONFIG)
@@ -228,8 +209,8 @@ class TestSizingTheObservation:
     def test_examples_of_different_sizes_are_padded_to_their_own_largest(
             self, monkeypatch):
         import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "x"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "x"}, {}))
 
         config = narrowed_for_task(_Task(shapes=((9, 9), (10, 8)),
                                          test_shape=(12, 11)), CONFIG)
@@ -240,8 +221,8 @@ class TestSizingTheObservation:
         """It is bigger than every training example here, and an agent that
         cannot observe it cannot be scored on it."""
         import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "x"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "x"}, {}))
 
         config = narrowed_for_task(_Task(shapes=((3, 3), (4, 4)),
                                          test_shape=(20, 20)), CONFIG)
@@ -257,7 +238,7 @@ class TestSizingTheObservation:
         def explode(*a, **k):
             raise RuntimeError("search died")
 
-        monkeypatch.setattr(hints, "feasible_from_search", explode)
+        monkeypatch.setattr(hints, "feasible_from_branches", explode)
 
         config = narrowed_for_task(_Task(shapes=((9, 9), (10, 8)),
                                          test_shape=(12, 11)), CONFIG)
@@ -310,8 +291,8 @@ class TestATaskWhoseGridsHoldOneObject:
         from rl.training import create_ARC_env
         import numpy as np
 
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "black_recolor"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "black_recolor"}, {}))
         task = self._one_object_task()
         config = narrowed_for_task(task, CONFIG)
         subtask = ARCSubtask("lone_0", task.subtasks[0].train_inp,
@@ -436,7 +417,7 @@ class TestWhatACoordinateTaskIsNarrowedTo:
         def fail(*_a, **_k):
             raise RuntimeError("search broke")
 
-        monkeypatch.setattr(hints, "feasible_from_search", refuse)
+        monkeypatch.setattr(hints, "feasible_from_branches", refuse)
         monkeypatch.setattr(coordinate_search, "feasible_from_coordinate_search", fail)
         config = narrowed_for_task(self._task("constructor"),
                                    dict(CONFIG, observation_space_elements=["objects_emb"]))
@@ -481,8 +462,8 @@ class TestWhatACoordinateTaskIsNarrowedTo:
         from data.configs.rl_configs import rl_config
         from rl.rl_module import RlConfig
 
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "red_recolor"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "red_recolor"}, {}))
         for agent in ("constructor", "highlighter"):
             RlConfig(**narrowed_for_task(self._task(agent), rl_config))
 
@@ -502,8 +483,8 @@ class TestWhatTheCallerSetIsKept:
     @staticmethod
     def _quiet(monkeypatch):
         import rl.search_hints as hints
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: {0: "submit", 1: "searched"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: ({0: "submit", 1: "searched"}, {}))
 
     def test_object_slots(self, monkeypatch):
         self._quiet(monkeypatch)
@@ -521,8 +502,8 @@ class TestWhatTheCallerSetIsKept:
         # Counted rather than raised: narrowed_for_task keeps the actions
         # it has when a search fails, which would hide a search it ran.
         calls = []
-        monkeypatch.setattr(hints, "feasible_from_search",
-                            lambda *a, **k: calls.append(a) or {0: "submit", 1: "searched"})
+        monkeypatch.setattr(hints, "feasible_from_branches",
+                            lambda *a, **k: (calls.append(a) or {0: "submit", 1: "searched"}, {}))
         chosen = {0: "submit", 1: "red_recolor", 2: "gravity"}
         config = narrowed_for_task(_Task(), dict(CONFIG, feasible_actions=chosen))
         assert config["feasible_actions"] == chosen
@@ -579,11 +560,11 @@ class TestTheSearchTriesEveryMainDirection:
 
         seen = {}
 
-        def record(task, settings, agent=None):
+        def record(task, settings=None, results=None):
             seen["directions"] = settings.directions
-            return {0: "submit"}
+            return {0: "submit"}, {}
 
-        monkeypatch.setattr(hints, "feasible_from_search", record)
+        monkeypatch.setattr(hints, "feasible_from_branches", record)
         narrowed_for_task(_Task(), dict(CONFIG))
         assert set(seen["directions"]) == {"N", "E", "S", "W"}
 

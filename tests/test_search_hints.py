@@ -1054,3 +1054,116 @@ class TestALineFromATriangle:
             env.reset()
             env.step(np.array([index[answer], 0, 0]))
             assert env.max_int == env.target_int, subtask.label
+
+
+def _found(lengths=(), peak=0.0, vocab=10, effective=None):
+    """A search result whose solutions have these numbers of steps."""
+    return {"solutions": [[[0, 0, 0]] * n for n in lengths], "peak": peak,
+            "actions": {i: f"a{i}" for i in range(vocab)},
+            "effective": effective or {}, "partials": []}
+
+
+class TestSearchingEachAgentsActions:
+    """The agents are the prior: one search per roster, and one over the
+    whole vocabulary for what no roster covers (SEARCH_BRANCHES)."""
+
+    def test_a_vocabulary_can_be_cut_to_some_types(self):
+        names = hints.build_vocabulary(("red", "blue"), ("N", "S"), bases=("recolor", "swap"))
+        assert set(names.values()) == {"submit", "red_recolor", "blue_recolor", "swap"}
+
+    def test_a_branch_is_its_agent_s_roster(self):
+        settings = hints.branch_settings(hints.SearchSettings(), "highlighter")
+        assert set(settings.bases) == {"recolor", "color_inversion"}
+        assert hints.branch_settings(settings, None).bases is None
+
+    def test_every_branch_is_searched_with_its_own_roster(self, monkeypatch):
+        seen = {}
+
+        def fake(task, settings):
+            seen[settings.bases] = True
+            return _found()
+
+        monkeypatch.setattr(hints, "search_task", fake)
+        results = hints.search_branches(("t", np.zeros((3, 3)), np.ones((3, 3))),
+                                        branches=("highlighter", "shifter", None))
+        assert set(results) == {"highlighter", "shifter", "full"}
+        assert None in seen and len(seen) == 3
+
+    def test_a_branch_that_fails_is_left_out(self, monkeypatch):
+        def fake(task, settings):
+            if settings.bases is None:
+                raise RuntimeError("full search died")
+            return _found()
+
+        monkeypatch.setattr(hints, "search_task", fake)
+        results = hints.search_branches(("t", np.zeros((3, 3)), np.ones((3, 3))),
+                                        branches=("highlighter", None))
+        assert set(results) == {"highlighter"}
+
+    def test_the_real_highlighter_branch_searches_its_two_types(self):
+        grid = np.zeros((4, 4), dtype=int)
+        grid[1, 1] = 2
+        out = grid.copy()
+        out[1, 1] = 1
+        results = hints.search_branches(
+            ("t", grid, out), hints.SearchSettings(rollouts=1, iterations=5, timeout=30),
+            branches=("highlighter",))
+        types = {hints.split_name(n)[0] for n in results["highlighter"]["actions"].values()}
+        assert types == {"submit", "recolor", "color_inversion"}
+        assert results["highlighter"]["solutions"]
+
+
+class TestChoosingABranch:
+    def test_solved_beats_closer(self):
+        name, _ = hints.best_branch({"a": _found(peak=0.9), "b": _found([1], peak=1.0)})
+        assert name == "b"
+
+    def test_among_solved_the_shorter_then_the_smaller(self):
+        results = {"long": _found([3], 1.0, vocab=5),
+                   "short_big": _found([1], 1.0, vocab=50),
+                   "short_small": _found([1], 1.0, vocab=5)}
+        assert hints.best_branch(results)[0] == "short_small"
+
+    def test_among_unsolved_the_highest_peak_then_the_smaller(self):
+        results = {"full": _found(peak=0.6, vocab=200), "modifier": _found(peak=0.6, vocab=30),
+                   "shifter": _found(peak=0.4, vocab=10)}
+        assert hints.best_branch(results)[0] == "modifier"
+
+    def test_nothing_to_choose_from(self):
+        assert hints.best_branch({}) is None
+
+    def test_the_vocabulary_comes_from_the_chosen_branch(self, monkeypatch):
+        results = {"full": {**_found(peak=0.5), "actions": {0: "submit", 1: "gravity"},
+                            "effective": {"gravity": 4}},
+                   "highlighter": {**_found([1], 1.0),
+                                   "actions": {0: "submit", 1: "red_recolor"},
+                                   "effective": {"red_recolor": 4}}}
+        actions, _ = hints.feasible_from_branches(
+            "task", hints.SearchSettings(colours=("red", "blue")), results=results)
+        assert set(actions.values()) == {"submit", "red_recolor", "blue_recolor"}
+
+
+class TestTellingTheReader:
+    def test_the_agents_that_reproduce_the_pair(self):
+        line = hints.branch_summary({"modifier": _found([2], 1.0),
+                                     "connector": _found([1], 1.0),
+                                     "shifter": _found(peak=0.3), "full": _found([1], 1.0)})
+        assert line == ("Searched within each agent's actions, the first pair is "
+                        "reproduced by: connector (1 step), modifier (2 steps).")
+
+    def test_only_the_whole_vocabulary(self):
+        line = hints.branch_summary({"modifier": _found(peak=0.3), "full": _found([1], 1.0)})
+        assert "No single agent's actions" in line
+
+    def test_the_closest_when_nothing_does(self):
+        line = hints.branch_summary({"modifier": _found(peak=0.3), "shifter": _found(peak=0.8),
+                                     "full": _found(peak=0.9)})
+        assert "shifter's came closest, recovering 80%" in line
+
+    def test_the_hint_leads_with_it_when_asked(self, monkeypatch):
+        results = {"modifier": {**_found([1], 1.0), "triple": ("t", None, None),
+                                "actions": {0: "submit", 1: "red_recolor"}}}
+        monkeypatch.setattr(hints, "search_branches", lambda task, settings: results)
+        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "BLOCK")
+        text = hints.hints_for("task", hints.SearchSettings(), branches=True)
+        assert text.startswith("Searched within each agent's actions") and text.endswith("BLOCK")

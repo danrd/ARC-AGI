@@ -133,6 +133,10 @@ class SearchSettings:
     #: What the search found up to the cut is kept; only the rollouts it
     #: had not returned yet are lost.
     timeout: int = 120
+    #: The action types the search may use, or None for every type the
+    #: vocabulary generates. A roster search is this set to one agent's
+    #: bases - see search_branches.
+    bases: tuple | None = None
 
 
 def output_colours(*grids):
@@ -172,14 +176,15 @@ def coordinate_vocabulary(colours):
     return {0: "submit", **{i + 1: n for i, n in enumerate(names)}}
 
 
-def build_vocabulary(colours, directions):
+def build_vocabulary(colours, directions, bases=None):
     """The action names an env is configured with, generated rather than
     written out: a hand-written name that misses its branch returns the grid
     untouched, which is indistinguishable from a transform that had nothing
-    to do."""
-    bases = ({a for roster in AGENT2ACTIONS.values() for a in roster}
+    to do. `bases` keeps only those action types."""
+    every = ({a for roster in AGENT2ACTIONS.values() for a in roster}
              | {a for group in ACTION_TYPES.values() for a in group}) \
         - UNIMPLEMENTED_ACTIONS
+    bases = every if bases is None else every & set(bases)
     names = []
     for base in sorted(bases):
         if base == "submit":
@@ -653,7 +658,7 @@ def shutdown_pool():
 def _search_in_worker(payload):
     """One search, addressed by value so it can cross a process boundary."""
     triple, colours, directions, settings = payload
-    return search_once(triple, build_vocabulary(colours, directions), settings)
+    return search_once(triple, build_vocabulary(colours, directions, settings.bases), settings)
 
 
 def merge_found(merged, found, partials_limit):
@@ -696,7 +701,7 @@ def search_task(task, settings=None):
     settings = settings or SearchSettings()
     triple = as_triple(task)
     colours = settings.colours or output_colours(triple[2])
-    actions = build_vocabulary(colours, settings.directions)
+    actions = build_vocabulary(colours, settings.directions, settings.bases)
     merged = {"effective": {}, "solutions": [], "partials": [], "peak": 0.0}
     started = time.perf_counter()
     repeats = max(1, settings.repeats)
@@ -830,19 +835,160 @@ def _training_outputs(task):
     return [as_triple(task)[2]]
 
 
-def hints_for(task, settings=None):
-    """The hint block for one task, computed now, or None."""
+def branch_name(agent):
+    """How a branch is called: its agent, or 'full' for the fallback."""
+    return "full" if agent is None else agent
+
+
+def branch_settings(settings, agent):
+    """`settings` narrowed to one agent's roster, or left whole for None."""
+    if agent is None:
+        return replace(settings, bases=None)
+    return replace(settings, bases=tuple(sorted(
+        set(AGENT2ACTIONS.get(agent) or ()) - UNIMPLEMENTED_ACTIONS - {"submit"})))
+
+
+def _branch_in_worker(payload):
+    """One branch's search, addressed by value so it can cross a process
+    boundary."""
+    triple, settings = payload
+    return search_task(triple, replace(settings, workers=1))
+
+
+def search_branches(task, settings=None, branches=None):
+    """One search per branch - an agent's roster, or None for the whole
+    vocabulary - as {branch name: search_task result}.
+
+    The agents are the prior (see SEARCH_BRANCHES): each branch searches a
+    space a fraction of the whole, so the same budget reaches deeper, and
+    which branches solve the pair is itself something to know about the
+    task. The branches share nothing, so with settings.workers above one
+    they run in the process pool search_task uses for repeats; otherwise one
+    after another. A branch whose search fails is left out rather than
+    failing the rest.
+    """
+    from data.configs.env_configs import SEARCH_BRANCHES
+
     settings = settings or SearchSettings()
-    merged = search_task(task, settings)
+    branches = SEARCH_BRANCHES if branches is None else branches
+    triple = as_triple(task)
+    if settings.colours is None:
+        settings = replace(settings, colours=tuple(output_colours(triple[2])))
+    jobs = {branch_name(agent): branch_settings(settings, agent) for agent in branches}
+    results = {}
+    pool = _pool(settings.workers) if len(jobs) > 1 else None
+    if pool is not None:
+        try:
+            futures = {name: pool.submit(_branch_in_worker, (triple, job))
+                       for name, job in jobs.items()}
+            for name, future in futures.items():
+                try:
+                    results[name] = future.result()
+                except Exception:  # noqa: BLE001 - one branch must not sink the rest
+                    continue
+            return results
+        except BrokenProcessPool:
+            shutdown_pool()
+    for name, job in jobs.items():
+        try:
+            results[name] = search_task(triple, replace(job, workers=1))
+        except Exception:  # noqa: BLE001 - one branch must not sink the rest
+            continue
+    return results
+
+
+def best_branch(results):
+    """(name, result) of the branch to take the vocabulary from, or None.
+
+    A branch that solved the pair beats one that did not; among those that
+    did, the shortest solution, then the smaller vocabulary. Among those
+    that did not, the highest peak, then the smaller vocabulary - a roster
+    that got as far as the whole vocabulary did is the tighter description
+    of the task.
+    """
+    if not results:
+        return None
+
+    def rank(item):
+        _name, found = item
+        solved = bool(found["solutions"])
+        length = min(len(s) for s in found["solutions"]) if solved else 0
+        return (not solved, length, -found["peak"], len(found["actions"]))
+
+    return min(results.items(), key=rank)
+
+
+def feasible_from_branches(task, settings=None, results=None):
+    """The action set to train on, from the best branch's search - its
+    types, the task's palette, every direction (feasible_from_search).
+
+    No agent label needed: every branch is tried, and the one that explains
+    the pair best supplies the types. `results` passes in search_branches'
+    output when a caller already has it.
+
+    Returns (feasible_actions, results).
+    """
+    settings = settings or SearchSettings()
+    results = results if results is not None else search_branches(task, settings)
+    best = best_branch(results)
+    if best is None:
+        raise RuntimeError("no branch of the search completed")
+    _name, found = best
+    return feasible_from_search(task, settings, found=found), results
+
+
+def branch_summary(results):
+    """One line a reader can use: which agents' actions reproduce the pair,
+    and in how many steps; or, when none does, which came closest."""
+    solved = sorted((min(len(s) for s in found["solutions"]), name)
+                    for name, found in results.items() if found["solutions"])
+    agents = [(steps, name) for steps, name in solved if name != "full"]
+    if agents:
+        listed = ", ".join(f"{name} ({steps} step{'s' if steps != 1 else ''})"
+                           for steps, name in agents)
+        return f"Searched within each agent's actions, the first pair is reproduced by: {listed}."
+    if solved:
+        return ("No single agent's actions reproduce the first pair; the whole "
+                "vocabulary together does.")
+    peaks = sorted(((found["peak"], name) for name, found in results.items()
+                    if name != "full"), reverse=True)
+    if not peaks:
+        return None
+    peak, name = peaks[0]
+    return (f"No agent's actions reproduce the first pair; {name}'s came closest, "
+            f"recovering {peak:.0%} of what the output needs.")
+
+
+def hints_for(task, settings=None, branches=False):
+    """The hint block for one task, computed now, or None.
+
+    `branches` searches each agent's roster (search_branches), renders the
+    best branch's block and puts branch_summary in front of it. Off by
+    default: the hint arms measured so far ran the single search.
+    """
+    settings = settings or SearchSettings()
+    if branches:
+        results = search_branches(task, settings)
+        best = best_branch(results)
+        if best is None:
+            return None
+        merged = best[1]
+        summary = branch_summary(results)
+    else:
+        merged = search_task(task, settings)
+        summary = None
     triple, actions = merged["triple"], merged["actions"]
     task_id = triple[0]
     shaped = {"names": {str(i): n for i, n in actions.items()},
               "solutions": {task_id: merged["solutions"]},
               "partials": {task_id: merged["partials"]},
               "effective": {task_id: merged["effective"]}}
-    return render_block(triple, shaped, actions, settings.moves,
-                        settings.min_gain, settings.episode_len,
-                        settings.skip_solved)
+    block = render_block(triple, shaped, actions, settings.moves,
+                         settings.min_gain, settings.episode_len,
+                         settings.skip_solved)
+    if summary is None:
+        return block
+    return summary if block is None else f"{summary}\n{block}"
 
 
 @dataclass

@@ -250,11 +250,11 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     - addressing None: read off the agent's label (addressing_for).
     - feasible_actions {0: 'submit'}: the search's. The shipped placeholder,
       which trains an agent whose only move is to give up. The object
-      search narrows the action types - 137 to 607 names in a task's
-      generated vocabulary, the ones that ever moved the grid, intersected
-      with the roster of the agent the task is labelled with - and never
-      the directions (feasible_from_search); the coordinate search narrows
-      colours and strokes (rl.coordinate_search).
+      search runs once per agent roster and once over everything
+      (search_hints.search_branches) and takes the action types from the
+      branch that explains the first pair best - no agent label needed -
+      and never narrows the directions (feasible_from_search); the
+      coordinate search narrows colours and strokes (rl.coordinate_search).
     - max_objects None: the slots the task's grids fill, a median 3
       against the 16 the action space would otherwise carry.
     - observation_grid_shape None: the task's largest grid when its
@@ -278,7 +278,7 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     """
     from data.configs.env_configs import MAIN_DIRECTIONS
     from rl.search_hints import (SearchSettings, coordinate_vocabulary,
-                                 feasible_from_search, output_colours)
+                                 feasible_from_branches, output_colours)
 
     agent = getattr(task, "agent", None)
     narrowed = dict(rl_config)
@@ -320,10 +320,13 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
         # action types move the grid, and a type that only works southwards
         # is invisible to a search that only tries north and east - the
         # scan's default, which SearchSettings keeps for the hints.
+        # One search per agent roster and one over everything
+        # (search_branches), the types taken from whichever explains the
+        # first pair best - which needs no agent label, and measured to
+        # solve 15 of 60 tasks where the single search solved 9.
         settings = settings or SearchSettings(directions=tuple(MAIN_DIRECTIONS))
         try:
-            narrowed["feasible_actions"] = feasible_from_search(
-                task, settings, agent=agent)
+            narrowed["feasible_actions"], _results = feasible_from_branches(task, settings)
         except Exception:  # noqa: BLE001 - a failed search must not fail the run
             pass
     return narrowed

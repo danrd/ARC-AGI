@@ -92,6 +92,23 @@ AGENT2ADDRESSING = {
     'constructor': 'coordinates',
 }
 
+#: The searches a task's object vocabulary is narrowed by: one per agent
+#: roster, each over that agent's actions only, and None - the whole
+#: generated vocabulary - as the fallback for tasks no roster covers. The
+#: agents are the prior: a search does not have to try everything and
+#: intersect with a roster afterwards, it can try each roster.
+#:
+#: Measured on 60 shape-preserving training tasks (first pair, four main
+#: directions, 60 s per search): one search over the whole vocabulary
+#: solved 9; the roster searches solved 15 between them - 8 the full one
+#: did not, and 2 it did (67385a82, b8cdaf2b, which need actions no roster
+#: holds; hence the fallback). The best roster search reached a higher peak
+#: than the full one on 28 tasks and a lower one on 6. connector_extended
+#: is left out: it is connector with every collision variant added, 188
+#: names against 44, the slowest of them, and solved nothing connector or
+#: another roster did not.
+SEARCH_BRANCHES = ('highlighter', 'modifier', 'connector', 'shifter', None)
+
 
 #: What each transform does, in words, for a reader who has never seen the
 #: vocabulary. Not derived from the names: several of them mislead. Read

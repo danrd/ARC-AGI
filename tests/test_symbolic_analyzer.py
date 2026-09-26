@@ -1,6 +1,7 @@
 """Tests for symbolic/analyzer.py - the layer that turns a pair of grid
-summaries into transformation patterns, and those into the hypothesis /
-insight text a downstream agent reads.
+summaries into transformation patterns. The prompt's summary no longer
+reads these patterns (symbolic.findings checks the grids instead); what is
+pinned here is that the patterns themselves stay honest.
 
 The central invariant here is honesty of the output: a number in an
 insight has to mean a number that was actually measured across the
@@ -141,58 +142,3 @@ class TestConsistentPatterns:
         pattern = next(p for p in ta.consistent_patterns if p.pattern_type == "size_scaling")
 
         assert pattern.parameters["common_values"] == {}
-
-
-# ---------------------------------------------------------------------------
-# honesty of the rendered output
-# ---------------------------------------------------------------------------
-
-class TestOutputHonesty:
-    @staticmethod
-    def test_agreed_shift_is_named_in_hypothesis_and_insights():
-        ta = _StubTaskAnalysis([
-            [_pattern("uniform_translation", shift=(1, 2))],
-            [_pattern("uniform_translation", shift=(1, 2))],
-        ])
-
-        assert "(1, 2)" in ta.get_transformation_hypothesis()
-        assert any("(1, 2)" in insight for insight in ta.get_actionable_insights())
-
-    @staticmethod
-    def test_varying_shift_never_reaches_the_output_as_a_number():
-        """The failure this guards against is not a missing line but a
-        convincing one: an unresolved parameter rendered as (0, 0) is
-        indistinguishable from a measured zero offset."""
-        ta = _StubTaskAnalysis([
-            [_pattern("uniform_translation", shift=(1, 2))],
-            [_pattern("uniform_translation", shift=(4, 5))],
-        ])
-
-        text = ta.get_transformation_hypothesis() + "\n".join(ta.get_actionable_insights())
-
-        assert "(0, 0)" not in text
-        assert "(1, 2)" not in text
-        assert "(4, 5)" not in text
-
-    @staticmethod
-    def test_unresolved_parameters_are_not_rendered_as_placeholder_words():
-        ta = _StubTaskAnalysis([
-            [_pattern("causal_shift", rule="shift_equals_inner_holes")],
-            [_pattern("causal_shift", rule="shift_equals_size")],
-        ])
-
-        text = ta.get_transformation_hypothesis() + "\n".join(ta.get_actionable_insights())
-
-        assert "unknown" not in text
-
-    @staticmethod
-    def test_insights_never_end_in_an_empty_value():
-        """`Delete all objects with color: ` - a label with nothing after
-        it - is the same failure wearing a different mask."""
-        ta = _StubTaskAnalysis([
-            [_pattern("color_based_deletion", color=("green",))],
-            [_pattern("color_based_deletion", color=("red",))],
-        ])
-
-        for insight in ta.get_actionable_insights():
-            assert not insight.rstrip().endswith(":")

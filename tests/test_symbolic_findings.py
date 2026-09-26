@@ -21,91 +21,7 @@ from symbolic.findings import (
     build_task_findings,
     render_findings,
     render_hypothesis,
-    render_insights,
 )
-
-
-def _parameter_keys_by_pattern_type():
-    """Which parameter keys each detector puts into the pattern it emits,
-    read out of the source rather than by running the (slow) real analysis
-    over enough tasks to hit every branch.
-
-    Keyed by pattern type rather than pooled: a key can be perfectly real for
-    one detector and meaningless for another - `offset` belongs to
-    `translation`, while `uniform_translation` writes `shift` - so a pooled
-    check would wave exactly that confusion through.
-    """
-    import ast
-    import collections
-    import pathlib
-
-    source = pathlib.Path("symbolic/analyzer.py").read_text(encoding="utf-8")
-    by_type = collections.defaultdict(set)
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        keywords = {kw.arg: kw.value for kw in node.keywords}
-        pattern_type = keywords.get("pattern_type")
-        parameters = keywords.get("parameters")
-        if not isinstance(pattern_type, ast.Constant) or not isinstance(pattern_type.value, str):
-            continue
-        if not isinstance(parameters, ast.Dict):
-            continue
-        by_type[pattern_type.value].update(
-            key.value for key in parameters.keys
-            if isinstance(key, ast.Constant) and isinstance(key.value, str)
-        )
-    return by_type
-
-
-def test_every_phrase_references_a_parameter_its_own_detector_produces():
-    """Regression test: the phrase table named `offset` where
-    uniform_translation writes `shift`, and `factor` where size_scaling
-    writes `scale_factor`. Nothing failed - the phrase simply never matched,
-    so those findings silently fell back to "parameters differ" and threw
-    away a value that had been measured. A wrong key name cannot be caught by
-    reading the output, only here."""
-    from symbolic.findings import _PHRASES
-
-    produced = _parameter_keys_by_pattern_type()
-
-    wrong = {}
-    for pattern_type, (_template, required, _unagreed) in _PHRASES.items():
-        if not required or pattern_type not in produced:
-            continue
-        missing = set(required) - produced[pattern_type]
-        if missing:
-            wrong[pattern_type] = sorted(missing)
-
-    assert not wrong, f"phrased but never produced by that detector: {wrong}"
-
-
-def test_a_phrase_that_loses_its_parameter_keeps_its_subject():
-    """"size scaling occurs, but its parameters differ between examples" was
-    what 42 of 100 blocks carried, and 31 of them carried it beside "the
-    output keeps the input's grid size" - two lines of one list saying
-    opposite things, because the subjectless phrasing reads as being about
-    the grid where the finding is about objects."""
-    from symbolic.findings import _PHRASES
-
-    subjectless = {pattern for pattern, (_t, required, unagreed) in _PHRASES.items()
-                   if required and not unagreed}
-
-    assert subjectless == set()
-    assert "objects are scaled" in _PHRASES["size_scaling"][2]
-
-
-def test_an_internal_identifier_does_not_reach_the_reader():
-    """`y_aligned` and `shift_equals_inner_holes` are keys in the analyser's
-    own dicts. 26 of 100 blocks passed one through to the prompt."""
-    from symbolic.findings import _statement_for
-
-    aligned = _statement_for("aligned_addition", {"alignment_type": "y_aligned"})
-    shifted = _statement_for("causal_shift", {"rule": "shift_equals_inner_holes"})
-
-    assert "y_aligned" not in aligned and "the y axis" in aligned
-    assert "shift_equals_inner_holes" not in shifted
-    assert "shift equals inner holes" in shifted
 
 
 def _finding(subject, statement, indices, total, confidence=0.9, **params):
@@ -190,14 +106,6 @@ def _example(inp, out, size_change=False, objects_in=1, objects_out=1):
     )
 
 
-def _pattern(ptype, confidence=0.9, common=None, indices=(0, 1)):
-    return SimpleNamespace(
-        pattern_type=ptype,
-        confidence=confidence,
-        parameters={"common_values": common or {}, "example_indices": tuple(indices)},
-    )
-
-
 def _stub_analysis(patterns, examples, task_id="stub"):
     return SimpleNamespace(
         task_id=task_id,
@@ -206,63 +114,107 @@ def _stub_analysis(patterns, examples, task_id="stub"):
     )
 
 
-class TestBuildFindings:
-    @staticmethod
-    def test_agreed_parameter_is_named_in_the_statement():
-        """The parameter name has to be the one the detector actually
-        produces - `shift` for uniform_translation, not `offset`. Getting it
-        wrong doesn't fail loudly: the phrase silently degrades to "parameters
-        differ" and a measured value is thrown away."""
-        analysis = _stub_analysis(
-            [_pattern("uniform_translation", common={"shift": (1, 2)})],
-            [_example([[1]], [[1]]), _example([[1]], [[1]])],
-        )
+def _changes(examples, background=None):
+    analysis = _stub_analysis([], examples)
+    analysis.background = _bg(consistent=background)
+    return build_task_findings(analysis).transformations
 
-        findings = build_task_findings(analysis)
 
-        assert "(1, 2)" in findings.transformations[0].statement
-        assert findings.transformations[0].parameters == {"shift": (1, 2)}
+def _pair(inp, out):
+    return _example(inp, out, size_change=np.array(inp).shape != np.array(out).shape)
 
-    @staticmethod
-    def test_parameter_that_varied_never_reaches_the_statement_as_a_value():
-        """The failure the whole structure exists to prevent: the audit's
-        showcase was 'Translate all objects by offset: (0, 0)' where the real
-        shifts were (-2, 5), (3, 6) and (0, 3)."""
-        analysis = _stub_analysis(
-            [_pattern("uniform_translation", common={})],
-            [_example([[1]], [[1]]), _example([[1]], [[1]])],
-        )
 
-        statement = build_task_findings(analysis).transformations[0].statement
+class TestWhatChanges:
+    """The changes section is made of checks on the grids, each stated only
+    when it holds in every example. It used to come from the pattern
+    detectors, which called an object that gained a cell "scaled" (64% of
+    blocks) and printed "colors are remapped consistently" for mappings
+    they had marked inconsistent."""
 
-        assert "differs between examples" in statement
-        assert "(0, 0)" not in statement
-        # The subject survives the value: "uniform translation occurs, but
-        # its parameters differ" dropped it, and a subjectless claim is what
-        # made a third of these blocks contradict their own grid-size line.
-        assert "object" in statement
+    def test_the_detectors_are_not_read(self):
+        analysis = _stub_analysis([SimpleNamespace(pattern_type="size_scaling", confidence=1.0,
+                                                   parameters={})],
+                                  [_pair([[1, 2]], [[1, 3]]), _pair([[4, 2]], [[4, 5]])])
+        analysis.background = None
+        assert all(f.subject != "size_scaling"
+                   for f in build_task_findings(analysis).transformations)
 
-    @staticmethod
-    def test_unknown_pattern_type_is_rendered_readably_not_dropped():
-        analysis = _stub_analysis(
-            [_pattern("some_new_detector", common={})],
-            [_example([[1]], [[1]])],
-        )
+    def test_a_whole_grid_move_is_named(self):
+        found = _changes([_pair([[1, 2], [3, 4]], [[3, 4], [1, 2]]),
+                          _pair([[5, 6, 7]], [[5, 6, 7]]), _pair([[1], [2]], [[2], [1]])])
+        assert [f.statement for f in found] == ["the output is the input flipped upside down"]
 
-        assert build_task_findings(analysis).transformations[0].statement == "some new detector"
+    def test_one_fixed_colour_replacement(self):
+        """d511f180: 5 and 8 swap wherever they are."""
+        found = _changes([_pair([[5, 8, 1]], [[8, 5, 1]]), _pair([[8, 8, 2]], [[5, 5, 2]])])
+        assert found[0].subject == "colour_replacement"
+        assert found[0].parameters == {"mapping": {5: 8, 8: 5}}
+        assert "5 becomes 8, 8 becomes 5" in found[0].statement
 
-    @staticmethod
-    def test_evidence_comes_from_the_examples_that_actually_showed_the_pattern():
-        analysis = _stub_analysis(
-            [_pattern("object_addition", indices=(0, 2))],
-            [_example([[1]], [[1]]) for _ in range(3)],
-        )
+    def test_a_colour_that_becomes_two_colours_is_no_replacement(self):
+        found = _changes([_pair([[5, 5]], [[8, 3]]), _pair([[5]], [[8]])])
+        assert all(f.subject != "colour_replacement" for f in found)
 
-        evidence = build_task_findings(analysis).transformations[0].evidence
+    def test_a_replacement_must_agree_between_examples(self):
+        found = _changes([_pair([[5]], [[8]]), _pair([[5]], [[3]])])
+        assert all(f.subject != "colour_replacement" for f in found)
 
-        assert evidence.example_indices == (0, 2)
-        assert evidence.example_count == 3
-        assert evidence.holds_everywhere is False
+    def test_only_the_background_changes_and_into_one_colour(self):
+        """3aa6fb7a: the notches of each L are filled with 1."""
+        found = _changes([_pair([[8, 0], [8, 8]], [[8, 1], [8, 8]]),
+                          _pair([[0, 8], [0, 0]], [[1, 8], [0, 0]])], background=0)
+        assert [f.subject for f in found] == ["only_background_changes",
+                                              "changes_become_one_colour"]
+        assert "colour 1" in found[1].statement
+
+    def test_background_claims_need_an_established_background(self):
+        found = _changes([_pair([[8, 0], [8, 8]], [[8, 1], [8, 8]]),
+                          _pair([[0, 8], [0, 0]], [[1, 8], [0, 0]])], background=None)
+        assert "only_background_changes" not in {f.subject for f in found}
+
+    def test_cells_that_only_disappear(self):
+        found = _changes([_pair([[3, 4, 0]], [[0, 4, 0]]), _pair([[4, 3]], [[4, 0]]),
+                          _pair([[4, 4, 3]], [[4, 4, 3]])], background=0)
+        assert "erased_only" in {f.subject for f in found}
+
+    def test_the_background_is_never_painted(self):
+        found = _changes([_pair([[3, 4, 0]], [[4, 3, 0]]), _pair([[4, 3, 0]], [[3, 3, 0]])],
+                         background=0)
+        assert "background_kept" in {f.subject for f in found}
+
+    def test_every_cell_becomes_a_block(self):
+        found = _changes([_pair([[1, 2]], [[1, 1, 2, 2], [1, 1, 2, 2]]),
+                          _pair([[3]], [[3, 3], [3, 3]])])
+        assert [(f.subject, f.parameters) for f in found] == [
+            ("upscale", {"row_factor": 2, "col_factor": 2})]
+
+    def test_a_block_size_that_differs_between_examples_is_not_named(self):
+        found = _changes([_pair([[1]], [[1, 1], [1, 1]]),
+                          _pair([[2]], [[2, 2, 2], [2, 2, 2], [2, 2, 2]])])
+        assert all(f.subject != "upscale" for f in found)
+
+    def test_the_input_repeated(self):
+        found = _changes([_pair([[1, 2]], [[1, 2, 1, 2]]), _pair([[3, 4]], [[3, 4, 3, 4]])])
+        assert [f.subject for f in found] == ["tile"]
+
+    def test_a_piece_of_the_input(self):
+        found = _changes([_pair([[1, 2, 3], [4, 5, 6]], [[5, 6]]),
+                          _pair([[7, 8], [9, 1]], [[7], [9]])])
+        assert [f.subject for f in found] == ["crop"]
+
+    def test_a_smaller_output_that_is_not_in_the_input_is_no_piece(self):
+        found = _changes([_pair([[1, 2, 3], [4, 5, 6]], [[6, 5]]),
+                          _pair([[7, 8], [9, 1]], [[7], [9]])])
+        assert all(f.subject != "crop" for f in found)
+
+    def test_one_example_that_disagrees_withdraws_the_claim(self):
+        found = _changes([_pair([[1, 2], [3, 4]], [[3, 4], [1, 2]]),
+                          _pair([[1, 2], [3, 4]], [[2, 1], [4, 3]])])
+        assert all(f.subject != "geometric" for f in found)
+
+    def test_every_claim_names_every_example(self):
+        found = _changes([_pair([[5, 8]], [[8, 5]]), _pair([[8]], [[5]])])
+        assert found and all(f.evidence.holds_everywhere for f in found)
 
 
 class TestInvariants:
@@ -514,61 +466,6 @@ class TestHypothesisView:
         assert "No clear transformation hypothesis" in text
 
 
-class TestInsightsView:
-    @staticmethod
-    def test_step_is_emitted_when_its_parameter_held_across_examples():
-        findings = TaskFindings(
-            task_id="t", example_count=2,
-            transformations=(_finding("color_based_deletion", "...", (0, 1), 2,
-                                       confidence=0.9, color="green"),),
-        )
-
-        assert render_insights(findings) == ["Delete all objects with color: green"]
-
-    @staticmethod
-    def test_step_is_dropped_when_its_parameter_never_held():
-        """Insights are meant to be executable, so an unresolved parameter
-        removes the step rather than softening it into words - which is the
-        one place this view is stricter than the prose one."""
-        findings = TaskFindings(
-            task_id="t", example_count=2,
-            transformations=(_finding("color_based_deletion", "...", (0, 1), 2, confidence=0.9),),
-        )
-
-        assert render_insights(findings) == []
-
-    @staticmethod
-    def test_step_is_dropped_below_the_confidence_threshold():
-        findings = TaskFindings(
-            task_id="t", example_count=2,
-            transformations=(_finding("color_based_deletion", "...", (0, 1), 2,
-                                       confidence=0.5, color="green"),),
-        )
-
-        assert render_insights(findings) == []
-
-    @staticmethod
-    def test_causal_shift_rule_selects_the_specific_step():
-        """'hor_size' contains 'size', so the more specific rule has to be
-        tested first or every shift collapses to the generic one."""
-        findings = TaskFindings(
-            task_id="t", example_count=2,
-            transformations=(_finding("causal_shift", "...", (0, 1), 2,
-                                       confidence=0.9, rule="shift_equals_hor_size"),),
-        )
-
-        assert render_insights(findings) == ["For each object: horizontal_shift = object.hor_size"]
-
-    @staticmethod
-    def test_unknown_subject_produces_no_step():
-        findings = TaskFindings(
-            task_id="t", example_count=2,
-            transformations=(_finding("some_new_detector", "...", (0, 1), 2, confidence=0.9),),
-        )
-
-        assert render_insights(findings) == []
-
-
 # -- grid- and task-level findings ---------------------------------------------
 
 def _bg(consistent=None, varies=False, preserved=None, per_input=(), per_output=()):
@@ -626,6 +523,9 @@ class TestGridSizeFindings:
         finding = next(f for f in self._observations(examples) if f.subject == "grid_scale")
 
         assert finding.parameters == {"row_factor": 2, "col_factor": 2}
+        assert finding.statement == ("the output grid has 2 times the input's rows and "
+                                     "2 times its columns"), \
+            "the size only - whether the content is scaled is not this finding's to say"
 
     def test_an_inconsistent_resize_still_falls_back_to_the_plain_statement(self):
         examples = [

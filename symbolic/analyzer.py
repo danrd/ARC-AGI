@@ -979,13 +979,6 @@ class TaskAnalysis:
 
         return render_hypothesis(self.get_findings())
 
-    def get_actionable_insights(self) -> List[str]:
-        """Transformation steps that could be programmed - the imperative
-        view of the same findings behind get_transformation_hypothesis."""
-        from symbolic.findings import render_insights
-
-        return render_insights(self.get_findings())
-
 
 # ============================================================================
 # AGGREGATOR — auxiliary task information, shared across modules

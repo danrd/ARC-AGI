@@ -7,8 +7,7 @@ consumer nothing to read - the structure exists inside it and is thrown away
 on the way out - and every separately-worded view of the same analysis is one
 more thing to drift. So this module holds the claims, and each way of showing
 them is a rendering over it: `render_findings` for a prompt block,
-`TaskAnalysis.get_transformation_hypothesis()` and `get_actionable_insights()`
-for prose and for executable steps.
+`TaskAnalysis.get_transformation_hypothesis()` for prose.
 
 Two rules the rest of this module exists to enforce:
 
@@ -22,7 +21,7 @@ Two rules the rest of this module exists to enforce:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -109,108 +108,192 @@ def _ranked(findings: Sequence[Finding]) -> Tuple[Finding, ...]:
 # Building findings out of a TaskAnalysis
 # ---------------------------------------------------------------------------
 
-# Phrasings for the pattern types the analyzer actually emits. The value is a
-# format string over the agreed parameters; when a referenced parameter wasn't
-# established, the generic fallback is used instead of naming a value.
+# What changes, checked cell for cell.
 #
-# The parameter names here are the ones the detectors actually put in
-# `parameters` (`shift`, not `offset`; `scale_factor`, not `factor`) - naming
-# a key that is never produced doesn't fail loudly, it just quietly degrades
-# every one of those findings to the "parameters differ" fallback, throwing
-# away a value that was measured.
-#: pattern -> (phrasing when the parameter is agreed, required parameters,
-#: phrasing when it is not). The third entry exists because the generic
-#: fallback - "<pattern> occurs, but its parameters differ between examples"
-#: - dropped the subject with the parameter, and the subject is what keeps
-#: the claim honest: "size scaling occurs" reads as being about the grid,
-#: and 31% of blocks carried it beside "the output keeps the input's grid
-#: size", so a third of the summaries contradicted themselves in the same
-#: list. Saying "objects are scaled" instead says which of the two is
-#: meant. It fired on 64% of blocks over 100 tasks, so this is the common
-#: rendering, not the corner.
-_PHRASES: Dict[str, Tuple[str, Tuple[str, ...], str]] = {
-    "uniform_translation": ("every object moves by {shift}", ("shift",),
-                            "every object moves by the same offset, and the "
-                            "offset differs between examples"),
-    "translation": ("objects move between input and output", (), ""),
-    "causal_shift": ("objects are shifted by a rule: {rule}", ("rule",),
-                     "objects are shifted by a rule that differs between examples"),
-    "color_mapping": ("colors are remapped consistently", (), ""),
-    "color_based_deletion": ("objects of color {color} are removed", ("color",),
-                             "objects of one colour are removed, a different "
-                             "colour in each example"),
-    "shape_based_deletion": ("all {shape} objects are removed", ("shape",),
-                             "all objects of one shape are removed, a different "
-                             "shape in each example"),
-    "position_based_deletion": ("objects at {positions} are removed", ("positions",),
-                                "objects at particular positions are removed, "
-                                "different positions in each example"),
-    "object_deletion": ("objects are removed from the input", (), ""),
-    "object_addition": ("new objects appear in the output", (), ""),
-    "aligned_addition": ("new objects appear, aligned with existing ones along "
-                         "{alignment_type}", ("alignment_type",),
-                         "new objects appear aligned with existing ones, along "
-                         "a different axis in each example"),
-    "shape_duplication": ("shapes from the input are duplicated", (), ""),
-    "size_scaling": ("objects are scaled by factor {scale_factor:.2f}",
-                     ("scale_factor",),
-                     "objects are scaled, by a different factor in each example"),
-    "symmetry_change": ("the symmetry of the grid changes", (), ""),
-}
+# These replaced the pattern detectors (analyzer.SubtaskAnalysis's
+# transformation_patterns) as the source of this section, because a
+# detector's claim was a guess about one object and the section stated it as
+# the task's rule: size_scaling fired whenever any object's cell count
+# changed - an object that gained one cell was "scaled" - and reached 64% of
+# blocks over 100 tasks; color_mapping printed "colors are remapped
+# consistently" for mappings it had itself marked inconsistent; a pattern
+# seen in half the examples was reported as the task's. With the summary in
+# the prompt an LLM run solved fewer tasks, not more.
+#
+# Each check below compares the grids themselves and a finding is made only
+# when it holds in every training example, so what the section says is true
+# of the examples by construction. Which of those claims carries over to the
+# test pair is a separate question, measured rather than assumed.
 
-#: Parameter values that are dict keys in the analyser and words nowhere.
-_VALUE_WORDS = {"y_aligned": "the y axis", "x_aligned": "the x axis"}
+def _grid_pairs(task_analysis):
+    """(input, output) of every example, or None when any grid is missing -
+    a claim about every example cannot be checked on some of them."""
+    pairs = []
+    for analysis in task_analysis.subtasks_analyses:
+        inp = getattr(analysis, "input_grid", None)
+        out = getattr(analysis, "output_grid", None)
+        if inp is None or out is None:
+            return None
+        pairs.append((np.asarray(inp), np.asarray(out)))
+    return pairs or None
 
 
-def _humanise(value):
-    """An internal identifier as something a reader can act on.
+#: Whole-grid moves, in the order they are tried: a grid symmetric under
+#: two of them is named by the first.
+_GEOMETRIC = (
+    ("flipped left to right", np.fliplr),
+    ("flipped upside down", np.flipud),
+    ("rotated half a turn", lambda grid: np.rot90(grid, 2)),
+    ("rotated a quarter turn clockwise", lambda grid: np.rot90(grid, -1)),
+    ("rotated a quarter turn anticlockwise", np.rot90),
+    ("transposed - its rows become the output's columns", np.transpose),
+)
 
-    The analyser puts its own keys into `parameters` - `y_aligned`,
-    `shift_equals_inner_holes` - and 26% of blocks over 100 tasks carried
-    one through to the prompt. A reader who has not read the codebase
-    cannot use them, and a reader who guesses will guess wrong.
+
+def _geometric(pairs):
+    for phrase, move in _GEOMETRIC:
+        if all(move(inp).shape == out.shape and np.array_equal(move(inp), out)
+               for inp, out in pairs):
+            return phrase
+    return None
+
+
+def _colour_map(pairs):
+    """{colour: colour it becomes} when one fixed replacement, applied to
+    every cell, turns each input into its output - only the colours that
+    change - or None."""
+    mapping = {}
+    for inp, out in pairs:
+        if inp.shape != out.shape:
+            return None
+        for colour in np.unique(inp).tolist():
+            became = np.unique(out[inp == colour]).tolist()
+            if len(became) != 1 or mapping.setdefault(colour, became[0]) != became[0]:
+                return None
+    changed = {colour: became for colour, became in mapping.items() if colour != became}
+    return changed or None
+
+
+def _contains(grid, piece):
+    rows, cols = piece.shape
+    if rows > grid.shape[0] or cols > grid.shape[1]:
+        return False
+    windows = np.lib.stride_tricks.sliding_window_view(grid, piece.shape)
+    return bool((windows == piece).all(axis=(2, 3)).any())
+
+
+def _block_factor(pairs, build):
+    """The one (rows, cols) factor with build(input, factor) == output in
+    every example, or None."""
+    factors = set()
+    for inp, out in pairs:
+        if out.shape[0] % inp.shape[0] or out.shape[1] % inp.shape[1]:
+            return None
+        factor = (out.shape[0] // inp.shape[0], out.shape[1] // inp.shape[1])
+        if factor == (1, 1) or not np.array_equal(build(inp, factor), out):
+            return None
+        factors.add(factor)
+    return factors.pop() if len(factors) == 1 else None
+
+
+def _upscaled(grid, factor):
+    return np.kron(grid, np.ones(factor, dtype=grid.dtype))
+
+
+def _tiled(grid, factor):
+    return np.tile(grid, factor)
+
+
+def _cell_change_findings(pairs, background, everywhere):
+    """Which cells change and into what, when every example agrees.
+
+    Stated against the background only when one was established for the
+    whole task: "only background cells change" means nothing to a reader
+    who was not told which colour that is.
     """
-    if not isinstance(value, str):
-        return value
-    return _VALUE_WORDS.get(value, value.replace("_", " "))
-
-
-def _statement_for(pattern_type: str, agreed: Mapping[str, Any]) -> str:
-    """Render a pattern as a sentence, naming only established parameters."""
-    template, required, unagreed = _PHRASES.get(pattern_type, (None, (), ""))
-    if template is not None and all(key in agreed for key in required):
-        try:
-            return template.format(**{key: _humanise(agreed[key])
-                                      for key in required})
-        except (ValueError, TypeError):
-            # A parameter of an unexpected type for its format spec (a scale
-            # factor that isn't a number, say) - fall through rather than
-            # crash the whole summary over one malformed value.
-            pass
-
-    # The pattern held and the parameter it hinges on did not, so the
-    # phrasing has to keep the subject while dropping the value - see
-    # _PHRASES on what the subjectless version cost.
-    if unagreed:
-        return unagreed
-    return pattern_type.replace("_", " ")
-
-
-def _transformation_findings(task_analysis) -> Tuple[Finding, ...]:
-    example_count = len(task_analysis.subtasks_analyses)
+    was, became = set(), set()
+    for inp, out in pairs:
+        changed = inp != out
+        was |= set(inp[changed].tolist())
+        became |= set(out[changed].tolist())
+    if not was:
+        return []
     findings = []
-    for pattern in task_analysis.consistent_patterns:
-        params = pattern.parameters or {}
-        agreed = params.get("common_values") or {}
-        indices = tuple(params.get("example_indices", ()))
+    if background is not None and was == {background}:
         findings.append(Finding(
-            subject=pattern.pattern_type,
-            statement=_statement_for(pattern.pattern_type, agreed),
-            evidence=Evidence(example_indices=indices, example_count=example_count),
-            confidence=float(pattern.confidence),
-            parameters=dict(agreed),
-        ))
-    return _ranked(findings)
+            subject="only_background_changes",
+            statement=f"only background cells (colour {int(background)}) change; every "
+                      "other cell keeps its colour and place",
+            evidence=everywhere, confidence=1.0,
+            parameters={"background_color": background}))
+    elif len(was) == 1:
+        colour = next(iter(was))
+        findings.append(Finding(
+            subject="only_one_colour_changes",
+            statement=f"only cells of colour {int(colour)} change",
+            evidence=everywhere, confidence=1.0, parameters={"changed_color": colour}))
+    elif background is not None and background not in was:
+        findings.append(Finding(
+            subject="background_kept",
+            statement=f"no background cell (colour {int(background)}) changes; only "
+                      "cells that already have another colour do",
+            evidence=everywhere, confidence=1.0,
+            parameters={"background_color": background}))
+    if len(became) == 1:
+        colour = next(iter(became))
+        erased = background is not None and colour == background
+        findings.append(Finding(
+            subject="erased_only" if erased else "changes_become_one_colour",
+            statement=(f"cells are only erased: every cell that changes becomes the "
+                       f"background colour {int(colour)}" if erased else
+                       f"every cell that changes becomes colour {int(colour)}"),
+            evidence=everywhere, confidence=1.0, parameters={"new_color": colour}))
+    return findings
+
+
+def _change_findings(task_analysis) -> Tuple[Finding, ...]:
+    """What the transformation does, from the checks above - each only when
+    it holds in every example, and the most specific that holds first: a
+    whole-grid move or a colour replacement says everything the cell-level
+    claims would, so those are left out beside it."""
+    pairs = _grid_pairs(task_analysis)
+    if pairs is None:
+        return ()
+    everywhere = Evidence(tuple(range(len(pairs))), len(pairs))
+    background = getattr(getattr(task_analysis, "background", None), "consistent_color", None)
+
+    move = _geometric(pairs)
+    if move is not None:
+        return (Finding(subject="geometric", statement=f"the output is the input {move}",
+                        evidence=everywhere, confidence=1.0, parameters={"move": move}),)
+
+    for subject, build, phrase in (
+            ("upscale", _upscaled, "every input cell becomes a {0}x{1} block of its colour"),
+            ("tile", _tiled, "the output is the input repeated {0}x{1} times")):
+        factor = _block_factor(pairs, build)
+        if factor is not None:
+            return (Finding(subject=subject, statement=phrase.format(*factor),
+                            evidence=everywhere, confidence=1.0,
+                            parameters={"row_factor": factor[0], "col_factor": factor[1]}),)
+
+    if all(out.size < inp.size and _contains(inp, out) for inp, out in pairs):
+        return (Finding(subject="crop",
+                        statement="the output is a piece of the input, copied cell for cell",
+                        evidence=everywhere, confidence=1.0),)
+
+    if any(inp.shape != out.shape for inp, out in pairs):
+        return ()
+
+    mapping = _colour_map(pairs)
+    if mapping is not None:
+        listed = ", ".join(f"{int(a)} becomes {int(b)}" for a, b in sorted(mapping.items()))
+        return (Finding(subject="colour_replacement",
+                        statement=f"every cell of a colour changes the same way wherever it "
+                                  f"is: {listed}; other colours stay",
+                        evidence=everywhere, confidence=1.0,
+                        parameters={"mapping": dict(sorted(mapping.items()))}),)
+
+    return tuple(_cell_change_findings(pairs, background, everywhere))
 
 
 def _object_count(grid_summary, level: int) -> Optional[int]:
@@ -336,9 +419,14 @@ def _grid_observation_findings(task_analysis) -> Tuple[Finding, ...]:
         scale = _uniform_scale(analyses)
         if scale is not None:
             row_factor, col_factor = scale
-            statement = (f"the output grid is the input scaled by {row_factor}x{col_factor}"
+            # The size only: whether the content is scaled, tiled or
+            # something else is _change_findings' to establish, and "the
+            # input scaled by 3x3" claimed the content too.
+            statement = (f"the output grid has {row_factor} times the input's rows and "
+                         f"{col_factor} times its columns"
                          if (row_factor, col_factor) > (0, 0) else
-                         f"the output grid is the input reduced by {-row_factor}x{-col_factor}")
+                         f"the output grid has 1/{-row_factor} of the input's rows and "
+                         f"1/{-col_factor} of its columns")
             return (Finding(
                 subject="grid_scale",
                 statement=statement,
@@ -538,7 +626,7 @@ def build_task_findings(task_analysis) -> TaskFindings:
     return TaskFindings(
         task_id=str(task_analysis.task_id),
         example_count=len(task_analysis.subtasks_analyses),
-        transformations=_transformation_findings(task_analysis),
+        transformations=_change_findings(task_analysis),
         invariants=_invariant_findings(task_analysis),
         # Ranked like the other two groups, so a budget cut drops the least
         # useful from the tail here as well: these all hold everywhere and
@@ -628,8 +716,6 @@ def render_findings(findings: TaskFindings, budget: Optional[int] = None,
 
 HIGH_CONFIDENCE = 0.8
 MEDIUM_CONFIDENCE = 0.5
-#: Insights are meant to be executable, so they demand more than prose does.
-INSIGHT_CONFIDENCE = 0.7
 
 _NO_HYPOTHESIS = ("No clear transformation hypothesis could be established. "
                    "The transformation may be highly variable or complex.")
@@ -662,81 +748,3 @@ def render_hypothesis(findings: TaskFindings) -> str:
         blocks.append(block("GRID OBSERVATIONS:", grid, with_evidence=False))
 
     return "\n\n".join(blocks) if blocks else _NO_HYPOTHESIS
-
-
-def _insight_causal_shift(params: Mapping[str, Any]) -> Optional[str]:
-    rule = params.get("rule")
-    if not isinstance(rule, str):
-        return None
-    # Order matters: "hor_size" and "vert_size" both contain "size", so the
-    # specific tests have to come first.
-    if "inner_holes" in rule:
-        return "For each object: shift_amount = count(inner_holes)"
-    if "hor_size" in rule:
-        return "For each object: horizontal_shift = object.hor_size"
-    if "vert_size" in rule:
-        return "For each object: vertical_shift = object.vert_size"
-    if "size" in rule:
-        return "For each object: shift_amount = object.size"
-    return None
-
-
-def _insight_aligned_addition(params: Mapping[str, Any]) -> Optional[str]:
-    alignment = params.get("alignment_type")
-    if not isinstance(alignment, str):
-        return None
-    if "x_aligned" in alignment:
-        return "Create new objects x-aligned with existing objects"
-    if "y_aligned" in alignment:
-        return "Create new objects y-aligned with existing objects"
-    return None
-
-
-def _insight_size_scaling(params: Mapping[str, Any]) -> Optional[str]:
-    factor = params.get("scale_factor")
-    if not isinstance(factor, (int, float)):
-        return None
-    return f"Scale all objects by factor: {factor:.2f}"
-
-
-def _keyed_insight(template: str, key: str):
-    def build(params: Mapping[str, Any]) -> Optional[str]:
-        if key not in params:
-            return None
-        return template.format(**{key: params[key]})
-    return build
-
-
-#: subject -> builder producing an executable step, or None when the
-#: parameters it needs weren't established across the examples.
-_INSIGHT_BUILDERS: Dict[str, Callable[[Mapping[str, Any]], Optional[str]]] = {
-    "causal_shift": _insight_causal_shift,
-    "aligned_addition": _insight_aligned_addition,
-    "size_scaling": _insight_size_scaling,
-    "shape_duplication": lambda params: "Duplicate shapes from input (possibly with transformations)",
-    "color_mapping": lambda params: "Apply color mapping transformation to all objects",
-    "color_based_deletion": _keyed_insight("Delete all objects with color: {color}", "color"),
-    "shape_based_deletion": _keyed_insight("Delete all objects with shape: {shape}", "shape"),
-    "uniform_translation": _keyed_insight("Translate all objects by offset: {shift}", "shift"),
-}
-
-
-def render_insights(findings: TaskFindings) -> List[str]:
-    """Imperative read: transformation steps that could actually be executed.
-
-    Stricter than the prose above, and deliberately so - a step whose
-    parameter never held across the examples cannot be executed, so it is
-    dropped rather than softened into words. The caller gets fewer steps, all
-    of them backed by a value every example agreed on.
-    """
-    insights = []
-    for finding in findings.transformations:
-        if finding.confidence < INSIGHT_CONFIDENCE:
-            continue
-        builder = _INSIGHT_BUILDERS.get(finding.subject)
-        if builder is None:
-            continue
-        insight = builder(finding.parameters)
-        if insight:
-            insights.append(insight)
-    return insights

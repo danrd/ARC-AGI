@@ -219,12 +219,13 @@ class TestWhatChanges:
 
 class TestInvariants:
     @staticmethod
-    def test_preserved_grid_size_palette_and_object_count_are_reported():
+    def test_preserved_grid_size_and_palette_are_reported():
         examples = [_example([[1, 0]], [[0, 1]]), _example([[2, 0]], [[0, 2]])]
 
         subjects = {f.subject for f in build_task_findings(_stub_analysis([], examples)).invariants}
 
-        assert subjects == {"grid_size", "palette", "object_count"}
+        assert subjects == {"grid_size", "palette"}, \
+            "no object count: what an object is is the segmenter's, and the reader never sees it"
 
     @staticmethod
     def test_size_change_in_any_example_withdraws_the_size_invariant():
@@ -244,26 +245,6 @@ class TestInvariants:
         subjects = {f.subject for f in build_task_findings(_stub_analysis([], examples)).invariants}
 
         assert "palette" not in subjects
-
-    @staticmethod
-    def test_changed_object_count_withdraws_the_count_invariant():
-        examples = [_example([[1]], [[1]], objects_in=1, objects_out=3)]
-
-        subjects = {f.subject for f in build_task_findings(_stub_analysis([], examples)).invariants}
-
-        assert "object_count" not in subjects
-
-    @staticmethod
-    def test_missing_level_does_not_claim_a_count_invariant():
-        """Levels are caller-selected; when the primary one wasn't parsed
-        there is no count to compare, which is not the same as it matching."""
-        example = _example([[1]], [[1]])
-        example.input_summary = SimpleNamespace(repr_levels={})
-        example.output_summary = SimpleNamespace(repr_levels={})
-
-        subjects = {f.subject for f in build_task_findings(_stub_analysis([], [example])).invariants}
-
-        assert "object_count" not in subjects
 
     @staticmethod
     def test_consistent_resizing_is_stated_as_a_grid_observation():

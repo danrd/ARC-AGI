@@ -29,7 +29,8 @@ def test_a_split_is_every_task_with_its_training_pairs():
 def _run(monkeypatch, tmp_path, answers, existing=None):
     monkeypatch.setattr(script, "load_split", lambda split: {t: [] for t in "abcd"})
     monkeypatch.setattr(script, "ProcessPoolExecutor",
-                        lambda max_workers, mp_context: ThreadPoolExecutor(max_workers=1))
+                        lambda max_workers, max_tasks_per_child, mp_context:
+                        ThreadPoolExecutor(max_workers=1))
     asked = []
 
     def hint_for(task_id, pairs, timeout):
@@ -67,3 +68,64 @@ def test_the_resolver_reads_null_as_no_block(tmp_path):
                               count_tokens=lambda text: len(text.split()))
     assert arc_resolvers.search_hints_resolver(SimpleNamespace(label="a"), 100, {}, builder) == "TEXT"
     assert arc_resolvers.search_hints_resolver(SimpleNamespace(label="b"), 100, {}, builder) is OMIT
+
+
+class _Pools:
+    """Pools whose workers die on the tasks named in `kills`, one list per
+    pool built: a killed worker fails every task still in the pool."""
+
+    def __init__(self, kills):
+        self.kills, self.built = list(kills), 0
+
+    def __call__(self, max_workers, max_tasks_per_child, mp_context):
+        from concurrent.futures import Future
+        from concurrent.futures.process import BrokenProcessPool
+        kills = self.kills[self.built] if self.built < len(self.kills) else ()
+        self.built += 1
+
+        class Pool:
+            broken = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def submit(self, fn, task_id, pairs, timeout):
+                future = Future()
+                if Pool.broken or task_id in kills:
+                    Pool.broken = True
+                    future.set_exception(BrokenProcessPool("killed"))
+                else:
+                    future.set_result(fn(task_id, pairs, timeout))
+                return future
+
+        return Pool()
+
+
+def _run_with(monkeypatch, tmp_path, pools):
+    monkeypatch.setattr(script, "load_split", lambda split: {t: [] for t in "abcd"})
+    monkeypatch.setattr(script, "ProcessPoolExecutor", pools)
+    # Last submitted first: a broken future reached before tasks that had
+    # already finished, which as_completed is free to do.
+    monkeypatch.setattr(script, "as_completed", lambda futures: list(reversed(futures)))
+    monkeypatch.setattr(script, "hint_for", lambda task_id, pairs, timeout:
+                        (task_id, task_id.upper(), 1.0, None))
+    out = tmp_path / "hints.json"
+    script.main(["--out", str(out)])
+    return json.loads(out.read_text())
+
+
+def test_a_killed_worker_sends_what_was_unfinished_to_a_fresh_pool(monkeypatch, tmp_path):
+    pools = _Pools([("c",)])
+    written = _run_with(monkeypatch, tmp_path, pools)
+    assert written == {"a": "A", "b": "B", "c": "C", "d": "D"}
+    assert pools.built == 2
+
+
+def test_a_task_caught_in_every_break_is_given_up_without_a_hint(monkeypatch, tmp_path):
+    pools = _Pools([("c",)] * script.BREAKS_ALLOWED)
+    written = _run_with(monkeypatch, tmp_path, pools)
+    assert written["c"] is None and written["a"] == "A"
+    assert written["d"] is None, "d sat behind c in every broken pool"

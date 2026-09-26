@@ -13,8 +13,17 @@ block, and which is also how a rerun knows the task is done - the file is
 rewritten after every task, so a run cut short resumes where it stopped.
 
 A task takes about a minute on one core (a search per agent roster on the
-first pair, then one small search per further pair), so a split of 400 is
-a couple of hours on four workers.
+first pair, then one small search per further pair). Two workers by
+default: a worker has been measured at 4.8 GB on one task, and four of
+them were killed for memory in a 15 GB container. Each worker runs one
+task and is replaced, so a large task's memory is returned rather than
+carried into the next.
+
+A worker killed anyway breaks the whole pool, and every task still in it
+comes back unfinished. They are all tried again in a fresh pool, since
+which of them was the one to blame cannot be told; a task unfinished
+through BREAKS_ALLOWED breaks is written as null - no block - so one task
+that cannot fit does not stop the split.
 
     python scripts/write_search_hints.py --split evaluation --workers 4
 """
@@ -29,6 +38,7 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -74,7 +84,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--split", default="evaluation", choices=("training", "evaluation"))
     parser.add_argument("--out", default="data/search_hints.json")
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=60,
                         help="seconds one search may take")
     parser.add_argument("--limit", type=int, default=0, help="only the first N tasks")
@@ -89,21 +99,60 @@ def main(argv=None):
     todo = [task_id for task_id in ids if task_id not in hints]
     print(f"{len(ids) - len(todo)} of {len(ids)} already in {args.out}; {len(todo)} to go")
 
-    with ProcessPoolExecutor(max_workers=args.workers,
-                             mp_context=multiprocessing.get_context("spawn")) as pool:
-        futures = [pool.submit(hint_for, task_id, tasks[task_id], args.timeout)
-                   for task_id in todo]
-        for done, future in enumerate(as_completed(futures), start=1):
-            task_id, text, seconds, error = future.result()
-            if error is not None:
-                print(f"[{done}/{len(todo)}] {task_id} failed: {error}", flush=True)
-                continue
-            hints[task_id] = text
-            write(args.out, hints)
-            verified = sum(value is not None for value in hints.values())
-            print(f"[{done}/{len(todo)}] {task_id} {'verified' if text else '-'} "
-                  f"({seconds:.0f}s; {verified} of {len(hints)} verified so far)", flush=True)
+    run(todo, tasks, hints, args)
 
+
+#: How many broken pools a task may be caught in before it is given up on.
+BREAKS_ALLOWED = 3
+
+
+def run(todo, tasks, hints, args):
+    """Every task in `todo` through a pool of workers, into `hints` and the
+    file, surviving a worker that is killed (see the module docstring)."""
+    breaks = {task_id: 0 for task_id in todo}
+    done = 0
+
+    def record(future, unfinished):
+        nonlocal done
+        task_id, text, seconds, error = future.result()
+        unfinished.discard(task_id)
+        done += 1
+        if error is not None:
+            print(f"[{done}] {task_id} failed: {error}", flush=True)
+            return
+        hints[task_id] = text
+        write(args.out, hints)
+        verified = sum(value is not None for value in hints.values())
+        print(f"[{done}] {task_id} {'verified' if text else '-'} "
+              f"({seconds:.0f}s; {verified} of {len(hints)} verified so far)", flush=True)
+
+    while todo:
+        unfinished, futures = set(todo), []
+        try:
+            with ProcessPoolExecutor(max_workers=args.workers, max_tasks_per_child=1,
+                                     mp_context=multiprocessing.get_context("spawn")) as pool:
+                futures = [pool.submit(hint_for, task_id, tasks[task_id], args.timeout)
+                           for task_id in todo]
+                for future in as_completed(futures):
+                    record(future, unfinished)
+        except BrokenProcessPool:
+            # Futures finish in no particular order, so the broken one can
+            # be reached before others that had already finished; those
+            # are results, not casualties.
+            for future in futures:
+                if future.done() and not future.cancelled() and future.exception() is None \
+                        and future.result()[0] in unfinished:
+                    record(future, unfinished)
+            for task_id in unfinished:
+                breaks[task_id] += 1
+                if breaks[task_id] >= BREAKS_ALLOWED:
+                    print(f"{task_id} was unfinished through {BREAKS_ALLOWED} broken "
+                          f"pools; written without a hint", flush=True)
+                    hints[task_id] = None
+            write(args.out, hints)
+            print(f"a worker was killed; {len(unfinished)} unfinished tasks go to a "
+                  f"fresh pool", flush=True)
+        todo = [task_id for task_id in todo if task_id in unfinished and task_id not in hints]
 
 if __name__ == "__main__":
     main()

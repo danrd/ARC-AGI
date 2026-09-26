@@ -1,26 +1,19 @@
-"""Run a search on one task and say what it found, in words.
+"""Run a search on one task and say what it found, in words - only where
+it can stand behind it.
 
-The offline path writes these blocks into a file ahead of time; this is the
-same thing computed when the task arrives, for a run that wants the hint
-without a scan behind it. Both share the renderer below, because the text
-in the prompt is the one thing that must not differ between them.
+The hint (hints_for) is said when a search reproduced every training pair
+with the same kinds of step, and it shows the steps each pair needed. Any
+other task gets no block. The block that came before said something on
+every task - the first pair's solution, or a partial attempt and the
+single moves that recovered cells somewhere in the search - and it cost an
+LLM run 7 of 41 solved: most of what it said pointed the wrong way.
 
-It costs what a search costs - seconds to a few minutes per task, against
-milliseconds for the rest of prompt building - so a caller decides when to
-pay it. That is why nothing here is wired into PromptBuilder: the search
-belongs to the rl layer, the prompt to the subsymbolic one, and the caller
-joins them by putting the returned text into the build context.
-
-What the block can say:
-
-- the sequence that solved the task, when the search solved it;
-- otherwise the furthest attempt it made, and how far that got;
-- the single moves that recovered cells at some point in the search.
-
-verified_hint says much less, and only what was checked: the steps that
-reproduce every training pair, when the same kinds of step do so on each,
-and nothing at all otherwise. The block above, on every task, cost an LLM
-run 7 of 41 solved.
+It costs what a search costs - about a minute per task - so a caller
+decides when to pay it: online through HintCache, or ahead of time into a
+file with scripts/verified_hints.py. Nothing here is wired into
+PromptBuilder: the search belongs to the rl layer, the prompt to the
+subsymbolic one, and the caller joins them through the build context or
+the file.
 
 Everything is named in the grid's own terms - colours as digits, objects by
 colour, size and bounding box - because a prompt that says "blue" beside a
@@ -74,10 +67,6 @@ _DIRECTION_WORDS = {"N": "up", "S": "down", "E": "right", "W": "left",
 #: measurement: "colour 2", "the 2s", "symbol 2".
 COLOUR_PHRASE = "colour {digit}"
 
-#: One cell fixed moves maximal_intersection by two - it counts
-#: 2 * matches - valid - so a gain of 34 is 17 cells.
-POINTS_PER_CELL = 2
-
 
 @dataclass(frozen=True)
 class SearchSettings:
@@ -108,9 +97,6 @@ class SearchSettings:
     #: of them was solved.
     colours: tuple | None = None
     directions: tuple = ("N", "E")
-    moves: int = 6
-    min_gain: int = 5
-    skip_solved: bool = False
     partials: int = 3
     #: Which action a playout tries next. 'weighted' draws from the pool
     #: the tree expands over by measured effect; 'default' samples the raw
@@ -386,70 +372,6 @@ def names_for(found, task_id):
     perfectly plausible.
     """
     return (found.get("names_by_task") or {}).get(task_id) or found["names"]
-
-
-def render_block(task, found, actions, moves=6, min_gain=5, episode_len=25,
-                 skip_solved=False):
-    """The hint block for one task, or None when the search found nothing.
-
-    `found` is what one search (or a pooled scan) reported for this task:
-    names, solutions, partials, effective.
-
-    Nothing is rendered rather than "the search found nothing" on purpose:
-    a block that is sometimes empty teaches the reader to expect one, and an
-    absent block is the honest form of having nothing to say.
-
-    `skip_solved` drops the verified solving sequence, keeping the moves
-    list. On a task the search solved, that sequence is the answer, and an
-    arm measuring whether a hint helps would be measuring whether the model
-    can follow a recipe on those tasks and something else on the rest.
-    """
-    task_id = task[0]
-    names = names_for(found, task_id)
-    lines = []
-    solved = found["solutions"].get(task_id) or []
-    partial = found["partials"].get(task_id) or []
-    effective = found["effective"].get(task_id) or {}
-    if solved and not skip_solved:
-        best = min(distinct(solved), key=len)
-        body = [step for step in best if names[str(step[0])] != "submit"]
-        body = minimise(task, body, actions, episode_len)
-        lines.append("A search over the first training pair reproduced its "
-                     "output exactly, by these steps:")
-        lines += [f"  {i + 1}. {line}" for i, line in
-                  enumerate(render_steps(task, body, names, actions, episode_len))]
-    elif partial:
-        progress, sequence = partial[0][0], partial[0][1]
-        body = [step for step in sequence if names[str(step[0])] != "submit"]
-        peak = reached(task, body, actions, episode_len)
-        if peak is not None:
-            body = minimise(task, body, actions, episode_len, goal=peak)
-        lines.append(f"A search over the first training pair did not reproduce "
-                     f"its output. Its best attempt recovered {progress:.0%} of "
-                     f"the cells the output needs, by these steps:")
-        lines += [f"  {i + 1}. {line}" for i, line in
-                  enumerate(render_steps(task, body, names, actions, episode_len))]
-    # A gain is measured against whatever state the search was standing in,
-    # not against the input grid, so it says "this move fixed cells somewhere
-    # in the search" and not "this move gets you N cells closer than doing
-    # nothing". Small gains are noise at that reading - on the 262-task scan
-    # a floor of one cell admitted 96% of tasks and a median of 38 moves
-    # each - so the block carries only moves worth naming.
-    ranked = [(name, gain) for name, gain in
-              sorted(effective.items(), key=lambda kv: (-kv[1], kv[0]))
-              if gain >= min_gain * POINTS_PER_CELL][:moves]
-    if ranked:
-        opening = ("Single steps that recovered cells somewhere in that "
-                   "search, whatever the grid looked like at the time:"
-                   if lines else
-                   "A search over the first training pair did not reproduce its "
-                   "output. These single steps recovered cells somewhere in it, "
-                   "whatever the grid looked like at the time:")
-        lines.append(opening)
-        lines += [f"  - {describe_action(name)} "
-                  f"(recovered up to {gain // POINTS_PER_CELL} cells)"
-                  for name, gain in ranked]
-    return "\n".join(lines) if lines else None
 
 
 def keep_partial(kept, closed, trace, limit):
@@ -1025,60 +947,6 @@ def feasible_from_branches(task, settings=None, results=None):
     return feasible_from_search(task, settings, found=found), results
 
 
-def branch_summary(results):
-    """One line a reader can use: which agents' actions reproduce the pair,
-    and in how many steps; or, when none does, which came closest."""
-    solved = sorted((min(len(s) for s in found["solutions"]), name)
-                    for name, found in results.items() if found["solutions"])
-    agents = [(steps, name) for steps, name in solved if name != "full"]
-    if agents:
-        listed = ", ".join(f"{name} ({steps} step{'s' if steps != 1 else ''})"
-                           for steps, name in agents)
-        return f"Searched within each agent's actions, the first pair is reproduced by: {listed}."
-    if solved:
-        return ("No single agent's actions reproduce the first pair; the whole "
-                "vocabulary together does.")
-    peaks = sorted(((found["peak"], name) for name, found in results.items()
-                    if name != "full"), reverse=True)
-    if not peaks:
-        return None
-    peak, name = peaks[0]
-    return (f"No agent's actions reproduce the first pair; {name}'s came closest, "
-            f"recovering {peak:.0%} of what the output needs.")
-
-
-def hints_for(task, settings=None, branches=False):
-    """The hint block for one task, computed now, or None.
-
-    `branches` searches each agent's roster (search_branches), renders the
-    best branch's block and puts branch_summary in front of it. Off by
-    default: the hint arms measured so far ran the single search.
-    """
-    settings = settings or SearchSettings()
-    if branches:
-        results = search_branches(task, settings)
-        best = best_branch(results)
-        if best is None:
-            return None
-        merged = best[1]
-        summary = branch_summary(results)
-    else:
-        merged = search_task(task, settings)
-        summary = None
-    triple, actions = merged["triple"], merged["actions"]
-    task_id = triple[0]
-    shaped = {"names": {str(i): n for i, n in actions.items()},
-              "solutions": {task_id: merged["solutions"]},
-              "partials": {task_id: merged["partials"]},
-              "effective": {task_id: merged["effective"]}}
-    block = render_block(triple, shaped, actions, settings.moves,
-                         settings.min_gain, settings.episode_len,
-                         settings.skip_solved)
-    if summary is None:
-        return block
-    return summary if block is None else f"{summary}\n{block}"
-
-
 def training_pairs(task):
     """Every training pair of a task as (id, input, output) triples.
 
@@ -1167,8 +1035,9 @@ def render_verified(explained, episode_len=25):
     return "\n".join(lines)
 
 
-def verified_hint(task, settings=None, candidates=3):
-    """A hint only for what the search can stand behind, else None.
+def hints_for(task, settings=None, candidates=3):
+    """The hint block for one task, or None: said only for what the search
+    can stand behind.
 
     Measured on 120 training tasks: one search over the whole vocabulary
     reproduced the first pair of 12, and in 6 of those the same action
@@ -1222,17 +1091,12 @@ class HintCache:
     arm, a resumed checkpoint - and each rebuild would otherwise pay for a
     fresh search whose result is random anyway, so the same task would carry
     a different hint each time.
-
-    `verified` gives verified_hint instead - a block only where the search
-    reproduced every training pair. It needs the whole task, not a triple.
     """
     settings: SearchSettings = field(default_factory=SearchSettings)
     cache: dict = field(default_factory=dict)
-    verified: bool = False
 
     def __call__(self, task):
         key = str(as_triple(task)[0])
         if key not in self.cache:
-            self.cache[key] = (verified_hint(task, self.settings) if self.verified
-                               else hints_for(task, self.settings))
+            self.cache[key] = hints_for(task, self.settings)
         return self.cache[key]

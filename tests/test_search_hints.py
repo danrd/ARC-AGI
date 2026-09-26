@@ -1,12 +1,11 @@
-"""Tests for rl/search_hints.py - the search-derived hint block.
+"""Tests for rl/search_hints.py - the search, and the hint said from it.
 
-Two paths produce one text: a scan writes these blocks into a file ahead of
-time, and an online run computes the same thing when the task arrives. The
-renderer is shared so they cannot drift, and this is where it is pinned.
-
-Rendering is tested against stubs so the properties are visible without an
-env in the way; the last class runs a real one, because a stub cannot show
-that a recorded sequence still means what it meant inside the search.
+The hint is said only where a search reproduced every training pair, so
+most of what is pinned here is when it speaks and what the search under it
+does: merging repeats, the budget, the vocabulary, branches and stages.
+Most of it runs against stubs so the properties are visible without an env
+in the way; a few classes run a real one, because a stub cannot show that
+a recorded sequence still means what it meant inside the search.
 """
 from __future__ import annotations
 
@@ -18,8 +17,6 @@ import pytest
 import rl.search_hints as hints
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-NAMES = {"0": "submit", "1": "fliplr", "2": "flipud"}
 
 
 @pytest.fixture(scope="module")
@@ -192,118 +189,6 @@ class TestDescribingWhatAnActionDoes:
                "not a transform (colour 2)"
 
 
-class TestRenderingABlock:
-    @staticmethod
-    def pooled(**kwargs):
-        base = {"per_task": {}, "effective": {}, "solutions": {},
-                "partials": {}, "names": NAMES, "span": (0, 1)}
-        base.update(kwargs)
-        return base
-
-    @pytest.fixture(autouse=True)
-    def no_env(self, monkeypatch):
-        monkeypatch.setattr(hints, "render_steps",
-                            lambda task, seq, names, actions, episode_len=25:
-                            [f"step {names[str(s[0])]}" for s in seq])
-        monkeypatch.setattr(hints, "minimise",
-                            lambda task, seq, actions, episode_len=25, goal=None:
-                            tuple(seq))
-        monkeypatch.setattr(hints, "reached",
-                            lambda task, seq, actions, episode_len=25: 4)
-
-    def test_a_task_the_search_found_nothing_on_gets_no_block(self):
-        """Not "the search found nothing" - a block that is sometimes empty
-        teaches the reader to expect one."""
-        assert hints.render_block(("aaa", None, None), self.pooled(), {}) is None
-
-    def test_a_solved_task_carries_the_trace(self):
-        pooled = self.pooled(solutions={"aaa": [[[1, 0, 0], [0, 0, 0]]]})
-
-        text = hints.render_block(("aaa", None, None), pooled, {})
-
-        assert "reproduced its output exactly" in text
-        assert "1. step fliplr" in text
-        assert "submit" not in text
-
-    def test_an_unsolved_task_carries_its_furthest_attempt(self):
-        pooled = self.pooled(partials={"aaa": [[0.42, [[1, 0, 0], [2, 0, 0]]]]})
-
-        text = hints.render_block(("aaa", None, None), pooled, {})
-
-        assert "recovered 42% of the cells" in text
-        assert "1. step fliplr" in text and "2. step flipud" in text
-
-    def test_gains_are_reported_in_cells_not_in_intersection_points(self):
-        """maximal_intersection counts 2 * matches - valid, so one cell
-        fixed moves it by two and a gain of 34 is 17 cells."""
-        pooled = self.pooled(effective={"aaa": {"fliplr": 34}})
-
-        text = hints.render_block(("aaa", None, None), pooled, {}, min_gain=1)
-
-        assert "up to 17 cells" in text
-
-    def test_moves_below_the_floor_are_not_listed(self):
-        """Named by what they do, so the two mirrors are told apart by
-        their descriptions rather than by their function names."""
-        pooled = self.pooled(effective={"aaa": {"fliplr": 4, "flipud": 40}})
-
-        text = hints.render_block(("aaa", None, None), pooled, {}, min_gain=5)
-
-        assert "top to bottom" in text and "left to right" not in text
-
-    def test_a_task_whose_moves_are_all_below_the_floor_gets_no_block(self):
-        pooled = self.pooled(effective={"aaa": {"fliplr": 4}})
-
-        assert hints.render_block(("aaa", None, None), pooled, {},
-                                   min_gain=5) is None
-
-    def test_only_the_asked_for_number_of_moves_is_listed(self):
-        pooled = self.pooled(effective={"aaa": {f"a{i}": 100 - i for i in range(10)}})
-
-        text = hints.render_block(("aaa", None, None), pooled, {}, moves=3,
-                                   min_gain=1)
-
-        assert len([line for line in text.splitlines() if "up to" in line]) == 3
-
-
-class TestLeavingTheAnswerOut:
-    """On a task the search solved, the trace in the block is the answer.
-    An arm that keeps it measures recipe-following on those tasks and
-    hint-following on the rest, and reports one number for both."""
-
-    @pytest.fixture(autouse=True)
-    def no_env(self, monkeypatch):
-        monkeypatch.setattr(hints, "render_steps",
-                            lambda task, seq, names, actions, episode_len=25:
-                            [f"step {names[str(s[0])]}" for s in seq])
-        monkeypatch.setattr(hints, "minimise",
-                            lambda task, seq, actions, episode_len=25, goal=None:
-                            tuple(seq))
-
-    @staticmethod
-    def pooled():
-        return {"per_task": {"aaa": 1.0}, "effective": {"aaa": {"fliplr": 40}},
-                "solutions": {"aaa": [[[1, 0, 0], [0, 0, 0]]]}, "partials": {},
-                "names": NAMES, "span": (0, 1)}
-
-    def test_the_solving_sequence_is_dropped(self):
-        text = hints.render_block(("aaa", None, None), self.pooled(), {},
-                                   skip_solved=True)
-
-        assert "reproduced its output exactly" not in text
-
-    def test_the_moves_list_survives(self):
-        text = hints.render_block(("aaa", None, None), self.pooled(), {},
-                                   skip_solved=True)
-
-        assert "left to right" in text and "up to 20 cells" in text
-
-    def test_by_default_the_sequence_is_still_there(self):
-        text = hints.render_block(("aaa", None, None), self.pooled(), {})
-
-        assert "reproduced its output exactly" in text
-
-
 class TestReplayingAgainstTheRealEnv:
     """One end-to-end check that the verification means anything: the env
     the traces are replayed in has to be the env they were recorded in,
@@ -406,14 +291,14 @@ class TestASearchCutByTheTimeout:
         assert found["solutions"] == [] and found["partials"] == []
 
 
-class TestTheOnlinePath:
-    """`hints_for` with the search stubbed: what is pinned is the merging
-    of repeats and the shape handed to the renderer, not the search."""
+class TestMergingRepeats:
+    """`search_task` with the search stubbed: what is pinned is how the
+    repeats of one task are merged."""
 
     @staticmethod
     def _triple():
-        """A real output grid: the vocabulary is now derived from its
-        palette, so None no longer stands in for one."""
+        """A real output grid: the vocabulary is derived from its palette,
+        so None does not stand in for one."""
         import numpy as np
         return ("aaa", np.zeros((3, 3), dtype=int), np.array([[0, 1, 2]] * 3))
 
@@ -424,27 +309,20 @@ class TestTheOnlinePath:
                          "partials": []}])
         monkeypatch.setattr(hints, "search_once",
                             lambda task, actions, settings: next(results))
-        monkeypatch.setattr(hints, "render_block",
-                            lambda task, found, *a, **k: found)
 
-        found = hints.hints_for(self._triple(),
-                                hints.SearchSettings(repeats=2))
+        found = hints.search_task(self._triple(), hints.SearchSettings(repeats=2))
 
-        assert found["effective"] == {"aaa": {"fliplr": 40}}, \
-            "the largest gain, not the last search's"
+        assert found["effective"] == {"fliplr": 40}, "the largest gain, not the last search's"
 
     def test_repeats_keep_the_best_peak(self, monkeypatch):
         results = iter([{"peak": 0.9, "effective": {}, "solutions": [], "partials": []},
                         {"peak": 0.1, "effective": {}, "solutions": [], "partials": []}])
-        seen = {}
         monkeypatch.setattr(hints, "search_once",
                             lambda task, actions, settings: next(results))
-        monkeypatch.setattr(hints, "render_block",
-                            lambda task, found, *a, **k: seen.update(found) or "x")
 
-        hints.hints_for(self._triple(), hints.SearchSettings(repeats=2))
+        found = hints.search_task(self._triple(), hints.SearchSettings(repeats=2))
 
-        assert seen["solutions"] == {"aaa": []}
+        assert found["peak"] == 0.9
 
     def test_a_solution_found_in_any_repeat_survives(self, monkeypatch):
         results = iter([{"peak": 0.0, "effective": {}, "solutions": [[[1, 0, 0]]],
@@ -452,12 +330,10 @@ class TestTheOnlinePath:
                         {"peak": 0.0, "effective": {}, "solutions": [], "partials": []}])
         monkeypatch.setattr(hints, "search_once",
                             lambda task, actions, settings: next(results))
-        monkeypatch.setattr(hints, "render_block",
-                            lambda task, found, *a, **k: found)
 
-        found = hints.hints_for(self._triple(), hints.SearchSettings(repeats=2))
+        found = hints.search_task(self._triple(), hints.SearchSettings(repeats=2))
 
-        assert found["solutions"] == {"aaa": [[[1, 0, 0]]]}
+        assert found["solutions"] == [[[1, 0, 0]]]
 
 
 class TestWhatCountsAsATask:
@@ -575,7 +451,7 @@ class TestTheVocabularyASearchGets:
 
 
 class TestTheVocabularyOneTaskGets:
-    def test_hints_for_derives_the_palette_from_this_task(self, monkeypatch):
+    def test_the_search_derives_the_palette_from_this_task(self, monkeypatch):
         """Not just build_vocabulary in isolation - the wiring, since a
         fixed pair here is exactly the bug being closed."""
         import numpy as np
@@ -586,10 +462,9 @@ class TestTheVocabularyOneTaskGets:
             return {"peak": 0.0, "effective": {}, "solutions": [], "partials": []}
 
         monkeypatch.setattr(hints, "search_once", capture)
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
         task = ("aaa", np.zeros((3, 3), dtype=int), np.full((3, 3), 3))
 
-        hints.hints_for(task, hints.SearchSettings())
+        hints.search_task(task, hints.SearchSettings())
 
         assert any(name.startswith("green_") for name in seen.values())
         assert not any(name.startswith("blue_") for name in seen.values())
@@ -611,9 +486,8 @@ class TestTheBudget:
             return {"peak": 0.0, "effective": {}, "solutions": [], "partials": []}
 
         monkeypatch.setattr(hints, "search_once", slow)
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        hints.hints_for(self._triple(),
+        hints.search_task(self._triple(),
                         hints.SearchSettings(repeats=5, budget=2, timeout=60))
 
         assert len(calls) < 5, "the budget bounds the task, not each search"
@@ -627,9 +501,8 @@ class TestTheBudget:
                     "partials": []}
 
         monkeypatch.setattr(hints, "search_once", solving)
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        hints.hints_for(self._triple(), hints.SearchSettings(repeats=4))
+        hints.search_task(self._triple(), hints.SearchSettings(repeats=4))
 
         assert len(calls) == 1
 
@@ -639,9 +512,8 @@ class TestTheBudget:
                             lambda task, actions, settings: calls.append(1) or
                             {"peak": 0.0, "effective": {}, "solutions": [],
                              "partials": []})
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        hints.hints_for(self._triple(), hints.SearchSettings(repeats=3))
+        hints.search_task(self._triple(), hints.SearchSettings(repeats=3))
 
         assert len(calls) == 3
 
@@ -672,9 +544,8 @@ class TestSearchingInParallel:
                 return future
 
         monkeypatch.setattr(hints, "_pool", lambda workers: FakePool())
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        hints.hints_for(self._triple(),
+        hints.search_task(self._triple(),
                         hints.SearchSettings(repeats=4, workers=4))
 
         assert len(submitted) == 4
@@ -685,9 +556,8 @@ class TestSearchingInParallel:
                             lambda *a, **k: calls.append(1) or
                             {"peak": 0.0, "effective": {}, "solutions": [],
                              "partials": []})
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        hints.hints_for(self._triple(), hints.SearchSettings(repeats=2, workers=1))
+        hints.search_task(self._triple(), hints.SearchSettings(repeats=2, workers=1))
 
         assert len(calls) == 2, "workers=1 searches here, without a pool"
 
@@ -698,9 +568,8 @@ class TestSearchingInParallel:
                             lambda *a, **k: calls.append(1) or
                             {"peak": 0.0, "effective": {}, "solutions": [],
                              "partials": []})
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        hints.hints_for(self._triple(),
+        hints.search_task(self._triple(),
                         hints.SearchSettings(repeats=3, workers=4))
 
         assert len(calls) == 3
@@ -760,12 +629,9 @@ class TestSearchingInParallel:
                             lambda *a, **k: calls.append(1) or
                             {"peak": 0.0, "effective": {}, "solutions": [],
                              "partials": []})
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "x")
 
-        out = hints.hints_for(self._triple(),
-                              hints.SearchSettings(repeats=3, workers=4))
+        hints.search_task(self._triple(), hints.SearchSettings(repeats=3, workers=4))
 
-        assert out == "x"
         assert len(calls) == 3
 
 
@@ -1143,32 +1009,6 @@ class TestChoosingABranch:
         assert set(actions.values()) == {"submit", "red_recolor", "blue_recolor"}
 
 
-class TestTellingTheReader:
-    def test_the_agents_that_reproduce_the_pair(self):
-        line = hints.branch_summary({"modifier": _found([2], 1.0),
-                                     "connector": _found([1], 1.0),
-                                     "shifter": _found(peak=0.3), "full": _found([1], 1.0)})
-        assert line == ("Searched within each agent's actions, the first pair is "
-                        "reproduced by: connector (1 step), modifier (2 steps).")
-
-    def test_only_the_whole_vocabulary(self):
-        line = hints.branch_summary({"modifier": _found(peak=0.3), "full": _found([1], 1.0)})
-        assert "No single agent's actions" in line
-
-    def test_the_closest_when_nothing_does(self):
-        line = hints.branch_summary({"modifier": _found(peak=0.3), "shifter": _found(peak=0.8),
-                                     "full": _found(peak=0.9)})
-        assert "shifter's came closest, recovering 80%" in line
-
-    def test_the_hint_leads_with_it_when_asked(self, monkeypatch):
-        results = {"modifier": {**_found([1], 1.0), "triple": ("t", None, None),
-                                "actions": {0: "submit", 1: "red_recolor"}}}
-        monkeypatch.setattr(hints, "search_branches", lambda task, settings: results)
-        monkeypatch.setattr(hints, "render_block", lambda *a, **k: "BLOCK")
-        text = hints.hints_for("task", hints.SearchSettings(), branches=True)
-        assert text.startswith("Searched within each agent's actions") and text.endswith("BLOCK")
-
-
 def _grid(cells, shape=(4, 4)):
     grid = np.zeros(shape, dtype=int)
     for (i, j), colour in cells.items():
@@ -1217,8 +1057,8 @@ class TestWaysAPairWasReproduced:
         assert seen["bases"] == ("fliplr", "recolor")
 
 
-class TestAVerifiedHint:
-    """verified_hint with the searches stubbed: what is pinned is when it
+class TestTheHint:
+    """hints_for with the searches stubbed: what is pinned is when it
     speaks. An LLM run lost 7 tasks to hints that were partial attempts or
     fitted to one pair, so a hint is said only when every pair checks out."""
 
@@ -1245,40 +1085,34 @@ class TestAVerifiedHint:
     def test_every_pair_reproduced_renders_every_pair(self, monkeypatch):
         self._stub(monkeypatch, [{"recolor"}],
                    {("t_1", frozenset({"recolor"})), ("t_2", frozenset({"recolor"}))})
-        text = hints.verified_hint(self.PAIRS)
+        text = hints.hints_for(self.PAIRS)
         assert text.startswith("A search reproduced every training pair (3 of 3)")
         assert [line for line in text.splitlines() if "step on" in line] == [
             "  1. step on t_0", "  1. step on t_1", "  1. step on t_2"]
 
     def test_one_pair_left_unexplained_says_nothing(self, monkeypatch):
         self._stub(monkeypatch, [{"recolor"}], {("t_1", frozenset({"recolor"}))})
-        assert hints.verified_hint(self.PAIRS) is None
+        assert hints.hints_for(self.PAIRS) is None
 
     def test_the_next_set_of_types_is_tried_when_one_fails(self, monkeypatch):
         both = frozenset({"recolor", "fliplr"})
         self._stub(monkeypatch, [{"recolor"}, set(both)], {("t_1", both), ("t_2", both)})
-        assert hints.verified_hint(self.PAIRS) is not None
+        assert hints.hints_for(self.PAIRS) is not None
 
     def test_nothing_reproduced_the_first_pair(self, monkeypatch):
         self._stub(monkeypatch, [], set())
-        assert hints.verified_hint(self.PAIRS) is None
+        assert hints.hints_for(self.PAIRS) is None
 
     def test_the_palette_is_every_output_and_every_main_direction_is_searched(self, monkeypatch):
         seen = self._stub(monkeypatch, [], set())
-        hints.verified_hint(self.PAIRS, hints.SearchSettings(directions=("N", "E")))
+        hints.hints_for(self.PAIRS, hints.SearchSettings(directions=("N", "E")))
         assert set(seen["settings"].colours) == {"black", "blue", "green"}
         assert set(seen["settings"].directions) == {"N", "E", "S", "W"}
-
-    def test_the_cache_hands_out_verified_hints_when_asked(self, monkeypatch):
-        monkeypatch.setattr(hints, "verified_hint", lambda task, settings: "checked")
-        monkeypatch.setattr(hints, "hints_for", lambda task, settings: "unchecked")
-        assert hints.HintCache(verified=True)(self.PAIRS) == "checked"
-        assert hints.HintCache()(self.PAIRS) == "unchecked"
 
     def test_a_real_recolouring_task_is_verified_pair_by_pair(self):
         pairs = [("r_0", _grid({(1, 1): 2}), _grid({(1, 1): 1})),
                  ("r_1", _grid({(2, 3): 2, (0, 0): 2}), _grid({(2, 3): 1, (0, 0): 1}))]
-        text = hints.verified_hint(pairs, hints.SearchSettings(rollouts=1, iterations=5,
+        text = hints.hints_for(pairs, hints.SearchSettings(rollouts=1, iterations=5,
                                                                timeout=30))
         assert text is not None and "Pair 1:" in text and "Pair 2:" in text
         assert "recovered" not in text, "no partial attempt, no single steps"

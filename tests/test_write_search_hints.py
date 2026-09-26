@@ -1,4 +1,4 @@
-"""Tests for scripts/verified_hints.py - precomputing verified hints into
+"""Tests for scripts/write_search_hints.py - precomputing search hints into
 the file the search_hints resolver reads."""
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import subsymbolic.arc_resolvers as arc_resolvers
 from subsymbolic.prompt_builder import OMIT
 
 _SPEC = importlib.util.spec_from_file_location(
-    "verified_hints", Path(__file__).resolve().parent.parent / "scripts" / "verified_hints.py")
+    "write_search_hints", Path(__file__).resolve().parent.parent / "scripts" / "write_search_hints.py")
 script = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(script)
 

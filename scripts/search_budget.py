@@ -27,9 +27,12 @@ produced every reference figure ran weighted; the table above did not.
 So the numbers above are a floor, and --playout is swept alongside depth
 rather than assumed.
 
-Reported per setting: how many tasks carried a hint at all, how far the
-search got, how many it solved outright, and what it cost. Coverage is
-the figure that matters for a prompt - a task with no hint gets no block.
+Reported per setting: how many tasks the search solved outright, how far
+it got, and what it cost. The "carried a hint" column above counted the
+block the prompt used to get - a partial attempt or a list of single moves
+on nearly every task - which is gone: a hint is now said only where a
+search reproduced every training pair (rl.search_hints.hints_for), so
+what a budget buys a prompt is read off `solved`.
 
 Usage:
     python scripts/search_budget.py --tasks 0-50 --iterations 40 160 640
@@ -56,8 +59,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from rl.search_hints import (SearchSettings, render_block,  # noqa: E402
-                             search_task)
+from rl.search_hints import SearchSettings, search_task  # noqa: E402
 from scripts.compare_reward_approaches import load_tasks, parse_span  # noqa: E402
 
 
@@ -69,20 +71,11 @@ def one_task(payload):
         found = search_task(triple, settings)
     except Exception as exc:  # a task that fails is not a task that scored 0
         return {"task": triple[0], "why": type(exc).__name__}
-    task_id = triple[0]
-    shaped = {"names": {str(i): n for i, n in found["actions"].items()},
-              "solutions": {task_id: found["solutions"]},
-              "partials": {task_id: found["partials"]},
-              "effective": {task_id: found["effective"]}}
-    text = render_block(triple, shaped, found["actions"], settings.moves,
-                        settings.min_gain, settings.episode_len,
-                        settings.skip_solved)
-    return {"task": task_id,
+    return {"task": triple[0],
             "seconds": time.perf_counter() - started,
             "peak": found["peak"],
             "solved": bool(found["solutions"]),
             "moves": len(found["effective"]),
-            "carried": bool(text),
             "why": None}
 
 
@@ -105,7 +98,6 @@ def report(label, rows):
     summary = {
         "tasks": len(scored),
         "failed": len(rows) - len(scored),
-        "carried": sum(1 for row in scored if row["carried"]),
         "solved": sum(1 for row in scored if row["solved"]),
         "median_seconds": statistics.median(seconds),
         "mean_seconds": statistics.mean(seconds),
@@ -113,8 +105,8 @@ def report(label, rows):
         "mean_peak": statistics.mean(peaks),
         "moved": sum(1 for row in scored if row["peak"] > 0),
     }
-    print(f"{label:>22s}  hint on {summary['carried']:3d}/{summary['tasks']:<3d}  "
-          f"solved {summary['solved']:2d}  moved {summary['moved']:3d}  "
+    print(f"{label:>22s}  solved {summary['solved']:2d}/{summary['tasks']:<3d}  "
+          f"moved {summary['moved']:3d}  "
           f"peak {summary['mean_peak']:.3f}  "
           f"median {summary['median_seconds']:6.1f}s  "
           f"mean {summary['mean_seconds']:6.1f}s  "
@@ -133,7 +125,6 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=600,
                         help="seconds one search may take; what it found up to "
                              "the cut is kept")
-    parser.add_argument("--min-gain", type=int, default=5)
     parser.add_argument("--playout", nargs="+", default=["weighted"],
                         choices=["weighted", "default"],
                         help="how a playout picks its next action; 'weighted' "
@@ -156,7 +147,7 @@ def main() -> None:
         for iterations in args.iterations:
             settings = SearchSettings(iterations=iterations, repeats=args.repeats,
                                       rollouts=args.rollouts, timeout=args.timeout,
-                                      min_gain=args.min_gain, playout=playout)
+                                      playout=playout)
             started = time.perf_counter()
             rows = sweep(tasks, settings, args.workers)
             label = f"{playout} {args.repeats} x {iterations}"
@@ -164,8 +155,7 @@ def main() -> None:
             summary["wall_seconds"] = time.perf_counter() - started
             results[f"{playout}:{iterations}"] = {"summary": summary, "rows": rows}
 
-    print("\n  coverage is what a prompt sees: a task with no hint gets no block.")
-    print("  compare the cost columns before reading anything into two tasks "
+    print("\n  compare the cost columns before reading anything into two tasks "
           "of difference - the spread between identical runs is that wide.")
 
     if args.out:

@@ -1282,3 +1282,72 @@ class TestAVerifiedHint:
                                                                timeout=30))
         assert text is not None and "Pair 1:" in text and "Pair 2:" in text
         assert "recovered" not in text, "no partial attempt, no single steps"
+
+
+class TestAStagedSearch:
+    """staged_search with the search stubbed: the base types first, and the
+    next tier from the input and from where the last stage got to."""
+
+    INPUT = _grid({(0, 0): 2, (3, 3): 2})
+    TARGET = _grid({(0, 0): 1, (3, 0): 2})
+    HALFWAY = _grid({(0, 0): 1, (3, 3): 2})
+    NOWHERE = _grid({(0, 0): 2, (3, 3): 2, (1, 1): 5})
+    ACTIONS = {0: "submit", 1: "blue_recolor"}
+
+    def _stub(self, monkeypatch, solves, ends):
+        calls = []
+
+        def search(pair, settings):
+            key = "input" if np.array_equal(pair[1], self.INPUT) else "halfway"
+            calls.append((key, settings.bases))
+            solved = (key, len(calls)) in solves or key in solves
+            return {"actions": self.ACTIONS, "solutions": [[[1, 0, 0]]] if solved else [],
+                    "partials": [] if solved else [[0.5, [[1, 0, 0], [0, 0, 0]]]]}
+
+        monkeypatch.setattr(hints, "search_task", search)
+        monkeypatch.setattr(hints, "minimise", lambda pair, body, actions, length: body)
+        monkeypatch.setattr(hints, "end_grid", lambda pair, trace, actions, length: ends)
+        return calls
+
+    TIERS = (("recolor",), ("gravity",), None)
+
+    def test_solved_by_the_base_types_goes_no_further(self, monkeypatch):
+        calls = self._stub(monkeypatch, {"input"}, self.HALFWAY)
+        found = hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
+        assert found["solved"] and found["stage"] == 0
+        assert calls == [("input", ("recolor",))]
+
+    def test_the_next_tier_searches_from_the_input_and_from_where_the_last_got(self, monkeypatch):
+        calls = self._stub(monkeypatch, {"halfway"}, self.HALFWAY)
+        found = hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
+        assert calls == [("input", ("recolor",)), ("input", ("gravity", "recolor")),
+                         ("halfway", ("gravity", "recolor"))]
+        assert found["stage"] == 1
+        assert [np.array_equal(grid, expected) for (grid, _), expected in
+                zip(found["segments"], (self.INPUT, self.HALFWAY))] == [True, True]
+        assert found["segments"][0][1] == [["blue_recolor", 0, 0]], "named, submit dropped"
+
+    def test_the_last_tier_is_every_type(self, monkeypatch):
+        calls = self._stub(monkeypatch, set(), self.HALFWAY)
+        found = hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
+        scorer = hints.make_env(("t", self.INPUT, self.TARGET), {0: "submit"}, 25)
+        halfway = ((scorer.maximal_intersection(self.HALFWAY) - scorer.max_int)
+                   / (scorer.target_int - scorer.max_int))
+        assert not found["solved"] and found["peak"] == pytest.approx(halfway), \
+            "measured from the input, not the stage's own figure (0.5)"
+        assert calls[-1][1] is None
+
+    def test_a_path_that_got_nowhere_is_not_continued(self, monkeypatch):
+        calls = self._stub(monkeypatch, set(), self.NOWHERE)
+        hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
+        assert {key for key, _ in calls} == {"input"}
+
+    def test_a_real_pair_needing_both_tiers(self):
+        """One cell recoloured in place, another dropped to the bottom row."""
+        found = hints.staged_search(
+            ("t", _grid({(0, 0): 2, (0, 3): 3}), _grid({(0, 0): 1, (3, 3): 3})),
+            hints.SearchSettings(rollouts=2, iterations=10, timeout=30),
+            tiers=(("recolor",), ("gravity", "edge_gravity_bottom"), None))
+        assert found["solved"] and found["stage"] in (1, 2)
+        for grid, steps in found["segments"]:
+            assert steps, "every segment does something"

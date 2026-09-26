@@ -923,6 +923,89 @@ def best_branch(results):
     return min(results.items(), key=rank)
 
 
+def _named(sequence, actions):
+    """A sequence with its action indices replaced by names, so it can be
+    read against no particular vocabulary."""
+    return [[actions[int(step[0])], *[int(x) for x in step[1:]]] for step in sequence]
+
+
+def end_grid(pair, sequence, actions, episode_len=25):
+    """The grid a sequence leaves `pair`'s input in, submit aside."""
+    env = make_env(pair, actions, episode_len)
+    with contextlib.redirect_stdout(io.StringIO()):
+        for step in _without_submit(sequence, actions):
+            env.step(np.asarray(step))
+    return np.array(env.grid)
+
+
+def staged_search(task, settings=None, tiers=None, starts=2):
+    """Search the base action types first, and more only where they fall
+    short.
+
+    Stage one searches the pair with the first tier's types. If that does
+    not solve it, the next stage searches with the next tier added - from
+    the input again, and from the `starts` furthest grids the stage before
+    reached, taking each as a fresh input. So the specific types come in
+    for the second half of a path the base ones began, which a search over
+    everything at once reaches only by chance: with every type in, the tree
+    is wide where the base types would have gone deep.
+
+    A continued grid is re-read into objects, as a grid is when a task
+    starts, rather than carrying the objects the path left behind: the
+    search resets its env for every rollout, so a continuation cannot start
+    from the middle of an episode. A solution is therefore a list of
+    segments, each replayable from the grid it starts on.
+
+    `tiers` defaults to SEARCH_TIERS, None in it meaning every type.
+
+    Returns solved, the stage it was solved at (or None), the segments as
+    (starting grid, named steps), the peak - how much of the distance any
+    grid a stage ended on closed, measured from the input - and seconds.
+    """
+    from data.configs.env_configs import SEARCH_TIERS
+
+    started = time.perf_counter()
+    settings = settings or SearchSettings()
+    tiers = SEARCH_TIERS if tiers is None else tiers
+    triple = as_triple(task)
+    if settings.colours is None:
+        settings = replace(settings, colours=tuple(output_colours(triple[2])))
+    scorer = make_env(triple, {0: "submit"}, settings.episode_len)
+    base, target = int(scorer.max_int), int(scorer.target_int)
+
+    def closed(grid):
+        span = target - base
+        return (int(scorer.maximal_intersection(grid)) - base) / span if span else 1.0
+
+    frontier = [([], np.asarray(triple[1]))]
+    bases, peak = set(), 0.0
+    for stage, tier in enumerate(tiers):
+        bases = None if tier is None or bases is None else bases | set(tier)
+        reached = []
+        for segments, grid in frontier:
+            pair = (triple[0], grid, triple[2])
+            found = search_task(pair, replace(settings, bases=None if bases is None
+                                              else tuple(sorted(bases))))
+            actions = found["actions"]
+            if found["solutions"]:
+                body = minimise(pair, _without_submit(found["solutions"][0], actions),
+                                actions, settings.episode_len)
+                return {"solved": True, "stage": stage, "peak": 1.0,
+                        "segments": segments + [(grid, _named(body, actions))],
+                        "seconds": time.perf_counter() - started}
+            for _progress, trace in found["partials"]:
+                end = end_grid(pair, trace, actions, settings.episode_len)
+                reached.append((closed(end), segments + [(grid, _named(
+                    _without_submit(trace, actions), actions))], end))
+        reached.sort(key=lambda item: -item[0])
+        if reached:
+            peak = max(peak, reached[0][0])
+        frontier = [([], np.asarray(triple[1]))] + \
+            [(segments, end) for progress, segments, end in reached[:starts] if progress > 0]
+    return {"solved": False, "stage": None, "peak": peak, "segments": [],
+            "seconds": time.perf_counter() - started}
+
+
 def feasible_from_branches(task, settings=None, results=None):
     """The action set to train on, from the best branch's search - its
     types, the task's palette, every direction (feasible_from_search).

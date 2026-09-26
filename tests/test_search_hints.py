@@ -1099,6 +1099,14 @@ class TestTheHint:
         self._stub(monkeypatch, [{"recolor"}, set(both)], {("t_1", both), ("t_2", both)})
         assert hints.hints_for(self.PAIRS) is not None
 
+    def test_a_task_that_resizes_the_grid_is_not_searched(self, monkeypatch):
+        """No object action changes the grid's size, so the search could
+        only fail - five searches' worth of it."""
+        monkeypatch.setattr(hints, "search_branches",
+                            lambda pair, settings: pytest.fail("searched a resize"))
+        pairs = self.PAIRS[:1] + [("t_1", _grid({(0, 0): 2}), _grid({(0, 0): 1}, (2, 2)))]
+        assert hints.hints_for(pairs) is None
+
     def test_nothing_reproduced_the_first_pair(self, monkeypatch):
         self._stub(monkeypatch, [], set())
         assert hints.hints_for(self.PAIRS) is None

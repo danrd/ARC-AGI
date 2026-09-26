@@ -1065,6 +1065,13 @@ def hints_for(task, settings=None, candidates=3):
     """
     settings = settings or SearchSettings()
     pairs = training_pairs(task)
+    # Every object action paints within the grid it is given - upscale_4
+    # included, which enlarges an object, not the grid - so a pair whose
+    # output is another size is out of the search's reach. About a third
+    # of the evaluation split; each would cost five searches to find that
+    # out.
+    if any(np.shape(pair[1]) != np.shape(pair[2]) for pair in pairs):
+        return None
     if settings.colours is None:
         settings = replace(settings, colours=tuple(output_colours(*[p[2] for p in pairs])))
     settings = replace(settings, directions=tuple(dict.fromkeys(

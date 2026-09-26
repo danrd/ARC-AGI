@@ -1167,3 +1167,118 @@ class TestTellingTheReader:
         monkeypatch.setattr(hints, "render_block", lambda *a, **k: "BLOCK")
         text = hints.hints_for("task", hints.SearchSettings(), branches=True)
         assert text.startswith("Searched within each agent's actions") and text.endswith("BLOCK")
+
+
+def _grid(cells, shape=(4, 4)):
+    grid = np.zeros(shape, dtype=int)
+    for (i, j), colour in cells.items():
+        grid[i, j] = colour
+    return grid
+
+
+class TestEveryTrainingPair:
+    def test_a_task_gives_up_all_its_pairs(self):
+        from types import SimpleNamespace
+        task = SimpleNamespace(label="bbb", subtasks=[
+            SimpleNamespace(train_inp="i0", train_out="o0"),
+            SimpleNamespace(train_inp="i1", train_out="o1")])
+        assert hints.training_pairs(task) == [("bbb_0", "i0", "o0"), ("bbb_1", "i1", "o1")]
+
+    def test_a_triple_is_one_pair_and_a_list_is_its_pairs(self):
+        assert hints.training_pairs(("t", 1, 2)) == [("t", 1, 2)]
+        assert hints.training_pairs([("a", 1, 2), ("b", 3, 4)]) == [("a", 1, 2), ("b", 3, 4)]
+
+
+class TestWaysAPairWasReproduced:
+    ACTIONS = {0: "submit", 1: "red_recolor", 2: "blue_fliplr", 3: "gravity_N"}
+
+    def test_one_per_set_of_types_fewest_first_shortest_kept(self, monkeypatch):
+        monkeypatch.setattr(hints, "minimise", lambda pair, body, actions, length: body)
+        results = {"a": {"actions": self.ACTIONS,
+                         "solutions": [[[2, 0, 0], [3, 0, 0], [0, 0, 0]],
+                                       [[1, 0, 0], [1, 1, 1], [0, 0, 0]],
+                                       [[1, 2, 2], [0, 0, 0]]]}}
+        found = hints.explanations(("p", None, None), results, hints.SearchSettings())
+        assert [sorted(types) for types, _, _ in found] == [["recolor"], ["fliplr", "gravity"]]
+        assert found[0][1] == [[1, 2, 2]], "the shortest sequence for a set, submit dropped"
+
+    def test_a_pair_that_needs_nothing_is_reproduced_by_nothing(self, monkeypatch):
+        monkeypatch.setattr(hints, "search_task", lambda *a: pytest.fail("no search needed"))
+        grid = _grid({(1, 1): 2})
+        assert hints.reproduce(("p", grid, grid.copy()), {"recolor"}, hints.SearchSettings())[0] == []
+
+    def test_another_pair_is_searched_with_those_types_only(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(hints, "search_task",
+                            lambda pair, settings: seen.update(bases=settings.bases)
+                            or {"solutions": [], "actions": {}})
+        pair = ("p", _grid({(1, 1): 2}), _grid({(1, 1): 1}))
+        assert hints.reproduce(pair, {"recolor", "fliplr"}, hints.SearchSettings()) is None
+        assert seen["bases"] == ("fliplr", "recolor")
+
+
+class TestAVerifiedHint:
+    """verified_hint with the searches stubbed: what is pinned is when it
+    speaks. An LLM run lost 7 tasks to hints that were partial attempts or
+    fitted to one pair, so a hint is said only when every pair checks out."""
+
+    PAIRS = [("t_0", _grid({(1, 1): 2}), _grid({(1, 1): 1})),
+             ("t_1", _grid({(2, 3): 2}), _grid({(2, 3): 3})),
+             ("t_2", _grid({(0, 0): 2}), _grid({(0, 0): 1}))]
+
+    def _stub(self, monkeypatch, candidates, reproducible):
+        seen = {}
+        monkeypatch.setattr(hints, "search_branches",
+                            lambda pair, settings: seen.update(settings=settings) or {})
+        monkeypatch.setattr(hints, "explanations",
+                            lambda pair, results, settings, limit: [
+                                (frozenset(types), [[1, 0, 0]], {0: "submit", 1: "x"})
+                                for types in candidates])
+        monkeypatch.setattr(hints, "reproduce",
+                            lambda pair, types, settings:
+                            ([[1, 0, 0]], {0: "submit", 1: "x"})
+                            if (pair[0], frozenset(types)) in reproducible else None)
+        monkeypatch.setattr(hints, "render_steps",
+                            lambda pair, sequence, names, actions, length: [f"step on {pair[0]}"])
+        return seen
+
+    def test_every_pair_reproduced_renders_every_pair(self, monkeypatch):
+        self._stub(monkeypatch, [{"recolor"}],
+                   {("t_1", frozenset({"recolor"})), ("t_2", frozenset({"recolor"}))})
+        text = hints.verified_hint(self.PAIRS)
+        assert text.startswith("A search reproduced every training pair (3 of 3)")
+        assert [line for line in text.splitlines() if "step on" in line] == [
+            "  1. step on t_0", "  1. step on t_1", "  1. step on t_2"]
+
+    def test_one_pair_left_unexplained_says_nothing(self, monkeypatch):
+        self._stub(monkeypatch, [{"recolor"}], {("t_1", frozenset({"recolor"}))})
+        assert hints.verified_hint(self.PAIRS) is None
+
+    def test_the_next_set_of_types_is_tried_when_one_fails(self, monkeypatch):
+        both = frozenset({"recolor", "fliplr"})
+        self._stub(monkeypatch, [{"recolor"}, set(both)], {("t_1", both), ("t_2", both)})
+        assert hints.verified_hint(self.PAIRS) is not None
+
+    def test_nothing_reproduced_the_first_pair(self, monkeypatch):
+        self._stub(monkeypatch, [], set())
+        assert hints.verified_hint(self.PAIRS) is None
+
+    def test_the_palette_is_every_output_and_every_main_direction_is_searched(self, monkeypatch):
+        seen = self._stub(monkeypatch, [], set())
+        hints.verified_hint(self.PAIRS, hints.SearchSettings(directions=("N", "E")))
+        assert set(seen["settings"].colours) == {"black", "blue", "green"}
+        assert set(seen["settings"].directions) == {"N", "E", "S", "W"}
+
+    def test_the_cache_hands_out_verified_hints_when_asked(self, monkeypatch):
+        monkeypatch.setattr(hints, "verified_hint", lambda task, settings: "checked")
+        monkeypatch.setattr(hints, "hints_for", lambda task, settings: "unchecked")
+        assert hints.HintCache(verified=True)(self.PAIRS) == "checked"
+        assert hints.HintCache()(self.PAIRS) == "unchecked"
+
+    def test_a_real_recolouring_task_is_verified_pair_by_pair(self):
+        pairs = [("r_0", _grid({(1, 1): 2}), _grid({(1, 1): 1})),
+                 ("r_1", _grid({(2, 3): 2, (0, 0): 2}), _grid({(2, 3): 1, (0, 0): 1}))]
+        text = hints.verified_hint(pairs, hints.SearchSettings(rollouts=1, iterations=5,
+                                                               timeout=30))
+        assert text is not None and "Pair 1:" in text and "Pair 2:" in text
+        assert "recovered" not in text, "no partial attempt, no single steps"

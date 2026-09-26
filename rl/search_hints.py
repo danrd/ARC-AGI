@@ -17,6 +17,11 @@ What the block can say:
 - otherwise the furthest attempt it made, and how far that got;
 - the single moves that recovered cells at some point in the search.
 
+verified_hint says much less, and only what was checked: the steps that
+reproduce every training pair, when the same kinds of step do so on each,
+and nothing at all otherwise. The block above, on every task, cost an LLM
+run 7 of 41 solved.
+
 Everything is named in the grid's own terms - colours as digits, objects by
 colour, size and bounding box - because a prompt that says "blue" beside a
 grid of digits asks the model to resolve a reference nothing defines.
@@ -41,7 +46,7 @@ from data.configs.env_configs import (ACTION_TYPES, AGENT2ACTIONS, ALL_DIRECTION
                                       COORDINATE_ACTIONS,
                                       DIRECTION_DEPENDENT_ACTIONS,
                                       DOUBLE_COLOR_DEPENDENT_ACTIONS,
-                                      TRANSFORM_DESCRIPTIONS,
+                                      MAIN_DIRECTIONS, TRANSFORM_DESCRIPTIONS,
                                       UNIMPLEMENTED_ACTIONS)
 from rl.arc_env import ARCGridWorld
 from rl.arc_task import ARCSubtask
@@ -991,6 +996,141 @@ def hints_for(task, settings=None, branches=False):
     return summary if block is None else f"{summary}\n{block}"
 
 
+def training_pairs(task):
+    """Every training pair of a task as (id, input, output) triples.
+
+    An ARCTask gives up all its subtasks; a list of triples is taken as it
+    is; a single triple is the one pair it holds.
+    """
+    subtasks = getattr(task, "subtasks", None)
+    if subtasks:
+        label = str(getattr(task, "label", "task"))
+        return [(f"{label}_{index}", subtask.train_inp, subtask.train_out)
+                for index, subtask in enumerate(subtasks)]
+    if isinstance(task, (tuple, list)) and task and isinstance(task[0], str):
+        return [tuple(task)]
+    return [tuple(pair) for pair in task]
+
+
+def _types_of(sequence, actions):
+    """The action types a sequence uses, submit aside."""
+    return frozenset(split_name(actions[int(step[0])])[0] for step in sequence) - {"submit"}
+
+
+def _without_submit(sequence, actions):
+    return [step for step in sequence if actions[int(step[0])] != "submit"]
+
+
+def explanations(pair, results, settings, limit=3):
+    """The ways the searches reproduced one pair, as (types, sequence,
+    actions): each solution minimised, one per distinct set of action
+    types - the shortest sequence for it - fewest types first.
+
+    A set of types is what can carry over to another pair; the sequence
+    itself names that pair's objects and cannot.
+    """
+    kept = {}
+    for found in results.values():
+        actions = found["actions"]
+        for solution in found["solutions"][:10]:
+            body = minimise(pair, _without_submit(solution, actions), actions,
+                            settings.episode_len)
+            types = _types_of(body, actions)
+            if types and (types not in kept or len(body) < len(kept[types][0])):
+                kept[types] = (list(body), actions)
+    ordered = sorted(kept.items(), key=lambda item: (len(item[0]), len(item[1][0]),
+                                                     sorted(item[0])))
+    return [(types, body, actions) for types, (body, actions) in ordered[:limit]]
+
+
+def reproduce(pair, types, settings):
+    """(sequence, actions) reproducing `pair` with only `types`, or None.
+
+    A pair whose output is its input needs no step at all.
+    """
+    if np.array_equal(np.asarray(pair[1]), np.asarray(pair[2])):
+        return [], {0: "submit"}
+    found = search_task(pair, replace(settings, bases=tuple(sorted(types)),
+                                      repeats=1, workers=1))
+    if not found["solutions"]:
+        return None
+    actions = found["actions"]
+    body = minimise(pair, _without_submit(found["solutions"][0], actions), actions,
+                    settings.episode_len)
+    return list(body), actions
+
+
+def render_verified(explained, episode_len=25):
+    """The verified block: every pair, the steps that reproduce it.
+
+    Only what was checked is said. The steps are each pair's own - which
+    shape a step takes, which colour or direction it uses - and the rule
+    that makes those choices is not something a search establishes, so it
+    is left to the reader, who has the grids.
+    """
+    lines = [f"A search reproduced every training pair ({len(explained)} of "
+             f"{len(explained)}) exactly, with the same kinds of step in each. "
+             "The steps below are what each pair needed; the rule that picks "
+             "the shapes and colours is not stated."]
+    for index, (pair, sequence, actions) in enumerate(explained, start=1):
+        lines.append(f"Pair {index}:")
+        if not sequence:
+            lines.append("  the output is the input, unchanged.")
+            continue
+        names = {str(i): name for i, name in actions.items()}
+        lines += [f"  {step}. {line}" for step, line in
+                  enumerate(render_steps(pair, sequence, names, actions, episode_len),
+                            start=1)]
+    return "\n".join(lines)
+
+
+def verified_hint(task, settings=None, candidates=3):
+    """A hint only for what the search can stand behind, else None.
+
+    Measured on 120 training tasks: one search over the whole vocabulary
+    reproduced the first pair of 12, and in 6 of those the same action
+    types could not reproduce the other pairs - the "solution" was fitted
+    to one grid. The other 108 got a partial attempt and a list of single
+    steps, and the partial attempts point the wrong way (d511f180 swaps 5
+    and 8; its hint said to paint a shape's interior 8, 15% recovered).
+    With both blocks in, an LLM run went from 41 solved to 34.
+
+    So this says something only when it has been checked:
+
+    1. the first pair is searched in every branch (search_branches);
+    2. each distinct set of action types a solution used is tried, fewest
+       types first, on every other training pair - a search over exactly
+       those types;
+    3. the first set that reproduces all of them is rendered pair by pair
+       (render_verified). Nothing is said about partial attempts or single
+       steps, and a task no set covers gets no block.
+
+    `settings.colours` defaults to the palette of every training output,
+    so the vocabulary is the same on every pair. The four main directions
+    are always searched, whatever settings.directions holds: the direction
+    is the pair's, not the task's, and a check over north and east alone
+    would reject every task whose second pair needs south.
+    """
+    settings = settings or SearchSettings()
+    pairs = training_pairs(task)
+    if settings.colours is None:
+        settings = replace(settings, colours=tuple(output_colours(*[p[2] for p in pairs])))
+    settings = replace(settings, directions=tuple(dict.fromkeys(
+        (*MAIN_DIRECTIONS, *settings.directions))))
+    first, rest = pairs[0], pairs[1:]
+    results = search_branches(first, settings)
+    for types, sequence, actions in explanations(first, results, settings, candidates):
+        explained = [(first, sequence, actions)]
+        for pair in rest:
+            reproduced = reproduce(pair, types, settings)
+            if reproduced is None:
+                break
+            explained.append((pair, *reproduced))
+        else:
+            return render_verified(explained, settings.episode_len)
+    return None
+
+
 @dataclass
 class HintCache:
     """`hints_for` with the answer remembered per task.
@@ -999,12 +1139,17 @@ class HintCache:
     arm, a resumed checkpoint - and each rebuild would otherwise pay for a
     fresh search whose result is random anyway, so the same task would carry
     a different hint each time.
+
+    `verified` gives verified_hint instead - a block only where the search
+    reproduced every training pair. It needs the whole task, not a triple.
     """
     settings: SearchSettings = field(default_factory=SearchSettings)
     cache: dict = field(default_factory=dict)
+    verified: bool = False
 
     def __call__(self, task):
         key = str(as_triple(task)[0])
         if key not in self.cache:
-            self.cache[key] = hints_for(task, self.settings)
+            self.cache[key] = (verified_hint(task, self.settings) if self.verified
+                               else hints_for(task, self.settings))
         return self.cache[key]

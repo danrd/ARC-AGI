@@ -71,12 +71,9 @@ from data.configs.env_configs import (AGENT2ACTIONS,  # noqa: E402
                                       DIRECTION_DEPENDENT_ACTIONS,
                                       DOUBLE_COLOR_DEPENDENT_ACTIONS)
 from rl.utils import define_feasible_actions  # noqa: E402
-# The renderer lives beside the search it describes, so the file this
-# writes and a hint computed online say the same thing about a task.
-from rl.search_hints import (POINTS_PER_CELL, build_vocabulary,  # noqa: E402,F401
-                             describe_object, distinct, make_env, minimise,
-                             names_for, readable, reached, render_block,
-                             render_steps, replays)
+from rl.search_hints import (build_vocabulary, describe_object,  # noqa: E402,F401
+                             distinct, make_env, minimise, names_for, readable,
+                             reached, render_steps, replays)
 from scripts.compare_reward_approaches import build_actions, load_tasks  # noqa: E402
 
 
@@ -266,16 +263,6 @@ def main() -> None:
     parser.add_argument("--directions", nargs="+", default=["N", "E"])
     parser.add_argument("--episode-len", type=int, default=25)
     parser.add_argument("--out", type=Path, help="write the minimal traces as JSON")
-    parser.add_argument("--prompt-block", type=Path,
-                        help="write task id -> hint text, ready for a prompt resolver")
-    parser.add_argument("--moves", type=int, default=6,
-                        help="how many single moves a hint block lists")
-    parser.add_argument("--min-gain", type=int, default=5,
-                        help="cells a single move must have recovered to be listed")
-    parser.add_argument("--skip-solved", action="store_true",
-                        help="leave the verified solving sequence out of the "
-                             "blocks, keeping the moves list - on a solved task "
-                             "that sequence is the answer")
     parser.add_argument("--agents", action="store_true",
                         help="also score the effective actions against the agent rosters")
     args = parser.parse_args()
@@ -328,40 +315,6 @@ def main() -> None:
                               for t, v in kept.items()}}
         args.out.write_text(json.dumps(payload, indent=1))
         print(f"\nwrote {args.out}")
-
-    if args.prompt_block:
-        blocks = {}
-        for task in tasks:
-            text = render_block(task, pooled, actions, args.moves,
-                                args.min_gain, args.episode_len,
-                                args.skip_solved)
-            if text:
-                blocks[task[0]] = text
-        args.prompt_block.write_text(json.dumps(blocks, indent=1, ensure_ascii=False))
-        covered = 100 * len(blocks) / max(len(tasks), 1)
-        print("\n=== prompt blocks ===")
-        giving = sum(1 for text in blocks.values()
-                     if "reproduced the output exactly" in text)
-        print(f"  {len(blocks)} of {len(tasks)} tasks carry one ({covered:.0f}%) - "
-              f"the rest get no block at all rather than an empty one")
-        print(f"  {giving} of them hand over a verified solution; read those "
-              f"apart from the rest, or rebuild with --skip-solved")
-        # What the floor buys, since it is the one knob that decides whether
-        # a task is spoken about at all.
-        for floor in (1, 5, 10, 20):
-            with_block = sum(1 for task in tasks
-                             if render_block(task, pooled, actions, args.moves,
-                                             floor, args.episode_len,
-                                             args.skip_solved))
-            print(f"    at >= {floor:2d} cells: {with_block} tasks")
-        sizes = [len(text) for text in blocks.values()]
-        if sizes:
-            print(f"  {int(np.median(sizes))} characters on the median task, "
-                  f"{max(sizes)} at most")
-            sample = sorted(blocks)[0]
-            print(f"\n  {sample}:\n" + "\n".join(f"    {line}" for line
-                                                 in blocks[sample].splitlines()))
-        print(f"\nwrote {args.prompt_block}")
 
     if args.agents:
         report_agents(effective, args.colours, args.directions)

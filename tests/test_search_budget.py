@@ -2,8 +2,8 @@
 
 The sweep answers one question - what a solve-time budget buys - so what
 is pinned is that its numbers mean what the table says: a task that
-failed is not a task that scored zero, coverage counts blocks rather than
-searches, and a setting reaches the search unchanged.
+failed is not a task that scored zero, and a setting reaches the search
+unchanged.
 """
 from __future__ import annotations
 
@@ -38,28 +38,25 @@ class TestOneTask:
         assert row["why"] == "RuntimeError"
         assert "peak" not in row
 
-    def test_carried_means_a_block_was_rendered(self, monkeypatch):
+    def test_the_peak_is_read_from_what_the_search_returned(self, monkeypatch):
         monkeypatch.setattr(script, "search_task",
                             lambda task, settings: {
                                 "peak": 0.4, "effective": {}, "solutions": [],
                                 "partials": [], "actions": {0: "submit"}})
-        monkeypatch.setattr(script, "render_block", lambda *a, **k: None)
 
         row = script.one_task((_triple(), script.SearchSettings()))
 
-        assert row["carried"] is False
-        assert row["peak"] == 0.4
+        assert row["peak"] == 0.4 and row["solved"] is False
 
     def test_a_solution_is_read_from_what_the_search_returned(self, monkeypatch):
         monkeypatch.setattr(script, "search_task",
                             lambda task, settings: {
                                 "peak": 1.0, "effective": {}, "solutions": [[[1, 0, 0]]],
                                 "partials": [], "actions": {0: "submit"}})
-        monkeypatch.setattr(script, "render_block", lambda *a, **k: "text")
 
         row = script.one_task((_triple(), script.SearchSettings()))
 
-        assert row["solved"] is True and row["carried"] is True
+        assert row["solved"] is True
 
 
 class TestTheSweep:
@@ -69,7 +66,6 @@ class TestTheSweep:
                             lambda task, settings: seen.append(settings.iterations)
                             or {"peak": 0.0, "effective": {}, "solutions": [],
                                 "partials": [], "actions": {0: "submit"}})
-        monkeypatch.setattr(script, "render_block", lambda *a, **k: None)
 
         script.sweep([_triple(), _triple()],
                      script.SearchSettings(iterations=640), workers=1)
@@ -81,7 +77,7 @@ class TestTheReport:
     def test_failures_are_left_out_of_the_averages(self):
         rows = [{"task": "a", "why": "TimedOut"},
                 {"task": "b", "why": None, "seconds": 2.0, "peak": 0.5,
-                 "solved": False, "moves": 3, "carried": True}]
+                 "solved": False, "moves": 3}]
 
         summary = script.report("x", rows)
 

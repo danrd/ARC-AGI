@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Write verified search hints for a split into the file the prompt reads.
+"""Write the search hints for a split into the file the prompt reads.
 
-A verified hint (rl.search_hints.verified_hint) is said only when a search
-reproduced every training pair of a task with the same kinds of step; any
-other task gets no block. The hints that were in the prompt before said
-something on every task - a partial attempt, a list of single steps - and
-with them and the summary in, a run went from 41 solved to 34.
+A hint (rl.search_hints.hints_for) is said only when a search reproduced
+every training pair of a task with the same kinds of step; any other task
+gets no block.
 
 The output is what subsymbolic.arc_resolvers.search_hints_resolver reads
-through `project.search_hints`: task id -> text. A task that was checked
+through `project.search_hints`, data/search_hints.json unless a config
+says otherwise: task id -> text. A task that was checked
 and has nothing verified maps to null, which the resolver reads as no
 block, and which is also how a rerun knows the task is done - the file is
 rewritten after every task, so a run cut short resumes where it stopped.
@@ -17,8 +16,7 @@ A task takes about a minute on one core (a search per agent roster on the
 first pair, then one small search per further pair), so a split of 400 is
 a couple of hours on four workers.
 
-    python scripts/verified_hints.py --split evaluation --workers 4 \\
-        --out data/search_hints_verified.json
+    python scripts/write_search_hints.py --split evaluation --workers 4
 """
 from __future__ import annotations
 
@@ -57,7 +55,7 @@ def hint_for(task_id, pairs, timeout):
     started = time.perf_counter()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         try:
-            text = hints.verified_hint(pairs, hints.SearchSettings(timeout=timeout))
+            text = hints.hints_for(pairs, hints.SearchSettings(timeout=timeout))
         except Exception as error:  # noqa: BLE001 - one task must not sink the split
             return task_id, None, time.perf_counter() - started, repr(error)
     return task_id, text, time.perf_counter() - started, None
@@ -75,7 +73,7 @@ def write(path, hints):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--split", default="evaluation", choices=("training", "evaluation"))
-    parser.add_argument("--out", default="data/search_hints_verified.json")
+    parser.add_argument("--out", default="data/search_hints.json")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--timeout", type=int, default=60,
                         help="seconds one search may take")

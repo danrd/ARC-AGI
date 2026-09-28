@@ -6,7 +6,8 @@
 UNIMPLEMENTED_ACTIONS = {"copy", "copy_input", "paste", "cut"}
 
 ACTION_TYPES = {
-                "color": ["recolor", "color_inversion", "color_inner_part", "color_inner_holes", "color_outer_holes", "dense_outer_contour"],
+                "color": ["recolor", "color_inversion", "color_inner_part", "color_inner_holes", "color_outer_holes", "dense_outer_contour",
+                          "part_recolor"],
                 "modification": ["upscale_4"],
                 "shift": ["shift_object", "swap"],
                 "gravity": ["gravity", "edge_gravity", "edge_gravity_bottom", "directed_gravity"],
@@ -40,17 +41,18 @@ COLOR_DEPENDENT_ACTIONS = ["recolor", "shortest_path", "background_shortest_path
                            "emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision",
                            "emission_with_recolor_collision", "emission_with_contour_collision", "color_inner_holes",
                            "color_outer_holes", "color_inner_part", "emission_with_collision_stop", "emission_with_object_recolor",
-                           "dense_outer_contour", "fill", "line", "triangle"
+                           "dense_outer_contour", "fill", "line", "triangle", "part_recolor"
                           ]
-DOUBLE_COLOR_DEPENDENT_ACTIONS = ["contour_connection", "emission_with_object_recolor", "emission_with_recolor_collision", "emission_with_contour_collision"]
+DOUBLE_COLOR_DEPENDENT_ACTIONS = ["contour_connection", "emission_with_object_recolor", "emission_with_recolor_collision", "emission_with_contour_collision",
+                                  "part_recolor"]
 DIRECTION_DEPENDENT_ACTIONS = ["emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision", "emission_with_object_recolor",
                                "emission_with_recolor_collision", "emission_with_contour_collision", "emission_with_collision_stop",
                                "shift_object", "directed_gravity"
                               ]
 AGENT2ACTIONS = {
-    'highlighter': ["submit", "recolor", "color_inversion"],
+    'highlighter': ["submit", "recolor", "color_inversion", "part_recolor"],
     'modifier': ["submit", "color_inner_part", "color_inner_holes", "color_outer_holes",
-                 "recolor", "outer_contour", "color_inversion", "emission"],
+                 "recolor", "outer_contour", "color_inversion", "emission", "part_recolor"],
     'connector': ["submit", "recolor", "shift_object", "outer_contour", "color_inner_part", "shortest_path",
                   "background_shortest_path_left", "background_shortest_path_right", "contour_connection",
                   "emission",],
@@ -148,6 +150,7 @@ TRANSFORM_DESCRIPTIONS = {
 
     # One object, painting
     "recolor": "repaint every cell of the shape to {colour}",
+    "part_recolor": "repaint the shape's cells of {second} to {colour}, leaving its other colours as they are",
     "color_inner_holes": "fill the enclosed empty regions inside the shape with {colour}",
     "color_outer_holes": "fill the concave notches along the shape's outline with {colour}",
     "color_inner_part": "paint the shape's interior - its cells other than its border - {colour}",

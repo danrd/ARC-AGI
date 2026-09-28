@@ -171,6 +171,10 @@ def define_feasible_actions(action_types, colors, directions, color_dependent_ac
                                        for action in colored_actions for color in colors]
                 else:
                     colored_actions = [f"{action}_{color}" for action in colored_actions for color in colors]
+                    if action == "part_recolor":
+                        # Repainting a colour with itself changes nothing.
+                        colored_actions = [name for name in colored_actions
+                                           if name.split("_")[0] != name.rsplit("_", 1)[1]]
             final_action_list.extend(colored_actions)
         elif action in direction_dependent_actions and action not in color_dependent_actions:
             # Create variants for each feasible color

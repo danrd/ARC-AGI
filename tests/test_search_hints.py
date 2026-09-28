@@ -939,7 +939,7 @@ class TestSearchingEachAgentsActions:
 
     def test_a_branch_is_its_agent_s_roster(self):
         settings = hints.branch_settings(hints.SearchSettings(), "highlighter")
-        assert set(settings.bases) == {"recolor", "color_inversion"}
+        assert set(settings.bases) == {"recolor", "color_inversion", "part_recolor"}
         assert hints.branch_settings(settings, None).bases is None
 
     def test_every_branch_is_searched_with_its_own_roster(self, monkeypatch):
@@ -966,7 +966,7 @@ class TestSearchingEachAgentsActions:
                                     branches=("highlighter", None))
         assert set(results) == {"highlighter"}
 
-    def test_the_real_highlighter_branch_searches_its_two_types(self):
+    def test_the_real_highlighter_branch_searches_its_three_types(self):
         grid = np.zeros((4, 4), dtype=int)
         grid[1, 1] = 2
         out = grid.copy()
@@ -975,7 +975,7 @@ class TestSearchingEachAgentsActions:
             ("t", grid, out), hints.SearchSettings(rollouts=1, iterations=5, timeout=30),
             branches=("highlighter",))
         types = {hints.split_name(n)[0] for n in results["highlighter"]["actions"].values()}
-        assert types == {"submit", "recolor", "color_inversion"}
+        assert types == {"submit", "recolor", "color_inversion", "part_recolor"}
         assert results["highlighter"]["solutions"]
 
 
@@ -1187,3 +1187,40 @@ class TestTheHint:
                                                                timeout=30))
         assert text is not None and "Pair 1:" in text and "Pair 2:" in text
         assert "recovered" not in text, "no partial attempt, no single steps"
+
+
+class TestNamingAPartToRecolour:
+    """part_recolor paints in an output's colour over an input's: the colour
+    repainted is often gone from every output."""
+
+    def test_painted_from_one_palette_repainted_from_the_other(self):
+        names = hints.part_recolor_names(("blue",), ("blue", "gray"))
+        assert names == ["blue_part_recolor_gray"], "blue over blue changes nothing"
+
+    def test_a_search_can_repaint_a_colour_only_the_input_has(self):
+        inp = np.array([[5, 5], [2, 2]])
+        out = np.array([[8, 8], [2, 2]])
+        actions = hints.build_vocabulary(hints.output_colours(out), ("N",), ("part_recolor",),
+                                         hints.output_colours(inp))
+        assert "sky_part_recolor_gray" in actions.values()
+
+    def test_the_training_vocabulary_takes_every_input_palette(self):
+        from types import SimpleNamespace
+        task = SimpleNamespace(
+            label="t", test_inp=np.array([[7]]),
+            subtasks=[SimpleNamespace(train_inp=np.array([[5]]), train_out=np.array([[8]]))])
+        found = {"actions": {0: "submit", 1: "sky_part_recolor_gray"},
+                 "effective": {"sky_part_recolor_gray": 2}}
+        actions = hints.feasible_from_search(task, hints.SearchSettings(), found=found)
+        assert set(actions.values()) == {"submit", "sky_part_recolor_gray",
+                                         "sky_part_recolor_orange"}, \
+            "the test input's orange too - the held-out pair can repaint it"
+
+    def test_the_search_repaints_from_its_pair_s_input(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(hints, "search_once", lambda task, actions, settings:
+                            seen.update(actions) or {"peak": 0.0, "effective": {},
+                                                     "solutions": [], "partials": []})
+        hints.search_task(("t", np.array([[5, 2]]), np.array([[8, 2]])),
+                          hints.SearchSettings(bases=("part_recolor",)))
+        assert "sky_part_recolor_gray" in seen.values()

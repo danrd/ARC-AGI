@@ -1584,6 +1584,27 @@ def directed_gravity(grid: np.array, obj1: GridObject, direction: str, font_colo
     return grid
 
 
+def part_recolor(grid: np.array, obj1: GridObject, color: int, old_color: int):
+    """Repaint the cells of object 1 that are `old_color` to `color`,
+    leaving its other colours as they are.
+
+    The part of a shape a task recolours is often its cells of one colour -
+    a many-coloured shape at repr_level 1 whose red part turns blue - and
+    recolor repaints the whole shape. Addressed by colour rather than by
+    which part: every cell of that colour in the shape changes, so the rule
+    reads off the name ("red becomes blue inside the shape") and needs no
+    object slot of its own. A shape without the colour, or a colour asked to
+    become itself, leaves the grid as it was.
+    """
+    cells = [(x, y) for x, y in obj1.coords if grid[x, y] == old_color]
+    if not cells or color == old_color:
+        return grid
+    for x, y in cells:
+        grid[x, y] = color
+    obj1.reinit_obj(list(obj1.coords), grid)
+    return grid
+
+
 def color_inner_part(grid: np.array, obj1: GridObject, color: float):
     """Change color of Object inner_part property."""
     # Create a new grid to modify

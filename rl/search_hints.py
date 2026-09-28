@@ -167,11 +167,26 @@ def coordinate_vocabulary(colours):
     return {0: "submit", **{i + 1: n for i, n in enumerate(names)}}
 
 
-def build_vocabulary(colours, directions, bases=None):
+def part_recolor_names(colours, sources):
+    """part_recolor in every colour of `colours` over every one of
+    `sources` - "blue_part_recolor_red", blue painted where red was.
+
+    Two palettes, unlike every other two-colour action: the colour painted
+    with is one the answer holds (`colours`, the outputs'), and the colour
+    repainted is one the input holds (`sources`) - often not an output's at
+    all, since a colour every cell of which is repainted is gone from the
+    answer. A colour made into itself changes nothing and is not named.
+    """
+    return [f"{new}_part_recolor_{old}" for new in colours for old in sources
+            if new != old]
+
+
+def build_vocabulary(colours, directions, bases=None, sources=None):
     """The action names an env is configured with, generated rather than
     written out: a hand-written name that misses its branch returns the grid
     untouched, which is indistinguishable from a transform that had nothing
-    to do. `bases` keeps only those action types."""
+    to do. `bases` keeps only those action types; `sources` is the palette
+    part_recolor may repaint (part_recolor_names), `colours` if not given."""
     every = ({a for roster in AGENT2ACTIONS.values() for a in roster}
              | {a for group in ACTION_TYPES.values() for a in group}) \
         - UNIMPLEMENTED_ACTIONS
@@ -179,6 +194,9 @@ def build_vocabulary(colours, directions, bases=None):
     names = []
     for base in sorted(bases):
         if base == "submit":
+            continue
+        if base == "part_recolor":
+            names.extend(part_recolor_names(colours, colours if sources is None else sources))
             continue
         generated = define_feasible_actions(
             [base], list(colours), list(directions), COLOR_DEPENDENT_ACTIONS,
@@ -585,7 +603,8 @@ def shutdown_pool():
 def _search_in_worker(payload):
     """One search, addressed by value so it can cross a process boundary."""
     triple, colours, directions, settings = payload
-    return search_once(triple, build_vocabulary(colours, directions, settings.bases), settings)
+    return search_once(triple, build_vocabulary(colours, directions, settings.bases,
+                                                output_colours(triple[1])), settings)
 
 
 def merge_found(merged, found, partials_limit):
@@ -628,7 +647,8 @@ def search_task(task, settings=None):
     settings = settings or SearchSettings()
     triple = as_triple(task)
     colours = settings.colours or output_colours(triple[2])
-    actions = build_vocabulary(colours, settings.directions, settings.bases)
+    actions = build_vocabulary(colours, settings.directions, settings.bases,
+                               output_colours(triple[1]))
     merged = {"effective": {}, "solutions": [], "partials": [], "peak": 0.0}
     started = time.perf_counter()
     repeats = max(1, settings.repeats)
@@ -747,10 +767,26 @@ def feasible_from_search(task, settings=None, agent=None, found=None):
         types = types & roster or types
     colours = settings.colours or output_colours(*_training_outputs(task))
     generated = define_feasible_actions(
-        sorted(types), list(colours), list(ALL_DIRECTIONS), COLOR_DEPENDENT_ACTIONS,
-        DOUBLE_COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS)
-    names = sorted(name for name in generated.values() if name != "submit")
+        sorted(types - {"part_recolor"}), list(colours), list(ALL_DIRECTIONS),
+        COLOR_DEPENDENT_ACTIONS, DOUBLE_COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS)
+    names = [name for name in generated.values() if name != "submit"]
+    if "part_recolor" in types:
+        # Every training input's palette and the test input's too: the part
+        # repainted is the input's, and the held-out input can hold a colour
+        # no training input did.
+        names += part_recolor_names(colours, output_colours(*_inputs(task)))
+    names = sorted(names)
     return {0: "submit", **{i: name for i, name in enumerate(names, start=1)}}
+
+
+def _inputs(task):
+    """Every input grid of a task, test input included, or the one a triple
+    or a subtask carries."""
+    subtasks = getattr(task, "subtasks", None)
+    if subtasks:
+        test = getattr(task, "test_inp", None)
+        return [subtask.train_inp for subtask in subtasks] + ([] if test is None else [test])
+    return [as_triple(task)[1]]
 
 
 def _training_outputs(task):

@@ -600,8 +600,9 @@ class ObjectProcessor(nn.Module):
 
         self.layer_norm = nn.LayerNorm(output_dim)
 
-    def forward(self, x):
-        """x: tensor of shape (batch_size, max_objects, OBJECT_DIM)"""
+    def forward(self, x, mask=None):
+        """x: tensor of shape (batch_size, max_objects, OBJECT_DIM); mask
+        (batch_size, max_objects) marks the slots holding an object."""
         # Split into feature groups
         color_features = x.index_select(-1, self.color_index)
         spatial_features = x.index_select(-1, self.spatial_index)
@@ -617,8 +618,22 @@ class ObjectProcessor(nn.Module):
             shape_emb = self.shape_processor(shape_features)    # (batch, max_objects, 16)
 
             if self.use_cross_attention:
-                # Apply cross-attention between spatial and shape features
-                spatial_attended, _ = self.cross_attention(spatial_emb, shape_emb, shape_emb)
+                # Each object's extent and position attend to every object's
+                # topology. Only to objects: an empty slot is zeros on the
+                # way in and a bias-made vector after its group network, and
+                # attended to it pulled every real object towards that
+                # vector by an amount set by how many empty slots the task
+                # happens to have - measured, one object read 0.057 apart
+                # (on a unit-scale row) between two slots and six. A row
+                # with no objects at all attends over its first slot, as the
+                # self-attention does, so the softmax is over something.
+                padding = None
+                if mask is not None:
+                    attends = mask.clone()
+                    attends[~mask.any(dim=1), 0] = True
+                    padding = ~attends
+                spatial_attended, _ = self.cross_attention(
+                    spatial_emb, shape_emb, shape_emb, key_padding_mask=padding)
                 spatial_emb = spatial_emb + spatial_attended
 
             # Concatenate all features
@@ -779,10 +794,10 @@ class ARCSeparateExtractor(BaseFeaturesExtractor):
         grid_features = self.grid_projection(grid_features)
 
         # Process objects
-        obj_embeddings = self.object_processor(observations['objects_emb'])
+        obj_mask = (observations['objects_emb'].sum(dim=-1) != 0)  # Valid object mask
+        obj_embeddings = self.object_processor(observations['objects_emb'], obj_mask)
 
         # Aggregate objects with attention-based pooling
-        obj_mask = (observations['objects_emb'].sum(dim=-1) != 0)  # Valid object mask
         if obj_mask.any():
             # The guard above is per batch, and the NaN is per row: one
             # all-background grid among several masks every key of its own
@@ -1676,7 +1691,7 @@ class ObjectSetProcessor(nn.Module):
         batch_size, max_objects, _ = x.shape
         # print(self.object_processor)
         # Process individual objects
-        object_embeddings = self.object_processor(x)  # (batch, max_objects, hidden_dim)
+        object_embeddings = self.object_processor(x, mask)  # (batch, max_objects, hidden_dim)
         if self.spatial_rows is not None:
             object_embeddings = object_embeddings + self.spatial_rows
             self.spatial_rows = None

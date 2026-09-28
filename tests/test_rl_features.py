@@ -1206,3 +1206,34 @@ class TestTheMessagePassingVariants:
         assert torch.allclose(normal, louder, atol=1e-5), (
             "ten times louder object rows changed the message, so the "
             f"projection passes scale through: {(normal - louder).abs().max():.4f}")
+
+
+class TestEmptySlotsAreNotObjects:
+    """The objects' cross-attention took no mask, so every object attended
+    to the empty slots too, and read differently in a task with more of
+    them: 0.057 apart on a unit-scale row between two slots and six."""
+
+    @staticmethod
+    def _row(slots, seed=1):
+        from rl.features import OptimalObjectExtractor
+        from symbolic.objects_analysis import OBJECT_DIM as _OBJECT_DIM
+        torch.manual_seed(0)
+        obj = torch.rand(_OBJECT_DIM)
+        torch.manual_seed(seed)
+        extractor = OptimalObjectExtractor((slots, _OBJECT_DIM), 64).eval()
+        x = torch.zeros(1, slots, _OBJECT_DIM)
+        x[0, 0] = obj
+        with torch.no_grad():
+            extractor(x)
+        return extractor.per_object[0, 0]
+
+    def test_an_object_reads_the_same_however_many_slots_are_empty(self):
+        assert torch.allclose(self._row(2), self._row(6), atol=1e-6)
+
+    def test_a_grid_with_no_objects_is_not_nan(self):
+        from rl.features import OptimalObjectExtractor
+        from symbolic.objects_analysis import OBJECT_DIM as _OBJECT_DIM
+        extractor = OptimalObjectExtractor((3, _OBJECT_DIM), 64).eval()
+        with torch.no_grad():
+            pooled = extractor(torch.zeros(2, 3, _OBJECT_DIM))
+        assert not torch.isnan(pooled).any()

@@ -464,7 +464,16 @@ def add_color_to_object(obj, color):
             obj.colors = tuple([COLORS_MAPPING[c] for c in obj.color_numbers if c is not None])
 
 def find_shortest_path(grid, start, end):
-    """Find shortest path between two points using BFS."""
+    """Find shortest path between two points using BFS.
+
+    Through any cell that holds a colour, 0-9 - the path goes over other
+    shapes, which is what separates it from find_path_through_background -
+    and never into padding, which holds no colour (pad_val, 10 by default).
+    The test used to be `!= 1.0`, from when grids were padded with 1: with
+    padding at 10 it made colour 1 alone a wall, so a path bent round blue
+    cells, never reached a blue shape at all, and gravity could not move
+    anything to or from one.
+    """
     if start == end:
         return [start]
 
@@ -487,11 +496,12 @@ def find_shortest_path(grid, start, end):
 
         visited.add((x, y))
 
-        # Check all four adjacent cells
+        # All eight neighbours: a diagonal step is one step
         for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0), (-1, -1), (1, 1), (-1, 1), (1, -1)]:
             nx, ny = x + dx, y + dy
 
-            if 0 <= nx < rows and 0 <= ny < cols and (nx, ny) not in visited and grid[nx, ny] != 1.0:
+            if 0 <= nx < rows and 0 <= ny < cols and (nx, ny) not in visited \
+                    and 0 <= grid[nx, ny] <= 9:
                 queue.append(((nx, ny), path + [(nx, ny)]))
 
     return []  # No path found

@@ -224,3 +224,59 @@ def test_world_dispatches_dense_outer_contour():
     new_grid = _world().apply_transform(3, "dense_outer_contour", obj1, obj1, grid, [obj1], {})
 
     assert new_grid[1, 2] == 3 and new_grid[1, 3] == 3
+
+
+# -- the shortest path: any colour, never padding ------------------------------
+
+class TestTheShortestPath:
+    """find_shortest_path used to treat colour 1 as a wall - a leftover of
+    grids padded with 1. With padding at 10 it walled off blue cells alone:
+    a path bent round them, never reached a blue shape, and gravity could
+    not move anything to or from one."""
+
+    @staticmethod
+    def _row(middle, ends=4):
+        grid = np.zeros((3, 7), dtype=int)
+        grid[1, 0] = grid[1, 6] = ends
+        grid[1, 3] = middle
+        return grid
+
+    def test_a_blue_cell_is_crossed_like_any_other_colour(self):
+        from rl.arc_transformators import find_shortest_path
+        for middle in (1, 2):
+            path = find_shortest_path(self._row(middle), (1, 0), (1, 6))
+            assert path == [(1, y) for y in range(7)], f"bent round colour {middle}"
+
+    def test_blue_shapes_can_be_joined(self):
+        from rl.arc_transformators import find_shortest_path
+        assert len(find_shortest_path(self._row(0, ends=1), (1, 0), (1, 6))) == 7
+
+    def test_padding_is_never_entered(self):
+        from rl.arc_transformators import find_shortest_path
+        grid = self._row(0)
+        grid[:, 3] = 10
+        grid[2, 3] = 0
+        path = find_shortest_path(grid, (1, 0), (1, 6))
+        assert path and all(grid[x, y] != 10 for x, y in path)
+        assert (2, 3) in path, "round the padding, through the one gap"
+
+    def test_gravity_moves_a_blue_shape(self):
+        from rl.arc_transformators import gravity
+        grid = np.zeros((1, 7), dtype=int)
+        grid[0, 0], grid[0, 6] = 1, 1
+        anchor = make_object([(0, 0)], 1, grid, "anchor")
+        mover = make_object([(0, 6)], 1, grid, "mover")
+
+        new_grid = gravity(grid, anchor, mover, 0)
+
+        assert new_grid.tolist() == [[1, 1, 0, 0, 0, 0, 0]]
+
+    def test_world_joins_two_blue_shapes(self):
+        grid = np.zeros((1, 5), dtype=int)
+        grid[0, 0], grid[0, 4] = 1, 1
+        obj1 = make_object([(0, 0)], 1, grid, "obj1")
+        obj2 = make_object([(0, 4)], 1, grid, "obj2")
+
+        new_grid = _world().apply_transform(3, "shortest_path", obj1, obj2, grid, [obj1, obj2], {})
+
+        assert new_grid.tolist() == [[1, 3, 3, 3, 1]]

@@ -129,18 +129,18 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
   rl["rl (20)"]
-  scripts["scripts (6)"]
+  scripts["scripts (7)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (54)"]
+  tests["tests (55)"]
   utils["utils (3)"]
-  tests -->|79| rl
+  tests -->|80| rl
+  tests -->|26| subsymbolic
   tests -->|26| symbolic
-  tests -->|24| subsymbolic
   tests -->|16| data
   rl -->|11| data
   rl -->|11| symbolic
-  scripts -->|7| rl
+  scripts -->|8| rl
   tests -->|6| orchestration
   orchestration -->|4| subsymbolic
   data -->|3| rl
@@ -185,24 +185,25 @@ graph TD
 | `rl.policy` | 4 |
 | `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
-| `rl.search_hints` | 10 |
+| `rl.search_hints` | 11 |
 | `rl.training` | 9 |
-| `rl.utils` | 9 |
+| `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
 | `scripts.harvest_traces` | 0 |
 | `scripts.module_map` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.sync_llm_kit` | 0 |
+| `scripts.write_search_hints` | 0 |
 | `subsymbolic.analyst` | 1 |
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 2 |
-| `subsymbolic.arc_resolvers` | 2 |
+| `subsymbolic.arc_resolvers` | 3 |
 | `subsymbolic.llm_run` | 3 |
 | `subsymbolic.llm_runtime` | 5 |
 | `subsymbolic.llm_setup` | 5 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 11 |
+| `subsymbolic.prompt_builder` | 12 |
 | `subsymbolic.registry` | 3 |
 | `subsymbolic.subsymbolic_module` | 2 |
 | `subsymbolic.utils` | 3 |

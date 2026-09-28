@@ -1533,6 +1533,57 @@ def shift_object(grid: np.array, obj1: GridObject, direction: str, font_color:in
 
     return grid
 
+#: (row, column) step per direction name; N is one row up.
+_STEPS = {'N': (-1, 0), 'NE': (-1, 1), 'E': (0, 1), 'SE': (1, 1),
+          'S': (1, 0), 'SW': (1, -1), 'W': (0, -1), 'NW': (-1, -1)}
+
+
+def directed_gravity(grid: np.array, obj1: GridObject, direction: str, font_color: int):
+    """Push object 1 towards `direction` until it touches something.
+
+    It moves whole, a cell at a time, and stops before the first step that
+    would put any of its cells on a cell that is neither background nor its
+    own, or off the grid - so it comes to rest against another shape or
+    against the edge, whichever is first. Padding is neither background nor
+    a shape's, so it stops the object as the edge does. An object that
+    cannot move a single cell leaves the grid as it was.
+
+    The directed form of what edge_gravity_bottom does for "down" on an
+    empty column, and what gravity does between two named shapes: here the
+    direction is the parameter and whatever lies in the way is the stop.
+    """
+    if direction not in _STEPS:
+        return grid
+    dx, dy = _STEPS[direction]
+    own = set(obj1.coords)
+    rows, cols = grid.shape
+
+    def free(shift):
+        for x, y in own:
+            nx, ny = x + dx * shift, y + dy * shift
+            if not (0 <= nx < rows and 0 <= ny < cols):
+                return False
+            if (nx, ny) not in own and grid[nx, ny] != font_color:
+                return False
+        return True
+
+    distance = 0
+    while free(distance + 1):
+        distance += 1
+    if distance == 0:
+        return grid
+
+    colors = {(x, y): grid[x, y] for x, y in own}
+    for x, y in own:
+        grid[x, y] = font_color
+    new_coords = []
+    for (x, y), colour in colors.items():
+        new_coords.append((x + dx * distance, y + dy * distance))
+        grid[x + dx * distance, y + dy * distance] = colour
+    obj1.reinit_obj(new_coords, grid)
+    return grid
+
+
 def color_inner_part(grid: np.array, obj1: GridObject, color: float):
     """Change color of Object inner_part property."""
     # Create a new grid to modify

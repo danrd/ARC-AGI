@@ -816,6 +816,10 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         # After the parent's _build, whose orthogonal initialisation is the
         # thing being corrected - see ARCCustomNetwork.start_near_uniform.
         self.mlp_extractor.start_near_uniform()
+        for extractor in {id(e): e for e in (self.features_extractor, self.pi_features_extractor,
+                                             self.vf_features_extractor)}.values():
+            if hasattr(extractor, "start_without_the_map"):
+                extractor.start_without_the_map()
 
     def _actor_observation_space(self) -> spaces.Space:
         """What the actor is allowed to see."""

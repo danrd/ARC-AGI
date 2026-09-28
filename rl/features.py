@@ -1397,6 +1397,9 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
                 channels=spatial_channels)
             total_concat_size += 2 * spatial_channels
+            #: The pooled map into the context, through a projection that
+            #: starts at zero - see start_without_the_map.
+            self.spatial_context = nn.Linear(2 * spatial_channels, 2 * spatial_channels)
             if "objects_emb" in extractors:
                 # Into the object branch's hidden width, added to each
                 # object's own encoding before the objects attend to one
@@ -1490,7 +1493,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         if self.relation_messages is not None and object_slot is not None:
             encoded_tensor_list[object_slot] = self.pass_messages(observation)
         if spatial is not None:
-            encoded_tensor_list.append(SpatialBackbone.pooled(*spatial))
+            encoded_tensor_list.append(self.spatial_context(SpatialBackbone.pooled(*spatial)))
         if self.pointer_slots is not None:
             encoded_tensor_list.append(self.pointer_tail())
         # Last, after the object tail: ARCCustomNetwork cuts the two off the
@@ -1502,6 +1505,28 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         if self.factored_width:
             encoded_tensor_list.append(self.factored_tail(observation))
         return torch.cat(encoded_tensor_list, dim=1)
+
+    def start_without_the_map(self):
+        """Zero the projections the map enters the objects and the context
+        through, so a fresh agent computes what it would without the map
+        and takes it in only as far as training finds it pays.
+
+        Measured with them at their ordinary initialisation, over 15 tasks
+        and 3 seeds: level with the per-key encoders on average (0.434
+        against 0.431 held-out), with the gains where objects needed their
+        surroundings (d687bc17 0.30 to 0.57, 4093f84a 0.11 to 0.30) and the
+        losses where the old features already sufficed and the map arrived
+        as noise from the first step (a2fd1cf0 1.0 to 0.56, training pairs
+        falling with it). The coordinate rows are not touched: there the
+        map replaces a reading rather than adding to one.
+
+        Called after stable-baselines3's orthogonal initialisation, which
+        would overwrite zeros set in __init__.
+        """
+        for projection in (getattr(self, "spatial_context", None), self.spatial_objects):
+            if projection is not None:
+                nn.init.zeros_(projection.weight)
+                nn.init.zeros_(projection.bias)
 
     def factored_tail(self, observation) -> torch.Tensor:
         """The raw object rows, flattened, and the share of the grid each

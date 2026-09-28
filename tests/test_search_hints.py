@@ -950,8 +950,8 @@ class TestSearchingEachAgentsActions:
             return _found()
 
         monkeypatch.setattr(hints, "search_task", fake)
-        results = hints.search_branches(("t", np.zeros((3, 3)), np.ones((3, 3))),
-                                        branches=("highlighter", "shifter", None))
+        results = hints.each_branch(("t", np.zeros((3, 3)), np.ones((3, 3))),
+                                    branches=("highlighter", "shifter", None))
         assert set(results) == {"highlighter", "shifter", "full"}
         assert None in seen and len(seen) == 3
 
@@ -962,8 +962,8 @@ class TestSearchingEachAgentsActions:
             return _found()
 
         monkeypatch.setattr(hints, "search_task", fake)
-        results = hints.search_branches(("t", np.zeros((3, 3)), np.ones((3, 3))),
-                                        branches=("highlighter", None))
+        results = hints.each_branch(("t", np.zeros((3, 3)), np.ones((3, 3))),
+                                    branches=("highlighter", None))
         assert set(results) == {"highlighter"}
 
     def test_the_real_highlighter_branch_searches_its_two_types(self):
@@ -971,12 +971,75 @@ class TestSearchingEachAgentsActions:
         grid[1, 1] = 2
         out = grid.copy()
         out[1, 1] = 1
-        results = hints.search_branches(
+        results = hints.each_branch(
             ("t", grid, out), hints.SearchSettings(rollouts=1, iterations=5, timeout=30),
             branches=("highlighter",))
         types = {hints.split_name(n)[0] for n in results["highlighter"]["actions"].values()}
         assert types == {"submit", "recolor", "color_inversion"}
         assert results["highlighter"]["solutions"]
+
+
+class TestTheBaseTypesFirst:
+    """Four types solved two thirds of what the branches did on 280 tasks,
+    for the price of one small search - so they go first, and a pair they
+    reproduce is not searched further."""
+
+    TRIPLE = ("t", np.zeros((3, 3)), np.ones((3, 3)))
+
+    def _stub(self, monkeypatch, base):
+        from data.configs.env_configs import SEARCH_BASE
+        searched = []
+
+        def fake(task, settings):
+            searched.append(settings.bases)
+            if settings.bases == SEARCH_BASE:
+                if base == "raise":
+                    raise RuntimeError("base search died")
+                return _found([1] if base == "solves" else [], peak=0.5)
+            return _found()
+
+        monkeypatch.setattr(hints, "search_task", fake)
+        return searched
+
+    def test_a_pair_the_base_types_reproduce_is_not_searched_further(self, monkeypatch):
+        from data.configs.env_configs import SEARCH_BASE
+        searched = self._stub(monkeypatch, "solves")
+        results = hints.search_branches(self.TRIPLE, branches=("highlighter", None))
+        assert set(results) == {"base"} and searched == [SEARCH_BASE]
+
+    def test_otherwise_the_branches_and_not_the_base(self, monkeypatch):
+        """Left out rather than ranked: modifier holds all four base types,
+        and a small unsolved search would win the ranking for its size."""
+        searched = self._stub(monkeypatch, "misses")
+        results = hints.search_branches(self.TRIPLE, branches=("highlighter", None))
+        assert set(results) == {"highlighter", "full"} and len(searched) == 3
+
+    def test_a_base_search_that_fails_leaves_the_branches(self, monkeypatch):
+        self._stub(monkeypatch, "raise")
+        results = hints.search_branches(self.TRIPLE, branches=("highlighter",))
+        assert set(results) == {"highlighter"}
+
+    def test_the_real_base_search_reproduces_a_recolouring(self):
+        grid = np.zeros((4, 4), dtype=int)
+        grid[1, 1] = 2
+        out = grid.copy()
+        out[1, 1] = 1
+        results = hints.search_branches(
+            ("t", grid, out), hints.SearchSettings(rollouts=1, iterations=5, timeout=30))
+        assert set(results) == {"base"} and results["base"]["solutions"]
+
+    def test_a_hint_the_base_types_cannot_carry_over_is_looked_for_in_the_branches(
+            self, monkeypatch):
+        """The base search stopping early must not be what withholds a hint
+        a roster could have given."""
+        monkeypatch.setattr(hints, "search_branches", lambda pair, settings: {"base": "B"})
+        monkeypatch.setattr(hints, "each_branch", lambda pair, settings: {"modifier": "M"})
+        monkeypatch.setattr(hints, "_first_verified",
+                            lambda first, rest, results, settings, candidates:
+                            "HINT" if "modifier" in results else None)
+        pairs = [("t_0", _grid({(1, 1): 2}), _grid({(1, 1): 1})),
+                 ("t_1", _grid({(2, 2): 2}), _grid({(2, 2): 1}))]
+        assert hints.hints_for(pairs) == "HINT"
 
 
 class TestChoosingABranch:
@@ -1124,72 +1187,3 @@ class TestTheHint:
                                                                timeout=30))
         assert text is not None and "Pair 1:" in text and "Pair 2:" in text
         assert "recovered" not in text, "no partial attempt, no single steps"
-
-
-class TestAStagedSearch:
-    """staged_search with the search stubbed: the base types first, and the
-    next tier from the input and from where the last stage got to."""
-
-    INPUT = _grid({(0, 0): 2, (3, 3): 2})
-    TARGET = _grid({(0, 0): 1, (3, 0): 2})
-    HALFWAY = _grid({(0, 0): 1, (3, 3): 2})
-    NOWHERE = _grid({(0, 0): 2, (3, 3): 2, (1, 1): 5})
-    ACTIONS = {0: "submit", 1: "blue_recolor"}
-
-    def _stub(self, monkeypatch, solves, ends):
-        calls = []
-
-        def search(pair, settings):
-            key = "input" if np.array_equal(pair[1], self.INPUT) else "halfway"
-            calls.append((key, settings.bases))
-            solved = (key, len(calls)) in solves or key in solves
-            return {"actions": self.ACTIONS, "solutions": [[[1, 0, 0]]] if solved else [],
-                    "partials": [] if solved else [[0.5, [[1, 0, 0], [0, 0, 0]]]]}
-
-        monkeypatch.setattr(hints, "search_task", search)
-        monkeypatch.setattr(hints, "minimise", lambda pair, body, actions, length: body)
-        monkeypatch.setattr(hints, "end_grid", lambda pair, trace, actions, length: ends)
-        return calls
-
-    TIERS = (("recolor",), ("gravity",), None)
-
-    def test_solved_by_the_base_types_goes_no_further(self, monkeypatch):
-        calls = self._stub(monkeypatch, {"input"}, self.HALFWAY)
-        found = hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
-        assert found["solved"] and found["stage"] == 0
-        assert calls == [("input", ("recolor",))]
-
-    def test_the_next_tier_searches_from_the_input_and_from_where_the_last_got(self, monkeypatch):
-        calls = self._stub(monkeypatch, {"halfway"}, self.HALFWAY)
-        found = hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
-        assert calls == [("input", ("recolor",)), ("input", ("gravity", "recolor")),
-                         ("halfway", ("gravity", "recolor"))]
-        assert found["stage"] == 1
-        assert [np.array_equal(grid, expected) for (grid, _), expected in
-                zip(found["segments"], (self.INPUT, self.HALFWAY))] == [True, True]
-        assert found["segments"][0][1] == [["blue_recolor", 0, 0]], "named, submit dropped"
-
-    def test_the_last_tier_is_every_type(self, monkeypatch):
-        calls = self._stub(monkeypatch, set(), self.HALFWAY)
-        found = hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
-        scorer = hints.make_env(("t", self.INPUT, self.TARGET), {0: "submit"}, 25)
-        halfway = ((scorer.maximal_intersection(self.HALFWAY) - scorer.max_int)
-                   / (scorer.target_int - scorer.max_int))
-        assert not found["solved"] and found["peak"] == pytest.approx(halfway), \
-            "measured from the input, not the stage's own figure (0.5)"
-        assert calls[-1][1] is None
-
-    def test_a_path_that_got_nowhere_is_not_continued(self, monkeypatch):
-        calls = self._stub(monkeypatch, set(), self.NOWHERE)
-        hints.staged_search(("t", self.INPUT, self.TARGET), tiers=self.TIERS)
-        assert {key for key, _ in calls} == {"input"}
-
-    def test_a_real_pair_needing_both_tiers(self):
-        """One cell recoloured in place, another dropped to the bottom row."""
-        found = hints.staged_search(
-            ("t", _grid({(0, 0): 2, (0, 3): 3}), _grid({(0, 0): 1, (3, 3): 3})),
-            hints.SearchSettings(rollouts=2, iterations=10, timeout=30),
-            tiers=(("recolor",), ("gravity", "edge_gravity_bottom"), None))
-        assert found["solved"] and found["stage"] in (1, 2)
-        for grid, steps in found["segments"]:
-            assert steps, "every segment does something"

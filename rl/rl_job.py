@@ -250,9 +250,10 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     - addressing None: read off the agent's label (addressing_for).
     - feasible_actions {0: 'submit'}: the search's. The shipped placeholder,
       which trains an agent whose only move is to give up. The object
-      search runs once per agent roster and once over everything
-      (search_hints.search_branches) and takes the action types from the
-      branch that explains the first pair best - no agent label needed -
+      search tries the base types first, and only if they fall short once
+      per agent roster and once over everything
+      (search_hints.search_branches); the action types come from the
+      search that explains the first pair best - no agent label needed -
       and never narrows the directions (feasible_from_search); the
       coordinate search narrows colours and strokes (rl.coordinate_search).
     - max_objects None: the slots the task's grids fill, a median 3
@@ -320,10 +321,11 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
         # action types move the grid, and a type that only works southwards
         # is invisible to a search that only tries north and east - the
         # scan's default, which SearchSettings keeps for the hints.
-        # One search per agent roster and one over everything
-        # (search_branches), the types taken from whichever explains the
-        # first pair best - which needs no agent label, and measured to
-        # solve 15 of 60 tasks where the single search solved 9.
+        # The base types, then - where they fall short - one search per
+        # agent roster and one over everything (search_branches), the
+        # types taken from whichever explains the first pair best. Needs
+        # no agent label; the branches solved 31 of 120 training tasks
+        # where the single search solved 12.
         settings = settings or SearchSettings(directions=tuple(MAIN_DIRECTIONS))
         try:
             narrowed["feasible_actions"], _results = feasible_from_branches(task, settings)

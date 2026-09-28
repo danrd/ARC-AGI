@@ -109,26 +109,24 @@ AGENT2ADDRESSING = {
 #: another roster did not.
 SEARCH_BRANCHES = ('highlighter', 'modifier', 'connector', 'shifter', None)
 
-#: A staged search (rl.search_hints.staged_search): the action types each
-#: stage adds, the base ones first. A stage that does not solve the pair
-#: hands its furthest grids to the next, which searches on from them - and
-#: from the input again - with the larger vocabulary; None adds every type.
+#: The action types searched before any branch (rl.search_hints.
+#: search_branches): a pair they reproduce is not searched further, since
+#: the branches would find the same thing wider and slower.
 #:
-#: The first stage is the four types that appeared in the most solutions
-#: on 120 shape-preserving training tasks: recolor (12 tasks),
-#: color_inner_part (7), color_outer_holes (4), outer_contour (3) - 21 of
-#: the 32 tasks any branch solved need nothing else. The second is the rest
-#: of the four searched rosters. Not ranked by how often a type moves the
-#: grid: contour_connection gave the largest single-step gain on 28 of
-#: those tasks and was in none of their solutions.
-SEARCH_TIERS = (
-    ('recolor', 'color_inner_part', 'color_outer_holes', 'outer_contour'),
-    ('color_inversion', 'color_inner_holes', 'emission', 'background_shortest_path_left',
-     'background_shortest_path_right', 'contour_connection', 'shift_object', 'shortest_path',
-     'center_merge', 'color_merge', 'edge_gravity', 'edge_gravity_bottom', 'gravity', 'merge',
-     'swap', 'x_alignment', 'y_alignment'),
-    None,
-)
+#: The four types that appeared in the most solutions on 120 training tasks
+#: - recolor (12), color_inner_part (7), color_outer_holes (4),
+#: outer_contour (3). Measured as the first stage of a staged search against
+#: the branches on 280 tasks (first pair, 60 s per search): they alone
+#: solved 21 of the 31 training tasks and 15 of the 25 evaluation tasks the
+#: branches solved. The later stages - adding the rest of the rosters, then
+#: everything, and continuing from the furthest grid the stage before
+#: reached - solved fewer tasks than the branches did (22 against 25 on the
+#: evaluation set: a stage of seventeen types is wide where a roster is
+#: deep), and continuing from a reached grid solved one task of 52, so only
+#: this first stage is kept. Not ranked by how often a type moves the grid:
+#: contour_connection gave the largest single-step gain on 28 training
+#: tasks and was in none of their solutions.
+SEARCH_BASE = ('recolor', 'color_inner_part', 'color_outer_holes', 'outer_contour')
 
 
 #: What each transform does, in words, for a reader who has never seen the

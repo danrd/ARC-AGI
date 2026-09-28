@@ -783,6 +783,38 @@ def _branch_in_worker(payload):
 
 
 def search_branches(task, settings=None, branches=None):
+    """The base types first, then one search per branch - as {name:
+    search_task result}.
+
+    A pair the base types (SEARCH_BASE) reproduce comes back as {"base":
+    ...} and nothing else is searched: on 280 tasks those four types solved
+    two thirds of what the branches did, for the price of one small search.
+    Otherwise the result is each_branch's; the base search is left out of
+    it, since the modifier roster holds all four of its types and the
+    ranking would otherwise favour it for being small rather than for what
+    it found.
+    """
+    settings = settings or SearchSettings()
+    triple = as_triple(task)
+    if settings.colours is None:
+        settings = replace(settings, colours=tuple(output_colours(triple[2])))
+    base = search_base(triple, settings)
+    if base is not None and base["solutions"]:
+        return {"base": base}
+    return each_branch(triple, settings, branches)
+
+
+def search_base(task, settings):
+    """search_task over the base types, or None if it failed."""
+    from data.configs.env_configs import SEARCH_BASE
+
+    try:
+        return search_task(task, replace(settings, bases=SEARCH_BASE, workers=1))
+    except Exception:  # noqa: BLE001 - the branches are still there to search
+        return None
+
+
+def each_branch(task, settings=None, branches=None):
     """One search per branch - an agent's roster, or None for the whole
     vocabulary - as {branch name: search_task result}.
 
@@ -843,89 +875,6 @@ def best_branch(results):
         return (not solved, length, -found["peak"], len(found["actions"]))
 
     return min(results.items(), key=rank)
-
-
-def _named(sequence, actions):
-    """A sequence with its action indices replaced by names, so it can be
-    read against no particular vocabulary."""
-    return [[actions[int(step[0])], *[int(x) for x in step[1:]]] for step in sequence]
-
-
-def end_grid(pair, sequence, actions, episode_len=25):
-    """The grid a sequence leaves `pair`'s input in, submit aside."""
-    env = make_env(pair, actions, episode_len)
-    with contextlib.redirect_stdout(io.StringIO()):
-        for step in _without_submit(sequence, actions):
-            env.step(np.asarray(step))
-    return np.array(env.grid)
-
-
-def staged_search(task, settings=None, tiers=None, starts=2):
-    """Search the base action types first, and more only where they fall
-    short.
-
-    Stage one searches the pair with the first tier's types. If that does
-    not solve it, the next stage searches with the next tier added - from
-    the input again, and from the `starts` furthest grids the stage before
-    reached, taking each as a fresh input. So the specific types come in
-    for the second half of a path the base ones began, which a search over
-    everything at once reaches only by chance: with every type in, the tree
-    is wide where the base types would have gone deep.
-
-    A continued grid is re-read into objects, as a grid is when a task
-    starts, rather than carrying the objects the path left behind: the
-    search resets its env for every rollout, so a continuation cannot start
-    from the middle of an episode. A solution is therefore a list of
-    segments, each replayable from the grid it starts on.
-
-    `tiers` defaults to SEARCH_TIERS, None in it meaning every type.
-
-    Returns solved, the stage it was solved at (or None), the segments as
-    (starting grid, named steps), the peak - how much of the distance any
-    grid a stage ended on closed, measured from the input - and seconds.
-    """
-    from data.configs.env_configs import SEARCH_TIERS
-
-    started = time.perf_counter()
-    settings = settings or SearchSettings()
-    tiers = SEARCH_TIERS if tiers is None else tiers
-    triple = as_triple(task)
-    if settings.colours is None:
-        settings = replace(settings, colours=tuple(output_colours(triple[2])))
-    scorer = make_env(triple, {0: "submit"}, settings.episode_len)
-    base, target = int(scorer.max_int), int(scorer.target_int)
-
-    def closed(grid):
-        span = target - base
-        return (int(scorer.maximal_intersection(grid)) - base) / span if span else 1.0
-
-    frontier = [([], np.asarray(triple[1]))]
-    bases, peak = set(), 0.0
-    for stage, tier in enumerate(tiers):
-        bases = None if tier is None or bases is None else bases | set(tier)
-        reached = []
-        for segments, grid in frontier:
-            pair = (triple[0], grid, triple[2])
-            found = search_task(pair, replace(settings, bases=None if bases is None
-                                              else tuple(sorted(bases))))
-            actions = found["actions"]
-            if found["solutions"]:
-                body = minimise(pair, _without_submit(found["solutions"][0], actions),
-                                actions, settings.episode_len)
-                return {"solved": True, "stage": stage, "peak": 1.0,
-                        "segments": segments + [(grid, _named(body, actions))],
-                        "seconds": time.perf_counter() - started}
-            for _progress, trace in found["partials"]:
-                end = end_grid(pair, trace, actions, settings.episode_len)
-                reached.append((closed(end), segments + [(grid, _named(
-                    _without_submit(trace, actions), actions))], end))
-        reached.sort(key=lambda item: -item[0])
-        if reached:
-            peak = max(peak, reached[0][0])
-        frontier = [([], np.asarray(triple[1]))] + \
-            [(segments, end) for progress, segments, end in reached[:starts] if progress > 0]
-    return {"solved": False, "stage": None, "peak": peak, "segments": [],
-            "seconds": time.perf_counter() - started}
 
 
 def feasible_from_branches(task, settings=None, results=None):
@@ -1049,7 +998,8 @@ def hints_for(task, settings=None, candidates=3):
 
     So this says something only when it has been checked:
 
-    1. the first pair is searched in every branch (search_branches);
+    1. the first pair is searched - the base types, then every branch
+       (search_branches);
     2. each distinct set of action types a solution used is tried, fewest
        types first, on every other training pair - a search over exactly
        those types;
@@ -1078,6 +1028,19 @@ def hints_for(task, settings=None, candidates=3):
         (*MAIN_DIRECTIONS, *settings.directions))))
     first, rest = pairs[0], pairs[1:]
     results = search_branches(first, settings)
+    text = _first_verified(first, rest, results, settings, candidates)
+    if text is None and set(results) == {"base"}:
+        # The base types reproduced the first pair but not the others: a
+        # roster may still hold the explanation that carries over, and the
+        # base search stopping early must not be what withholds it.
+        text = _first_verified(first, rest, each_branch(first, settings), settings,
+                               candidates)
+    return text
+
+
+def _first_verified(first, rest, results, settings, candidates):
+    """The block for the first explanation in `results` that reproduces
+    every other pair too, or None."""
     for types, sequence, actions in explanations(first, results, settings, candidates):
         explained = [(first, sequence, actions)]
         for pair in rest:

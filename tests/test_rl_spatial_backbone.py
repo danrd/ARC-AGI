@@ -178,3 +178,52 @@ class TestAnAgent:
             agent.learn(total_timesteps=32)
         finally:
             vec_env.close()
+
+
+class TestStartingWithoutTheMap:
+    """With its projections at their ordinary initialisation the map
+    arrived as noise from the first step: level on average over 15 tasks,
+    losing where the old features sufficed (a2fd1cf0 1.0 to 0.56). So a
+    fresh agent starts with the projections at zero - computing what it
+    would without the map - and learns to take it in."""
+
+    def _agent(self):
+        vec_env = create_vec_env(two_objects(), n_envs=1, max_episode_len=4,
+                                 feasible_actions={0: "submit", 1: "blue_recolor"},
+                                 observation_space_elements=["objects_emb"], repr_level=1,
+                                 input_pattern="start")
+        agent = create_agent({"model_type": "PPO"}, vec_env,
+                             {"n_steps": 16, "batch_size": 8, "verbose": 0,
+                              "spatial_channels": 8})
+        return agent, vec_env
+
+    def test_the_projections_start_at_zero_after_the_policy_is_built(self):
+        agent, vec_env = self._agent()
+        try:
+            extractor = agent.policy.features_extractor
+            for projection in (extractor.spatial_context, extractor.spatial_objects):
+                assert projection.weight.abs().sum() == 0 and projection.bias.abs().sum() == 0
+        finally:
+            vec_env.close()
+
+    def test_a_fresh_object_row_ignores_the_grid_and_training_can_change_that(self):
+        agent, vec_env = self._agent()
+        try:
+            extractor = agent.policy.features_extractor.eval()
+            objects = np.stack([object_row((1, 1, 3, 3), (5, 5))] + [np.zeros(OBJECT_DIM)]
+                               * (extractor.pointer_slots - 1))
+            plain = np.zeros((5, 5), dtype=int)
+            dotted = plain.copy()
+            dotted[2, 2] = 6
+            rows = []
+            for grid in (plain, dotted):
+                extractor(observation([grid], objects=[objects]))
+                rows.append(extractor.extractors["objects_emb"].per_object[0, 0])
+            assert torch.allclose(rows[0], rows[1])
+            extractor.train()
+            features = extractor(observation([dotted], objects=[objects]))
+            features.sum().backward()
+            assert extractor.spatial_objects.weight.grad.abs().sum() > 0
+            assert extractor.spatial_context.weight.grad.abs().sum() > 0
+        finally:
+            vec_env.close()

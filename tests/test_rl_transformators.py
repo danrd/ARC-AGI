@@ -280,3 +280,67 @@ class TestTheShortestPath:
         new_grid = _world().apply_transform(3, "shortest_path", obj1, obj2, grid, [obj1, obj2], {})
 
         assert new_grid.tolist() == [[1, 3, 3, 3, 1]]
+
+
+# -- directed gravity -----------------------------------------------------------
+
+class TestDirectedGravity:
+    """Push a shape one way until it touches something: another shape, or
+    the edge of the grid."""
+
+    @staticmethod
+    def _push(grid, cells, direction):
+        from rl.arc_transformators import directed_gravity
+        obj = make_object(cells, int(grid[cells[0]]), grid, "pushed")
+        return directed_gravity(grid.copy(), obj, direction, 0), obj
+
+    def test_it_stops_against_another_shape(self):
+        grid = np.array([[2, 2, 0, 0, 0, 3]])
+        new_grid, obj = self._push(grid, [(0, 0), (0, 1)], "E")
+        assert new_grid.tolist() == [[0, 0, 0, 2, 2, 3]]
+        assert sorted(obj.coords) == [(0, 3), (0, 4)], "the object moves with its cells"
+
+    def test_with_nothing_in_the_way_it_stops_at_the_edge(self):
+        grid = np.zeros((5, 3), dtype=int)
+        grid[1, 1] = 4
+        new_grid, _ = self._push(grid, [(1, 1)], "S")
+        assert new_grid[4, 1] == 4 and new_grid.sum() == 4
+
+    def test_a_shape_already_touching_stays(self):
+        grid = np.array([[0, 2, 3]])
+        new_grid, _ = self._push(grid, [(0, 1)], "E")
+        assert new_grid.tolist() == [[0, 2, 3]]
+
+    def test_the_whole_shape_stops_when_any_cell_would_touch(self):
+        grid = np.zeros((4, 4), dtype=int)
+        grid[0, 0] = grid[1, 0] = 5
+        grid[3, 1] = 7
+        new_grid, _ = self._push(grid, [(0, 0), (1, 0)], "E")
+        assert new_grid[0].tolist() == [0, 0, 0, 5] and new_grid[1].tolist() == [0, 0, 0, 5]
+        grid[1, 3] = 7
+        new_grid, _ = self._push(grid, [(0, 0), (1, 0)], "E")
+        assert new_grid[0].tolist() == [0, 0, 5, 0], "row 1 hits the 7 first"
+
+    def test_padding_stops_it_like_the_edge(self):
+        grid = np.array([[2, 0, 0, 10, 10]])
+        new_grid, _ = self._push(grid, [(0, 0)], "E")
+        assert new_grid.tolist() == [[0, 0, 2, 10, 10]]
+
+    def test_diagonally(self):
+        grid = np.zeros((4, 4), dtype=int)
+        grid[0, 0] = 6
+        new_grid, _ = self._push(grid, [(0, 0)], "SE")
+        assert new_grid[3, 3] == 6 and new_grid.sum() == 6
+
+    def test_the_world_dispatches_it_by_name(self):
+        from rl.utils import define_feasible_actions
+        from data.configs.env_configs import (COLOR_DEPENDENT_ACTIONS, DIRECTION_DEPENDENT_ACTIONS,
+                                              DOUBLE_COLOR_DEPENDENT_ACTIONS)
+        names = define_feasible_actions(["directed_gravity"], ["red"], ["N", "W"],
+                                        COLOR_DEPENDENT_ACTIONS, DOUBLE_COLOR_DEPENDENT_ACTIONS,
+                                        DIRECTION_DEPENDENT_ACTIONS)
+        assert set(names.values()) == {"directed_gravity_N", "directed_gravity_W", "submit"}
+        grid = np.array([[0, 0, 9]])
+        obj = make_object([(0, 2)], 9, grid, "obj")
+        new_grid = _world().apply_transform(-1, "directed_gravity_W", obj, obj, grid, [obj], {})
+        assert new_grid.tolist() == [[9, 0, 0]]

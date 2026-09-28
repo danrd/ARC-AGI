@@ -9,7 +9,7 @@ ACTION_TYPES = {
                 "color": ["recolor", "color_inversion", "color_inner_part", "color_inner_holes", "color_outer_holes", "dense_outer_contour"],
                 "modification": ["upscale_4"],
                 "shift": ["shift_object", "swap"],
-                "gravity": ["gravity", "edge_gravity", "edge_gravity_bottom"],
+                "gravity": ["gravity", "edge_gravity", "edge_gravity_bottom", "directed_gravity"],
                 "emission": ["emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision", "emission_with_recolor_collision",
                              "emission_with_contour_collision", "emission_with_collision_stop", "emission_with_object_recolor"],
                 "merge": ["merge", "center_merge", "color_merge"],
@@ -45,7 +45,7 @@ COLOR_DEPENDENT_ACTIONS = ["recolor", "shortest_path", "background_shortest_path
 DOUBLE_COLOR_DEPENDENT_ACTIONS = ["contour_connection", "emission_with_object_recolor", "emission_with_recolor_collision", "emission_with_contour_collision"]
 DIRECTION_DEPENDENT_ACTIONS = ["emission", "emission_with_turn_left_collision", "emission_with_turn_right_collision", "emission_with_object_recolor",
                                "emission_with_recolor_collision", "emission_with_contour_collision", "emission_with_collision_stop",
-                               "shift_object"
+                               "shift_object", "directed_gravity"
                               ]
 AGENT2ACTIONS = {
     'highlighter': ["submit", "recolor", "color_inversion"],
@@ -54,7 +54,8 @@ AGENT2ACTIONS = {
     'connector': ["submit", "recolor", "shift_object", "outer_contour", "color_inner_part", "shortest_path",
                   "background_shortest_path_left", "background_shortest_path_right", "contour_connection",
                   "emission",],
-    'shifter': ["submit", "recolor", "gravity", "edge_gravity", "edge_gravity_bottom", "x_alignment", "y_alignment",
+    'shifter': ["submit", "recolor", "gravity", "edge_gravity", "edge_gravity_bottom", "directed_gravity",
+                "x_alignment", "y_alignment",
                 "shift_object", "swap", "merge", "center_merge", "color_merge"],
     'connector_extended': ["submit", "recolor", "shift_object", "outer_contour", "color_inner_part", "shortest_path",
               "background_shortest_path_left", "background_shortest_path_right", "contour_connection",
@@ -163,6 +164,7 @@ TRANSFORM_DESCRIPTIONS = {
     "shift_object": "move the shape one cell {direction}",
     "edge_gravity": "move the shape until it meets the nearest edge of the grid",
     "edge_gravity_bottom": "move the shape down until it meets the bottom edge",
+    "directed_gravity": "push the shape {direction} until it touches another shape or the edge of the grid",
     "upscale_4": "double the shape in both directions, each cell becoming a 2x2 block",
     "symmetric_restoration": "mirror the shape left to right, then mirror the result "
                              "top to bottom, so a quarter of a symmetric figure "

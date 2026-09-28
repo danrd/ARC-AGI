@@ -4,7 +4,7 @@ from symbolic.objects_analysis import GridObject
 from data.configs.env_configs import COLORS_MAPPING
 from rl.arc_transformators import (
 symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gravity, emission, emission_with_collision, color_inner_holes, color_outer_holes,
-shift_object, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
+shift_object, directed_gravity, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
 find_path_through_background, perform_merge, objects_swap, center_merge, color_merge,
 symmetry_reflection, symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy, dense_outer_contour,
 fill_rectangle, draw_line, fill_triangle
@@ -160,6 +160,10 @@ class World:
             # direction is the last segment rather than everything after
             # "shift_", because the action's own name carries an underscore
             # too - define_feasible_actions builds "shift_object_N".
+            elif transform.startswith("directed_gravity_"):
+                direction = transform.rsplit("_", 1)[1]
+                new_grid = directed_gravity(new_grid, obj1, direction, self.font_color)
+
             elif transform.startswith("shift_"):
                 direction = transform.rsplit("_", 1)[1]
                 new_grid = shift_object(new_grid, obj1, direction, self.font_color)

@@ -4,7 +4,7 @@ from symbolic.objects_analysis import GridObject
 from data.configs.env_configs import COLORS_MAPPING
 from rl.arc_transformators import (
 symmetry_transformation, upscale, get_outer_contour, inverse_obj_color, edge_gravity, emission, emission_with_collision, color_inner_holes, color_outer_holes,
-shift_object, directed_gravity, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
+shift_object, directed_gravity, part_recolor, color_inner_part, gravity, x_alignment, y_alignment, contour_connection, find_shortest_distance, find_shortest_path, filter_paths,
 find_path_through_background, perform_merge, objects_swap, center_merge, color_merge,
 symmetry_reflection, symmetric_restoration, color_swap, shape_swap, color_copy, shape_copy, dense_outer_contour,
 fill_rectangle, draw_line, fill_triangle
@@ -78,6 +78,12 @@ class World:
                 # turned merge's colour concatenation into a TypeError.
                 obj1.color_numbers = (add,)
                 obj1.colors = tuple(COLORS_MAPPING[color] for color in obj1.color_numbers)
+
+            elif transform.startswith("part_recolor_"):
+                # "blue_part_recolor_red": the leading colour is `add`, the
+                # one painted with; the trailing one is the part repainted.
+                old_color = self.inverse_colors_mapping[transform.rsplit("_", 1)[1]]
+                new_grid = part_recolor(new_grid, obj1, add, old_color)
 
             elif transform == "upscale_4":
                 """Upscale object by 4x: each cell becomes a 2x2 square."""

@@ -344,3 +344,36 @@ class TestDirectedGravity:
         obj = make_object([(0, 2)], 9, grid, "obj")
         new_grid = _world().apply_transform(-1, "directed_gravity_W", obj, obj, grid, [obj], {})
         assert new_grid.tolist() == [[9, 0, 0]]
+
+
+# -- part_recolor ----------------------------------------------------------------
+
+class TestPartRecolor:
+    """Repaint one colour's cells inside a shape, leaving its other colours:
+    the part a task recolours is often a colour of a many-coloured shape,
+    and recolor repaints the whole of it."""
+
+    @staticmethod
+    def _shape():
+        grid = np.array([[2, 2, 5], [5, 2, 0]])
+        return grid, make_object([(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)], 2, grid, "shape")
+
+    def test_only_that_colour_changes(self):
+        from rl.arc_transformators import part_recolor
+        grid, obj = self._shape()
+        new_grid = part_recolor(grid.copy(), obj, 1, 5)
+        assert new_grid.tolist() == [[2, 2, 1], [1, 2, 0]]
+        assert set(obj.color_numbers) == {1, 2}, "the shape knows its new colours"
+
+    def test_a_colour_the_shape_lacks_or_itself_changes_nothing(self):
+        from rl.arc_transformators import part_recolor
+        grid, obj = self._shape()
+        assert part_recolor(grid.copy(), obj, 1, 7).tolist() == grid.tolist()
+        assert part_recolor(grid.copy(), obj, 5, 5).tolist() == grid.tolist()
+
+    def test_the_world_reads_both_colours_off_the_name(self):
+        grid, obj = self._shape()
+        world = World(objects=[obj], actions_dict={1: "blue_part_recolor_gray"}, font_color=0)
+        add, transform = world.parse_action([1, 0, 0])
+        new_grid = world.apply_transform(add, transform, obj, obj, grid, [obj], {})
+        assert new_grid.tolist() == [[2, 2, 1], [1, 2, 0]]

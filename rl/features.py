@@ -999,6 +999,151 @@ def default_grid_arch():
     )
 
 
+def true_cells(observation):
+    """(batch, rows, cols) bool: the cells that are grid - neither the pad
+    value nor past the true shape the observation was padded from."""
+    grid = observation["grid"]
+    valid = grid < 10
+    shape = observation.get("grid_shape")
+    if shape is not None:
+        shape = shape.to(torch.int64)
+        rows = torch.arange(grid.shape[1], device=grid.device).view(1, -1, 1)
+        cols = torch.arange(grid.shape[2], device=grid.device).view(1, 1, -1)
+        valid = valid & (rows < shape[:, :1, None]) & (cols < shape[:, 1:2, None])
+    return valid
+
+
+def true_shape(observation):
+    """(batch, 2) float: rows and columns of each true grid."""
+    grid = observation["grid"]
+    shape = observation.get("grid_shape")
+    if shape is None:
+        return torch.tensor(grid.shape[1:], device=grid.device,
+                            dtype=torch.float32).expand(grid.shape[0], 2)
+    return shape.to(torch.float32)
+
+
+class SpatialBackbone(nn.Module):
+    """One feature map over the grid at full resolution, which every entity
+    reads its vector from.
+
+    The grid encoder pools to 3x3, the deltas have encoders of their own,
+    the objects are their 26 computed numbers and the coordinate rows a
+    separate MLP over raw cells: four readings of one grid that meet only at
+    the logits. So nothing could say where on an object a dot sits, or that
+    a changed cell is next to a red one, and a coordinate row learnt "red in
+    column 3" apart from "red in column 7".
+
+    Here every grid-shaped observation the extractor has - the colours of
+    each grid key one-hot, each delta as a plane - goes into one stack of
+    3x3 convolutions together, with the row and column of each cell
+    (normalised by the true shape) and a channel marking which cells are
+    grid. Nothing is pooled: the output F has a vector per cell, zero on
+    padding. What reads it:
+
+      pooled      mean and max of F over the grid, for the context
+      over_boxes  mean of F over each object's bounding box, which
+                  objects_emb carries - so an object sees the grid in and
+                  around it, and the observation needs no mask
+      over_lines  mean and max of F along each row and column, for the
+                  coordinate heads - the same weights for every row
+
+    The actor's extractor has the deltas its observation holds and the
+    critic's the answer's too, so the same class reads what each may.
+    """
+
+    def __init__(self, grid_keys, delta_keys, channels: int = 32, layers: int = 3):
+        super().__init__()
+        self.grid_keys = tuple(grid_keys)
+        self.delta_keys = tuple(delta_keys)
+        inputs = 10 * len(self.grid_keys) + len(self.delta_keys) + 3
+        widths = [inputs] + [channels] * layers
+        self.convs = nn.ModuleList(nn.Conv2d(a, b, kernel_size=3, padding=1)
+                                   for a, b in zip(widths, widths[1:]))
+        self.channels = channels
+
+    def planes(self, observation, valid):
+        """(batch, inputs, rows, cols), zero wherever `valid` is not."""
+        mask = valid.unsqueeze(1).float()
+        stacked = []
+        for key in self.grid_keys:
+            grid = observation[key].to(torch.int64).clamp(0, 10)
+            colours = torch.nn.functional.one_hot(grid, num_classes=11)[..., :10]
+            stacked.append(colours.permute(0, 3, 1, 2).float() * mask)
+        for key in self.delta_keys:
+            stacked.append(observation[key].float().unsqueeze(1) * mask)
+        batch, rows, cols = valid.shape
+        shape = true_shape(observation)
+        down = torch.arange(rows, device=valid.device, dtype=torch.float32).view(1, -1, 1)
+        across = torch.arange(cols, device=valid.device, dtype=torch.float32).view(1, 1, -1)
+        down = down / (shape[:, :1, None] - 1).clamp(min=1)
+        across = across / (shape[:, 1:2, None] - 1).clamp(min=1)
+        stacked += [down.unsqueeze(1) * mask, across.unsqueeze(1) * mask, mask]
+        return torch.cat(stacked, dim=1)
+
+    def forward(self, observation):
+        """(F, valid): F is (batch, channels, rows, cols).
+
+        Off-grid cells are zeroed after every layer, not only at the end: a
+        convolution's bias makes a padded cell nonzero after the first, and
+        the next would carry that into the grid's border cells - the same
+        grid padded and unpadded then read differently, measured before
+        this at 0.049 against 0.027 in one corner."""
+        valid = true_cells(observation)
+        mask = valid.unsqueeze(1).float()
+        features = self.planes(observation, valid)
+        for conv in self.convs:
+            features = torch.relu(conv(features)) * mask
+        return features, valid
+
+    @staticmethod
+    def pooled(features, valid):
+        """(batch, 2 * channels): mean and max over the true cells."""
+        mask = valid.unsqueeze(1).float()
+        count = mask.sum(dim=(2, 3)).clamp(min=1)
+        mean = features.sum(dim=(2, 3)) / count
+        peak = features.masked_fill(mask == 0, 0.0).amax(dim=(2, 3))
+        return torch.cat([mean, peak], dim=1)
+
+    @staticmethod
+    def over_boxes(features, objects, observation):
+        """(batch, slots, channels): the mean of F over each object's
+        bounding box, read back from objects_emb, whose box is normalised
+        by the true grid's size. An empty slot is zeros."""
+        from symbolic.objects_analysis import OBJECT_SCHEMA
+        index, position = {}, 0
+        for name, _group, arity in OBJECT_SCHEMA:
+            index[name] = position
+            position += arity
+        shape = true_shape(observation)
+        height, width = shape[:, :1], shape[:, 1:2]
+        objects = objects.float()
+        top = torch.round(objects[..., index["min_i"]] * height)
+        bottom = torch.round(objects[..., index["max_i"]] * height)
+        left = torch.round(objects[..., index["min_j"]] * width)
+        right = torch.round(objects[..., index["max_j"]] * width)
+        rows = torch.arange(features.shape[2], device=features.device, dtype=torch.float32)
+        cols = torch.arange(features.shape[3], device=features.device, dtype=torch.float32)
+        in_rows = (rows.view(1, 1, -1) >= top.unsqueeze(-1)) & (rows.view(1, 1, -1) <= bottom.unsqueeze(-1))
+        in_cols = (cols.view(1, 1, -1) >= left.unsqueeze(-1)) & (cols.view(1, 1, -1) <= right.unsqueeze(-1))
+        present = (objects.abs().sum(dim=-1) != 0).float()
+        boxes = (in_rows.unsqueeze(-1) & in_cols.unsqueeze(-2)).float() * present[..., None, None]
+        total = torch.einsum("bshw,bchw->bsc", boxes, features)
+        return total / boxes.sum(dim=(2, 3)).clamp(min=1).unsqueeze(-1)
+
+    @staticmethod
+    def over_lines(features, valid):
+        """((batch, rows, 2 * channels), (batch, cols, 2 * channels)): mean
+        and max of F along each row and along each column, over true cells."""
+        mask = valid.unsqueeze(1).float()
+        masked = features.masked_fill(mask == 0, 0.0)
+        row_mean = masked.sum(dim=3) / mask.sum(dim=3).clamp(min=1)
+        col_mean = masked.sum(dim=2) / mask.sum(dim=2).clamp(min=1)
+        rows = torch.cat([row_mean, masked.amax(dim=3)], dim=1).transpose(1, 2)
+        cols = torch.cat([col_mean, masked.amax(dim=2)], dim=1).transpose(1, 2)
+        return rows, cols
+
+
 class CoordinateRows(nn.Module):
     """One embedding per row of the grid and one per column - what the
     coordinate heads score when they choose a row or a column.
@@ -1017,15 +1162,25 @@ class CoordinateRows(nn.Module):
     largest grid of the task - are masked, and the heads never pick them.
     """
 
-    def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64):
+    def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64,
+                 spatial_channels: int = 0):
+        """`spatial_channels` reads each row and column from the backbone's
+        map (SpatialBackbone.over_lines) rather than from its raw cells:
+        the same weights for every row, where the raw reading gives each
+        column position a weight of its own - "red in column 3" and "red
+        in column 7" learnt apart, and nothing carried to a grid of another
+        width."""
         super().__init__()
         self.rows, self.cols = rows, cols
         self.delta_keys = tuple(delta_keys)
+        self.spatial_channels = spatial_channels
         channels = 10 + len(self.delta_keys)
+        row_in = 2 * spatial_channels + 1 if spatial_channels else cols * channels + 1
+        col_in = 2 * spatial_channels + 1 if spatial_channels else rows * channels + 1
         self.row_encoder = nn.Sequential(
-            nn.Linear(cols * channels + 1, hidden), nn.ReLU(), nn.Linear(hidden, dim))
+            nn.Linear(row_in, hidden), nn.ReLU(), nn.Linear(hidden, dim))
         self.col_encoder = nn.Sequential(
-            nn.Linear(rows * channels + 1, hidden), nn.ReLU(), nn.Linear(hidden, dim))
+            nn.Linear(col_in, hidden), nn.ReLU(), nn.Linear(hidden, dim))
         self.dim = dim
 
     def planes(self, observation):
@@ -1053,11 +1208,21 @@ class CoordinateRows(nn.Module):
         cols = torch.arange(self.cols, device=device).unsqueeze(0) < shape[:, 1:2]
         return rows.float(), cols.float()
 
-    def forward(self, observation):
-        """(row_embeddings, row_mask, col_embeddings, col_mask)."""
+    def forward(self, observation, lines=None):
+        """(row_embeddings, row_mask, col_embeddings, col_mask). `lines` is
+        SpatialBackbone.over_lines' output, required when the rows are
+        read from the map."""
+        row_mask, col_mask = self.masks(observation)
+        if self.spatial_channels:
+            rows, cols = lines
+            batch = rows.shape[0]
+            where_row = torch.linspace(0, 1, self.rows, device=rows.device)
+            where_col = torch.linspace(0, 1, self.cols, device=rows.device)
+            rows = torch.cat([rows, where_row.view(1, -1, 1).expand(batch, -1, 1)], dim=2)
+            cols = torch.cat([cols, where_col.view(1, -1, 1).expand(batch, -1, 1)], dim=2)
+            return (self.row_encoder(rows), row_mask, self.col_encoder(cols), col_mask)
         planes = self.planes(observation)
         batch = planes.shape[0]
-        row_mask, col_mask = self.masks(observation)
         where_row = torch.linspace(0, 1, self.rows, device=planes.device)
         where_col = torch.linspace(0, 1, self.cols, device=planes.device)
         rows = planes.permute(0, 2, 1, 3).reshape(batch, self.rows, -1)
@@ -1072,10 +1237,10 @@ class CoordinateRows(nn.Module):
         """How much of the feature vector the rows and columns take."""
         return (self.rows + self.cols) * (self.dim + 1)
 
-    def tail(self, observation):
+    def tail(self, observation, lines=None):
         """The rows and columns as one flat block, each followed by its
         mask bit - the layout ARCCustomNetwork.split_coordinate_tail reads."""
-        rows, row_mask, cols, col_mask = self(observation)
+        rows, row_mask, cols, col_mask = self(observation, lines)
         return torch.cat([
             torch.cat([rows, row_mask.unsqueeze(-1)], dim=2).flatten(1),
             torch.cat([cols, col_mask.unsqueeze(-1)], dim=2).flatten(1)], dim=1)
@@ -1098,8 +1263,13 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, extr_arch=None,
                  pointer_dim: int = 32, object_arch=None,
                  relation_mode: str = "flat", relation_arch=None,
-                 coordinate_dim: int = 0, factored_tail: bool = False):
-        """`relation_mode` decides how 'relations_emb' enters, when the
+                 coordinate_dim: int = 0, factored_tail: bool = False,
+                 spatial_channels: int = 0):
+        """`spatial_channels` builds a SpatialBackbone of that width over
+        every grid-shaped key the observation holds, and has the context,
+        the objects and the coordinate rows read from it; 0 builds none.
+
+        `relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
 
           'flat'      the whole matrix through Flatten and two Linears -
@@ -1216,6 +1386,23 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         if self.pointer_slots is not None:
             self.pointer_projection = nn.Linear(
                 extractors["objects_emb"].processor.hidden_dim, pointer_dim)
+        #: The shared feature map - see SpatialBackbone - or None. Its pooled
+        #: mean and max join the concatenated vector right after the
+        #: per-key branches, ahead of every tail.
+        self.spatial = None
+        self.spatial_objects = None
+        if spatial_channels and "grid" in observation_space.spaces:
+            self.spatial = SpatialBackbone(
+                [key for key in GRID_KEYS if key in observation_space.spaces],
+                [key for key in DELTA_KEYS if key in observation_space.spaces],
+                channels=spatial_channels)
+            total_concat_size += 2 * spatial_channels
+            if "objects_emb" in extractors:
+                # Into the object branch's hidden width, added to each
+                # object's own encoding before the objects attend to one
+                # another: see ObjectSetProcessor.spatial_rows.
+                self.spatial_objects = nn.Linear(
+                    spatial_channels, extractors["objects_emb"].processor.hidden_dim)
         #: The rows and columns the coordinate heads score, or None. Built
         #: over the observation's own grid shape - which coordinate
         #: addressing pads to the action space's - from the colours and
@@ -1231,7 +1418,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             self.coordinate_rows = CoordinateRows(
                 rows, cols,
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
-                dim=coordinate_dim)
+                dim=coordinate_dim,
+                spatial_channels=spatial_channels if "grid" in observation_space.spaces else 0)
             total_concat_size += self.coordinate_rows.width
         #: What the factored object heads read besides the rows: each
         #: slot's raw embedding - its colour shares and where its mass sits
@@ -1253,6 +1441,16 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
     def forward(self, observation) -> torch.Tensor:
         encoded_tensor_list = []
         object_slot = None
+        spatial = None
+        if self.spatial is not None:
+            spatial = self.spatial(observation)
+            if self.spatial_objects is not None:
+                # Before the loop, where the object branch runs - the same
+                # side channel as the relation bias below.
+                boxes = SpatialBackbone.over_boxes(spatial[0], observation["objects_emb"],
+                                                   observation)
+                self.extractors["objects_emb"].processor.spatial_rows = \
+                    self.spatial_objects(boxes)
         if self.relation_bias is not None:
             # Before the loop, not after it: the object branch runs inside
             # the loop and reads this during its attention. Set afterwards
@@ -1291,12 +1489,16 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             encoded_tensor_list.append(res)
         if self.relation_messages is not None and object_slot is not None:
             encoded_tensor_list[object_slot] = self.pass_messages(observation)
+        if spatial is not None:
+            encoded_tensor_list.append(SpatialBackbone.pooled(*spatial))
         if self.pointer_slots is not None:
             encoded_tensor_list.append(self.pointer_tail())
         # Last, after the object tail: ARCCustomNetwork cuts the two off the
         # end in that order.
         if self.coordinate_rows is not None:
-            encoded_tensor_list.append(self.coordinate_rows.tail(observation))
+            lines = (SpatialBackbone.over_lines(*spatial)
+                     if self.coordinate_rows.spatial_channels else None)
+            encoded_tensor_list.append(self.coordinate_rows.tail(observation, lines))
         if self.factored_width:
             encoded_tensor_list.append(self.factored_tail(observation))
         return torch.cat(encoded_tensor_list, dim=1)
@@ -1430,6 +1632,12 @@ class ObjectSetProcessor(nn.Module):
         self.layer_norm1 = nn.LayerNorm(hidden_dim)
         self.layer_norm2 = nn.LayerNorm(embedding_dim)
 
+        #: (batch, max_objects, hidden_dim) added to each object's encoding
+        #: before the attention, set by the caller for the next forward and
+        #: cleared by it - the grid map read over the object's box
+        #: (ARCCombinedExtractor's spatial backbone).
+        self.spatial_rows = None
+
         #: An additive bias for the attention below, set by the caller for
         #: the next forward and cleared by it. A side channel like
         #: per_object above, and for the same reason: every caller and
@@ -1444,6 +1652,9 @@ class ObjectSetProcessor(nn.Module):
         # print(self.object_processor)
         # Process individual objects
         object_embeddings = self.object_processor(x)  # (batch, max_objects, hidden_dim)
+        if self.spatial_rows is not None:
+            object_embeddings = object_embeddings + self.spatial_rows
+            self.spatial_rows = None
 
         # Self-attention for object interactions
         if mask is not None:

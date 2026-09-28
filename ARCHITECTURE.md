@@ -132,11 +132,11 @@ graph TD
   scripts["scripts (7)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (55)"]
+  tests["tests (56)"]
   utils["utils (3)"]
-  tests -->|80| rl
+  tests -->|83| rl
+  tests -->|27| symbolic
   tests -->|26| subsymbolic
-  tests -->|26| symbolic
   tests -->|16| data
   rl -->|11| data
   rl -->|11| symbolic
@@ -172,13 +172,13 @@ graph TD
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 25 |
+| `rl.arc_task` | 26 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
 | `rl.coordinate_search` | 3 |
 | `rl.evaluation` | 5 |
-| `rl.features` | 6 |
+| `rl.features` | 7 |
 | `rl.mcts` | 8 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 4 |
@@ -186,7 +186,7 @@ graph TD
 | `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 11 |
-| `rl.training` | 9 |
+| `rl.training` | 10 |
 | `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
@@ -210,7 +210,7 @@ graph TD
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |
-| `symbolic.objects_analysis` | 18 |
+| `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 5 |
 | `symbolic.summaries` | 10 |
 | `symbolic.symbolic_module` | 3 |

@@ -178,6 +178,10 @@ def load_PPO_config():
     # 'coordinates', where action_heads is five whatever the line above
     # says - the action space decides that, not this file.
     'coordinate_dim': 32,
+    # Width of the shared feature map every entity reads from - see
+    # rl.features.SpatialBackbone - or 0 for none, the per-key encoders
+    # alone. Off until measured against them.
+    'spatial_channels': 0,
     # How the coordinate heads choose: 'autoregressive' draws the action,
     # then i1 knowing it, j1 knowing both, and so on (see
     # rl.policy.AutoregressiveCoordinateDistribution); 'independent' draws

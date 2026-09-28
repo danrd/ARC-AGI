@@ -956,8 +956,8 @@ def needs_relations(observation_space, name):
 
     ARCGNNExtractor builds its graph out of them and ARCSeparateExtractor
     processes them in its own branch, so neither can run on an observation
-    that carries objects alone - which is what rl_config ships
-    (observation_space_elements = ["objects_emb"]). Without this the failure
+    that carries objects alone - which a config dropping 'relations_emb'
+    from observation_space_elements asks for. Without this the failure
     is a KeyError from inside forward, naming a dict key rather than the
     setting that decides it.
     """

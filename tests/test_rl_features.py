@@ -394,8 +394,8 @@ def test_every_extractor_encodes_a_colour_as_a_name_not_a_quantity(
 @pytest.mark.parametrize("extractor_class", _extractor_classes()[1:])
 def test_an_observation_without_relations_says_which_setting_to_change(
         extractor_class):
-    """rl_config ships observation_space_elements = ["objects_emb"], and
-    both of these read relations - without this the failure is a KeyError
+    """A config can leave relations out of the observation, and both of
+    these read them - without this the failure is a KeyError
     from inside forward, naming a dict key rather than the setting."""
     space = spaces.Dict({
         "grid": spaces.Box(low=0, high=10, shape=(6, 6), dtype=np.int64),

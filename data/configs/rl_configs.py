@@ -110,7 +110,15 @@ rl_config = {
     # output colour and every direction.
     'feasible_actions': {0:'submit'},
     'repr_level': 1,
-    'observation_space_elements': ["objects_emb"], # ["objects_emb", "relations_emb"]
+    # The same observation for every task, so the two addressings differ in
+    # what an action names and not in what the policy sees: the objects and
+    # their relations, what the agent has changed so far (delta_input) and
+    # what is still wrong (delta_target - the answer, so the critic's alone:
+    # rl.training.critic_only enforces that whatever this says). Coordinate
+    # addressing drops the two object keys, having no objects to name
+    # (rl.rl_job.observation_for). Relations with the deltas beside them
+    # were measured at +0.131 median over grid and objects alone (below).
+    'observation_space_elements': ["objects_emb", "relations_emb", "delta_input", "delta_target"],
     # None keeps the observation's grid sized to the subtask, which means one
     # agent can only span examples that are all the same size. A shape here
     # (ARC's largest is (30, 30)) pads the observation to it for the buffer's
@@ -224,8 +232,7 @@ def load_PPO_config():
     # keyword arguments for ObjectSetProcessor - dropout, self_attention,
     # grouped, cross_attention, use_position. None is what this shipped as.
     'object_arch': None,
-    # How 'relations_emb' is read, when observation_space_elements asks for
-    # it at all. 'messages' is one round of message passing with weights
+    # How 'relations_emb' is read - part of the observation by default. 'messages' is one round of message passing with weights
     # shared across pairs, merged into the object rows so that it reaches
     # the pointer head - 22.7k parameters however many slots there are.
     # 'flat' is the Flatten-and-two-Linears branch this shipped with, kept
@@ -247,7 +254,9 @@ def load_PPO_config():
     # So relations pay next to the deltas rather than by themselves, and
     # only in this form. The effect is smaller than the 0.292 spread
     # between seeds, so it shows up as a consistent sign rather than in any
-    # single run.
+    # single run. A caveat on that arm: it predates the guard that keeps
+    # delta_target from the actor whatever a config says (rl.training.
+    # critic_only), so part of it may be the answer having leaked in.
     'relation_mode': 'messages',
     # The message-passing architecture, the way object_arch is the object
     # branch's: keyword arguments for RelationMessages - endpoints,

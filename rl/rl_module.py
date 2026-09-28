@@ -45,7 +45,8 @@ class RlConfig(BaseModel):
     pad_val: int = 10
     feasible_actions: Dict[int, str] = Field(default_factory=lambda: {0: "submit"})
     repr_level: int = 1
-    observation_space_elements: List[str] = ["objects_emb"]  # ["objects_emb", "relations_emb"]
+    observation_space_elements: List[str] = ["objects_emb", "relations_emb",
+                                             "delta_input", "delta_target"]
     observation_grid_shape: Optional[Tuple[int, int]] = None
     max_objects: Optional[int] = None  # None: per task, see rl_config
     addressing: Optional[str] = None  # None: per task, see rl_config

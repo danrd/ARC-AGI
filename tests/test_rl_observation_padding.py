@@ -166,7 +166,7 @@ class TestUndoingItInThePolicy:
         small, large = env_for(3), env_for(6)
         extractor = self._extractor(small)
         batch = {}
-        for key in ("grid", "grid_shape", "objects_emb", "action_space"):
+        for key in ("grid", "grid_shape", "objects_emb"):
             rows = [np.asarray(self._observation(env)[key][0]) for env in (small, large)]
             batch[key] = torch.as_tensor(np.stack(rows))
 

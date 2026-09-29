@@ -514,12 +514,6 @@ class ARCGridWorld(gymnasium.Env):
             # describe.
             self.observation_space['grid_shape'] = spaces.Box(
                 low=1, high=max(self.obs_grid_shape), shape=(2,), dtype=np.int64)
-        # Flat, matching np.array(self.action_space.nvec): action count and
-        # two object slots, or action count and the rows and columns of two
-        # cells. Bounded by 900 because a 30x30 grid cannot hold more objects
-        # than cells.
-        self.observation_space['action_space'] = spaces.Box(
-            low=0, high=900, shape=(len(self.action_space.nvec),), dtype=np.int64)
         if shows_input(self.input_pattern):
             self.observation_space['input_pattern'] = spaces.Box(low=self.low_val, high=self.max_val,
                 shape=self.obs_grid_shape or (shape_x_inp, shape_y_inp), dtype=self.grid_dtype)
@@ -694,7 +688,6 @@ class ARCGridWorld(gymnasium.Env):
         obs['grid'] = self.observed_grid(self.grid)
         if self.obs_grid_shape is not None:
             obs['grid_shape'] = self.true_grid_shape()
-        obs['action_space'] = np.array(self.action_space.nvec)
         if shows_input(self.input_pattern):
             obs['input_pattern'] = self.observed_grid(self.train_inp)
         if "target" in self.observation_space_elements:
@@ -723,10 +716,7 @@ class ARCGridWorld(gymnasium.Env):
         self.step_no = 0
         self.prev_action = None
 
-        obs = {
-            'grid': self.observed_grid(self.grid),
-            'action_space': np.array(self.action_space.nvec)
-        }
+        obs = {'grid': self.observed_grid(self.grid)}
         if self.obs_grid_shape is not None:
             obs['grid_shape'] = self.true_grid_shape()
 
@@ -787,7 +777,6 @@ class ARCGridWorld(gymnasium.Env):
 
         obs = {}
         obs['grid'] = self.observed_grid(new_grid)
-        obs['action_space'] = np.array(self.action_space.nvec)
         self.grid = copy(new_grid)
         if self.obs_grid_shape is not None:
             obs['grid_shape'] = self.true_grid_shape()

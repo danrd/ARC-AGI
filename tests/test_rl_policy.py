@@ -295,7 +295,6 @@ class TestWhichObjectTheActionNames:
         from symbolic.objects_analysis import OBJECT_DIM
         return spaces.Dict({
             "grid": spaces.Box(0, 9, shape=(8, 8), dtype=np.int64),
-            "action_space": spaces.Box(0, 900, shape=(3,), dtype=np.int64),
             "objects_emb": spaces.Box(0, 1, shape=(self.SLOTS, OBJECT_DIM),
                                       dtype=np.float32)})
 
@@ -316,7 +315,6 @@ class TestWhichObjectTheActionNames:
         objects = torch.zeros(1, self.SLOTS, OBJECT_DIM)
         objects[0, :objects_held] = torch.rand(objects_held, OBJECT_DIM)
         return {"grid": torch.randint(0, 9, (1, 8, 8)),
-                "action_space": torch.tensor([[6, self.SLOTS, self.SLOTS]]),
                 "objects_emb": objects}
 
     def test_swapping_two_objects_swaps_their_logits(self):

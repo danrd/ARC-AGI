@@ -251,6 +251,88 @@ def _cell_change_findings(pairs, background, everywhere):
     return findings
 
 
+def _box(mask):
+    """(top, bottom, left, right) of the True cells, inclusive, or None."""
+    rows, cols = np.where(mask)
+    if not rows.size:
+        return None
+    return rows.min(), rows.max(), cols.min(), cols.max()
+
+
+def _piece(grid, box, inside):
+    if box is None:
+        return None
+    top, bottom, left, right = box
+    if inside:
+        top, bottom, left, right = top + 1, bottom - 1, left + 1, right - 1
+        if bottom < top or right < left:
+            return None
+    return grid[top:bottom + 1, left:right + 1]
+
+
+def _crop_where(pairs, background):
+    """Where the piece comes from, or None: only a rule that gives the
+    output exactly in every example - the box round the cells that are not
+    background, round the cells of one colour (or the inside of it, one cell
+    in), or a corner or half of the input. A rule that fits some examples
+    and not others is not a rule."""
+    boxes = []
+    if background is not None:
+        boxes.append((f"the bounding box of the cells that are not background "
+                      f"(colour {int(background)})", "non_background",
+                      lambda grid: _box(grid != background)))
+    for colour in sorted(set.intersection(*(set(np.unique(inp).tolist()) for inp, _ in pairs))):
+        if colour != background:
+            boxes.append((f"the bounding box of the cells of colour {int(colour)}",
+                          f"colour_{int(colour)}",
+                          lambda grid, colour=colour: _box(grid == colour)))
+    for phrase, key, find in boxes:
+        for inside in (False, True):
+            if all((piece := _piece(inp, find(inp), inside)) is not None
+                   and piece.shape == out.shape and np.array_equal(piece, out)
+                   for inp, out in pairs):
+                return (phrase + (", without the outermost cell on each side" if inside else ""),
+                        key + ("_inside" if inside else ""))
+    corners = {"top-left": lambda g, h, w: g[:h, :w], "top-right": lambda g, h, w: g[:h, g.shape[1] - w:],
+               "bottom-left": lambda g, h, w: g[g.shape[0] - h:, :w],
+               "bottom-right": lambda g, h, w: g[g.shape[0] - h:, g.shape[1] - w:]}
+    common = [name for name, cut in corners.items()
+              if all(np.array_equal(cut(inp, *out.shape), out) for inp, out in pairs)]
+    halves = (("left half", "top-left", lambda i, o: o.shape[0] == i.shape[0] and 2 * o.shape[1] == i.shape[1]),
+              ("right half", "top-right", lambda i, o: o.shape[0] == i.shape[0] and 2 * o.shape[1] == i.shape[1]),
+              ("top half", "top-left", lambda i, o: o.shape[1] == i.shape[1] and 2 * o.shape[0] == i.shape[0]),
+              ("bottom half", "bottom-left", lambda i, o: o.shape[1] == i.shape[1] and 2 * o.shape[0] == i.shape[0]))
+    for name, corner, fits in halves:
+        if corner in common and all(fits(inp, out) for inp, out in pairs):
+            return f"the {name} of the input", name.replace(" ", "_")
+    if len(common) == 1:
+        return f"the {common[0]} corner of the input", common[0].replace("-", "_") + "_corner"
+    return None
+
+
+def _crop_finding(pairs, background, everywhere):
+    """The output is a piece of the input, or of the input moved as a whole,
+    and where it is taken from when that is one rule for every example."""
+    if not all(out.size < inp.size for inp, out in pairs):
+        return None
+    if all(_contains(inp, out) for inp, out in pairs):
+        statement = "the output is a piece of the input, copied cell for cell"
+        parameters = {}
+        where = _crop_where(pairs, background)
+        if where is not None:
+            statement += f": {where[0]}"
+            parameters["where"] = where[1]
+        return Finding(subject="crop", statement=statement, evidence=everywhere,
+                       confidence=1.0, parameters=parameters)
+    for phrase, move in _GEOMETRIC:
+        if all(_contains(move(inp), out) for inp, out in pairs):
+            return Finding(subject="crop",
+                           statement=f"the output is a piece of the input {phrase}, "
+                                     "copied cell for cell",
+                           evidence=everywhere, confidence=1.0, parameters={"move": phrase})
+    return None
+
+
 def _change_findings(task_analysis) -> Tuple[Finding, ...]:
     """What the transformation does, from the checks above - each only when
     it holds in every example, and the most specific that holds first: a
@@ -276,10 +358,9 @@ def _change_findings(task_analysis) -> Tuple[Finding, ...]:
                             evidence=everywhere, confidence=1.0,
                             parameters={"row_factor": factor[0], "col_factor": factor[1]}),)
 
-    if all(out.size < inp.size and _contains(inp, out) for inp, out in pairs):
-        return (Finding(subject="crop",
-                        statement="the output is a piece of the input, copied cell for cell",
-                        evidence=everywhere, confidence=1.0),)
+    crop = _crop_finding(pairs, background, everywhere)
+    if crop is not None:
+        return (crop,)
 
     if any(inp.shape != out.shape for inp, out in pairs):
         return ()

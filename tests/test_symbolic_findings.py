@@ -203,9 +203,59 @@ class TestWhatChanges:
         assert [f.subject for f in found] == ["crop"]
 
     def test_a_smaller_output_that_is_not_in_the_input_is_no_piece(self):
-        found = _changes([_pair([[1, 2, 3], [4, 5, 6]], [[6, 5]]),
+        found = _changes([_pair([[1, 2, 3], [4, 5, 6]], [[9, 9]]),
                           _pair([[7, 8], [9, 1]], [[7], [9]])])
         assert all(f.subject != "crop" for f in found)
+
+    def test_a_piece_of_the_input_flipped(self):
+        found = _changes([_pair([[1, 2, 3], [4, 5, 6]], [[6, 5]]),
+                          _pair([[7, 8, 9], [1, 2, 3]], [[9, 8]])])
+        assert [(f.subject, f.parameters) for f in found] == [
+            ("crop", {"move": "flipped left to right"})]
+
+    def test_the_piece_is_the_box_round_what_is_not_background(self):
+        found = _changes([_pair([[0, 0, 0, 0], [0, 3, 4, 0], [0, 5, 0, 0]], [[3, 4], [5, 0]]),
+                          _pair([[0, 0, 0], [0, 0, 7], [0, 6, 0]], [[0, 7], [6, 0]])],
+                         background=0)
+        assert found[0].parameters == {"where": "non_background"}
+        assert "bounding box of the cells that are not background (colour 0)" in found[0].statement
+
+    def test_a_box_round_non_background_needs_an_established_background(self):
+        found = _changes([_pair([[0, 0, 0, 0], [0, 3, 4, 0], [0, 5, 0, 0]], [[3, 4], [5, 0]]),
+                          _pair([[0, 0, 0], [0, 0, 7], [0, 6, 0]], [[0, 7], [6, 0]])])
+        assert [f.subject for f in found] == ["crop"] and found[0].parameters == {}
+
+    def test_the_box_of_one_colour_and_its_inside(self):
+        """A frame of 2 round a picture, and a stray 9 outside it, so the box
+        round everything that is not background is not the frame's."""
+        def grid(inner):
+            frame = [[2, 2, 2, 2]] + [[2, *row, 2] for row in inner] + [[2, 2, 2, 2]]
+            rows = [[0, *row, 0, 0] for row in frame]
+            return [[0] * 7] + rows + [[9, 0, 0, 0, 0, 0, 0]]
+        inner_a, inner_b = [[1, 3], [4, 5]], [[6, 7], [8, 6]]
+        found = _changes([_pair(grid(inner_a), inner_a), _pair(grid(inner_b), inner_b)],
+                         background=0)
+        assert found[0].parameters == {"where": "colour_2_inside"}
+        assert "colour 2" in found[0].statement and "without the outermost" in found[0].statement
+
+    def test_a_corner_and_a_half(self):
+        corner = _changes([_pair([[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[4, 5], [7, 8]]),
+                           _pair([[9, 8, 7], [6, 5, 4], [3, 2, 1]], [[6, 5], [3, 2]])])
+        assert corner[0].parameters == {"where": "bottom_left_corner"}
+        half = _changes([_pair([[1, 2, 3, 4], [5, 6, 7, 8]], [[1, 2], [5, 6]]),
+                         _pair([[9, 8, 7, 6], [5, 4, 3, 2]], [[9, 8], [5, 4]])])
+        assert half[0].parameters == {"where": "left_half"}
+        assert "the left half of the input" in half[0].statement
+
+    def test_a_place_that_holds_for_some_examples_only_is_not_named(self):
+        found = _changes([_pair([[1, 2, 3], [4, 5, 6]], [[1, 2], [4, 5]]),
+                          _pair([[7, 8, 9], [1, 2, 3]], [[8, 9], [2, 3]])])
+        assert [f.subject for f in found] == ["crop"] and found[0].parameters == {}
+
+    def test_a_grid_that_is_one_colour_names_no_corner(self):
+        """Every corner reads the same, so no one of them is the rule."""
+        found = _changes([_pair([[4, 4, 4], [4, 4, 4]], [[4]])])
+        assert found[0].subject == "crop" and found[0].parameters == {}
 
     def test_one_example_that_disagrees_withdraws_the_claim(self):
         found = _changes([_pair([[1, 2], [3, 4]], [[3, 4], [1, 2]]),

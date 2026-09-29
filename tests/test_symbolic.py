@@ -1582,3 +1582,40 @@ class TestATransformLeavesNothingDescribingTheOldPosition:
             f"the embedding does not carry the new colour: {embedding[:10]}"
         assert embedding[1] == 0, \
             f"the embedding still carries the old colour: {embedding[:10]}"
+
+
+class TestTheSummaryAfterAStepIsLazy:
+    """update_representation_level runs after every effective step of an
+    env observing relations, and rebuilding the objects summary was 70% of
+    its cost for a summary the env never reads."""
+
+    @staticmethod
+    def _summary():
+        import numpy as np
+        from symbolic.summaries import GridSummary
+        grid = np.zeros((5, 5), dtype=int)
+        grid[1, 1] = 2
+        grid[3, 3] = 4
+        return GridSummary(grid, grid.shape, font_color=0, levels=[1])
+
+    def test_it_is_built_only_when_read_and_reads_as_the_eager_one(self, monkeypatch):
+        from symbolic.summaries import GridSummary
+        summary = self._summary()
+        eager = summary.repr_levels[1].objects_summary
+        built = []
+        original = GridSummary.create_objects_summary
+        monkeypatch.setattr(GridSummary, "create_objects_summary",
+                            lambda self, objects: built.append(1) or original(self, objects))
+        level = summary.update_representation_level(1, summary.repr_levels[1].objects[0])
+        assert built == []
+        assert level.objects_summary.shape_colors == eager.shape_colors
+        assert level.objects_summary.mean_size == eager.mean_size
+        level.objects_summary.shape_colors
+        assert built == [1], "built once, then kept"
+
+    def test_it_survives_a_deep_copy(self):
+        from copy import deepcopy
+        summary = self._summary()
+        level = summary.update_representation_level(1, summary.repr_levels[1].objects[0])
+        copied = deepcopy(level)
+        assert copied.objects_summary.shape_colors == level.objects_summary.shape_colors

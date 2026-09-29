@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Any, Optional
 import numpy as np
 from copy import copy
 from collections import defaultdict, deque, Counter
+from functools import partial
 from dataclasses import dataclass, field
 from itertools import product
 from scipy.spatial.distance import euclidean
@@ -191,6 +192,40 @@ class RelationEmbeddings:
     def get_embeddings_for_object(self, obj_label: str) -> Dict[str, Any]:
         """Get all embeddings where specified object is the first object."""
         return self.embeddings.get(obj_label, {})
+
+class LazyObjectsSummary:
+    """An ObjectsSummary computed the first time anything reads it.
+
+    update_representation_level runs after every effective step of an env
+    that observes relations, and rebuilt this summary each time - 70% of
+    that update's cost, 7.4 s of 10.5 s over 4096 training steps on
+    a48eeaf7 - for a summary the env never reads: the relation embeddings
+    come from the triples and distances, and only the symbolic analysis
+    looks at the summary. So the update hands over this instead, and a
+    reader that does look pays then and once.
+    """
+
+    __slots__ = ("_build", "_summary")
+
+    def __init__(self, build):
+        self._build = build
+        self._summary = None
+
+    def resolve(self) -> "ObjectsSummary":
+        if self._summary is None:
+            self._summary = self._build()
+            self._build = None
+        return self._summary
+
+    def __getattr__(self, name):
+        # Private and dunder names are not the summary's: copy.deepcopy
+        # builds a copy without __init__ and asks it for __setstate__ and
+        # the like, and resolving then would recurse through _summary,
+        # which the copy does not have yet.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self.resolve(), name)
+
 
 @dataclass(frozen=True)
 class RepresentationLevel:
@@ -1009,7 +1044,7 @@ class GridSummary():
 
         # Recreate all components with embeddings
         objects_tuple = tuple(all_objects)
-        objects_summary = self.create_objects_summary(objects_dict)
+        objects_summary = LazyObjectsSummary(partial(self.create_objects_summary, objects_dict))
         triples, relation_statistics, distances = self.set_relations(objects_dict)
         cell2obj = self.grid_markup(all_objects)
         relation_embeddings = self._create_relation_embeddings_for_objects(objects_tuple, triples, distances)

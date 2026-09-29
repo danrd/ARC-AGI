@@ -168,13 +168,14 @@ class TestAnAgent:
         finally:
             vec_env.close()
 
-    def test_the_critic_reads_the_answer_s_delta_and_the_actor_does_not(self):
+    def test_the_answer_s_delta_is_the_critic_s_alone(self):
         from tests.test_rl_coordinate_policy import coordinate_agent_with
         agent, vec_env = coordinate_agent_with({"spatial_channels": 8})
         try:
             actor = agent.policy.pi_features_extractor.spatial
-            critic = agent.policy.vf_features_extractor.spatial
-            assert "delta_target" not in actor.delta_keys and "delta_target" in critic.delta_keys
+            critic_own = agent.policy.vf_features_extractor.own
+            assert "delta_target" not in actor.delta_keys
+            assert "delta_target" in critic_own.extractors
             agent.learn(total_timesteps=32)
         finally:
             vec_env.close()

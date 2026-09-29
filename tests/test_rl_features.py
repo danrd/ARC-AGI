@@ -1,10 +1,6 @@
 """Tests for rl/features.py's ARCCombinedExtractor - specifically its
-per-key dispatch in __init__, which used to have two problems: raising a
-plain string instead of an exception for an unrecognized key, and treating
-'action_space' (which ARCGridWorld always includes in every observation -
-see rl/arc_env.py's set_subtask) as unrecognized, when it's simply not a
-feature the extractor is meant to embed (forward() never reads it, same
-as ARCGNNExtractor/ARCSeparateExtractor).
+per-key dispatch in __init__, which used to raise a plain string instead
+of an exception for an unrecognized key.
 """
 from __future__ import annotations
 
@@ -16,23 +12,6 @@ from gymnasium import spaces
 from rl.features import ARCCombinedExtractor, pairwise_relations
 from symbolic.objects_analysis import OBJECT_DIM
 from symbolic.summaries import RELATION_DIM
-
-
-def test_action_space_key_is_skipped_not_raised():
-    """Regression test: __init__ iterates every observation_space key and
-    used to hit its `else: raise(f'Unknown feature: {key}')` branch for
-    'action_space' - itself broken (raises a str, not an exception:
-    `TypeError: exceptions must derive from BaseException`), on top of
-    'action_space' not actually being unrecognized-and-fatal at all."""
-    observation_space = spaces.Dict({
-        "grid": spaces.Box(low=0, high=10, shape=(9, 9), dtype=np.int64),
-        "action_space": spaces.Box(low=0, high=900, shape=(1, 3), dtype=np.int64),
-    })
-
-    extractor = ARCCombinedExtractor(observation_space)
-
-    assert "action_space" not in extractor.extractors
-    assert "grid" in extractor.extractors
 
 
 def test_unknown_feature_key_raises_a_real_exception():
@@ -651,7 +630,6 @@ class TestVaryingTheObjectBranch:
         from rl.features import ARCCombinedExtractor
         space = spaces.Dict({
             "grid": spaces.Box(0, 9, shape=(8, 8), dtype=np.int64),
-            "action_space": spaces.Box(0, 900, shape=(3,), dtype=np.int64),
             "objects_emb": spaces.Box(0, 1, shape=(slots, OBJECT_DIM),
                                       dtype=np.float32)})
         return ARCCombinedExtractor(space, object_arch=arch)
@@ -660,7 +638,6 @@ class TestVaryingTheObjectBranch:
         objects = torch.zeros(1, slots, OBJECT_DIM)
         objects[0, :held] = torch.rand(held, OBJECT_DIM)
         return {"grid": torch.randint(0, 9, (1, 8, 8)),
-                "action_space": torch.tensor([[6, slots, slots]]),
                 "objects_emb": objects}
 
     @pytest.mark.parametrize("arch", [

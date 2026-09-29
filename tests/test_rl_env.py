@@ -100,7 +100,10 @@ def test_set_subtask_and_reset_produces_valid_observation(subtask):
     env.set_subtask(subtask)
     obs, info = env.reset()
 
-    assert {"grid", "action_space"} <= obs.keys()
+    assert "grid" in obs.keys()
+    # The size of the action space is the env's and the policy's to know,
+    # not an observation: nothing ever read it there.
+    assert "action_space" not in obs and "action_space" not in env.observation_space.spaces
     assert obs["grid"].shape == subtask.train_out_shape
     assert len(env.objects) > 0
     # Object slots, not this subtask's object count: the action space is the

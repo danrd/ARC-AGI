@@ -1369,10 +1369,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 readout = DeltaReadout()
                 extractors[key] = readout
                 total_concat_size += readout.out_dim
-            elif key in ('action_space', 'grid_shape'):
-                # Neither is a feature to embed. The action space's own
-                # .nvec (varies per task) is in every observation so the
-                # policy can see it; grid_shape is there to undo the
+            elif key == 'grid_shape':
+                # Not a feature to embed: it is there to undo the
                 # observation padding, and forward() below uses it for
                 # exactly that rather than encoding it.
                 continue

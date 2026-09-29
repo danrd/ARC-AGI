@@ -1149,4 +1149,3 @@ class TestACoordinateAddressedEnv:
         spaces = env.observation_space.spaces
         assert "objects_emb" not in spaces and "relations_emb" not in spaces
         assert {"grid", "delta_input", "delta_target"} <= set(spaces)
-        assert spaces["action_space"].shape == (5,)

@@ -1,6 +1,7 @@
 import torch.nn as nn
 from rl.utils import linear_schedule
 from rl.policy import ARCCustomActorCriticPolicy
+from rl.features import default_grid_arch
 
 rl_config = {
     'model_type': 'PPO',
@@ -190,6 +191,10 @@ def load_PPO_config():
     # rl.features.SpatialBackbone - or 0 for none, the per-key encoders
     # alone. Off until measured against them.
     'spatial_channels': 0,
+    # Whether the deltas go into the grid encoder as planes beside the ten
+    # colours, or each through a DeltaReadout of its own - see
+    # ARCCombinedExtractor. Being measured against each other.
+    'delta_in_grid': False,
     # How the coordinate heads choose: 'autoregressive' draws the action,
     # then i1 knowing it, j1 knowing both, and so on (see
     # rl.policy.AutoregressiveCoordinateDistribution); 'independent' draws
@@ -264,7 +269,7 @@ def load_PPO_config():
     'relation_arch': None,
     }
 
-def lin(act_func=nn.ReLU()):
+def lin(act_func=nn.ReLU(), in_channels=10, widths=(8, 16)):
     """The grid encoder: two convolutions and a pool to a 3x3 grid.
 
     It used to pool to (1, 1), which returns one mean per channel over the
@@ -295,14 +300,9 @@ def lin(act_func=nn.ReLU()):
     taken; the finding being acted on is "not a global mean", not "3x3
     exactly".
 
-    `act_func` is accepted and unused, as it was before.
+    `act_func` is accepted and unused, as it was before. `in_channels` and
+    `widths` are for an encoder that reads more than the ten colour planes,
+    or reads them wider.
     """
-    return nn.Sequential(
-              nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
-              nn.ReLU(),
-              nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
-              nn.ReLU(),
-              nn.AdaptiveAvgPool2d((3, 3)),  # Output shape: [batch, 16, 3, 3]
-              nn.Flatten()                   # Output shape: [batch, 144]
-            )
+    return default_grid_arch(in_channels=in_channels, widths=widths)
 lin_arch = lin()  # kept for notebooks that import it; configs name `lin`

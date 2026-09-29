@@ -969,18 +969,29 @@ def needs_relations(observation_space, name):
         "use ARCCombinedExtractor, which works without them.")
 
 
-def build_grid_arch(extr_arch=None):
+def build_grid_arch(extr_arch=None, in_channels=10):
     """One grid encoder, from a module to copy, a factory, or the default.
 
     `extr_arch` describes an architecture; a module handed over is copied so
     that two extractors built from one config do not share weights - see
-    ARCCombinedExtractor.
+    ARCCombinedExtractor. `in_channels` is asked of a factory or the default
+    only when it is not the ten colour planes: a grid that carries its
+    deltas as further channels.
     """
+    kwargs = {} if in_channels == 10 else {"in_channels": in_channels}
     if callable(extr_arch) and not isinstance(extr_arch, nn.Module):
-        return extr_arch()
+        return extr_arch(**kwargs)
     if extr_arch is not None:
         return copy.deepcopy(extr_arch)
-    return default_grid_arch()
+    return default_grid_arch(**kwargs)
+
+
+def grid_arch_channels(arch):
+    """How many planes a grid encoder reads: its first convolution's."""
+    for module in arch.modules():
+        if isinstance(module, nn.Conv2d):
+            return module.in_channels
+    return 10
 
 
 def grid_arch_width(arch):
@@ -991,10 +1002,10 @@ def grid_arch_width(arch):
     anything else a config might name.
     """
     with torch.no_grad():
-        return arch(torch.zeros(1, 10, 30, 30)).shape[1]
+        return arch(torch.zeros(1, grid_arch_channels(arch), 30, 30)).shape[1]
 
 
-def default_grid_arch():
+def default_grid_arch(in_channels=10, widths=(8, 16)):
     """The grid encoder used when a config does not supply one.
 
     Pools to 3x3 rather than to 1x1, and the same as
@@ -1004,10 +1015,11 @@ def default_grid_arch():
     where every encoder keeping some notion of where scored above zero
     somewhere.
     """
+    first, second = widths
     return nn.Sequential(
-        nn.Conv2d(in_channels=10, out_channels=8, kernel_size=3, stride=1, padding=1),
+        nn.Conv2d(in_channels=in_channels, out_channels=first, kernel_size=3, stride=1, padding=1),
         nn.ReLU(),
-        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding=1),
+        nn.Conv2d(in_channels=first, out_channels=second, kernel_size=3, stride=1, padding=1),
         nn.ReLU(),
         nn.AdaptiveAvgPool2d((3, 3)),
         nn.Flatten(),
@@ -1279,8 +1291,14 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                  pointer_dim: int = 32, object_arch=None,
                  relation_mode: str = "flat", relation_arch=None,
                  coordinate_dim: int = 0, factored_tail: bool = False,
-                 spatial_channels: int = 0):
-        """`spatial_channels` builds a SpatialBackbone of that width over
+                 spatial_channels: int = 0, delta_in_grid: bool = False):
+        """`delta_in_grid` hands the deltas to the grid encoder as planes
+        beside the ten colours, instead of to a DeltaReadout each: one
+        stack of convolutions reads a cell's colour and whether it differs
+        from the input together, so "a changed cell next to a red one" is
+        something it can express. No effect without a 'grid' key.
+
+        `spatial_channels` builds a SpatialBackbone of that width over
         every grid-shaped key the observation holds, and has the context,
         the objects and the coordinate rows read from it; 0 builds none.
 
@@ -1317,7 +1335,10 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         self.pointer_dim = pointer_dim
         self.pointer_slots = None
         self.build_grid_arch = lambda: build_grid_arch(extr_arch)
-        self.extr_arch = self.build_grid_arch()
+        self.delta_in_grid = bool(delta_in_grid) and "grid" in observation_space.spaces
+        self.grid_deltas = tuple(key for key in DELTA_KEYS if key in observation_space.spaces
+                                 ) if self.delta_in_grid else ()
+        self.extr_arch = build_grid_arch(extr_arch, 10 + len(self.grid_deltas))
         for key, subspace in observation_space.spaces.items():
             if key == "objects_emb":
                 # print(f'objects_emb subspace.shape:{subspace.shape}')
@@ -1364,6 +1385,9 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 extractors[key] = self.extr_arch if key == 'grid' else self.build_grid_arch()
                 total_concat_size += grid_arch_width(extractors[key])
             elif key in DELTA_KEYS:
+                if self.delta_in_grid:
+                    # Planes of the grid encoder instead - see forward.
+                    continue
                 # Grid-shaped and read differently: see DeltaReadout for why
                 # a mean over a delta is max_int computed the long way round.
                 readout = DeltaReadout()
@@ -1492,10 +1516,22 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                     x = torch.nn.functional.one_hot(torch.tensor(grid, dtype=torch.int64), num_classes=10)  # Shape: (Batch, H, W, 10)
                     x = x.float()  # Convert to float
                     return x.permute(0, 3, 1, 2)  # Change to (Batch, 10, H, W)
+                planes = observation[key]
+                if key == "grid" and self.grid_deltas:
+                    # The colours and each delta stacked on a last axis, so
+                    # the crop below slices rows and columns as it does for
+                    # a grid alone; prepare splits them back into planes.
+                    planes = torch.stack([observation[key].float()] + [
+                        observation[delta].float() for delta in self.grid_deltas], dim=-1)
+
+                    def prepare(stacked):
+                        colours = torch.nn.functional.one_hot(
+                            stacked[..., 0].to(torch.int64), num_classes=10).float()
+                        return torch.cat([colours, stacked[..., 1:]], dim=-1).permute(0, 3, 1, 2)
                 # Cropped to the real grid first when the observation was
                 # padded to a common shape - the pad value is not a colour
                 # and one_hot would not know what to do with it.
-                res = unpadded_grid_features(extractor, observation[key],
+                res = unpadded_grid_features(extractor, planes,
                                              observation.get('grid_shape'), prepare)
             else:
                 res = extractor(observation[key].unsqueeze(1))

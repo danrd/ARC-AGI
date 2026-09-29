@@ -171,7 +171,23 @@ class TestWhatTheCriticMaySeeAndTheActorMayNot:
         policy = self._policy(("target",))
 
         assert "target" not in policy.pi_features_extractor.extractors
-        assert "target" in policy.vf_features_extractor.extractors
+        assert "target" in policy.vf_features_extractor.own.extractors
+
+    def test_the_actor_s_features_are_computed_once_and_shared(self):
+        """The critic used to run an extractor of its own over the whole
+        observation - the object branch twice a step, twice an update."""
+        import torch
+
+        policy = self._policy(("target",))
+        calls = []
+        extractor = policy.pi_features_extractor
+        original = extractor.forward
+        extractor.forward = lambda obs: calls.append(1) or original(obs)
+        obs = self._observation()
+        with torch.no_grad():
+            _actions, values, _log_prob = policy.forward(obs)
+            assert len(calls) == 1
+            assert torch.allclose(values, policy.predict_values(obs))
 
     def test_naming_a_critic_only_key_stops_the_extractor_being_shared(self):
         """Two extractors, or there is nothing to route between."""

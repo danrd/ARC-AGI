@@ -750,6 +750,37 @@ class ARCCustomNetwork(nn.Module):
     def forward_critic(self, features: torch.Tensor) -> torch.Tensor:
         return self.value_net(self.without_pointer_tail(features))
 
+class CriticFeatures(nn.Module):
+    """What the critic reads: its own branch over the critic-only keys, then
+    everything the actor's extractor produces.
+
+    The critic used to have an extractor of its own over the whole
+    observation, which ran the object branch - most of the network - a
+    second time on every step and every update, only to add delta_target
+    to it: 12.2 s of feature extraction became 28.1 s over 8192 steps on
+    a48eeaf7, and the update 6.0 s became 14.8 s. The actor's features are
+    now shared and the critic adds only what the actor may not see.
+
+    Its branch comes first so the actor's tails stay at the very end, where
+    ARCCustomNetwork cuts them off before the value network.
+    """
+
+    def __init__(self, actor: nn.Module, own: nn.Module, own_keys: Tuple[str, ...]):
+        super().__init__()
+        self.actor = actor
+        self.own = own
+        self.own_keys = tuple(own_keys)
+        self.features_dim = own.features_dim + actor.features_dim
+
+    def own_features(self, obs) -> torch.Tensor:
+        return self.own({key: value for key, value in obs.items() if key in self.own_keys})
+
+    def forward(self, obs, actor_features: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if actor_features is None:
+            actor_features = self.actor(obs)
+        return torch.cat([self.own_features(obs), actor_features], dim=1)
+
+
 class ARCCustomActorCriticPolicy(ActorCriticPolicy):
     """Actor and critic over ARCGridWorld's dict observation.
 
@@ -844,6 +875,8 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
                 self._actor_observation_space(),
                 **(self.features_extractor_kwargs or {}))
             self.features_dim = self.pi_features_extractor.features_dim
+            self.vf_features_extractor = CriticFeatures(
+                self.pi_features_extractor, self._critic_branch(), self._critic_branch_keys())
         action_dims = self.action_space.nvec.tolist()
         self.mlp_extractor = ARCCustomNetwork(
             self.features_dim,
@@ -863,6 +896,21 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             factored_width=getattr(self._actor_extractor(), "factored_width", 0),
             direction_keys=self.direction_keys,
         )
+
+    def _critic_branch_keys(self) -> Tuple[str, ...]:
+        """The critic-only keys, and the true grid shape they are cropped
+        by when the observation is padded."""
+        spaces_ = self.observation_space.spaces
+        return tuple(key for key in self.critic_only_keys + ("grid_shape",) if key in spaces_)
+
+    def _critic_branch(self) -> nn.Module:
+        """An extractor over the critic-only keys alone - a DeltaReadout
+        for delta_target, a grid encoder for target - with the grid
+        encoder the config names and none of the actor's heads' tails."""
+        kwargs = self.features_extractor_kwargs or {}
+        space = spaces.Dict({key: self.observation_space.spaces[key]
+                             for key in self._critic_branch_keys()})
+        return ARCCombinedExtractor(space, extr_arch=kwargs.get("extr_arch"), pointer_dim=0)
 
     def _coordinate_shape(self):
         rows = getattr(self._actor_extractor(), "coordinate_rows", None)
@@ -902,8 +950,11 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         if self.share_features_extractor:
             extractor = features_extractor or self.features_extractor
             return extractor(obs)
-        return (self.pi_features_extractor(self._actor_observation(obs)),
-                self.vf_features_extractor(obs))
+        actor = self.pi_features_extractor(self._actor_observation(obs))
+        if isinstance(self.vf_features_extractor, CriticFeatures):
+            # The actor's features computed once and handed to the critic.
+            return actor, self.vf_features_extractor(obs, actor_features=actor)
+        return actor, self.vf_features_extractor(obs)
 
     def forward(self, obs, deterministic: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass through both the actor and critic networks.

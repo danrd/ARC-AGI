@@ -9,8 +9,16 @@ text, about a minute of search a task, and only for a task whose training
 pairs a single set of action types reproduces. This puts the second into the
 first for run_llm_over_tasks:
 
-    context_builder = with_search_hints(my_context)      # my_context(task) -> dict
+    def my_context(task):                                # what the prompt is built with today
+        return {"grid_repr_type": "concise", "test_input_grid": task.test_subtask.train_inp}
+
+    context_builder = with_search_hints(my_context)      # the same, plus the hint when there is one
     run_llm_over_tasks(tasks, module, evaluator, context_builder=context_builder)
+
+The builder you already have goes in as the argument and its result is what
+comes out, so a name must not be both: `context_builder = with_search_hints(
+context_builder)` wraps the old builder, and is only safe in a cell that
+defines it again each time it runs.
 
 The prompt has to ask for it: "search_hints" in PromptingConfig.blocks and in
 .resolvers, or the hint is computed and never shown.

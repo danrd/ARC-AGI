@@ -108,7 +108,12 @@ def test_prompt_does_not_end_with_a_mismatched_partial_answer(arc_task, tiny_tok
 
 
 @pytest.fixture(scope="session")
-def cpu_runner(supra_router_gguf_path):
+def llama_cpp_installed():
+    pytest.importorskip("llama_cpp")
+
+
+@pytest.fixture(scope="session")
+def cpu_runner(llama_cpp_installed, supra_router_gguf_path):
     base = BaseConfig(device="cpu")
     llm = LlmConfig(framework="llama_cpp", model=supra_router_gguf_path)
     generation = GenerationConfig(max_tokens=64, temperature=0.0)

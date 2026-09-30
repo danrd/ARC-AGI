@@ -6,6 +6,7 @@ grammar-constrained generation inside that same accepted format.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from subsymbolic.utils import build_grid_grammar, parse_llm_output
 
@@ -60,13 +61,13 @@ def test_build_grid_grammar_compiles_as_valid_gbnf():
     """A real llama.cpp GBNF syntax check, not just "it's a string" - a
     malformed grammar would otherwise only surface at actual inference
     time."""
-    from llama_cpp import LlamaGrammar
+    LlamaGrammar = pytest.importorskip("llama_cpp").LlamaGrammar
 
     LlamaGrammar.from_string(build_grid_grammar())
 
 
 def test_build_grid_grammar_colors_str_variant_compiles_too():
-    from llama_cpp import LlamaGrammar
+    LlamaGrammar = pytest.importorskip("llama_cpp").LlamaGrammar
 
     LlamaGrammar.from_string(build_grid_grammar(colors_str=True))
 

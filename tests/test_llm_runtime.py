@@ -87,7 +87,7 @@ def test_to_llama_cpp_omits_grammar_by_default():
 
 
 def test_to_llama_cpp_compiles_grammar_to_a_llama_grammar_instance():
-    from llama_cpp import LlamaGrammar
+    LlamaGrammar = pytest.importorskip("llama_cpp").LlamaGrammar
 
     config = GenerationConfig(grammar='root ::= "a"')
 

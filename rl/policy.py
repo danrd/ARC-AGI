@@ -976,7 +976,6 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             pi_features, vf_features = features
             latent_pi = self.mlp_extractor.forward_actor(pi_features)
             latent_vf = self.mlp_extractor.forward_critic(vf_features)
-        # print(f'Value net: {self.value_net}')
         # Evaluate the values for the given observations
         values = self.value_net(latent_vf)
 
@@ -991,7 +990,6 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         log_prob = distribution.log_prob(actions)
         # Reshape actions to match action space
         actions = actions.reshape((-1, len(self.action_space.nvec)))
-        # print(f'Values at the end: {values}')
         return actions, values, log_prob
 
 class ARCGNNPolicy(ARCCustomActorCriticPolicy):

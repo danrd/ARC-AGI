@@ -1341,7 +1341,6 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         self.extr_arch = build_grid_arch(extr_arch, 10 + len(self.grid_deltas))
         for key, subspace in observation_space.spaces.items():
             if key == "objects_emb":
-                # print(f'objects_emb subspace.shape:{subspace.shape}')
                 extractor, output_dim = create_object_extractor(
                     subspace.shape, object_arch)
                 extractors[key] = extractor
@@ -1352,7 +1351,6 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 if pointer_dim:
                     self.pointer_slots = subspace.shape[0]
                     total_concat_size += self.pointer_slots * (pointer_dim + 1)
-                # print(f'objects_emb_concat_size: {output_dim}')
             elif key == "relations_emb":
                 if relation_mode == "messages":
                     # Nothing of its own in the concatenated vector: the
@@ -1475,7 +1473,6 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             slots, object_dim = observation_space.spaces["objects_emb"].shape
             self.factored_width = slots * object_dim + 10
             total_concat_size += self.factored_width
-        # print(f'total_concat_size: {total_concat_size}')
         self._features_dim = total_concat_size
 
     def forward(self, observation) -> torch.Tensor:
@@ -1501,7 +1498,6 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 self.relation_bias(observation["relations_emb"])
         # self.extractors contain nn.Modules that do all the processing.
         for key, extractor in self.extractors.items():
-            # print(f'observation key {key} has shape: {observation[key].shape}')
             if key in DELTA_KEYS:
                 # Cropped back to the real grid for the same reason a grid
                 # is: the observation padding is zeros here, and a centre of
@@ -1535,7 +1531,6 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                                              observation.get('grid_shape'), prepare)
             else:
                 res = extractor(observation[key].unsqueeze(1))
-                # print(f'output for key {key} has shape: {res.shape}')
             if key == "objects_emb":
                 object_slot = len(encoded_tensor_list)
             encoded_tensor_list.append(res)
@@ -1723,7 +1718,6 @@ class ObjectSetProcessor(nn.Module):
         mask: optional mask for variable number of objects
         """
         batch_size, max_objects, _ = x.shape
-        # print(self.object_processor)
         # Process individual objects
         object_embeddings = self.object_processor(x, mask)  # (batch, max_objects, hidden_dim)
         if self.spatial_rows is not None:
@@ -1746,9 +1740,6 @@ class ObjectSetProcessor(nn.Module):
             attn_mask = attn_mask.float().masked_fill(attn_mask == 0, float('-inf'))
         else:
             attends, attn_mask = None, None
-        # print(f'forward in ObjectSetProcessor: batch_size:{batch_size} max_objects:{max_objects}' )
-        # print(f'forward in ObjectSetProcessor: object_embeddings.shape:{object_embeddings.shape}' )
-        # print(self.self_attention)
         if self.use_self_attention:
             attended, _ = self.self_attention(
                 object_embeddings, object_embeddings, object_embeddings,

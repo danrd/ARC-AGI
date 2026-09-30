@@ -636,66 +636,6 @@ class GridObject():
         geometric_center_y = sum_y / num_cells
         return (int(geometric_center_x), int(geometric_center_y)), (geometric_center_x, geometric_center_y)
 
-    def structure_analysis(self):
-        """Get destributions describing object inner structure in terms of shapes and colors."""
-        shape_types = ('line' ,'rectangle', 'diagonal', 'l_shape', 't_shape', 's_shape', 'tv_shape',
-                            'hs_shape', 'cross', 'flower', 'markup_matrix','markup_line', 'cell', 'complex')
-        size2shape = defaultdict(list)
-        shape2size = {}
-        hor_size2shape = defaultdict(list)
-        shape2hor_size = {}
-        vert_size2shape = defaultdict(list)
-        shape2vert_size = {}
-        shapes = {shape:0 for shape in shape_types}
-        shape_colors = {colors_mapping[i]:0 for i in range(10)}
-        colors = {colors_mapping[i]:0 for i in range(10)}
-        for k, v in self.sub_objects.items():
-            for idx, obj in enumerate(v):
-                size2shape[obj.size].append(obj)
-                hor_size2shape[obj.hor_size].append(obj)
-                vert_size2shape[obj.vert_size].append(obj)
-                shape2size[obj.label] = obj.size
-                shape2hor_size[obj.label] = obj.hor_size
-                shape2vert_size[obj.label] = obj.vert_size
-                shapes[obj.shape] += 1
-                color = obj.colors[0]
-                shape_colors[color] += 1
-                colors[color] += obj.size
-        # size
-        sorted_keys = sorted(list(size2shape.keys()), reverse=True)
-        size2shape = {k:size2shape[k] for k in sorted_keys}
-        shape2size_values = list(shape2size.values())
-        n_sizes = len(shape2size_values)
-        size2description = {shape2size_values[i]:f'{i+1} by size' for i in range(n_sizes)}
-        # horizontal size
-        sorted_keys = sorted(list(hor_size2shape.keys()), reverse=True)
-        hor_size2shape = {k:hor_size2shape[k] for k in sorted_keys}
-        shape2hor_size_values = list(shape2hor_size.values())
-        n_sizes = len(shape2hor_size_values)
-        hor_size2description = {shape2hor_size_values[i]:f'{i+1} by horizontal size' for i in range(n_sizes)}
-        # vertical size
-        sorted_keys = sorted(list(vert_size2shape.keys()), reverse=True)
-        vert_size2shape = {k:vert_size2shape[k] for k in sorted_keys}
-        shape2vert_size_values = list(shape2vert_size.values())
-        n_sizes = len(shape2vert_size_values)
-        vert_size2description = {shape2vert_size_values[i]:f'{i+1} by vertical size' for i in range(n_sizes)}
-        # shape colors
-        shape_colors2freq_values = sorted(list(shape_colors.values()), reverse=True)
-        shape_colors_reversed = {v:k for k, v in shape_colors.items()}
-        shape_color2description = {shape_colors_reversed[shape_colors2freq_values[i]]:f'{i+1} by shape color freq' for i in range(10)}
-        # colors
-        color2freq_values = sorted(list(colors.values()), reverse=True)
-        colors_reversed = {v:k for k, v in colors.items()}
-        color2description = {colors_reversed[color2freq_values[i]]:f'{i+1} by color freq' for i in range(10)}
-        # aggregating
-        objects_summary = {
-            'size2shape': size2shape, 'shape2size': shape2size, 'hor_size2shape': hor_size2shape, 'shape2hor_size': shape2hor_size,
-            'vert_size2shape': vert_size2shape, 'shape2vert_size': shape2vert_size, 'shapes': shapes, 'shape_colors': shape_colors,
-            'colors': colors, 'shape_hor_size_description': hor_size2description, 'shape_vert_size_description': vert_size2description,
-            'shape_size_description': size2description, 'shape_color_description': shape_color2description, 'color_description': color2description
-        }
-        self.objects_summary = objects_summary
-
     def create_embedding(self):
         """Creates a vector embedding representation of the GridObject with the following features:
         - color_shares: Color distribution based on actual color shares (up to 10 colors)
@@ -934,8 +874,6 @@ class GridObject():
 
     def _is_hs_shape(self) -> bool:
         """Check if shape is HS shape (TV shape missing one edge)."""
-        # if not self._is_approximately_rectangular():
-        #     return False
 
         # HS shape should have exactly 2 proper corners
         corners = self._count_corners()
@@ -1113,31 +1051,6 @@ class GridObject():
         # ... keep existing implementation unchanged ...
         sums = [i + j for i, j in self.coords]
         return len(set(sums)) == 1
-
-    def _is_monotonic(self, x: List[int], y: List[int]) -> bool:
-        """Check if coordinates form a monotonic sequence."""
-        # ... keep existing implementation unchanged ...
-        if len(x) < 2:
-            return False
-
-        x_sorted, y_sorted = zip(*sorted(zip(x, y)))
-        y_increasing = all(y_sorted[i] <= y_sorted[i+1] for i in range(len(y_sorted)-1))
-        y_decreasing = all(y_sorted[i] >= y_sorted[i+1] for i in range(len(y_sorted)-1))
-
-        return y_increasing or y_decreasing
-
-    def _is_approximately_rectangular(self) -> bool:
-        """Check if shape is approximately rectangular."""
-        if not hasattr(self, 'hu_moments'):
-            return False
-
-        hu1, hu2, hu3, hu4, hu5, hu6, hu7 = self.hu_moments
-
-        # Use absolute values
-        return (abs(hu1) > 0.1 and  # Check absolute value
-                abs(hu2) < 0.5 and
-                abs(hu3) < 0.3 and
-                abs(hu7) < 0.1)
 
     def _count_corners(self) -> int:
         """Count the number of proper 90-degree corners in the shape."""

@@ -36,7 +36,21 @@ The repository structure mirrors the tri-modal design directly:
 * `rl/` — the **Interactive** path: the ARC grid-world environment and RL-based training.
 * `orchestration/` — implements the integration of these three concepts into the actual multi-agent system: a coordinator/agent graph (built on LangGraph) that embodies the approach's core idea in line with current multi-agent system design practice, rather than hardcoding a single solving strategy.
 
-Supporting code lives alongside these: `data/` holds datasets, prompt templates, and per-module configs; `utils/` holds repository-wide helpers not tied to one conceptual approach.
+Supporting code lives alongside these: `data/` holds datasets, prompt templates, and per-module configs; `utils/` holds repository-wide helpers not tied to one conceptual approach; `scripts/` holds the measurement tools (comparing prompt arms, measuring the search over a dataset); `tests/` holds the test suite.
+
+`ARCHITECTURE.md` says how the packages depend on each other, where to start reading for a given question, and what tends to bite. Its module map at the bottom is generated (`python scripts/module_map.py --write`), and the layering it describes is a checked contract (`lint-imports`).
+
+### Working on it
+
+```
+pip install -e ".[rl,test]"          # or the extras you need: hf, vllm, llama-cpp, openrouter, logging
+                                     # ruff and import-linter are in the dev group: uv sync --group dev
+pytest                               # the test suite
+ruff check .                         # lint
+lint-imports                         # the layering contract
+python scripts/module_map.py --check # ARCHITECTURE.md's module map is current
+python -m orchestration              # one task through the coordinator -> agent -> module graph
+```
 
 ---
 

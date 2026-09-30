@@ -104,8 +104,9 @@ rosters in `configs`, ARC itself in `datasets/ARC`, prompt templates in
 `prompts`. Beside the task files, `datasets/ARC/idx2agent.pkl` labels each
 task with the agent that suits it, and `evaluation_difficulty.json` grades
 the 400 evaluation tasks by hand (easy, medium, hard, very_hard,
-impossible; the 30 the symbolic modules solve are `symbolic`, and were never
-shown to an LLM). `task2difficulty.json` is not that
+impossible; the 27 the symbolic modules solve are `symbolic`, and were never
+shown to an LLM; three that they do not solve, put there at first, are
+`ungraded` and left to the LLM). `task2difficulty.json` is not that
 grade - it says 'easy' for every training task and 'hard' for every
 evaluation one.
 

@@ -10,3 +10,4 @@ report.md
 *.html
 # Training run artifacts: rl_config writes progress.csv here (log_path).
 .data/
+prompt_tests/

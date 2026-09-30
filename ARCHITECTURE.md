@@ -155,18 +155,18 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
   rl["rl (20)"]
-  scripts["scripts (6)"]
+  scripts["scripts (7)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (56)"]
+  tests["tests (57)"]
   utils["utils (3)"]
-  tests -->|86| rl
-  tests -->|27| symbolic
+  tests -->|87| rl
+  tests -->|28| symbolic
   tests -->|24| subsymbolic
   tests -->|17| data
   rl -->|11| data
   rl -->|11| symbolic
-  scripts -->|7| rl
+  scripts -->|8| rl
   tests -->|6| orchestration
   orchestration -->|4| subsymbolic
   data -->|3| rl
@@ -177,6 +177,7 @@ graph TD
   data -->|1| symbolic
   data -->|1| utils
   orchestration -->|1| symbolic
+  scripts -->|1| symbolic
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -198,7 +199,7 @@ graph TD
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 26 |
+| `rl.arc_task` | 28 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -219,6 +220,7 @@ graph TD
 | `scripts.harvest_traces` | 0 |
 | `scripts.module_map` | 0 |
 | `scripts.search_budget` | 0 |
+| `scripts.symbolic_coverage` | 0 |
 | `scripts.sync_llm_kit` | 0 |
 | `subsymbolic.analyst` | 1 |
 | `subsymbolic.arc_evaluators` | 1 |
@@ -238,7 +240,7 @@ graph TD
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 5 |
 | `symbolic.summaries` | 10 |
-| `symbolic.symbolic_module` | 3 |
+| `symbolic.symbolic_module` | 5 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 5 |
 | `utils.utils` | 2 |

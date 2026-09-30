@@ -166,16 +166,16 @@ graph TD
   scripts["scripts (10)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (61)"]
+  tests["tests (62)"]
   utils["utils (3)"]
-  tests -->|87| rl
-  tests -->|28| symbolic
+  tests -->|88| rl
+  tests -->|29| symbolic
   tests -->|24| subsymbolic
   tests -->|18| data
   rl -->|11| data
   rl -->|11| symbolic
   scripts -->|9| rl
-  tests -->|6| orchestration
+  tests -->|7| orchestration
   orchestration -->|4| subsymbolic
   data -->|3| rl
   orchestration -->|3| rl
@@ -204,11 +204,11 @@ graph TD
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
-| `orchestration.graph` | 3 |
+| `orchestration.graph` | 4 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 29 |
+| `rl.arc_task` | 30 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -252,7 +252,7 @@ graph TD
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 5 |
 | `symbolic.summaries` | 10 |
-| `symbolic.symbolic_module` | 5 |
+| `symbolic.symbolic_module` | 6 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 5 |
 | `utils.utils` | 2 |

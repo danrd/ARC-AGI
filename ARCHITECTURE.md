@@ -166,10 +166,10 @@ graph TD
   scripts["scripts (10)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (62)"]
+  tests["tests (64)"]
   utils["utils (3)"]
-  tests -->|88| rl
-  tests -->|29| symbolic
+  tests -->|90| rl
+  tests -->|32| symbolic
   tests -->|24| subsymbolic
   tests -->|18| data
   rl -->|11| data
@@ -208,7 +208,7 @@ graph TD
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 30 |
+| `rl.arc_task` | 32 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -250,9 +250,9 @@ graph TD
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |
 | `symbolic.objects_analysis` | 19 |
-| `symbolic.patterns` | 5 |
+| `symbolic.patterns` | 6 |
 | `symbolic.summaries` | 10 |
-| `symbolic.symbolic_module` | 6 |
+| `symbolic.symbolic_module` | 8 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 5 |
 | `utils.utils` | 2 |

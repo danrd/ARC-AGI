@@ -129,18 +129,18 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
   rl["rl (20)"]
-  scripts["scripts (7)"]
+  scripts["scripts (6)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (57)"]
+  tests["tests (56)"]
   utils["utils (3)"]
   tests -->|86| rl
   tests -->|27| symbolic
-  tests -->|26| subsymbolic
+  tests -->|24| subsymbolic
   tests -->|17| data
   rl -->|11| data
   rl -->|11| symbolic
-  scripts -->|8| rl
+  scripts -->|7| rl
   tests -->|6| orchestration
   data -->|4| rl
   orchestration -->|4| subsymbolic
@@ -185,7 +185,7 @@ graph TD
 | `rl.policy` | 4 |
 | `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
-| `rl.search_hints` | 11 |
+| `rl.search_hints` | 10 |
 | `rl.training` | 11 |
 | `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
@@ -194,16 +194,15 @@ graph TD
 | `scripts.module_map` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.sync_llm_kit` | 0 |
-| `scripts.write_search_hints` | 0 |
 | `subsymbolic.analyst` | 1 |
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 2 |
-| `subsymbolic.arc_resolvers` | 3 |
+| `subsymbolic.arc_resolvers` | 2 |
 | `subsymbolic.llm_run` | 3 |
 | `subsymbolic.llm_runtime` | 5 |
 | `subsymbolic.llm_setup` | 5 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 12 |
+| `subsymbolic.prompt_builder` | 11 |
 | `subsymbolic.registry` | 3 |
 | `subsymbolic.subsymbolic_module` | 2 |
 | `subsymbolic.utils` | 3 |

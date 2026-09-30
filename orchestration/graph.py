@@ -113,9 +113,8 @@ def _dispatch_symbolic(task: Any, symbolic_module: Optional[Any] = None) -> Dict
     here if the caller didn't supply one.
 
     Through checked_solve rather than solve: a claim these solvers make is
-    right about 6% of the time, and holding it to the task's own examples
-    takes that to 93-100% - see checked_solve for the numbers on both
-    splits. A solver that cannot reproduce an example it was shown comes
+    right 7-9% of the time, and holding it to the task's own examples takes
+    that to 100% on training and 93.5% on evaluation - see checked_solve. A solver that cannot reproduce an example it was shown comes
     back as a failure here, so the next solver gets its turn instead of
     the first claim winning.
     """

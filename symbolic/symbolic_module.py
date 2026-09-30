@@ -97,10 +97,10 @@ def checked_solve(solver, task) -> SolveResult:
 
     A solver that thinks it succeeded has nothing to explain, which is the
     one case where these modules are silent and the one case where they are
-    usually wrong: upscale_or_covering claims 350 of 400 training tasks and
-    is right on 13, color_restore claims 31 and is right on 1. Overall the
-    three solvers make 392 claims and 25 are correct - a claim on its own
-    carries almost no information.
+    usually wrong: upscale_or_covering claims 353 of 400 training tasks and
+    is right on 13, color_restore claims 138 and is right on 10. Overall the
+    three solvers make 506 claims and 37 are correct - a claim on its own
+    carries little information.
 
     A rule inferred from the examples can be applied back to them. Hold one
     training pair out, give the solver the rest, and ask it for the held-out
@@ -111,17 +111,20 @@ def checked_solve(solver, task) -> SolveResult:
     Measured over both splits, keeping a claim only when every held-out
     example came back exactly right:
 
-        training    392 claims, 25 correct ->  21 kept, 21 correct
-                    precision   6.4% -> 100.0%
-        evaluation  375 claims, 28 correct ->  28 kept, 26 correct
-                    precision   7.5% ->  92.9%
+        training    506 claims, 37 correct ->  31 kept, 31 correct
+                    precision   7.3% -> 100.0%
+        evaluation  494 claims, 44 correct ->  46 kept, 43 correct
+                    precision   8.9% ->  93.5%
+
+    (With the font colour tried per task - font_value_candidates - so a claim
+    is any candidate's; scripts/symbolic_coverage.py reproduces the table.)
 
     The strict reading is what ships. Forgiving a declined example - a
     solver refusing when it has one example fewer is arguably saying it
-    needs that example rather than that its rule is false - keeps one more
-    claim on training and it is a wrong one (100% -> 95.5%), and changes
-    nothing at all on evaluation. Same answers retained either way, so the
-    stricter rule is free.
+    needs that example rather than that its rule is false - kept one more
+    claim on training and a wrong one (100% -> 95.5%), and changed nothing
+    on evaluation, when this was measured on the solvers as they were then.
+    Same answers retained either way, so the stricter rule is free.
 
     Not folded into `solve` itself, and not a third kind of result. It
     cannot live in `solve` because it calls `solve`, and a solver whose own

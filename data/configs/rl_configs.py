@@ -1,7 +1,6 @@
 import torch.nn as nn
 from rl.utils import linear_schedule
 from rl.policy import ARCCustomActorCriticPolicy
-from rl.features import default_grid_arch
 
 rl_config = {
     'model_type': 'PPO',
@@ -304,5 +303,13 @@ def lin(act_func=nn.ReLU(), in_channels=10, widths=(8, 16)):
     `widths` are for an encoder that reads more than the ten colour planes,
     or reads them wider.
     """
-    return default_grid_arch(in_channels=in_channels, widths=widths)
+    first, second = widths
+    return nn.Sequential(
+              nn.Conv2d(in_channels=in_channels, out_channels=first, kernel_size=3, stride=1, padding=1),
+              nn.ReLU(),
+              nn.Conv2d(in_channels=first, out_channels=second, kernel_size=3, stride=1, padding=1),
+              nn.ReLU(),
+              nn.AdaptiveAvgPool2d((3, 3)),  # Output shape: [batch, second, 3, 3]
+              nn.Flatten()                   # Output shape: [batch, second * 9]
+            )
 lin_arch = lin()  # kept for notebooks that import it; configs name `lin`

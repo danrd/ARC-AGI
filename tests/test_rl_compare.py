@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -68,11 +69,26 @@ class TestTheGrid:
         assert [task for task, _arm, _seed in grid[:4]] == ["a"] * 4
         assert len(grid) == 3 * 2 * 2 and len(set(grid)) == len(grid)
 
-    def test_the_shards_between_them_run_everything_once(self):
-        grid = compare.run_grid(self.CONFIGS, ["g", "gd", "gd_ch"])
-        shards = [grid[shard::4] for shard in range(4)]
-        assert sorted(run for shard in shards for run in shard) == sorted(grid)
-        assert all(not set(a) & set(b) for a in shards for b in shards if a is not b)
+    def test_the_shares_between_them_run_everything_once(self):
+        grid = compare.run_grid({str(i): {} for i in range(20)}, ["g", "gd", "gd_ch"])
+        shares = [compare.share(grid, index, 4) for index in range(4)]
+        assert sorted(run for share in shares for run in share) == sorted(grid)
+        assert all(not set(a) & set(b) for a in shares for b in shares if a is not b)
+
+    def test_a_share_holds_every_arm_and_keeps_the_tasks_first_order(self):
+        """By stride, three arms and three workers would hand each worker one
+        arm: lose a notebook and an arm is gone."""
+        grid = compare.run_grid({str(i): {} for i in range(30)}, ["g", "gd", "gd_ch"])
+        for index in range(3):
+            share = compare.share(grid, index, 3)
+            assert {arm for _task, arm, _seed in share} == {"g", "gd", "gd_ch"}
+            assert share == [run for run in grid if run in set(share)]
+
+    def test_a_share_is_the_same_on_every_machine(self):
+        """crc32 of the run, not hash(): the latter differs between processes."""
+        import zlib
+        assert compare.share([("a", "g", 0)], zlib.crc32(b"a|g|0") % 5, 5) == [("a", "g", 0)]
+        assert compare.share([("a", "g", 0)], (zlib.crc32(b"a|g|0") + 1) % 5, 5) == []
 
 
 class TestResuming:
@@ -90,23 +106,94 @@ class TestResuming:
 
         def fake(config, arm, seed, steps, task_id):
             ran.append((task_id, arm, seed))
-            return {"task": task_id, "arm": arm, "seed": seed, "held_out": 0.0, "train": [0.0]}
+            return {"task": task_id, "arm": arm, "seed": seed, "held_out": 0.0, "train": [0.0],
+                    "seconds": 1.0}
 
         monkeypatch.setattr(compare, "one_run", fake)
         compare.train({"a": {}}, ["g"], 10, 0, 1, path, seeds=(0, 1))
         assert ran == [("a", "g", 1)]
         assert len(path.read_text().splitlines()) == 2
 
+    def _fake(self, ran, seconds=1.0):
+        def fake(config, arm, seed, steps, task_id):
+            ran.append((task_id, arm, seed))
+            return {"task": task_id, "arm": arm, "seed": seed, "held_out": 0.0, "train": [0.0],
+                    "seconds": seconds}
+        return fake
+
     def test_a_shard_runs_only_its_share_and_the_shards_together_run_the_grid(self, tmp_path, monkeypatch):
         ran = []
-        monkeypatch.setattr(compare, "one_run", lambda config, arm, seed, steps, task_id: (
-            ran.append((task_id, arm, seed)) or
-            {"task": task_id, "arm": arm, "seed": seed, "held_out": 0.0, "train": [0.0]}))
+        monkeypatch.setattr(compare, "one_run", self._fake(ran))
         configs = {"a": {}, "b": {}}
         for shard in range(3):
             compare.train(configs, ["g", "gd"], 10, shard, 3, tmp_path / f"{shard}.jsonl", seeds=(0, 1))
         assert sorted(ran) == sorted(compare.run_grid(configs, ["g", "gd"], seeds=(0, 1)))
         assert len(ran) == len(set(ran)) == 8
+
+    def test_workers_split_the_shard_between_them(self, tmp_path, monkeypatch):
+        """Two notebooks of two workers: worker w of shard k is number 2k+w of 4."""
+        ran = []
+        monkeypatch.setattr(compare, "one_run", self._fake(ran))
+        configs = {str(i): {} for i in range(6)}
+        grid = compare.run_grid(configs, ["g", "gd"])
+        for shard in range(2):
+            for w in range(2):
+                compare._work(configs, ["g", "gd"], 10, shard * 2 + w, 4, tmp_path / f"{shard}{w}.jsonl",
+                              (0, 1, 2), None)
+        assert sorted(ran) == sorted(grid)
+
+    def test_it_stops_before_a_run_that_would_end_after_the_deadline(self, tmp_path, monkeypatch):
+        """1000 s left: the first run is assumed to take FIRST_RUN_SECONDS (900), takes 500, and
+        the next fits exactly; with 0 left the longest seen (500) does not."""
+        clock = [0.0]
+        ran = []
+
+        def fake(config, arm, seed, steps, task_id):
+            ran.append((task_id, arm, seed))
+            clock[0] += 500.0
+            return {"task": task_id, "arm": arm, "seed": seed, "held_out": 0.0, "train": [0.0],
+                    "seconds": 500.0}
+
+        monkeypatch.setattr(compare, "one_run", fake)
+        monkeypatch.setattr(compare, "time", types.SimpleNamespace(time=lambda: clock[0]))
+        compare._work({"a": {}, "b": {}}, ["g"], 10, 0, 1, tmp_path / "o.jsonl", (0, 1, 2), 1000.0)
+        assert len(ran) == 2
+
+    def test_runs_in_the_skip_files_are_done(self, tmp_path, monkeypatch):
+        ran = []
+        monkeypatch.setattr(compare, "one_run", self._fake(ran))
+        other = tmp_path / "other.jsonl"
+        other.write_text("".join(json.dumps({"task": "a", "arm": "g", "seed": seed, "held_out": 0.0,
+                                             "train": []}) + "\n" for seed in (0, 1)))
+        compare._work({"a": {}}, ["g"], 10, 0, 1, tmp_path / "o.jsonl", (0, 1, 2), None, skip=[other])
+        assert ran == [("a", "g", 2)]
+
+    def test_each_worker_of_a_notebook_gets_its_own_number_of_all_the_workers(self, tmp_path, monkeypatch):
+        """Notebook 1 of 3 with 2 workers: they are workers 2 and 3 of 6, and the
+        deadline and the skip files go to both."""
+        started = []
+
+        class Process:
+            def __init__(self, target, args):
+                self.args = args
+
+            def start(self):
+                started.append(self.args)
+
+            def join(self):
+                pass
+
+        monkeypatch.setattr(compare.multiprocessing, "get_context",
+                            lambda method: types.SimpleNamespace(Process=Process))
+        compare.train({"a": {}}, ["g"], 10, 1, 3, tmp_path / "o.jsonl", workers=2, hours=2.0, skip=["s"])
+        assert [(args[3], args[4]) for args in started] == [(2, 6), (3, 6)]
+        assert all(args[7] is not None and args[8] == ["s"] for args in started)
+
+    def test_no_deadline_means_every_run(self, tmp_path, monkeypatch):
+        ran = []
+        monkeypatch.setattr(compare, "one_run", self._fake(ran, seconds=10 ** 6))
+        compare._work({"a": {}}, ["g"], 10, 0, 1, tmp_path / "o.jsonl", (0, 1, 2), None)
+        assert len(ran) == 3
 
 
 class TestNarrowing:

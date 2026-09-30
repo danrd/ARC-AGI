@@ -164,18 +164,18 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (5)"]
   rl["rl (20)"]
-  scripts["scripts (10)"]
+  scripts["scripts (11)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (65)"]
+  tests["tests (66)"]
   utils["utils (3)"]
-  tests -->|92| rl
+  tests -->|93| rl
   tests -->|32| symbolic
   tests -->|27| subsymbolic
   tests -->|18| data
   rl -->|11| data
   rl -->|11| symbolic
-  scripts -->|9| rl
+  scripts -->|10| rl
   tests -->|8| orchestration
   orchestration -->|4| rl
   orchestration -->|4| subsymbolic
@@ -223,7 +223,7 @@ graph TD
 | `rl.policy` | 4 |
 | `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
-| `rl.search_hints` | 12 |
+| `rl.search_hints` | 14 |
 | `rl.training` | 11 |
 | `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
@@ -233,6 +233,7 @@ graph TD
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
+| `scripts.search_census` | 0 |
 | `scripts.solved_by_source` | 0 |
 | `scripts.symbolic_coverage` | 0 |
 | `scripts.sync_llm_kit` | 0 |

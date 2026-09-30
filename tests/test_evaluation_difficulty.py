@@ -6,8 +6,11 @@ task2difficulty.json next to it says only 'easy' for every training task and
 file is the grade, kept in a file because it was being carried in a message.
 It was written from indices (0..799, training then evaluation, the numbering
 ARCDataset stamps on its tasks), so what is pinned here is that the ids it
-holds are the ones those indices name. The 30 graded `symbolic` are the ones
+holds are the ones those indices name. The 27 graded `symbolic` are the ones
 the symbolic modules solve, which is why they were never shown to an LLM.
+Three that were first put there and that no symbolic module solves
+(25094a63, dd2401ed, f9d67f8b) are `ungraded`: they go to the LLM, and have
+no hand grade yet.
 """
 from __future__ import annotations
 
@@ -22,9 +25,9 @@ from data.datasets.ARC.arc_dataset import ARCDataset
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ARC = REPO_ROOT / "data" / "datasets" / "ARC"
 
-LEVELS = ("easy", "medium", "hard", "very_hard", "impossible", "symbolic")
+LEVELS = ("easy", "medium", "hard", "very_hard", "impossible", "symbolic", "ungraded")
 #: How many tasks the grading put in each level.
-COUNTS = {"easy": 95, "medium": 53, "hard": 67, "very_hard": 87, "impossible": 68, "symbolic": 30}
+COUNTS = {"easy": 95, "medium": 53, "hard": 67, "very_hard": 87, "impossible": 68, "symbolic": 27, "ungraded": 3}
 
 
 @pytest.fixture(scope="module")
@@ -40,6 +43,11 @@ def test_every_evaluation_task_has_a_level_and_nothing_else_does(difficulty):
 def test_the_levels_are_the_known_ones_in_the_known_numbers(difficulty):
     assert set(difficulty.values()) <= set(LEVELS)
     assert dict(Counter(difficulty.values())) == COUNTS
+
+
+def test_the_three_the_symbolic_modules_do_not_solve_are_left_to_the_llm(difficulty):
+    assert {task for task, level in difficulty.items() if level == "ungraded"} == {
+        "25094a63", "dd2401ed", "f9d67f8b"}
 
 
 def test_the_indices_the_grading_was_written_in_name_these_ids(difficulty, monkeypatch):

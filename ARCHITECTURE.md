@@ -245,7 +245,7 @@ graph TD
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |
 | `scripts.solved_by_source` | 0 |
-| `scripts.symbolic_coverage` | 0 |
+| `scripts.symbolic_coverage` | 1 |
 | `scripts.sync_llm_kit` | 0 |
 | `subsymbolic.analyst` | 1 |
 | `subsymbolic.answer_check` | 1 |

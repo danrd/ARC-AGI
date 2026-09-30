@@ -164,25 +164,25 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (5)"]
   rl["rl (20)"]
-  scripts["scripts (11)"]
+  scripts["scripts (12)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (66)"]
+  tests["tests (67)"]
   utils["utils (3)"]
-  tests -->|93| rl
+  tests -->|95| rl
   tests -->|32| symbolic
   tests -->|27| subsymbolic
-  tests -->|18| data
+  tests -->|19| data
+  scripts -->|13| rl
   rl -->|11| data
   rl -->|11| symbolic
-  scripts -->|10| rl
   tests -->|8| orchestration
   orchestration -->|4| rl
   orchestration -->|4| subsymbolic
   data -->|3| rl
   rl -->|3| utils
+  scripts -->|3| data
   scripts -->|3| subsymbolic
-  scripts -->|2| data
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
@@ -201,7 +201,7 @@ graph TD
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
 | `data.configs.env_configs` | 15 |
-| `data.configs.rl_configs` | 11 |
+| `data.configs.rl_configs` | 13 |
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
@@ -210,21 +210,21 @@ graph TD
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 33 |
+| `rl.arc_task` | 34 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
 | `rl.coordinate_search` | 3 |
 | `rl.evaluation` | 5 |
-| `rl.features` | 8 |
+| `rl.features` | 9 |
 | `rl.mcts` | 8 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 4 |
 | `rl.policy` | 4 |
-| `rl.rl_job` | 3 |
+| `rl.rl_job` | 5 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 14 |
-| `rl.training` | 11 |
+| `rl.training` | 12 |
 | `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
@@ -232,6 +232,7 @@ graph TD
 | `scripts.module_map` | 0 |
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |
+| `scripts.rl_compare` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |
 | `scripts.solved_by_source` | 0 |

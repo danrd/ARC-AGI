@@ -106,7 +106,7 @@ task with the agent that suits it, and `evaluation_difficulty.json` grades
 the 400 evaluation tasks by hand (easy, medium, hard, very_hard,
 impossible; the 27 the symbolic modules solve are `symbolic`, and were never
 shown to an LLM; three that they do not solve, put there at first, are
-`ungraded` and left to the LLM). `task2difficulty.json` is not that
+graded `medium` and left to the LLM). `task2difficulty.json` is not that
 grade - it says 'easy' for every training task and 'hard' for every
 evaluation one.
 

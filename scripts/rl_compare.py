@@ -8,17 +8,27 @@ the test pair, 1.0 when solved - is the score; a single run says little (the
 same agent on the same task ranges from -0.4 to 1.0 across seeds), so every
 task is run under three seeds and arms are compared over tasks.
 
-    python scripts/rl_compare.py narrow --out configs.json
-    python scripts/rl_compare.py train --configs configs.json --arms g gd gd_ch gd_wide \\
-        --steps 100000 --shard 0 --shards 4 --out runs.jsonl
+    python scripts/rl_compare.py select --peaks agent_searches.jsonl --symbolic sym.jsonl
+    python scripts/rl_compare.py narrow --tasks $(python scripts/rl_compare.py select ...) --out configs.json
+    python scripts/rl_compare.py train --configs configs.json --arms default gd_ch gd_wide \\
+        --steps 250000 --shard 0 --shards 4 --out runs.jsonl
     python scripts/rl_compare.py summary --out runs.jsonl
 
-`narrow` decides, once per task, what rl_config leaves open (the vocabulary
+`select` picks the tasks: see below. `narrow` decides, once per task, what rl_config leaves open (the vocabulary
 the search narrows to, the object slots, the observation shape) so that every
 arm trains over the same one. `train` runs one shard of the (task, arm, seed)
 grid and appends a line per finished run, skipping what is already in the
 file, so a run cut short - the machine restarts, a shard is killed - is
 resumed by starting it again. `summary` reads the file.
+
+Which tasks. An arm is told apart from another only on a task some agent can
+make progress on: where every arm scores zero (a48eeaf7 and dc433765 in the
+short series) there is nothing to compare. `select` keeps the tasks the
+object search got somewhere on - a peak above zero, from a census
+(search_census.py) or a roster search (agent_searches: the best over rosters)
+- and drops the ones the symbolic solvers already solve, which the agents are
+never asked. Those that the search solves outright stay: they say whether an
+arm finds what is findable, and the rest say how far it gets.
 
 The arms, and what each was for:
 
@@ -53,6 +63,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 DATA = REPO_ROOT / "data" / "datasets" / "ARC"
 DELTAS = ["delta_input", "delta_target"]
+#: Steps of one run: the full length, not the shortened series' 100k.
+STEPS = 250_000
 
 #: The fifteen training tasks the observation experiments have run on: one
 #: to a few objects, shape-preserving, from the object agents' rosters.
@@ -126,6 +138,27 @@ def narrow(tasks, out):
     with open(out, "w") as handle:
         json.dump(configs, handle, default=list)
     return configs
+
+
+def best_peak(record):
+    """How far the search got on a task's first pair, from either kind of
+    record: a census line has `peak`, a roster search the best over `agents`."""
+    if "peak" in record:
+        return float(record["peak"])
+    return max((float(found["peak"]) for found in record.get("agents", {}).values()), default=0.0)
+
+
+def select_tasks(records, excluded=()):
+    """The tasks of `records` whose search peak is above zero and that are not
+    in `excluded`, sorted. A census record that was skipped (the grids change
+    size) has no peak, reads as zero, and is not a candidate."""
+    return sorted(record["task"] for record in records
+                  if best_peak(record) > 0 and record["task"] not in set(excluded))
+
+
+def read_lines(path):
+    with open(path) as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -234,14 +267,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    selecting = sub.add_parser("select", help="print the ids of the tasks worth comparing arms on")
+    selecting.add_argument("--peaks", required=True, help="a census or roster-search jsonl")
+    selecting.add_argument("--symbolic", help="symbolic_coverage jsonl: its solved training tasks are left out")
     narrowing = sub.add_parser("narrow", help="write each task's narrowed rl_config")
     narrowing.add_argument("--tasks", nargs="*", default=list(DEFAULT_TASKS))
     narrowing.add_argument("--out", default="rl_compare_configs.json")
     training = sub.add_parser("train", help="run one shard of the (task, arm, seed) grid")
     training.add_argument("--configs", default="rl_compare_configs.json")
-    training.add_argument("--arms", nargs="+", default=["g", "gd", "gd_ch", "gd_wide"], choices=sorted(ARMS))
+    training.add_argument("--arms", nargs="+", default=["default", "gd_ch", "gd_wide"], choices=sorted(ARMS))
     training.add_argument("--tasks", nargs="*", help="only these tasks of the configs file")
-    training.add_argument("--steps", type=int, default=100_000)
+    training.add_argument("--steps", type=int, default=STEPS)
     training.add_argument("--shard", type=int, default=0)
     training.add_argument("--shards", type=int, default=1)
     training.add_argument("--out", default="rl_compare_runs.jsonl")
@@ -249,7 +285,18 @@ def main():
     reading.add_argument("--out", default="rl_compare_runs.jsonl")
     args = parser.parse_args()
 
-    if args.command == "narrow":
+    if args.command == "select":
+        from scripts.symbolic_coverage import solved_ids
+        solved = set()
+        if args.symbolic:
+            for ids in solved_ids(read_lines(args.symbolic), "training").values():
+                solved.update(ids)
+        records = read_lines(args.peaks)
+        chosen = select_tasks(records, solved)
+        print(f"{len(records)} tasks searched, {len(solved)} solved symbolically, {len(chosen)} chosen",
+              file=sys.stderr)
+        print(" ".join(chosen))
+    elif args.command == "narrow":
         narrow(args.tasks, args.out)
     elif args.command == "train":
         with open(args.configs) as handle:

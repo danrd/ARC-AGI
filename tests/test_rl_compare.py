@@ -145,3 +145,26 @@ class TestSummary:
     def test_the_table_lists_every_arm(self):
         text = compare.render(compare.summarise(self.RUNS))
         assert "\ng " in text and "\ngd " in text and "precision" in text
+
+
+class TestSelectingTasks:
+    RECORDS = [{"task": "d", "peak": 1.0},
+               {"task": "a", "peak": 0.0},                       # nothing reachable: nothing to compare
+               {"task": "c", "agents": {"x": {"peak": 0.0}, "y": {"peak": 0.7}}},   # best over rosters
+               {"task": "b", "peak": 0.4},
+               {"task": "e", "skipped": "the grids change size"},
+               {"task": "f", "agents": {}}]
+
+    def test_the_tasks_the_search_got_somewhere_on_are_chosen_sorted(self):
+        assert compare.select_tasks(self.RECORDS) == ["b", "c", "d"]
+
+    def test_the_tasks_symbolic_solves_are_left_out(self):
+        assert compare.select_tasks(self.RECORDS, excluded=["c"]) == ["b", "d"]
+
+    def test_a_census_peak_and_a_roster_peak_are_read_alike(self):
+        assert compare.best_peak({"peak": 0.3}) == 0.3
+        assert compare.best_peak({"agents": {"x": {"peak": 0.3}, "y": {"peak": 0.9}}}) == 0.9
+        assert compare.best_peak({}) == 0.0
+
+    def test_a_run_is_the_full_length_by_default(self):
+        assert compare.STEPS == 250_000

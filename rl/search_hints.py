@@ -9,11 +9,9 @@ single moves that recovered cells somewhere in the search - and it cost an
 LLM run 7 of 41 solved: most of what it said pointed the wrong way.
 
 It costs what a search costs - about a minute per task - so a caller
-decides when to pay it: online through HintCache, or ahead of time into a
-file with scripts/verified_hints.py. Nothing here is wired into
-PromptBuilder: the search belongs to the rl layer, the prompt to the
-subsymbolic one, and the caller joins them through the build context or
-the file.
+decides when to pay it, online through HintCache. Nothing here is wired
+into PromptBuilder: the search belongs to the rl layer, the prompt to the
+subsymbolic one, and the caller joins them through the build context.
 
 Everything is named in the grid's own terms - colours as digits, objects by
 colour, size and bounding box - because a prompt that says "blue" beside a

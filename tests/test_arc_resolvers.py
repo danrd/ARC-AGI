@@ -124,104 +124,45 @@ def test_cache_does_not_grow_without_bound(fake_analysis, monkeypatch):
 
 
 class TestSearchHints:
-    """The block that carries what an automated search measured on the task.
+    """The block that carries what a search measured on the task, computed
+    by the caller for this task now and handed over in the build context.
 
-    Written offline - a search costs hours per shard, a prompt is built in
-    milliseconds - so what this pins is the reading side: the right task's
-    hint, the budget honoured, and silence rather than noise for a task
-    nothing is known about.
+    What this pins is the reading side: the hint as given, the budget
+    honoured, and silence rather than noise for a task nobody brought one
+    for.
     """
 
-    @pytest.fixture(autouse=True)
-    def clear_hints(self):
-        arc_resolvers._hints_cache.clear()
-        yield
-        arc_resolvers._hints_cache.clear()
-
     @staticmethod
-    def _builder(path, limit=10_000):
-        return SimpleNamespace(count_tokens=len,
-                              config=SimpleNamespace(project={"search_hints": str(path)}))
+    def _builder():
+        return SimpleNamespace(count_tokens=len, config=SimpleNamespace(project={}))
 
-    @staticmethod
-    def _file(tmp_path, mapping):
-        import json
-        path = tmp_path / "hints.json"
-        path.write_text(json.dumps(mapping))
-        return path
-
-    def test_the_hint_of_this_task_is_returned(self, tmp_path):
-        path = self._file(tmp_path, {"task-1": "a search found X", "task-2": "Y"})
-
-        out = arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                 self._builder(path))
+    def test_the_hint_the_caller_computed_is_returned(self):
+        out = arc_resolvers.search_hints_resolver(
+            _task("task-1"), 1000, {"search_hints": "a search found X"}, self._builder())
 
         assert out == "a search found X"
 
-    def test_a_task_the_search_says_nothing_about_omits_the_block(self, tmp_path):
-        path = self._file(tmp_path, {"task-2": "Y"})
-
+    def test_a_task_with_no_hint_omits_the_block(self):
         assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                  self._builder(path)) is OMIT
+                                                   self._builder()) is OMIT
+        assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, None,
+                                                   self._builder()) is OMIT
 
-    def test_a_hint_that_does_not_fit_the_budget_omits_the_block(self, tmp_path):
-        path = self._file(tmp_path, {"task-1": "a" * 50})
+    def test_an_empty_hint_omits_the_block(self):
+        assert arc_resolvers.search_hints_resolver(
+            _task("task-1"), 1000, {"search_hints": ""}, self._builder()) is OMIT
 
-        assert arc_resolvers.search_hints_resolver(_task("task-1"), 10, {},
-                                                   self._builder(path)) is OMIT
-
-    def test_a_missing_file_loses_the_block_rather_than_the_run(self, tmp_path):
-        """A run configured with hints on a machine that has not scanned yet
-        should lose the block, not fail at the first task."""
-        missing = tmp_path / "nothing.json"
-
-        assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                   self._builder(missing)) is OMIT
-
-    def test_the_file_is_read_once_however_many_tasks_ask(self, tmp_path):
-        path = self._file(tmp_path, {"task-1": "X"})
-        builder = self._builder(path)
-
-        arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {}, builder)
-        path.write_text('{"task-1": "replaced"}')
-
-        assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                   builder) == "X"
-
-    def test_a_missing_file_is_remembered_as_missing(self, tmp_path):
-        """Otherwise every task of the run re-opens a file that is not there
-        and re-prints the notice saying so."""
-        missing = tmp_path / "nothing.json"
-
-        arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                            self._builder(missing))
-
-        assert str(missing) in arc_resolvers._hints_cache
-
-    def test_a_hint_computed_now_is_preferred_to_the_file(self, tmp_path):
-        """The online path: a context_builder ran the search for this task
-        and put the text in the context. Nothing should then depend on a
-        file existing, or on it being up to date."""
-        path = self._file(tmp_path, {"task-1": "stale text from a scan"})
-
+    def test_a_hint_is_budgeted_like_any_other(self):
         out = arc_resolvers.search_hints_resolver(
-            _task("task-1"), 1000, {"search_hints": "fresh text"},
-            self._builder(path))
-
-        assert out == "fresh text"
-
-    def test_the_file_still_answers_when_the_context_is_silent(self, tmp_path):
-        path = self._file(tmp_path, {"task-1": "from the scan"})
-
-        out = arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
-                                                  self._builder(path))
-
-        assert out == "from the scan"
-
-    def test_a_computed_hint_is_budgeted_like_any_other(self, tmp_path):
-        path = self._file(tmp_path, {})
-
-        out = arc_resolvers.search_hints_resolver(
-            _task("task-1"), 10, {"search_hints": "a" * 50}, self._builder(path))
+            _task("task-1"), 10, {"search_hints": "a" * 50}, self._builder())
 
         assert out is OMIT
+
+    def test_no_file_is_read_any_more(self):
+        """The precomputed file the block used to fall back on is gone: a
+        config still naming one changes nothing."""
+        builder = SimpleNamespace(count_tokens=len,
+                                  config=SimpleNamespace(project={"search_hints": "hints.json"}))
+
+        assert arc_resolvers.search_hints_resolver(_task("task-1"), 1000, {},
+                                                   builder) is OMIT

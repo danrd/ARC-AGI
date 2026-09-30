@@ -38,53 +38,22 @@ def build_examples_resolver(task, budget: int, context: dict, builder) -> Option
     return accumulated
 
 
-_hints_cache: "dict[str, dict]" = {}
-
-
-def _search_hints(path: str) -> dict:
-    """The hint file, read once per path.
-
-    A missing file is an empty mapping rather than an error: the block is
-    optional by design, and a run configured with it on a machine that has
-    not scanned yet should lose the block, not fail at the first task.
-    """
-    if path not in _hints_cache:
-        import json
-        import os
-
-        try:
-            with open(path) as handle:
-                _hints_cache[path] = json.load(handle)
-        except (OSError, ValueError):
-            _hints_cache[path] = {}
-        if not _hints_cache[path]:
-            print(f"search hints: nothing loaded from {os.path.abspath(path)}")
-    return _hints_cache[path]
-
-
 def search_hints_resolver(task, budget: int, context: dict, builder) -> Optional[str]:
     """What an automated search found on this task, if anything.
 
-    Two ways in, and the context wins. `context["search_hints"]` is a hint
-    computed for this task now - rl.search_hints.hints_for run by the
-    caller's context_builder - and the file named by
-    `project.search_hints` is the same text harvested from a scan
-    beforehand. The search is minutes of CPU where the rest of prompt
+    `context["search_hints"]` is a hint computed for this task now -
+    rl.search_hints.hints_for run by the caller's context_builder (see
+    HintCache). The search is minutes of CPU where the rest of prompt
     building is milliseconds, and it belongs to the rl layer, so this
-    resolver never starts one itself: it renders whichever the caller
-    arranged.
+    resolver never starts one itself: it renders what the caller arranged.
 
-    Omits itself for a task neither knows about, and for a hint that does
+    Omits itself for a task the caller brought no hint for, and for a hint that does
     not fit the budget. Both are the same statement: this block speaks only
     when it has something measured to say, and a block that is sometimes
     empty teaches the model to expect one. OMIT rather than None, or the
     task would be dropped from the run instead of asked without the block.
     """
     text = (context or {}).get("search_hints")
-    if not text:
-        path = (builder.config.project or {}).get("search_hints",
-                                                  "data/search_hints.json")
-        text = _search_hints(path).get(str(getattr(task, "label", "") or task.id))
     if not text:
         return OMIT
     return text if builder.count_tokens(text) <= budget else OMIT

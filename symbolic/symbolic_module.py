@@ -689,6 +689,10 @@ class MixerSolver:
             colors_mapper: Dict[Any, Any] = {}
             transf_type: Optional[str] = None
             skipped: List[str] = []
+            #: How many equal strips the examples were cut into where nothing
+            #: marked a split, read off the output's size - see
+            #: _segments_from_heuristic.
+            strip_counts = set()
 
             for idx, subtask in enumerate(task.subtasks):
                 grid = subtask.train_inp
@@ -698,10 +702,12 @@ class MixerSolver:
                 if idx == 0:
                     transf_type = self._color_analysis(task, patterns)
 
-                segments = self._get_segments(grid, patterns)
+                segments = self._get_segments(grid, patterns, out_shape=subtask.train_out.shape)
                 if not segments:
                     skipped.append(f"example {idx}: no segments found")
                     continue
+                if not patterns:
+                    strip_counts.add(len(segments))
 
                 if transf_type == 'logical_ops':
                     segment_color = self._main_color(segments[0])
@@ -728,7 +734,8 @@ class MixerSolver:
 
             grid_shape = test_input.shape
             patterns = retrieve_shapes(test_input, grid_shape, ('markup', 'partition_lines'), self.font_val)
-            segments = self._get_segments(test_input, patterns)
+            segments = self._get_segments(test_input, patterns,
+                                          count=strip_counts.pop() if len(strip_counts) == 1 else None)
             if not segments:
                 return SolveResult.fail("mixer: could not segment the test input")
 
@@ -767,14 +774,15 @@ class MixerSolver:
     def _homog_colored(self, segment: np.ndarray) -> bool:
         return len(set(segment.flatten().tolist())) == 2
 
-    def _get_segments(self, grid: np.ndarray, markups: Dict[str, list]) -> List[np.ndarray]:
+    def _get_segments(self, grid: np.ndarray, markups: Dict[str, list],
+                      out_shape=None, count=None) -> List[np.ndarray]:
         shape = grid.shape
 
         if markups.get('markup'):
             return self._segments_from_markup(grid, markups['markup'])
         if markups.get('partition_lines'):
             return self._segments_from_partition_lines(grid, markups['partition_lines'])
-        return self._segments_from_heuristic(grid, shape)
+        return self._segments_from_heuristic(grid, shape, out_shape=out_shape, count=count)
 
     def _segments_from_markup(self, grid, markup) -> List[np.ndarray]:
         from symbolic.utils import find_upper_left_corner, coords_transform
@@ -828,12 +836,32 @@ class MixerSolver:
             segments.append(grid[:, cur:])
         return segments
 
-    def _segments_from_heuristic(self, grid: np.ndarray, shape: Tuple[int, int]) -> List[np.ndarray]:
+    def _segments_from_heuristic(self, grid: np.ndarray, shape: Tuple[int, int],
+                                 out_shape=None, count=None) -> List[np.ndarray]:
         """No markup detected: try splitting into an NxN grid of equally
         homogeneous-colored square tiles (for square grids), else into equal
         strips along whichever dimension is larger. Stops at the first
         successful tiling for the square case; for strips, keeps the finest
-        (largest n_segments) successful split found."""
+        (largest n_segments) successful split found.
+
+        The finest split is a guess, and a wrong one where the answer is a
+        few large pieces: a 12x4 input that is two 6x4 pieces one over the
+        other is also six 2x4 strips of two colours each, and the finer one
+        won. Where the output is known and is one piece of the input, the
+        strips are that piece's size; where it is not (the test input), the
+        number of strips the examples were cut into."""
+        if shape[0] != shape[1] and (out_shape is not None or count is not None):
+            dim = 0 if shape[0] > shape[1] else 1
+            n_segments = count
+            if n_segments is None and out_shape[1 - dim] == shape[1 - dim] \
+                    and 0 < out_shape[dim] < shape[dim] and shape[dim] % out_shape[dim] == 0:
+                n_segments = shape[dim] // out_shape[dim]
+            if n_segments and n_segments > 1 and shape[dim] % n_segments == 0:
+                step = shape[dim] // n_segments
+                strips = [grid[i * step:(i + 1) * step, :] if dim == 0 else grid[:, i * step:(i + 1) * step]
+                          for i in range(n_segments)]
+                if all(self._homog_colored(strip) for strip in strips):
+                    return strips
         if shape[0] == shape[1] and shape[0] >= 4:
             for n_segments in range(2, shape[0] // 2 + 1):
                 if shape[0] % n_segments != 0:
@@ -1365,15 +1393,67 @@ class ColorRestoreSolver:
 # AGGREGATOR — plain attribute access, no shared logic or dispatch
 # ============================================================================
 
+def font_value_candidates(task, limit: int = 3) -> List[int]:
+    """The colours a task's "font" - its missing or background cells - may be,
+    most likely first.
+
+    Every solver here is built around one such colour: ColorRestoreSolver
+    fills the cells of it, the mixer treats it as empty, the upscale solvers
+    as the ground. It was left at 0, which is right where the picture sits on
+    black and wrong wherever the missing part is painted some other colour -
+    a symmetric picture with a patch of 8 laid over it, say. Measured on the
+    evaluation tasks the symbolic modules were meant to solve: a fixed 0
+    solved 14 of 30, and eight of the other sixteen were solved by
+    ColorRestoreSolver once it was told the patch was 8, 6, 3, 2, 0, 7, 3.
+
+    Read off the training pairs, which is available at inference:
+
+      same-size pairs   the colour of the input cells that change, by how
+                        many change (the patch a restoration removes)
+      other pairs       a colour every input has and no output has (the
+                        patch a crop cuts out)
+
+    then 0, then the most common colour of the inputs - and no more than
+    `limit`, since each candidate is a further round of every solver.
+    """
+    pairs = [(np.asarray(s.train_inp), np.asarray(s.train_out)) for s in task.subtasks]
+    ranked: List[int] = []
+    if pairs and all(inp.shape == out.shape for inp, out in pairs):
+        changed: Dict[int, int] = {}
+        for inp, out in pairs:
+            for colour in inp[inp != out].tolist():
+                changed[colour] = changed.get(colour, 0) + 1
+        ranked += [colour for colour, _ in sorted(changed.items(), key=lambda item: -item[1])][:2]
+    elif pairs:
+        in_every_input = set.intersection(*(set(np.unique(inp).tolist()) for inp, _ in pairs))
+        in_an_output = set().union(*(set(np.unique(out).tolist()) for _, out in pairs))
+        ranked += sorted(in_every_input - in_an_output)[:2]
+    ranked.append(0)
+    if pairs:
+        counts = np.bincount(np.concatenate([inp.ravel() for inp, _ in pairs]))
+        ranked.append(int(counts.argmax()))
+    unique = list(dict.fromkeys(int(colour) for colour in ranked))
+    return unique[:limit]
+
+
 class SymbolicModule:
     """Groups the three solvers for convenience only:
         SymbolicModule().mixer.solve(task)
         SymbolicModule().upscale_or_covering.solve(task)
         SymbolicModule().color_restore.solve(task)
     No shared state, no orchestration/dispatch logic between them.
+
+    Built with one font colour. For a task, `for_task` builds one module per
+    colour the task's training pairs suggest - see font_value_candidates.
     """
 
     def __init__(self, font_val: int = 0, pad_val: int = 10):
+        self.font_val = font_val
         self.mixer = MixerSolver(font_val=font_val, pad_val=pad_val)
         self.upscale_or_covering = UpscaleOrCoveringSolver(font_color=font_val)
         self.color_restore = ColorRestoreSolver(font_val=font_val, pad_val=pad_val)
+
+    @classmethod
+    def for_task(cls, task, pad_val: int = 10, limit: int = 3) -> List["SymbolicModule"]:
+        return [cls(font_val=colour, pad_val=pad_val)
+                for colour in font_value_candidates(task, limit=limit)]

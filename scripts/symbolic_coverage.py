@@ -102,26 +102,46 @@ def default_solvers():
     return {name: getattr(module, name) for name in SOLVERS}
 
 
+def solvers_for(task):
+    """{solver: one instance per font colour the task suggests}: the same
+    solver tried against each colour its training pairs give for the missing
+    or background cells (symbolic_module.font_value_candidates)."""
+    from symbolic.symbolic_module import SymbolicModule
+
+    modules = SymbolicModule.for_task(task)
+    return {name: [getattr(module, name) for module in modules] for name in SOLVERS}
+
+
 def score_task(task, solvers, timeout=0):
-    """{solver: flags} for one task. A solver that runs past `timeout`
-    seconds, or raises, is recorded as such and claims nothing."""
+    """{solver: flags} for one task. A solver may be given as a list, one
+    instance per font colour: it claims if any instance does, and it is kept
+    by the first instance whose claim survives checked_solve. One that runs
+    past `timeout` seconds, or raises, is recorded as such and claims
+    nothing."""
     from symbolic.symbolic_module import checked_solve
 
     answer = np.asarray(task.test_subtask.train_out)
     scored = {}
-    for name, solver in solvers.items():
+    for name, given in solvers.items():
+        instances = list(given) if isinstance(given, (list, tuple)) else [given]
         record = {"claimed": False, "correct": False, "kept": False, "kept_correct": False,
-                  "timed_out": False, "error": None}
+                  "timed_out": False, "error": None, "instance": None}
         started = time.perf_counter()
         try:
             with _Alarm(timeout):
-                result = solver.solve(task)
-                record["claimed"] = bool(result.success)
-                record["correct"] = bool(result.success) and _same(result.grid, answer)
-                if result.success:
+                for position, solver in enumerate(instances):
+                    result = solver.solve(task)
+                    if not result.success:
+                        continue
+                    if not record["claimed"]:
+                        record["claimed"] = True
+                        record["correct"] = _same(result.grid, answer)
                     checked = checked_solve(solver, task)
-                    record["kept"] = bool(checked.success)
-                    record["kept_correct"] = bool(checked.success) and _same(checked.grid, answer)
+                    if checked.success:
+                        record["kept"] = True
+                        record["kept_correct"] = _same(checked.grid, answer)
+                        record["instance"] = position
+                        break
         except TimedOut:
             record["timed_out"] = True
         except Exception as error:  # noqa: BLE001 - one solver must not sink the split
@@ -137,8 +157,8 @@ def _same(grid, answer):
 
 def score_by_id(split, task_id, timeout):
     """Top-level so a process pool can pickle it."""
-    return {"split": split, "task": task_id,
-            "solvers": score_task(load_task(split, task_id), default_solvers(), timeout)}
+    task = load_task(split, task_id)
+    return {"split": split, "task": task_id, "solvers": score_task(task, solvers_for(task), timeout)}
 
 
 def read_records(path):

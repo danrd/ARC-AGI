@@ -63,6 +63,7 @@ nothing.
 | how a prompt is assembled | `subsymbolic/prompt_builder.py`, blocks in `data/prompts`, resolvers in `subsymbolic/registry.py` |
 | running a model over many tasks | `subsymbolic/llm_run.py`, backend in `subsymbolic/llm_setup.py` and `llm_runtime.py` |
 | comparing two prompt arms | `scripts/compare_llm_arms.py` |
+| which tasks each way of solving solves, and what they add to one another | `scripts/solved_by_source.py`, reading the files the measuring scripts write |
 | measuring the search over the dataset | `scripts/compare_reward_approaches.py`, `scripts/search_budget.py`, then `scripts/harvest_traces.py` |
 
 ## The packages
@@ -109,7 +110,8 @@ grade - it says 'easy' for every training task and 'hard' for every
 evaluation one.
 
 **`scripts`** are the measurement tools (`compare_llm_arms`,
-`compare_reward_approaches`, `search_budget`, `harvest_traces`, plus
+`compare_reward_approaches`, `search_budget`, `harvest_traces`,
+`symbolic_coverage`, `solved_by_source`, `prompt_variants`, plus
 `module_map` and `sync_llm_kit`). They are not part of any run -
 each exists because a question came up that the code could not answer by
 being read.
@@ -161,10 +163,10 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (4)"]
   rl["rl (20)"]
-  scripts["scripts (9)"]
+  scripts["scripts (10)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (60)"]
+  tests["tests (61)"]
   utils["utils (3)"]
   tests -->|87| rl
   tests -->|28| symbolic
@@ -229,6 +231,7 @@ graph TD
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
+| `scripts.solved_by_source` | 0 |
 | `scripts.symbolic_coverage` | 0 |
 | `scripts.sync_llm_kit` | 0 |
 | `subsymbolic.analyst` | 1 |

@@ -30,6 +30,29 @@ object search got somewhere on - a peak above zero, from a census
 never asked. Those that the search solves outright stay: they say whether an
 arm finds what is findable, and the rest say how far it gets.
 
+Spreading it over machines. The grid is 918 runs for 51 tasks, six arms and
+three seeds, about 460 s each at 250k steps, and is meant to be shared between
+notebooks. `--shard k --shards K` gives a notebook the k-th of K shares of the
+grid (by a hash of the run, so each holds every arm); `--workers W` runs W
+processes in it, one thread each; `--hours H` stops it starting a run that
+would end after H hours, so a notebook with a 12 hour limit ends by itself
+with its file written. What the notebooks leave undone - a notebook that died,
+a limit that came first - is what `--skip` is for: a later wave is given the
+earlier outputs and does what is not in them, split however the new
+notebooks are. `--tasks` and `--arms` narrow a wave the same way.
+
+    # on Kaggle, a notebook of the first of three
+    !git clone https://github.com/danrd/ARC-AGI && pip install -e "ARC-AGI[rl]"
+    !cd ARC-AGI && python scripts/rl_compare.py train \\
+        --configs data/experiments/rl_compare_configs.json \\
+        --shard 0 --shards 3 --workers 4 --hours 11 --out /kaggle/working/runs_0.jsonl
+    # after: the files of the notebooks, in a dataset, for a second wave or the table
+    !python ARC-AGI/scripts/rl_compare.py summary --out /kaggle/input/runs/*.jsonl
+
+The narrowed configs are data/experiments/rl_compare_configs.json, made once by
+`narrow` and kept: the search that narrows a task's vocabulary is random, and
+every arm, seed and notebook has to train over the same one.
+
 The arms, and what each was for:
 
     objonly     objects only: what the agent sees if nothing else is given
@@ -50,9 +73,11 @@ import collections
 import contextlib
 import io
 import json
+import multiprocessing
 import pickle
 import sys
 import time
+import zlib
 from functools import partial
 from pathlib import Path
 
@@ -65,6 +90,8 @@ DATA = REPO_ROOT / "data" / "datasets" / "ARC"
 DELTAS = ["delta_input", "delta_target"]
 #: Steps of one run: the full length, not the shortened series' 100k.
 STEPS = 250_000
+#: What a worker assumes a run takes before it has finished one (seconds).
+FIRST_RUN_SECONDS = 900
 
 #: The fifteen training tasks the observation experiments have run on: one
 #: to a few objects, shape-preserving, from the object agents' rosters.
@@ -122,12 +149,20 @@ def load_task(task_id, split="training"):
 
 
 def narrow(tasks, out):
-    """Write each task's narrowed rl_config to `out`."""
+    """Write each task's narrowed rl_config to `out`, one task at a time: a
+    task already in the file is kept and not searched again, so a run cut
+    short resumes. The search is random, which is why the result is kept and
+    every arm, seed and machine trains over this one."""
     from data.configs.rl_configs import rl_config
     from rl.rl_job import narrowed_for_task
 
     configs = {}
+    if Path(out).exists():
+        with open(out) as handle:
+            configs = json.load(handle)
     for task_id in tasks:
+        if task_id in configs:
+            continue
         task = load_task(task_id)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             config = narrowed_for_task(task, rl_config)
@@ -135,8 +170,8 @@ def narrow(tasks, out):
         configs[task_id] = config
         print(task_id, getattr(task, "agent", None), config["addressing"], len(config["feasible_actions"]),
               "actions", flush=True)
-    with open(out, "w") as handle:
-        json.dump(configs, handle, default=list)
+        with open(out, "w") as handle:
+            json.dump(configs, handle, default=list)
     return configs
 
 
@@ -169,6 +204,17 @@ def run_grid(configs, arms, seeds=(0, 1, 2)):
     """Every (task, arm, seed), tasks first: a partial file covers every arm
     on the tasks it reached."""
     return [(task_id, arm, seed) for task_id in sorted(configs) for seed in seeds for arm in arms]
+
+
+def share(grid, index, total):
+    """The runs of `grid` that worker `index` of `total` does.
+
+    By a hash of the run and not by position: the grid runs through the arms
+    in turn, so a stride that divides by the number of arms would give a
+    worker one arm and lose that arm whole if its notebook dies. Stable
+    across machines (crc32, not hash()), and a worker's runs keep the
+    grid's tasks-first order."""
+    return [run for run in grid if zlib.crc32("|".join(map(str, run)).encode()) % total == index]
 
 
 def read_runs(path):
@@ -213,16 +259,48 @@ def one_run(config, arm, seed, steps, task_id):
             "seconds": round(time.time() - started, 1)}
 
 
-def train(configs, arms, steps, shard, shards, out, seeds=(0, 1, 2)):
-    """Run this shard's share of the grid, appending each run as it ends."""
+def _work(configs, arms, steps, index, total, out, seeds, deadline, skip=()):
+    """One worker's share of the grid, appending each run as it ends. Stops
+    before a run that would not be done by `deadline` (a time, or None): the
+    longest run this worker has seen, or FIRST_RUN_SECONDS before it has seen
+    one, is what it assumes a run takes."""
+    import torch
+
+    torch.set_num_threads(1)   # one thread a worker: several workers share the cores
     done = read_runs(out)
+    for path in skip:
+        done.update(read_runs(path))
+    longest = None
     with open(out, "a", buffering=1) as handle:
-        for task_id, arm, seed in run_grid(configs, arms, seeds)[shard::shards]:
+        for task_id, arm, seed in share(run_grid(configs, arms, seeds), index, total):
             if (task_id, arm, seed) in done:
                 continue
+            if deadline is not None and time.time() + (longest or FIRST_RUN_SECONDS) > deadline:
+                print(f"worker {index}: out of time, stopping before {task_id} {arm} {seed}", flush=True)
+                return
             record = one_run(configs[task_id], arm, seed, steps, task_id)
+            longest = max(longest or 0, record["seconds"])
             handle.write(json.dumps(record) + "\n")
             print(json.dumps(record), flush=True)
+
+
+def train(configs, arms, steps, shard, shards, out, seeds=(0, 1, 2), workers=1, hours=None, skip=()):
+    """This shard's share of the grid - shard `shard` of `shards`, one per
+    machine or notebook - run by `workers` processes that split it between
+    them and append to `out`; `hours` is how long to keep starting runs.
+    Runs in the `skip` files count as done: the outputs of earlier notebooks,
+    so a later wave picks up what is left however the first was split."""
+    deadline = None if hours is None else time.time() + hours * 3600
+    total = shards * workers
+    if workers == 1:
+        return _work(configs, arms, steps, shard, total, out, seeds, deadline, skip)
+    context = multiprocessing.get_context("spawn")
+    processes = [context.Process(target=_work, args=(configs, arms, steps, shard * workers + w, total, out,
+                                                      seeds, deadline, skip)) for w in range(workers)]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join()
 
 
 # ---------------------------------------------------------------------------
@@ -275,14 +353,17 @@ def main():
     narrowing.add_argument("--out", default="rl_compare_configs.json")
     training = sub.add_parser("train", help="run one shard of the (task, arm, seed) grid")
     training.add_argument("--configs", default="rl_compare_configs.json")
-    training.add_argument("--arms", nargs="+", default=["default", "gd_ch", "gd_wide"], choices=sorted(ARMS))
+    training.add_argument("--arms", nargs="+", default=list(ARMS), choices=sorted(ARMS))
     training.add_argument("--tasks", nargs="*", help="only these tasks of the configs file")
     training.add_argument("--steps", type=int, default=STEPS)
-    training.add_argument("--shard", type=int, default=0)
-    training.add_argument("--shards", type=int, default=1)
+    training.add_argument("--shard", type=int, default=0, help="this machine's number, of --shards")
+    training.add_argument("--shards", type=int, default=1, help="how many machines or notebooks share the grid")
+    training.add_argument("--workers", type=int, default=1, help="processes on this machine")
+    training.add_argument("--skip", nargs="*", default=[], help="runs files of other notebooks: what is in them is done")
+    training.add_argument("--hours", type=float, help="stop starting runs that would end after this long")
     training.add_argument("--out", default="rl_compare_runs.jsonl")
-    reading = sub.add_parser("summary", help="summarise a runs file")
-    reading.add_argument("--out", default="rl_compare_runs.jsonl")
+    reading = sub.add_parser("summary", help="summarise runs files (one per notebook)")
+    reading.add_argument("--out", nargs="+", default=["rl_compare_runs.jsonl"])
     args = parser.parse_args()
 
     if args.command == "select":
@@ -303,9 +384,13 @@ def main():
             configs = json.load(handle)
         if args.tasks:
             configs = {task: configs[task] for task in args.tasks}
-        train(configs, args.arms, args.steps, args.shard, args.shards, args.out)
+        train(configs, args.arms, args.steps, args.shard, args.shards, args.out,
+              workers=args.workers, hours=args.hours, skip=args.skip)
     else:
-        print(render(summarise(read_runs(args.out).values())))
+        runs = {}
+        for path in args.out:
+            runs.update(read_runs(path))
+        print(render(summarise(runs.values())))
 
 
 if __name__ == "__main__":

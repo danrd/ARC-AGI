@@ -794,6 +794,22 @@ class MixerSolver:
         i, j = np.where((grid != self.pad_val) * (grid != self.font_val))
         return grid[i[0], j[0]]
 
+    @staticmethod
+    def _target_colour(colors_mapper, segment_color):
+        """The colour a logical operation paints in for a piece of colour
+        `segment_color`. Learned from the examples, so a colour the examples
+        never showed has no entry; then the rule the examples agree on is
+        used - the piece's own colour where every example kept its colour,
+        the one colour where every example painted the same - and where
+        they agree on nothing there is no answer to give."""
+        if segment_color in colors_mapper:
+            return colors_mapper[segment_color]
+        if colors_mapper and all(key == value for key, value in colors_mapper.items()):
+            return segment_color
+        if len(set(colors_mapper.values())) == 1:
+            return next(iter(colors_mapper.values()))
+        raise KeyError(segment_color)
+
     def _arr_diff(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         return (a != b)  # fixed: was an O(n^2) manual coordinate-membership loop
 
@@ -1065,7 +1081,9 @@ class MixerSolver:
         def build(aug_name, segments_colors):
             aug = AUGS[aug_name]
             aug_masks = [aug(m) for m in masks]
-            answer = aug(segments[0])
+            # A copy: the segments are views of the example's input, and the
+            # marks below would be written into it.
+            answer = aug(segments[0]).copy()
             for i in range(n):
                 segment = aug(segments[i])
                 j = (i + 1) % n
@@ -1103,7 +1121,7 @@ class MixerSolver:
             segments_colors.append(found_colors.pop())
             unique_coords_list.append(unique_coords)
 
-        answer = AUGS[aug_name](segments[0])
+        answer = AUGS[aug_name](segments[0]).copy()
         for i in range(n):
             segment = AUGS[aug_name](segments[i])
             for coord in unique_coords_list[i]:
@@ -1124,7 +1142,7 @@ class MixerSolver:
             aug, func = AUGS[aug_name], LOGIC_FUNCS[func_name]
             for m in masks[1:]:
                 res_mask = func(res_mask, aug(m))
-            target_color = colors_mapper[segment_color]
+            target_color = self._target_colour(colors_mapper, segment_color)
             return (res_mask * target_color).astype(int)
 
         if transf_type == "color_mix":

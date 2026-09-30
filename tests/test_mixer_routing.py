@@ -167,3 +167,68 @@ class TestTheFitRule:
                        test_out=np.array(answer[0]))
         result = MixerSolver(font_val=0).solve(task)
         assert result.success and np.array_equal(result.grid, task.test_subtask.train_out)
+
+
+class TestASolveTouchesNothingItWasGiven:
+    def test_solving_a_conjunction_task_leaves_every_grid_as_it_was(self):
+        """The search wrote its marks into a view of the example's input, so
+        the first solve changed the task and the check's second solve, on
+        the changed task, gave a different answer."""
+        task = task_of([pair(seed) for seed in range(4)])
+        before = [(s.train_inp.copy(), s.train_out.copy()) for s in task.subtasks]
+        test_before = task.test_subtask.train_inp.copy()
+        MixerSolver(font_val=0).solve(task)
+        for subtask, (inp, out) in zip(task.subtasks, before):
+            assert np.array_equal(subtask.train_inp, inp) and np.array_equal(subtask.train_out, out)
+        assert np.array_equal(task.test_subtask.train_inp, test_before)
+
+    def test_solving_twice_gives_the_same_answer(self):
+        task = task_of([pair(seed) for seed in range(4)])
+        solver = MixerSolver(font_val=0)
+        assert np.array_equal(solver.solve(task).grid, solver.solve(task).grid)
+
+
+class TestAColourTheExamplesNeverShowed:
+    def test_the_colour_the_examples_agree_on_is_used(self):
+        mapper = {3: 4, 5: 4}
+        assert MixerSolver._target_colour(mapper, 3) == 4
+        assert MixerSolver._target_colour(mapper, 6) == 4
+
+    def test_a_piece_keeps_its_colour_where_every_example_kept_it(self):
+        assert MixerSolver._target_colour({3: 3, 5: 5}, 6) == 6
+
+    def test_where_the_examples_agree_on_nothing_there_is_no_answer(self):
+        import pytest
+        with pytest.raises(KeyError):
+            MixerSolver._target_colour({3: 4, 5: 2}, 6)
+
+    def test_a_known_colour_is_not_second_guessed(self):
+        assert MixerSolver._target_colour({3: 4, 5: 2}, 5) == 2
+
+    def test_a_held_out_example_with_a_colour_no_other_example_has_is_still_solved(self):
+        """Pieces of a different colour in every example, the output 4 wherever
+        either has a cell: the check holds each example out, and its colour is
+        then one the rest never showed."""
+        pairs = []
+        for seed, colour in enumerate((3, 6, 7, 9)):
+            rng = np.random.default_rng(seed)
+            top, bottom = rng.random((6, 4)) > 0.55, rng.random((6, 4)) > 0.55
+            pairs.append((np.vstack([np.where(top, colour, 0), np.where(bottom, 5, 0)]),
+                          np.where(top | bottom, 4, 0)))
+        from symbolic.symbolic_module import checked_solve
+        task = task_of(pairs)
+        result = checked_solve(MixerSolver(font_val=0), task)
+        assert result.success and np.array_equal(result.grid, task.test_subtask.train_out)
+
+
+def test_the_two_real_tasks_these_came_from_survive_the_check():
+    from symbolic.symbolic_module import checked_solve
+    for task_id in ("d47aa2ff", "195ba7dc"):
+        challenge = json.loads((DATA / "evaluation_challenges.json").read_text())[task_id]
+        answer = json.loads((DATA / "evaluation_solutions.json").read_text())[task_id]
+        subtasks = [ARCSubtask(f"{task_id}_{i}", np.array(p["input"]), np.array(p["output"]))
+                    for i, p in enumerate(challenge["train"])]
+        task = ARCTask(label=task_id, subtasks=subtasks, test_inp=np.array(challenge["test"][0]["input"]),
+                       test_out=np.array(answer[0]))
+        result = checked_solve(MixerSolver(font_val=0), task)
+        assert result.success and np.array_equal(result.grid, task.test_subtask.train_out), task_id

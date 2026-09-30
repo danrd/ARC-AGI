@@ -51,15 +51,19 @@ nothing.
 | run the whole pipeline on one task | `orchestration/__main__.py`, `orchestration/graph.py` |
 | how a grid becomes objects | `symbolic/objects_analysis.py` (`GridObject`, the component retrieval) |
 | what the analyser claims about a task | `symbolic/findings.py`, then `symbolic/summaries.py` |
-| the action vocabulary | `data/configs/env_configs.py`, expanded by `rl/utils.py:define_feasible_actions` |
+| the action vocabulary | `data/configs/env_configs.py`, expanded by `rl/utils.py:define_feasible_actions` and `rl/search_hints.py:build_vocabulary` |
 | what an action does to a grid | `rl/arc_world.py:apply_transform`, dispatching into `rl/arc_transformators.py` |
-| the environment an agent or a search sees | `rl/arc_env.py` (`ARCGridWorld`) |
-| the search | `rl/mcts.py` |
-| PPO training | `rl/training.py`, `rl/policy.py`, launched by `rl/rl_job.py` |
+| the environment an agent or a search sees | `rl/arc_env.py` (`ARCGridWorld`): grid, deltas, object and relation embeddings |
+| the search over object actions | `rl/mcts.py`; `rl/search_hints.py` runs it per task (base action types first, then the agent rosters) |
+| the search over strokes, for coordinate-addressed tasks | `rl/coordinate_search.py` |
+| what a verified search finding says to an LLM | `rl/search_hints.py:hints_for`, joined to a prompt through the build context (`subsymbolic/arc_resolvers.py`) |
+| what the agent's action is made of | `rl/action_structure.py` (type, colour, direction as separate choices) |
+| how observations become features | `rl/features.py` (`ARCCombinedExtractor`), read by the heads in `rl/policy.py` |
+| PPO training | `rl/training.py`, `rl/policy.py`, launched by `rl/rl_job.py`, which narrows the vocabulary per task |
 | how a prompt is assembled | `subsymbolic/prompt_builder.py`, blocks in `data/prompts`, resolvers in `subsymbolic/registry.py` |
 | running a model over many tasks | `subsymbolic/llm_run.py`, backend in `subsymbolic/llm_setup.py` and `llm_runtime.py` |
 | comparing two prompt arms | `scripts/compare_llm_arms.py` |
-| measuring the search over the dataset | `scripts/compare_reward_approaches.py`, then `scripts/harvest_traces.py` |
+| measuring the search over the dataset | `scripts/compare_reward_approaches.py`, `scripts/search_budget.py`, then `scripts/harvest_traces.py` |
 
 ## The packages
 
@@ -72,10 +76,16 @@ to *understand* a task, and the only one whose output a human can check by
 reading it.
 
 **`rl`** is the grid as a state machine. `arc_task` carries a task,
-`arc_world` applies one transform to one or two objects,
-`arc_transformators` holds the transforms themselves, `arc_env` wraps it
-as a Gymnasium env, and `mcts` searches it. `features` and `policy` are
-the learned side; `training`, `callbacks` and `evaluation` are the loop
+`arc_world` applies one transform to one or two objects (or, under
+coordinate addressing, to two cells), `arc_transformators` holds the
+transforms themselves, `arc_env` wraps it as a Gymnasium env, and `mcts`
+searches it. Two things sit between the search and the learner:
+`search_hints` runs the search for a task - the base action types first,
+then the agent rosters - and keeps what reproduces every training pair,
+and `rl_job` uses what it found to narrow the action vocabulary before
+PPO starts. `features` and `policy` are the learned side (objects,
+relations and the two deltas in; pointer heads over objects, or over rows
+and columns, out); `training`, `callbacks` and `evaluation` are the loop
 around it.
 
 **`subsymbolic`** is everything about talking to a language model.
@@ -92,7 +102,9 @@ task between those three, plus the system-level config.
 rosters in `configs`, ARC itself in `datasets/ARC`, prompt templates in
 `prompts`.
 
-**`scripts`** are the measurement tools. They are not part of any run -
+**`scripts`** are the measurement tools (`compare_llm_arms`,
+`compare_reward_approaches`, `search_budget`, `harvest_traces`, plus
+`module_map` and `sync_llm_kit`). They are not part of any run -
 each exists because a question came up that the code could not answer by
 being read.
 
@@ -100,14 +112,19 @@ being read.
 
 ## Things that bite
 
-- **An action is three numbers**, not one: `(transform, object_1, object_2)`
-  over `MAX_OBJECTS = 16` slots. A slot beyond the objects a grid actually
-  has is a legal action that does nothing, and there are many of them.
+- **An action is several numbers**, not one. Object addressing is
+  `(transform, object_1, object_2)` over object slots; coordinate addressing
+  is `(transform, i1, j1, i2, j2)` over the rows and columns of the grid.
+  The slots are the objects the task's grids fill when the job narrows them
+  to the task (a median of 3), and `MAX_OBJECTS = 16` when nothing does. A
+  slot beyond the objects a grid actually has is a legal action that does
+  nothing.
 - **Colours and directions are baked into action names.** `red_recolor` is
   "recolor to colour 2"; the vocabulary is generated per colour and per
   direction, so its size depends on which colours you build it with -
-  89 names at two colours and two directions, 141 at three, 2943 at all
-  ten and all eight.
+  89 names at two colours and two directions, 145 at three colours, 1669
+  at ten colours and the four main directions, 3037 at all ten and all
+  eight. The search narrows it per task before anything learns over it.
 - **`max_int` counts `2 * matches - valid`**, so fixing one cell moves it
   by two. Gains read off it are in those units, not in cells.
 - **A transform that cannot apply returns the grid untouched.** It never
@@ -121,6 +138,15 @@ being read.
   rendered. `overrides` wins over both.
 - **Search shards are only poolable within one vocabulary.** Action 47 is a
   name, not a number.
+- **A hint is said only when it is verified.** `hints_for` reproduces every
+  training pair with the same kinds of step, or says nothing; the summary
+  the LLM reads (`symbolic/findings.py`) states a fact only when it holds
+  in every example. Both are computed for the task in hand, not read from a
+  file.
+- **Observation padding is not grid padding.** When a task's examples
+  differ in size the observation is padded to the largest and carries
+  `grid_shape`, and the extractor crops it back; the env's own grid is never
+  padded.
 
 <!-- generated by scripts/module_map.py - do not edit below -->
 
@@ -142,8 +168,8 @@ graph TD
   rl -->|11| symbolic
   scripts -->|7| rl
   tests -->|6| orchestration
-  data -->|4| rl
   orchestration -->|4| subsymbolic
+  data -->|3| rl
   orchestration -->|3| rl
   rl -->|3| utils
   scripts -->|2| data
@@ -172,13 +198,13 @@ graph TD
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 27 |
+| `rl.arc_task` | 26 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
 | `rl.coordinate_search` | 3 |
 | `rl.evaluation` | 5 |
-| `rl.features` | 9 |
+| `rl.features` | 8 |
 | `rl.mcts` | 8 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 4 |
@@ -219,8 +245,7 @@ graph TD
 
 Packages that import each other:
 
-- `data` -> `rl` (4) against `rl` -> `data` (11):
-  - `data.configs.rl_configs imports rl.features`
+- `data` -> `rl` (3) against `rl` -> `data` (11):
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`

@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 import collections
 import itertools
 import random
@@ -8,50 +7,6 @@ from typing import Dict, Any, List, Optional
 from copy import copy, deepcopy
 from tqdm import tqdm
 
-
-def process_observations(observations, device, pad_inp=True, multi_env=False):
-    """Process different types of observations to make them compatible with the policy.
-
-    Args:
-        observations: Batch of observations (could be dicts, arrays, etc.)
-        device: Target device for tensors
-        pad_inp: Whether to pad inputs (default: True)
-        multi_env: Whether to add an additional first dimension for multiple environments (default: False)
-
-    Returns:
-        Processed observations ready for the model, with an additional first dimension if multi_env=True
-    """
-    # Dictionary observations from DataLoader
-    if isinstance(observations, dict):
-        result = {}
-        for key in observations:
-            try:
-                # If it's already a tensor, just move to device
-                if isinstance(observations[key], torch.Tensor):
-                    tensor = observations[key].to(device)
-                else:
-                    # Otherwise convert to tensor
-                    tensor = torch.tensor(observations[key], device=device)
-
-                # Add environment dimension if needed
-                if multi_env and tensor.dim() > 0:
-                    tensor = tensor.unsqueeze(0)  # Add env dimension as first dimension
-
-                result[key] = tensor
-            except Exception as e:
-                print(f"Error processing key {key}: {e}")
-                # Try to handle numpy arrays specifically
-                if isinstance(observations[key], np.ndarray):
-                    tensor = torch.from_numpy(observations[key]).to(device)
-                    if multi_env and tensor.dim() > 0:
-                        tensor = tensor.unsqueeze(0)
-                    result[key] = tensor
-        return result
-
-    # Unknown observation type
-    else:
-        print(f"Warning: Unknown observation type: {type(observations)}")
-        return observations
 
 def submit_index(env) -> Optional[int]:
     """Which action index means submit, or None if this env has no such
@@ -1014,24 +969,6 @@ class MCTS:
 
         return best_child.action
 
-    def get_best_action_sequence(self, root, max_length=10):
-        """Extract best action sequence from MCTS tree"""
-        sequence = []
-        node = root
-
-        for _ in range(max_length):
-            if not node.children:
-                break
-
-            # Select child with highest average reward
-            best_child = max(node.children.values(),
-                           key=lambda x: x.total_reward / max(x.visits, 1))
-
-            sequence.append(best_child.action)
-            node = best_child
-
-        return sequence
-
 def replay_solution(env, actions, submit_index=None) -> Dict[str, Any]:
     """Run a candidate solution on the real env and return it as a rollout,
     or None if it does not in fact solve the task.
@@ -1429,14 +1366,6 @@ def select_best_rollouts(rollouts: List[Dict[str, Any]], top_k: int = 10, min_le
         print(f"Rollout {i + 1}: Reward = {rollout['total_reward']:.2f}, Steps = {rollout['length']}")
 
     return selected_rollouts
-
-def reconstruct_rollout(grids, actions, rewards, infos):
-    rollout = {}
-    rollout['observations'] = [{"grid": grid} for grid in grids]
-    rollout['actions'] = actions
-    rollout['rewards'] = rewards
-    rollout['infos'] = infos
-    return rollout
 
 def extract_promising_actions(rollouts, feasible_actions, k=10):
     """Which transformations the best rollouts actually used, most-used first.

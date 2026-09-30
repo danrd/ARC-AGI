@@ -6,7 +6,6 @@ from collections import defaultdict, deque, Counter
 from functools import partial
 from dataclasses import dataclass, field
 from itertools import product
-from scipy.spatial.distance import euclidean
 from scipy import stats as st
 from rl.arc_task import ARCSubtask
 from symbolic.objects_analysis import GridObject, matching_transforms
@@ -427,10 +426,6 @@ class SubtaskSummary:
         features['mean_hor_size'] = round(float(obj_summary.mean_hor_size), 3)
         features['mean_vert_size'] = round(float(obj_summary.mean_vert_size), 3)
 
-        # Shape counts
-        # for shape, count in obj_summary.shapes.items():
-        #     features[f'shape_{shape}_count'] = float(count)
-
         # Color counts from shape_colors
         for color, count in obj_summary.shape_colors.items():
             if color != 'multicolor':  # Handle multicolor separately if needed
@@ -667,19 +662,6 @@ class GridSummary():
             for coord in obj.coords:
                 cell_mappings[coord] = idx
         return Cell2Obj(cell_mappings=cell_mappings)
-
-    def _calculate_hu_moments_similarity(self, obj1, obj2):
-        """Calculate shape similarity based on Hu moments."""
-        if not (hasattr(obj1, 'hu_moments') and hasattr(obj2, 'hu_moments') and
-                obj1.hu_moments is not None and obj2.hu_moments is not None):
-            return 0.0
-
-        # Calculate Euclidean distance between Hu moments
-        distance = euclidean(obj1.hu_moments, obj2.hu_moments)
-        # Convert to similarity (0 = identical, higher values = more different)
-        # Use exponential decay to convert distance to similarity [0,1]
-        similarity = np.exp(-distance)
-        return similarity
 
     @staticmethod
     def filter_objects(objects, repr_level:int=1):

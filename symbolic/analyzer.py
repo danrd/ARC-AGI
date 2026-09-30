@@ -342,57 +342,6 @@ class SubtaskAnalysis:
 
         return changes
 
-    def _analyze_object_context(self, obj, grid_summary, obj_type: str = 'input') -> Dict[str, Any]:
-        """Analyze contextual properties and relations of an object."""
-        context = {
-            'relations': defaultdict(list),
-            'properties': {},
-            'nearby_objects': []
-        }
-
-        # Get representation level objects and triples
-        level_data = grid_summary.repr_levels[self.levels[0]]
-        all_objects = level_data.objects
-        triples = level_data.triples
-
-        # Extract object properties
-        if hasattr(obj, 'size'):
-            context['properties']['size'] = obj.size
-        if hasattr(obj, 'colors'):
-            context['properties']['colors'] = obj.colors
-        if hasattr(obj, 'shape'):
-            context['properties']['shape'] = obj.shape
-        if hasattr(obj, 'center'):
-            context['properties']['center'] = obj.center
-        if hasattr(obj, 'symmetry'):
-            context['properties']['symmetry'] = obj.symmetry
-        if hasattr(obj, 'inner_holes'):
-            context['properties']['inner_holes_count'] = len(obj.inner_holes)
-        if hasattr(obj, 'outer_holes'):
-            context['properties']['outer_holes_count'] = len(obj.outer_holes)
-
-        # Get relations involving this object
-        obj_triples = triples.get_triples_for_object(obj.label)
-        for triple in obj_triples:
-            head, relation, tail = triple
-            context['relations'][relation].append(tail)
-
-        # Find nearby objects (within certain distance threshold)
-        distances = level_data.distances
-        for other_obj in all_objects:
-            if other_obj.label == obj.label:
-                continue
-            dist = distances.get_distance(obj.label, other_obj.label)
-            if dist <= 3:  # Threshold for "nearby"
-                context['nearby_objects'].append({
-                    'label': other_obj.label,
-                    'distance': dist,
-                    'shape': other_obj.shape if hasattr(other_obj, 'shape') else None,
-                    'colors': other_obj.colors if hasattr(other_obj, 'colors') else None
-                })
-
-        return context
-
     def _find_addition_patterns(self, added_changes: List[ObjectChange]) -> List[TransformationPattern]:
         """Analyze why objects were added - find common patterns."""
         patterns = []

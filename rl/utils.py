@@ -1,7 +1,6 @@
 import random
 import numpy as np
 from symbolic.utils import crop_pad, adjust_grid_shape, grid_formatting  # noqa: F401 - re-exported for rl.plotting
-from rl.arc_task import ARCTask
 
 def linear_schedule(initial_value: float, final_value: float = 0.0):
     """Linear learning rate schedule.
@@ -86,21 +85,6 @@ def vote_grid(arrays, tie_break='random'):
 
     return voted_grid
 
-def get_vec_info(vec_env):
-    right_placements = []
-    max_ints = []
-    envs = vec_env.envs
-    for env in envs:
-        right_placements.append(env.subtask.right_placement)
-        max_ints.append(env.subtask.max_int)
-    return right_placements, max_ints
-
-def get_position(obs_pos_vector):
-    positions = []
-    for pos in obs_pos_vector:
-        positions.append(pos.nonzero())
-    return positions
-
 def repad(subtask, max_shape=(15,15), pad_val=-0.1):
     subtask.train_inp = adjust_grid_shape(crop_pad(subtask.train_inp, pad_val=1),
                                                     target_shape=max_shape, pad_value=pad_val, normalize=False)
@@ -108,53 +92,9 @@ def repad(subtask, max_shape=(15,15), pad_val=-0.1):
                                           target_shape=max_shape, pad_value=pad_val, normalize=False)
     return subtask
 
-def define_padding(task:ARCTask):
-    """Define max padding for specific task"""
-    max_i = 0
-    max_j = 0
-    for subtask in task.subtasks:
-        inp_shape = subtask.train_inp_shape
-        out_shape = subtask.train_out_shape
-        if inp_shape[0] > max_i:
-            max_i = inp_shape[0]
-        if inp_shape[1] > max_j:
-            max_j = inp_shape[1]
-        if out_shape[0] > max_i:
-            max_i = out_shape[0]
-        if out_shape[1] > max_j:
-            max_j = out_shape[1]
-    return (max_i, max_j)
-
 def calculate_eval_freq(n_envs, total_steps, n_evaluations):
     """Calculate evaluation frequency value based on number of environments, training steps and desired number of evaluations during training."""
     return (total_steps//n_evaluations//n_envs)
-
-def solution_description(actions, env):
-    direction2name = {'N': 'north',
-                      'NE': 'north-east',
-                      'E': 'east',
-                      'SE': 'south-east',
-                      'S': 'south',
-                      'SW': 'south-west',
-                      'W': 'west',
-                      'NW': 'north-west'
-                     }
-    actions_dict = env.action_name_to_idx
-    idx2name = {v:k for k,v in actions_dict.items()}
-    description = ""
-    for idx, action in enumerate(actions):
-        if len(action) == 5:
-            description += (f'{idx2name[action[0]].replace("_", " ")} from '
-                            f'({action[1]}, {action[2]}) to ({action[3]}, {action[4]})')
-        elif action[1] == action[2]:
-            description += f'{idx2name[action[0]].replace("_", " ")} for object_{action[1]}'
-        else:
-            description += f'{idx2name[action[0]].replace("_", " ")} for object_{action[1]} and object_{action[2]}'
-        if idx != len(actions) - 1:
-            description += " -> "
-    for k, v in direction2name.items():
-        description = description.replace(k, direction2name[k])
-    return description
 
 def define_feasible_actions(action_types, colors, directions, color_dependent_actions, double_color_dependent_actions, direction_dependent_actions):
     """Creates the dict of all possible actions {idx:action}."""
@@ -243,12 +183,3 @@ def get_step_description(step_idx, observation, action, reward, action_mapping, 
                 description += f"\n{key}: {value}"
 
     return description
-
-def task_colors(task, colors_mapping):
-    uniq_colors = []
-    for subtask in task.subtasks:
-        subtask_vals = np.unique(np.vstack([crop_pad(subtask.train_inp, pad_val=10), crop_pad(subtask.train_out, pad_val=10)]))
-        uniq_colors.extend([colors_mapping[val] for val in subtask_vals if val!=0])
-    test_vals = np.unique(crop_pad(subtask.train_inp, pad_val=10))
-    uniq_colors.extend([colors_mapping[val] for val in test_vals if val!=0])
-    return uniq_colors

@@ -48,7 +48,8 @@ nothing.
 
 | you want | start at |
 | --- | --- |
-| run the whole pipeline on one task | `orchestration/__main__.py`, `orchestration/graph.py` |
+| run the whole pipeline on one task | `orchestration/__main__.py`, `orchestration/graph.py`; with the order of trust below, `orchestration/hierarchy.py:solve_with_hierarchy` |
+| who is believed when the sources disagree | `orchestration/hierarchy.py`: symbolic (checked against the training pairs), then RL (closed every training pair - `rl/rl_module.py`), then the model only if a second model agrees (`subsymbolic/answer_check.py:LlmVerifier`) |
 | how a grid becomes objects | `symbolic/objects_analysis.py` (`GridObject`, the component retrieval) |
 | what the analyser claims about a task | `symbolic/findings.py`, then `symbolic/summaries.py` |
 | the action vocabulary | `data/configs/env_configs.py`, expanded by `rl/utils.py:define_feasible_actions` and `rl/search_hints.py:build_vocabulary` |
@@ -97,7 +98,14 @@ supplies the blocks that need computing rather than templating,
 `analyst` is the piece that reads symbolic findings and picks agents.
 
 **`orchestration`** is the multi-agent skeleton (LangGraph) that routes a
-task between those three, plus the system-level config.
+task between those three, plus the system-level config. `graph` runs the
+paths - symbolic first, then RL in a background process beside the model -
+and leaves the choice of answer to a decision function; `hierarchy` is the
+one that ranks them by what each can show for its answer without the target
+(symbolic: its rule reproduces every training pair; RL: the policy closed
+every training pair, a gate that about two runs in three also pass on the
+held-out pair; the model: nothing, until a second model agrees). `context`
+adds the search's verified hint to the model's prompt.
 
 **`data`** is configuration and datasets: the action vocabulary and agent
 rosters in `configs`, ARC itself in `datasets/ARC`, prompt templates in
@@ -162,23 +170,23 @@ being read.
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (5)"]
+  orchestration["orchestration (6)"]
   rl["rl (20)"]
   scripts["scripts (12)"]
-  subsymbolic["subsymbolic (13)"]
+  subsymbolic["subsymbolic (14)"]
   symbolic["symbolic (9)"]
-  tests["tests (67)"]
+  tests["tests (69)"]
   utils["utils (3)"]
   tests -->|95| rl
   tests -->|32| symbolic
-  tests -->|27| subsymbolic
+  tests -->|30| subsymbolic
   tests -->|19| data
   scripts -->|13| rl
   rl -->|11| data
   rl -->|11| symbolic
-  tests -->|8| orchestration
+  tests -->|10| orchestration
+  orchestration -->|5| subsymbolic
   orchestration -->|4| rl
-  orchestration -->|4| subsymbolic
   data -->|3| rl
   rl -->|3| utils
   scripts -->|3| data
@@ -204,9 +212,10 @@ graph TD
 | `data.configs.rl_configs` | 13 |
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
-| `orchestration.configs` | 5 |
+| `orchestration.configs` | 6 |
 | `orchestration.context` | 1 |
-| `orchestration.graph` | 4 |
+| `orchestration.graph` | 5 |
+| `orchestration.hierarchy` | 1 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
@@ -239,17 +248,18 @@ graph TD
 | `scripts.symbolic_coverage` | 0 |
 | `scripts.sync_llm_kit` | 0 |
 | `subsymbolic.analyst` | 1 |
+| `subsymbolic.answer_check` | 1 |
 | `subsymbolic.arc_evaluators` | 1 |
-| `subsymbolic.arc_grid_formatting` | 3 |
+| `subsymbolic.arc_grid_formatting` | 4 |
 | `subsymbolic.arc_resolvers` | 2 |
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 5 |
 | `subsymbolic.llm_setup` | 5 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 13 |
-| `subsymbolic.registry` | 5 |
+| `subsymbolic.prompt_builder` | 15 |
+| `subsymbolic.registry` | 6 |
 | `subsymbolic.subsymbolic_module` | 2 |
-| `subsymbolic.utils` | 3 |
+| `subsymbolic.utils` | 4 |
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |

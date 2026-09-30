@@ -21,6 +21,10 @@ Two-level graph:
     and bounded, never an open-ended loop).
     Compiled as its own graph and invoked as a single node from the system
     graph (standard LangGraph pattern for hierarchical agents).
+
+The graph only routes; which answer to believe is the decision function's
+call. default_decision_fn accepts whatever came last, and
+orchestration.hierarchy.hierarchical_decision_fn ranks the sources.
 """
 from __future__ import annotations
 
@@ -412,6 +416,7 @@ class SystemState(TypedDict, total=False):
     solution: str
     status: str
     validated: bool
+    accepted_source: Optional[str]         # who the accepted answer came from, as in AgentState
     has_next: bool
 
     module_dispatch_fn: Callable[[AgentState], Dict[str, Any]]
@@ -471,6 +476,7 @@ def _run_agent_node(state: SystemState) -> Dict[str, Any]:
     return {
         "iteration": iteration,
         "solution": solution,
+        "accepted_source": agent_result.get("accepted_source"),
         "history": [record],
     }
 

@@ -105,7 +105,7 @@ class AgentState(TypedDict, total=False):
 
 def _dispatch_symbolic(task: Any, symbolic_module: Optional[Any] = None) -> Dict[str, Any]:
     """Tries each of SymbolicModule's solvers in turn, returns the first
-    success. Solvers need no model/config, so a default instance is built
+    success. Solvers need no model/config, so default instances are built
     here if the caller didn't supply one.
 
     Through checked_solve rather than solve: a claim these solvers make is
@@ -117,13 +117,17 @@ def _dispatch_symbolic(task: Any, symbolic_module: Optional[Any] = None) -> Dict
     """
     from symbolic.symbolic_module import SymbolicModule, checked_solve
 
-    module = symbolic_module or SymbolicModule()
+    # One module per font colour the task's training pairs suggest, unless
+    # the caller fixed one: a solver told the wrong colour for the missing or
+    # background cells finds nothing where the right one solves the task.
+    modules = [symbolic_module] if symbolic_module else SymbolicModule.for_task(task)
     errors = []
-    for solver in (module.mixer, module.upscale_or_covering, module.color_restore):
-        result = checked_solve(solver, task)
-        if result.success:
-            return {"solution": result.grid, "module_results": {"debug": result.debug}}
-        errors.append(result.debug)
+    for module in modules:
+        for solver in (module.mixer, module.upscale_or_covering, module.color_restore):
+            result = checked_solve(solver, task)
+            if result.success:
+                return {"solution": result.grid, "module_results": {"debug": result.debug}}
+            errors.append(result.debug)
     return {"solution": "", "module_results": {"error": "; ".join(errors)}}
 
 

@@ -62,6 +62,20 @@ SAME = task_with([([[1, 2]], [[1, 2]]), ([[3, 4]], [[3, 4]]), ([[5, 6]], [[5, 6]
 DIFFERENT = task_with([([[1, 2]], [[2, 1]]), ([[3, 4]], [[4, 3]]), ([[5, 6]], [[6, 5]])], ([[7, 8]], [[8, 7]]))
 
 
+class TestOneSolverPerFontColour:
+    def test_a_list_claims_if_any_claims_and_is_kept_by_the_first_that_survives(self):
+        flags = coverage.score_task(SAME, {"copies": [Declines(), Copies(), Copies()]})["copies"]
+        assert flags["claimed"] and flags["kept_correct"] and flags["instance"] == 1
+
+    def test_a_list_of_solvers_that_all_decline_claims_nothing(self):
+        flags = coverage.score_task(SAME, {"none": [Declines(), Declines()]})["none"]
+        assert not flags["claimed"] and flags["instance"] is None
+
+    def test_a_wrong_claim_in_the_list_does_not_hide_a_right_one_after_it(self):
+        flags = coverage.score_task(DIFFERENT, {"mixed": [Copies(), Copies()]})["mixed"]
+        assert flags["claimed"] and not flags["kept"]
+
+
 class TestScoring:
     def test_a_solver_that_is_right_is_claimed_correct_and_kept(self):
         flags = coverage.score_task(SAME, {"copies": Copies()})["copies"]

@@ -677,6 +677,10 @@ class MixerSolver:
         self.font_val = font_val
         self.pad_val = pad_val
 
+    #: How many times the search may be asked for another answer for the first
+    #: example when the one it gave contradicts a later one.
+    MAX_RETRIES = 50
+
     def solve(self, task) -> SolveResult:
         try:
             from symbolic.patterns import retrieve_shapes
@@ -684,24 +688,51 @@ class MixerSolver:
             return SolveResult.fail(f"retrieve_shapes unavailable: {e}")
 
         try:
-            test_input = task.test_subtask.train_inp
+            first = task.subtasks[0]
+            first_patterns = retrieve_shapes(first.train_inp, first.train_inp_shape,
+                                             ('markup', 'partition_lines'), self.font_val)
+            primary = self._color_analysis(task, first_patterns)
+            # The kind the colours point to first; "fit" - the pieces are laid
+            # over one another when they do not collide, and the first piece
+            # stands alone when they do - is tried where that finds nothing.
+            reasons = []
+            for transf_type in dict.fromkeys([primary, 'fit']):
+                outcome = self._fit_examples(task, transf_type, retrieve_shapes)
+                if outcome["solution"]:
+                    return self._answer(task, transf_type, outcome, retrieve_shapes)
+                reasons.append(outcome["reason"])
+            return SolveResult.fail(reasons[0])
+
+        except Exception as e:
+            return SolveResult.fail(f"mixer solver raised {type(e).__name__}: {e}")
+
+    def _fit_examples(self, task, transf_type, retrieve_shapes) -> Dict[str, Any]:
+        """Search the examples for one way of combining the pieces of type
+        `transf_type`.
+
+        The search settles on the first way that gives the first example, and
+        checks it against the others. Where several ways give the first
+        example - pieces that never overlap in it, so any order of layering
+        does - the first of them was kept and a later example that said
+        otherwise ended the search. Now the way that failed is set aside and
+        the search asked again."""
+        rejected: List = []
+        last_wrong = ""
+        for _ in range(self.MAX_RETRIES + 1):
             solution: List = []
+            first_found: Optional[List] = None
             colors_mapper: Dict[Any, Any] = {}
-            transf_type: Optional[str] = None
             skipped: List[str] = []
             #: How many equal strips the examples were cut into where nothing
             #: marked a split, read off the output's size - see
             #: _segments_from_heuristic.
             strip_counts = set()
+            wrong: Optional[str] = None
 
             for idx, subtask in enumerate(task.subtasks):
                 grid = subtask.train_inp
-                grid_shape = subtask.train_inp_shape
-                patterns = retrieve_shapes(grid, grid_shape, ('markup', 'partition_lines'), self.font_val)
-
-                if idx == 0:
-                    transf_type = self._color_analysis(task, patterns)
-
+                patterns = retrieve_shapes(grid, subtask.train_inp_shape,
+                                           ('markup', 'partition_lines'), self.font_val)
                 segments = self._get_segments(grid, patterns, out_shape=subtask.train_out.shape)
                 if not segments:
                     skipped.append(f"example {idx}: no segments found")
@@ -715,35 +746,47 @@ class MixerSolver:
                     colors_mapper[segment_color] = target_color
 
                 try:
-                    pos_solution = self._solver(segments, transf_type, solution, subtask.train_out)
+                    pos_solution = self._solver(segments, transf_type, solution, subtask.train_out, rejected)
                 except _WrongCheck as e:
-                    return SolveResult.fail(
-                        f"strategy from earlier example contradicts example {idx}: {e.message}"
-                    )
+                    wrong = f"strategy from earlier example contradicts example {idx}: {e.message}"
+                    break
                 except _TooManyOrderings as e:
                     # Not "raised", which is what the catch-all below would
                     # call it: this is the solver declining a task it
                     # cannot afford, and it reads as a refusal.
-                    return SolveResult.fail(f"mixer declines example {idx}: {e.message}")
+                    return {"solution": None, "reason": f"mixer declines example {idx}: {e.message}"}
                 if pos_solution:
+                    if not solution:
+                        first_found = copy(pos_solution)
                     solution = copy(pos_solution)
 
+            if wrong is not None:
+                last_wrong = wrong
+                if first_found is None:
+                    break
+                rejected.append(self._key(first_found))
+                continue
             if not solution:
                 reason = "; ".join(skipped) if skipped else "no consistent transformation found across examples"
-                return SolveResult.fail(f"mixer: {reason}")
+                return {"solution": None, "reason": f"mixer: {reason}"}
+            return {"solution": solution, "colors_mapper": colors_mapper,
+                    "strip_counts": strip_counts, "reason": ""}
+        return {"solution": None, "reason": last_wrong}
 
-            grid_shape = test_input.shape
-            patterns = retrieve_shapes(test_input, grid_shape, ('markup', 'partition_lines'), self.font_val)
-            segments = self._get_segments(test_input, patterns,
-                                          count=strip_counts.pop() if len(strip_counts) == 1 else None)
-            if not segments:
-                return SolveResult.fail("mixer: could not segment the test input")
+    def _answer(self, task, transf_type, outcome, retrieve_shapes) -> SolveResult:
+        test_input = task.test_subtask.train_inp
+        patterns = retrieve_shapes(test_input, test_input.shape, ('markup', 'partition_lines'), self.font_val)
+        counts = outcome["strip_counts"]
+        segments = self._get_segments(test_input, patterns, count=next(iter(counts)) if len(counts) == 1 else None)
+        if not segments:
+            return SolveResult.fail("mixer: could not segment the test input")
+        answer = self._infer_grid(segments, transf_type, outcome["solution"], outcome["colors_mapper"])
+        return SolveResult.ok(answer)
 
-            answer = self._infer_grid(segments, transf_type, solution, colors_mapper)
-            return SolveResult.ok(answer)
-
-        except Exception as e:
-            return SolveResult.fail(f"mixer solver raised {type(e).__name__}: {e}")
+    @staticmethod
+    def _key(solution):
+        """A found way of combining as something a set can hold."""
+        return tuple(tuple(part) if isinstance(part, list) else part for part in solution)
 
     # -- shared helpers -------------------------------------------------------
 
@@ -767,7 +810,16 @@ class MixerSolver:
             uniq_inp -= 1
         if self.font_val in flattened_out:
             uniq_out -= 1
-        return 'color_mix' if uniq_inp == uniq_out and uniq_out > 2 else 'logical_ops'
+        if uniq_inp == uniq_out and uniq_out > 2:
+            return 'color_mix'
+        # Colours the inputs do not have, more of them than the pieces have
+        # between them: the cells one piece has and its neighbour lacks are
+        # marked in a colour of their own - the conjunction rule, which
+        # _color_analysis was never routing to (the search and the way of
+        # applying it were both here, and nothing chose them).
+        if uniq_out > uniq_inp:
+            return 'conjunction'
+        return 'logical_ops'
 
     # -- segmentation ---------------------------------------------------------
 
@@ -903,16 +955,18 @@ class MixerSolver:
 
     # -- transformation search --------------------------------------------
 
-    def _solver(self, segments, transf_type, solution, target):
+    def _solver(self, segments, transf_type, solution, target, rejected=()):
         if transf_type == "logical_ops":
-            return self._logical_transf_search(segments, target, solution)
+            return self._logical_transf_search(segments, target, solution, rejected)
         if transf_type == "color_mix":
-            return self._color_mix_search(segments, target, solution)
+            return self._color_mix_search(segments, target, solution, rejected)
         if transf_type == "conjunction":
             return self._conjunction_search(segments, target, solution)
+        if transf_type == "fit":
+            return self._fit_search(segments, target, solution)
         raise ValueError(f'Unsupported transformation type: {transf_type!r}')
 
-    def _logical_transf_search(self, segments, target, solution):
+    def _logical_transf_search(self, segments, target, solution, rejected=()):
         target_color = self._main_color(target)
         masks = [g != self.font_val for g in segments]
 
@@ -928,7 +982,7 @@ class MixerSolver:
 
         for func_name, func in LOGIC_FUNCS.items():
             for aug_name, aug in AUGS.items():
-                if aug(masks[0]).shape != target.shape:
+                if aug(masks[0]).shape != target.shape or (aug_name, func_name) in rejected:
                     continue
                 res_mask = masks[0]
                 for m in masks[1:]:
@@ -937,7 +991,7 @@ class MixerSolver:
                     return (aug_name, func_name)
         return False
 
-    def _color_mix_search(self, segments, target, solution):
+    def _color_mix_search(self, segments, target, solution, rejected=()):
         masks = [g != self.font_val for g in segments]
         shape = segments[0].shape
 
@@ -974,11 +1028,35 @@ class MixerSolver:
         for perm in permutations(range(len(segments))):
             perm = list(perm)
             for aug_name in AUGS:
-                if AUGS[aug_name](masks[perm[0]]).shape != target.shape:
+                if AUGS[aug_name](masks[perm[0]]).shape != target.shape \
+                        or (aug_name, tuple(perm)) in rejected:
                     continue
                 if np.equal(build(perm, aug_name), target).all():
                     return (aug_name, perm)
         return False
+
+    def _fit_build(self, segments):
+        """The pieces laid over one another, the first on top, when no two
+        have a cell in the same place; the first piece alone when two do."""
+        masks = [g != self.font_val for g in segments]
+        if any((masks[a] & masks[b]).any() for a in range(len(masks)) for b in range(a + 1, len(masks))):
+            return segments[0].copy()
+        answer = segments[0].copy()
+        for piece, mask in zip(segments[1:], masks[1:]):
+            answer = np.where(mask, piece, answer)
+        return answer
+
+    def _fit_search(self, segments, target, solution):
+        if len({segment.shape for segment in segments}) != 1 or segments[0].shape != target.shape:
+            if solution:
+                raise _WrongCheck("previously found fit rule does not apply to this example's shape")
+            return False
+        matches = np.array_equal(self._fit_build(segments), target)
+        if solution:
+            if matches:
+                return solution
+            raise _WrongCheck("previously found fit rule no longer matches")
+        return ("ID", "fit") if matches else False
 
     def _conjunction_search(self, segments, target, solution):
         masks = [g != self.font_val for g in segments]
@@ -1063,6 +1141,9 @@ class MixerSolver:
                 res_mask_prev = copy(res_mask)
             return answer.astype(int)
 
+        if transf_type == "fit":
+            return self._fit_build(segments).astype(int)
+
         if transf_type == "conjunction":
             aug_name, segments_colors = solution
             aug = AUGS[aug_name]
@@ -1134,6 +1215,15 @@ class ColorRestoreSolver:
                 train_inp[i_1:i_2, j_1:j_2] = train_out
                 train_out = train_inp
 
+            inferred = self._restore_by_inferred_symmetries(test_inp)
+            if inferred is not None:
+                if shape_correspondence:
+                    return SolveResult.ok(inferred)
+                test_patch = find_connected_components_with_color(test_inp, self.font_val)
+                if test_patch:
+                    i_1, i_2, j_1, j_2 = self._segment2slice(test_patch[0])
+                    return SolveResult.ok(inferred[i_1:i_2, j_1:j_2])
+
             restored_grid = copy(test_inp)
             symmetry = self._check_symmetry(train_out)
 
@@ -1158,6 +1248,17 @@ class ColorRestoreSolver:
                     )
                 restored_grid[i_1:i_2, j_1:j_2] = restored_patch
 
+            # A restoration fills what is missing and touches nothing else.
+            # The region-based restoration above reflects whole strips, and
+            # where the picture is not symmetric all the way out it rewrites
+            # cells that were right: measured, 20 of them on one evaluation
+            # task, and that answer passed the held-out check.
+            # (Where the answer is only the patch, what is done outside it
+            # does not reach the answer.)
+            known = test_inp != self.font_val
+            if shape_correspondence and (restored_grid[known] != test_inp[known]).any():
+                return SolveResult.fail("the restoration changed cells that were not missing")
+
             if not shape_correspondence:
                 test_patch = find_connected_components_with_color(test_inp, self.font_val)
                 if not test_patch:
@@ -1169,6 +1270,158 @@ class ColorRestoreSolver:
 
         except Exception as e:
             return SolveResult.fail(f"color restore solver raised {type(e).__name__}: {e}")
+
+    # -- symmetries read off the grid itself --------------------------------
+
+    #: How much of the visible picture a mirror has to overlap to count, and
+    #: how much of that overlap has to agree.
+    MIN_OVERLAP = 0.3
+
+    def _mirrors(self, height: int, width: int):
+        """(name, function of index arrays) for every mirror the grid could
+        have: left-right and up-down about any line, and the two diagonals
+        through any offset - the symmetries a restoration task is built on."""
+        found = []
+        for total in range(width // 2, 2 * width - width // 2):
+            found.append(("lr", total, lambda i, j, t=total: (i, t - j)))
+        for total in range(height // 2, 2 * height - height // 2):
+            found.append(("ud", total, lambda i, j, t=total: (t - i, j)))
+        for offset in range(-(width // 2), height // 2 + 1):
+            found.append(("diag", offset, lambda i, j, d=offset: (j + d, i - d)))
+        for total in range(min(height, width) // 2, height + width - min(height, width) // 2):
+            found.append(("anti", total, lambda i, j, t=total: (t - j, t - i)))
+        return found
+
+    def _agreement(self, grid, visible, mirror):
+        """(cells compared, share that agree) for a mirror, over the cells
+        both it and its image leave visible."""
+        height, width = grid.shape
+        rows, cols = np.indices((height, width))
+        image_rows, image_cols = mirror(rows, cols)
+        inside = (image_rows >= 0) & (image_rows < height) & (image_cols >= 0) & (image_cols < width)
+        image_rows = np.clip(image_rows, 0, height - 1)
+        image_cols = np.clip(image_cols, 0, width - 1)
+        both = inside & visible & visible[image_rows, image_cols]
+        compared = int(both.sum())
+        if not compared:
+            return 0, 0.0
+        return compared, float((grid[both] == grid[image_rows, image_cols][both]).mean())
+
+    def _restore_by_inferred_symmetries(self, grid: np.ndarray):
+        """The grid with every font cell filled from a mirror image of it, or
+        None when the grid has none to fill or its mirrors do not reach them.
+
+        The mirrors are found in the grid in hand, from the cells that are
+        not font: any left-right, up-down or diagonal mirror under which
+        those cells agree wherever a cell and its image are both there.
+        Nothing is carried over from the training pictures, so a symmetry
+        axis that sits somewhere else in each example - the case a fixed
+        region of the last training output cannot express - is found again
+        each time. A cell is filled from the image the best-supported mirror
+        gives it, and the result has to keep every mirror it was filled by
+        exact; a picture whose mirrors contradict each other is refused."""
+        grid = np.asarray(grid)
+        visible = (grid != self.font_val) & (grid != self.pad_val)
+        if visible.all() or not visible.any():
+            return None
+        mirrors, mirrors_named = [], []
+        for name, key, function in self._mirrors(*grid.shape):
+            compared, share = self._agreement(grid, visible, function)
+            if compared >= self.MIN_OVERLAP * visible.sum() and share == 1.0:
+                mirrors.append((compared, function))
+                mirrors_named.append((name, key))
+        if not mirrors:
+            return None
+        mirrors.sort(key=lambda item: -item[0])
+        filled = grid.copy()
+        missing = grid == self.font_val
+        for _ in range(self.max_iterations):
+            if not missing.any():
+                break
+            progressed = False
+            rows, cols = np.where(missing)
+            for _support, function in mirrors:
+                image_rows, image_cols = function(rows, cols)
+                inside = (image_rows >= 0) & (image_rows < grid.shape[0]) \
+                    & (image_cols >= 0) & (image_cols < grid.shape[1])
+                for k in np.where(inside)[0]:
+                    r, c = rows[k], cols[k]
+                    if missing[r, c] and not missing[image_rows[k], image_cols[k]]:
+                        filled[r, c] = filled[image_rows[k], image_cols[k]]
+                        missing[r, c] = False
+                        progressed = True
+            if not progressed:
+                break
+        if missing.any():
+            filled, missing = self._restore_by_local_mirrors(filled, missing, self._quarter_turns(grid, mirrors_named))
+            if missing.any():
+                return None
+        everything = np.ones(grid.shape, dtype=bool)
+        for _support, function in mirrors:
+            _n, share = self._agreement(filled, everything, function)
+            if share != 1.0:
+                return None
+        return filled
+
+    #: The pairs along a cell's row, or along its column, a mirror has to
+    #: agree on, none against, for it to be trusted at a cell the
+    #: picture-wide mirrors do not reach.
+    MIN_LOCAL_PAIRS = 8
+
+    def _quarter_turns(self, grid, mirrors_named):
+        """Quarter turns about the centre the picture-wide left-right and
+        up-down mirrors share: the frame round a symmetric picture is often
+        the picture's own edge turned, top strip to side strip."""
+        totals_j = [key for name, key in mirrors_named if name == "lr"]
+        totals_i = [key for name, key in mirrors_named if name == "ud"]
+        turns = []
+        for a in totals_j[:1]:
+            for b in totals_i[:1]:
+                if (a - b) % 2:
+                    continue
+                shift, both = (b - a) // 2, (a + b) // 2
+                turns.append(lambda i, j, u=shift, v=both: (j + u, v - i))
+                turns.append(lambda i, j, u=shift, v=both: (v - j, i - u))
+        return turns
+
+    def _restore_by_local_mirrors(self, grid, missing, extra=()):
+        """Fill what the picture-wide mirrors could not reach - a frame
+        around the symmetric part, whose top strip is the transpose of its
+        left one - from a mirror that is exact along the cell's own row or
+        along its own column. Returns the grid and what is still missing."""
+        filled, missing = grid.copy(), missing.copy()
+        height, width = grid.shape
+        visible = ~missing & (grid != self.pad_val)
+        rows_all, cols_all = np.indices((height, width))
+        table = []
+        for function in [f for _n, _k, f in self._mirrors(height, width)] + list(extra):
+            image_rows, image_cols = function(rows_all, cols_all)
+            inside = (image_rows >= 0) & (image_rows < height) & (image_cols >= 0) & (image_cols < width)
+            clipped_rows, clipped_cols = np.clip(image_rows, 0, height - 1), np.clip(image_cols, 0, width - 1)
+            both = inside & visible & visible[clipped_rows, clipped_cols]
+            agree = both & (grid == grid[clipped_rows, clipped_cols])
+            against = both & ~agree
+            table.append((function, agree.sum(axis=1), agree.sum(axis=0),
+                          against.sum(axis=1), against.sum(axis=0)))
+        for _ in range(self.max_iterations):
+            progressed = False
+            for r, c in zip(*np.where(missing)):
+                best, best_support = None, 0
+                for function, agree_rows, agree_cols, against_rows, against_cols in table:
+                    support = max(int(agree_rows[r]) if not against_rows[r] else 0,
+                                  int(agree_cols[c]) if not against_cols[c] else 0)
+                    if support < self.MIN_LOCAL_PAIRS or support <= best_support:
+                        continue
+                    image_row, image_col = function(r, c)
+                    if 0 <= image_row < height and 0 <= image_col < width and not missing[image_row, image_col]:
+                        best, best_support = (image_row, image_col), support
+                if best is not None:
+                    filled[r, c] = filled[best]
+                    missing[r, c] = False
+                    progressed = True
+            if not progressed or not missing.any():
+                break
+        return filled, missing
 
     # -- symmetry detection -------------------------------------------------
 

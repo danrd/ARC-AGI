@@ -492,32 +492,49 @@ class TestTheConfigReachesTheAgent:
 
 
 class TestWhatCountsAsASolution:
-    def _module_result(self, task, config, ppo, monkeypatch, test_acc, grid):
+    """The gate is every training pair closed, not the held-out accuracy: the
+    held-out accuracy is measured against a target a real run does not have."""
+
+    def _module_result(self, task, config, ppo, monkeypatch, accs, grid, test_acc=None):
         module = RLModule(RlConfig(**{**config, "log_path": ".data/logs/rl/"}), ppo)
 
         def fake_train(**kwargs):
-            return {}, {}, object(), {"test_acc": test_acc, "test_grid": grid,
-                                      "test_len": 1.0, "expl_vars": []}
+            return accs, {}, object(), {"test_acc": test_acc, "test_grid": grid,
+                                        "test_len": 1.0, "expl_vars": []}
 
         monkeypatch.setattr("rl.training.train_on_task", fake_train)
         return module.solve(task)
 
-    def test_a_solved_held_out_grid_is_the_solution(self, task, config, ppo, monkeypatch):
+    def test_a_policy_that_closed_every_training_pair_offers_its_held_out_grid(
+            self, task, config, ppo, monkeypatch):
         grid = np.array([[7, 7], [0, 0]])
 
-        result = self._module_result(task, config, ppo, monkeypatch, 1.0, grid)
+        result = self._module_result(task, config, ppo, monkeypatch, {0: 1.0, 1: 1.0, 2: 1.0}, grid)
 
         assert np.array_equal(result["solution"], grid)
 
-    def test_a_grid_that_did_not_solve_it_is_not_a_solution(self, task, config, ppo,
-                                                            monkeypatch):
-        """0.99 of the distance closed is a wrong grid. Reported as a
-        solution it would end the orchestration graph with a wrong answer."""
-        result = self._module_result(task, config, ppo, monkeypatch, 0.99,
-                                     np.array([[7, 0], [0, 0]]))
+    def test_the_gate_does_not_look_at_the_held_out_accuracy(self, task, config, ppo, monkeypatch):
+        """A run scoring itself against the target would open the gate only
+        where the target is known; here the grid is wrong and still offered,
+        because the training pairs were closed."""
+        result = self._module_result(task, config, ppo, monkeypatch, {0: 1.0, 1: 1.0}, np.array([[7, 0]]),
+                                     test_acc=-0.4)
+
+        assert result["solution"] is not None
+
+    def test_one_training_pair_left_open_is_no_solution(self, task, config, ppo, monkeypatch):
+        """0.99 of the distance closed on one pair is a wrong grid there, and
+        a policy that misses a pair it was shown has not found the rule."""
+        result = self._module_result(task, config, ppo, monkeypatch, {0: 1.0, 1: 0.99, 2: 1.0},
+                                     np.array([[7, 7], [0, 0]]), test_acc=1.0)
 
         assert result["solution"] is None
-        assert result["module_results"]["train_metrics"]["test_acc"] == 0.99
+        assert result["module_results"]["accuracies"][1] == 0.99
+
+    def test_no_training_pair_at_all_is_no_solution(self, task, config, ppo, monkeypatch):
+        result = self._module_result(task, config, ppo, monkeypatch, {}, np.array([[7, 7], [0, 0]]))
+
+        assert result["solution"] is None
 
 
 class TestTheAddressingReachesTheEnvsTrainingBuilds:

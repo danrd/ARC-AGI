@@ -68,11 +68,16 @@ class RLModule:
             mode=self.mode,
         )
         self.agent = agent
-        # The policy's grid on the held-out input is a candidate answer only
-        # when it is the answer: train_metrics['test_acc'] is the fraction of
-        # the distance closed, so 1.0 means the grid matches the target and
-        # anything less is a wrong grid that would be reported as a solution.
-        solved = train_metrics.get("test_acc") == 1.0
+        # The policy's grid on the held-out input is offered as the answer
+        # when the policy closed every training pair - the one thing that is
+        # known without the answer. The held-out accuracy in train_metrics is
+        # measured against the target, which exists only when an experiment
+        # scores itself, so a gate on it would open in the benchmark and
+        # nowhere else. The gate is not certainty: over 72 runs that closed
+        # every training pair, 47 also closed the held-out pair (0.65), which
+        # is why the orchestration ranks this below the symbolic solvers and
+        # above an unchecked model.
+        solved = bool(accs) and all(acc == 1.0 for acc in accs.values())
         return {
             "solution": train_metrics.get("test_grid") if solved else None,
             "module_results": {

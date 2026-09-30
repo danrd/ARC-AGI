@@ -29,7 +29,11 @@ from subsymbolic.prompt_builder import PromptingConfig
 class AgentRunConfig:
     """Execution settings for the agent-level (module) loop."""
     max_agent_iterations: int = 3
-    rl_wait_timeout: float = 30.0
+    # The one wait for the background RL job after the model first answers.
+    # A run at 100k steps took 85-522 s (median 183 s) over 36 runs, so a
+    # shorter wait cancels RL on almost every task before it can answer. The
+    # value follows the speed of the final RL step; revisit it when that moves.
+    rl_wait_timeout: float = 600.0
     verbose: bool = False
 
 

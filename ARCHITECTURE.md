@@ -100,7 +100,12 @@ task between those three, plus the system-level config.
 
 **`data`** is configuration and datasets: the action vocabulary and agent
 rosters in `configs`, ARC itself in `datasets/ARC`, prompt templates in
-`prompts`.
+`prompts`. Beside the task files, `datasets/ARC/idx2agent.pkl` labels each
+task with the agent that suits it, and `evaluation_difficulty.json` grades
+the 400 evaluation tasks by hand (easy, medium, hard, very_hard,
+impossible; 30 are left `unlabeled`). `task2difficulty.json` is not that
+grade - it says 'easy' for every training task and 'hard' for every
+evaluation one.
 
 **`scripts`** are the measurement tools (`compare_llm_arms`,
 `compare_reward_approaches`, `search_budget`, `harvest_traces`, plus

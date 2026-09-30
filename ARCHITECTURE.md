@@ -56,7 +56,7 @@ nothing.
 | the environment an agent or a search sees | `rl/arc_env.py` (`ARCGridWorld`): grid, deltas, object and relation embeddings |
 | the search over object actions | `rl/mcts.py`; `rl/search_hints.py` runs it per task (base action types first, then the agent rosters) |
 | the search over strokes, for coordinate-addressed tasks | `rl/coordinate_search.py` |
-| what a verified search finding says to an LLM | `rl/search_hints.py:hints_for`, joined to a prompt through the build context (`subsymbolic/arc_resolvers.py`) |
+| what a verified search finding says to an LLM | `rl/search_hints.py:hints_for`, joined to a prompt by `orchestration/context.py:with_search_hints` through the build context, and shown by the `search_hints` block (`subsymbolic/arc_resolvers.py`) |
 | what the agent's action is made of | `rl/action_structure.py` (type, colour, direction as separate choices) |
 | how observations become features | `rl/features.py` (`ARCCombinedExtractor`), read by the heads in `rl/policy.py` |
 | PPO training | `rl/training.py`, `rl/policy.py`, launched by `rl/rl_job.py`, which narrows the vocabulary per task |
@@ -162,24 +162,24 @@ being read.
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (4)"]
+  orchestration["orchestration (5)"]
   rl["rl (20)"]
   scripts["scripts (10)"]
   subsymbolic["subsymbolic (13)"]
   symbolic["symbolic (9)"]
-  tests["tests (64)"]
+  tests["tests (65)"]
   utils["utils (3)"]
-  tests -->|90| rl
+  tests -->|92| rl
   tests -->|32| symbolic
-  tests -->|24| subsymbolic
+  tests -->|27| subsymbolic
   tests -->|18| data
   rl -->|11| data
   rl -->|11| symbolic
   scripts -->|9| rl
-  tests -->|7| orchestration
+  tests -->|8| orchestration
+  orchestration -->|4| rl
   orchestration -->|4| subsymbolic
   data -->|3| rl
-  orchestration -->|3| rl
   rl -->|3| utils
   scripts -->|3| subsymbolic
   scripts -->|2| data
@@ -205,11 +205,12 @@ graph TD
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
 | `orchestration.configs` | 5 |
+| `orchestration.context` | 1 |
 | `orchestration.graph` | 4 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 32 |
+| `rl.arc_task` | 33 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -222,7 +223,7 @@ graph TD
 | `rl.policy` | 4 |
 | `rl.rl_job` | 3 |
 | `rl.rl_module` | 5 |
-| `rl.search_hints` | 10 |
+| `rl.search_hints` | 12 |
 | `rl.training` | 11 |
 | `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
@@ -239,12 +240,12 @@ graph TD
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 3 |
 | `subsymbolic.arc_resolvers` | 2 |
-| `subsymbolic.llm_run` | 3 |
+| `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 5 |
 | `subsymbolic.llm_setup` | 5 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 12 |
-| `subsymbolic.registry` | 4 |
+| `subsymbolic.prompt_builder` | 13 |
+| `subsymbolic.registry` | 5 |
 | `subsymbolic.subsymbolic_module` | 2 |
 | `subsymbolic.utils` | 3 |
 | `symbolic.analyzer` | 3 |

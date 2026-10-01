@@ -720,3 +720,41 @@ def test_start_vllm_server_omits_enforce_eager_by_default(tmp_path, monkeypatch)
 
     args = mock_popen.call_args[0][0]
     assert "--enforce-eager" not in args
+
+
+def _with_prompt_budget(config, token_limit, max_tokens):
+    config.prompt = SimpleNamespace(token_limit=token_limit)
+    config.generation.max_tokens = max_tokens
+    return config
+
+
+def test_a_prompt_budget_that_can_outgrow_the_context_is_warned_about(tmp_path, monkeypatch):
+    """The builder's token_limit is raised for a 30 x 30 task and n_ctx is
+    not: the server is then loaded with a window the prompt and its answer
+    can overflow, and says nothing useful when they do."""
+    monkeypatch.chdir(tmp_path)
+    config = _with_prompt_budget(_fake_server_config(tmp_path), token_limit=12000, max_tokens=2048)
+    config.llm.n_ctx = 9000
+
+    with patch("subprocess.Popen"), pytest.warns(UserWarning, match=r"14048 tokens.*n_ctx=9000"):
+        _start_llama_cpp_server(config)
+
+
+def test_a_prompt_budget_that_fits_the_context_is_not_warned_about(tmp_path, monkeypatch):
+    import warnings
+    monkeypatch.chdir(tmp_path)
+    config = _with_prompt_budget(_fake_server_config(tmp_path), token_limit=7000, max_tokens=2000)
+    config.llm.n_ctx = 9000
+
+    with patch("subprocess.Popen"), warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _start_llama_cpp_server(config)
+
+
+def test_the_context_check_falls_back_to_max_context_when_n_ctx_is_unset(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config = _with_prompt_budget(_fake_server_config(tmp_path), token_limit=9000, max_tokens=1000)
+    config.llm.max_context = 9000
+
+    with patch("subprocess.Popen"), pytest.warns(UserWarning, match="10000 tokens"):
+        _start_llama_cpp_server(config)

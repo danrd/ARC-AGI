@@ -31,6 +31,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import warnings
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -148,11 +149,35 @@ def resolve_local_model_path(config) -> str:
     return hf_hub_download(repo_id=model, filename=quant_file, local_dir=local_dir)
 
 
+def _warn_if_prompt_can_overflow(config, n_ctx) -> None:
+    """Warn when a prompt the builder lets through, and the answer after it,
+    can be longer than the context the model is loaded with.
+
+    The builder's budget (prompt.token_limit) and the model's window (n_ctx)
+    are two settings, and raising the first - as a 30 x 30 task needs - leaves
+    the second where it was. The server is started with the second, and a
+    request past it does not come back as "too long": llama.cpp's server has
+    been seen to fail on one with "could not broadcast input array from shape
+    (<vocab>,) into shape (0,)", an error that names neither setting.
+    """
+    budget = getattr(getattr(config, "prompt", None), "token_limit", None)
+    answer = getattr(getattr(config, "generation", None), "max_tokens", None)
+    if budget is None or answer is None or not n_ctx or int(budget) + int(answer) <= int(n_ctx):
+        return
+    warnings.warn(
+        f"prompt.token_limit={budget} plus generation.max_tokens={answer} is {int(budget) + int(answer)} "
+        f"tokens, more than the context the model is loaded with (n_ctx={n_ctx}). A prompt near the limit "
+        f"may fail on the server with an unrelated error. Raise llm.n_ctx (or llm.max_context) to at least "
+        f"{int(budget) + int(answer)}, or lower prompt.token_limit or generation.max_tokens.",
+        stacklevel=2)
+
+
 def _start_llama_cpp_server(config) -> subprocess.Popen:
     port = getattr(config.base, "port", 8001)
     n_ctx = str(getattr(config.llm, "n_ctx", None)
                 or getattr(config.llm, "max_context", None)
                 or getattr(config.generation, "max_tokens", 2048))
+    _warn_if_prompt_can_overflow(config, n_ctx)
     log_file = open("llama_cpp.log", "w", encoding="utf-8")
 
     args = [sys.executable, "-m", "llama_cpp.server", "--model", resolve_local_model_path(config),
@@ -295,11 +320,13 @@ def setup_llama_cpp_model(model_path: str, config=None, tokenizer_id: Optional[s
         "tensor_split": getattr(llm_cfg, "tensor_split", None),
         "n_threads": getattr(llm_cfg, "n_threads", None),
     }
+    n_ctx = (getattr(llm_cfg, "n_ctx", None)
+             or getattr(llm_cfg, "max_context", None)
+             or getattr(gen_cfg, "max_tokens", 2048))
+    _warn_if_prompt_can_overflow(config, n_ctx)
     model = Llama(
         model_path=model_path,
-        n_ctx=(getattr(llm_cfg, "n_ctx", None)
-               or getattr(llm_cfg, "max_context", None)
-               or getattr(gen_cfg, "max_tokens", 2048)),
+        n_ctx=n_ctx,
         n_batch=getattr(llm_cfg, "n_tokens_batch", 512),
         use_mlock=getattr(llm_cfg, "use_mlock", True),
         n_gpu_layers=getattr(llm_cfg, "n_gpu_layers", 0),

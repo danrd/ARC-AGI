@@ -113,8 +113,10 @@ rosters in `configs`, ARC itself in `datasets/ARC`, prompt templates in
 task with the agent that suits it, and `evaluation_difficulty.json` grades
 the 400 evaluation tasks by hand (easy, medium, hard, very_hard,
 impossible; the 27 the symbolic modules solve are `symbolic`, and were never
-shown to an LLM; three that they do not solve, put there at first, are
-graded `medium` and left to the LLM). `task2difficulty.json` is not that
+shown to an LLM; two that they do not solve, put there at first, are
+graded `medium` and left to the LLM, and a third, f9d67f8b, is `oversized`:
+its four 30 x 30 pairs need far more context than the rest of the split, so
+it is left out of the LLM runs). `task2difficulty.json` is not that
 grade - it says 'easy' for every training task and 'hard' for every
 evaluation one.
 

@@ -9,7 +9,10 @@ ARCDataset stamps on its tasks), so what is pinned here is that the ids it
 holds are the ones those indices name. The 27 graded `symbolic` are the ones
 the symbolic modules solve, which is why they were never shown to an LLM.
 Three that were first put there and that no symbolic module solves
-(25094a63, dd2401ed, f9d67f8b) are graded `medium` and go to the LLM.
+(25094a63, dd2401ed, f9d67f8b) went to the LLM; two are graded `medium`, and
+f9d67f8b `oversized`: four 30 x 30 pairs and a 30 x 30 input are about 10k tokens of prompt and
+another thousand of answer, more context than the rest of the split asks for,
+so it is left out of the LLM runs by being in a level nobody selects.
 """
 from __future__ import annotations
 
@@ -24,9 +27,10 @@ from data.datasets.ARC.arc_dataset import ARCDataset
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ARC = REPO_ROOT / "data" / "datasets" / "ARC"
 
-LEVELS = ("easy", "medium", "hard", "very_hard", "impossible", "symbolic")
+LEVELS = ("easy", "medium", "hard", "very_hard", "impossible", "symbolic", "oversized")
 #: How many tasks the grading put in each level.
-COUNTS = {"easy": 95, "medium": 56, "hard": 67, "very_hard": 87, "impossible": 68, "symbolic": 27}
+COUNTS = {"easy": 95, "medium": 55, "hard": 67, "very_hard": 87, "impossible": 68, "symbolic": 27,
+          "oversized": 1}
 
 
 @pytest.fixture(scope="module")
@@ -44,8 +48,12 @@ def test_the_levels_are_the_known_ones_in_the_known_numbers(difficulty):
     assert dict(Counter(difficulty.values())) == COUNTS
 
 
-def test_the_three_the_symbolic_modules_do_not_solve_are_medium_and_left_to_the_llm(difficulty):
-    assert {difficulty[task] for task in ("25094a63", "dd2401ed", "f9d67f8b")} == {"medium"}
+def test_two_of_the_three_the_symbolic_modules_do_not_solve_are_medium_and_left_to_the_llm(difficulty):
+    assert {difficulty[task] for task in ("25094a63", "dd2401ed")} == {"medium"}
+
+
+def test_the_task_whose_prompt_is_far_past_the_rest_is_in_a_level_of_its_own(difficulty):
+    assert difficulty["f9d67f8b"] == "oversized"
 
 
 def test_the_indices_the_grading_was_written_in_name_these_ids(difficulty, monkeypatch):

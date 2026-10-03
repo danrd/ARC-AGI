@@ -53,6 +53,13 @@ class TestTheArms:
         assert compare.arm_settings("gd_wide")[1]["extr_arch"] is not None
         assert width("gd_wide") == 32 * 9 and width("gd_ch") == 16 * 9
 
+    def test_the_deltas_are_the_only_difference_between_objrel_and_default(self):
+        """Default against objonly changes the relations and the deltas at once;
+        objrel is the arm that separates them."""
+        assert set(compare.ARMS["default"][0]) - set(compare.ARMS["objrel"][0]) == set(compare.DELTAS)
+        assert set(compare.ARMS["objrel"][0]) - set(compare.ARMS["objonly"][0]) == {"relations_emb"}
+        assert compare.ARMS["default"][1] == compare.ARMS["objrel"][1] == {}
+
     def test_the_default_arm_is_what_rl_config_observes(self):
         from data.configs.rl_configs import rl_config
         assert compare.arm_settings("default")[0] == list(rl_config["observation_space_elements"])

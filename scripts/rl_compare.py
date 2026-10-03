@@ -30,7 +30,7 @@ object search got somewhere on - a peak above zero, from a census
 never asked. Those that the search solves outright stay: they say whether an
 arm finds what is findable, and the rest say how far it gets.
 
-Spreading it over machines. The grid is 918 runs for 51 tasks, six arms and
+Spreading it over machines. The grid is 1071 runs for 51 tasks, seven arms and
 three seeds, about 460 s each at 250k steps, and is meant to be shared between
 notebooks. `--shard k --shards K` gives a notebook the k-th of K shares of the
 grid (by a hash of the run, so each holds every arm); `--workers W` runs W
@@ -55,7 +55,8 @@ every arm, seed and notebook has to train over the same one.
 
 The arms, and what each was for:
 
-    objonly     objects only: what the agent sees if nothing else is given
+    objonly     the grid and the objects, nothing else added
+    objrel      plus the relations between objects: default without the deltas
     default     objects, relations, both deltas: rl_config's default
     g           the grid alone, object actions - the grid encoder on its own
     gd          plus the deltas, each through a DeltaReadout of its own
@@ -106,6 +107,7 @@ SHORT_TASKS = ("05f2a901", "dc433765", "a48eeaf7")
 #: function of nothing that builds one where it must be built afresh.
 ARMS = {
     "objonly": (["objects_emb"], {}),
+    "objrel": (["objects_emb", "relations_emb"], {}),
     "default": (["objects_emb", "relations_emb", *DELTAS], {}),
     "g": ([], {}),
     "gd": (DELTAS, {}),

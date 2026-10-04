@@ -75,8 +75,21 @@ class TestTheArms:
     def test_what_train_runs_by_default_is_the_first_series(self):
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
-        assert set(compare.OBSERVATION_ARMS) | set(compare.OBJECT_ARMS) == set(compare.ARMS)
-        assert not set(compare.OBSERVATION_ARMS) & set(compare.OBJECT_ARMS)
+        series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS)
+        assert set().union(*map(set, series)) == set(compare.ARMS)
+        assert sum(map(len, series)) == len(compare.ARMS)
+
+    def test_the_third_series_changes_what_the_grid_and_deltas_do_and_nothing_else(self):
+        from data.configs.rl_configs import load_PPO_config
+        ppo = load_PPO_config()
+        default = compare.arm_settings("default")[0]
+        assert compare.GRID_ARMS and set(compare.GRID_ARMS) <= set(compare.ARMS)
+        elements, settings = compare.arm_settings("s_ch")
+        assert elements == default and settings == {"delta_in_grid": True} and ppo["delta_in_grid"] is False
+        elements, settings = compare.arm_settings("s_nodelta")
+        assert set(default) - set(elements) == set(compare.DELTAS) and settings == {"spatial_channels": 32}
+        elements, settings = compare.arm_settings("s_grid")
+        assert elements == compare.DELTAS and settings == {"spatial_channels": 32} and ppo["spatial_channels"] == 0
 
     def test_a_train_command_without_arms_runs_the_first_series(self, tmp_path, monkeypatch):
         configs = tmp_path / "c.json"

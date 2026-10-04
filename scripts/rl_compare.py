@@ -79,6 +79,18 @@ from `default` and run only on the tasks where the object arms respond, with
                 its own embedding rather than from the pooled vector
     o_pointer64 per-object rows for the pointer heads 64 wide instead of 32
 
+The third series, how the grid and the deltas are read (GRID_ARMS), asks what in
+o_spatial does the work. SpatialBackbone puts the colours and each delta as planes
+into one stack of convolutions at full resolution, pools it by mean and max, and
+lets each object read it over its box:
+
+    s_grid      the grid and the deltas, no objects, with the map: is the map enough
+    s_nodelta   objects and relations with the map and no deltas: do the deltas
+                matter once the map has the colours
+    s_ch        default with the deltas as planes of the pooled grid encoder
+                instead of the readouts: the channels beside objects, without
+                the map
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -140,11 +152,20 @@ ARMS = {
     "o_spatial": (DEFAULT_ELEMENTS, {"spatial_channels": 32}),
     "o_factored": (DEFAULT_ELEMENTS, {"object_heads": "factored"}),
     "o_pointer64": (DEFAULT_ELEMENTS, {"pointer_dim": 64}),
+    # The third series, how the grid and the deltas are read: what in o_spatial
+    # does the work - the deltas in the full-resolution map, the objects reading
+    # the map over their boxes, or the map by itself - and whether the deltas as
+    # planes of the pooled grid encoder do anything beside objects.
+    "s_grid": (DELTAS, {"spatial_channels": 32}),
+    "s_nodelta": (["objects_emb", "relations_emb"], {"spatial_channels": 32}),
+    "s_ch": (DEFAULT_ELEMENTS, {"delta_in_grid": True}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
 #: The second series, run against `default`'s runs already made.
 OBJECT_ARMS = tuple(arm for arm in ARMS if arm.startswith("o_"))
+#: The third series, against `default`'s and `o_spatial`'s runs.
+GRID_ARMS = tuple(arm for arm in ARMS if arm.startswith("s_"))
 
 
 def arm_settings(arm):

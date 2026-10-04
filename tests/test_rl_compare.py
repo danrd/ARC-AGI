@@ -60,6 +60,39 @@ class TestTheArms:
         assert set(compare.ARMS["objrel"][0]) - set(compare.ARMS["objonly"][0]) == {"relations_emb"}
         assert compare.ARMS["default"][1] == compare.ARMS["objrel"][1] == {}
 
+    def test_every_object_arm_is_one_change_from_default(self):
+        """Same observation as default, and one PPO setting that default does not set;
+        the settings are keys the PPO config has."""
+        from data.configs.rl_configs import load_PPO_config
+        ppo = load_PPO_config()
+        assert compare.OBJECT_ARMS and set(compare.OBJECT_ARMS) <= set(compare.ARMS)
+        for arm in compare.OBJECT_ARMS:
+            elements, settings = compare.arm_settings(arm)
+            assert elements == compare.arm_settings("default")[0], arm
+            assert len(settings) == 1 and set(settings) <= set(ppo), arm
+            assert settings != {key: ppo[key] for key in settings}, arm
+
+    def test_what_train_runs_by_default_is_the_first_series(self):
+        """The object arms are run only on request: a command without --arms must not
+        start the second series on every task."""
+        assert set(compare.OBSERVATION_ARMS) | set(compare.OBJECT_ARMS) == set(compare.ARMS)
+        assert not set(compare.OBSERVATION_ARMS) & set(compare.OBJECT_ARMS)
+
+    def test_a_train_command_without_arms_runs_the_first_series(self, tmp_path, monkeypatch):
+        configs = tmp_path / "c.json"
+        configs.write_text(json.dumps({"a": {}}))
+        seen = {}
+        monkeypatch.setattr(compare, "train", lambda configs, arms, *args, **kwargs: seen.update(arms=arms))
+        monkeypatch.setattr(sys, "argv", ["rl_compare.py", "train", "--configs", str(configs)])
+        compare.main()
+        assert tuple(seen["arms"]) == compare.OBSERVATION_ARMS
+
+    def test_an_arms_settings_are_its_own_copy(self):
+        """A run that edited its object_arch must not change the next arm's."""
+        _elements, settings = compare.arm_settings("o_nopos")
+        settings["object_arch"]["use_position"] = True
+        assert compare.arm_settings("o_nopos")[1]["object_arch"]["use_position"] is False
+
     def test_the_default_arm_is_what_rl_config_observes(self):
         from data.configs.rl_configs import rl_config
         assert compare.arm_settings("default")[0] == list(rl_config["observation_space_elements"])

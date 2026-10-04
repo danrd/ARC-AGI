@@ -7,14 +7,19 @@ on is what each source can show for its answer without the target:
     symbolic   the rule reproduced every training pair when that pair was
                held out (symbolic_module.checked_solve, run by the dispatch),
                so an answer that arrives without an error is taken as it is
-    RL         the policy closed every training pair (rl_module.RLModule), so
-               its held-out grid is taken when it is there. This is a gate
-               and not a proof: about two runs in three that pass it also
-               close the held-out pair
+    RL         the policy closed every training pair (rl_module.RLModule),
+               and its held-out grid is put to the second model like the
+               first model's answer. The gate is not a proof: on 945 runs
+               over 51 tasks, 47 of the 201 that passed it closed the held-out
+               pair, and on many tasks none did. A policy fits each pair by
+               its own actions without finding the rule
     the model  nothing it says about itself counts. Its answer is read as a
                grid and put to a second model, which is asked whether the
                answer is what the training pairs imply (subsymbolic.answer_check);
                a refusal sends the first model round again
+
+The second model's word is asked once for each RL grid and remembered, so a
+retry of the first model does not ask it again.
 
 The order is the order of trust, not of arrival: RL is usually still training
 when the model answers, so the first time the model answers and RL has not
@@ -54,23 +59,44 @@ def _read_grid(parse: Callable[[str], Any], text) -> Optional[np.ndarray]:
     return grid if isinstance(grid, np.ndarray) and grid.ndim == 2 else None
 
 
+def _rl_grid(solution) -> Optional[np.ndarray]:
+    """The RL job's held-out grid as a 2-D array, or None."""
+    if solution is None:
+        return None
+    grid = np.asarray(solution)
+    return grid if grid.ndim == 2 and grid.size else None
+
+
 def hierarchical_decision_fn(verify: Callable[[Any, np.ndarray], bool],
                              parse: Callable[[str], Any] = parse_llm_output
                              ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    """The agent graph's decision_fn: symbolic, then RL, then the model checked by `verify`.
+    """The agent graph's decision_fn: symbolic, then RL and the model, each
+    answer checked by `verify`.
 
     `verify(task, grid) -> bool` is the second model's verdict (LlmVerifier);
     `parse(text) -> grid` reads the first model's text - pass a partial of
     parse_llm_output for a prompt that pre-seeds the answer's header
     (expected_prefix) or letter-coded colors.
     """
+    rl_verdicts: Dict[Any, bool] = {}
+
+    def rl_accepted(state: Dict[str, Any]) -> bool:
+        grid = _rl_grid(state.get("rl_solution"))
+        if grid is None:
+            return False
+        task = state["task"]
+        key = (getattr(task, "label", id(task)), grid.shape, grid.tobytes())
+        if key not in rl_verdicts:
+            rl_verdicts[key] = bool(verify(task, grid))
+        return rl_verdicts[key]
+
     def decide(state: Dict[str, Any]) -> Dict[str, Any]:
         if state.get("last_dispatch") == "symbolic":
             if _has_answer(state):
                 return {"status": "VALIDATED", "source": "symbolic"}
             return {"status": "INVALID", "action": "give_up"}
 
-        if state.get("rl_status") == "ok" and state.get("rl_solution") is not None:
+        if state.get("rl_status") == "ok" and rl_accepted(state):
             return {"status": "VALIDATED", "source": "rl"}
 
         if (state.get("rl_handle") is not None and state.get("rl_status") is None

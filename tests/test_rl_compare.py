@@ -115,6 +115,14 @@ class TestTheGrid:
         assert sorted(run for share in shares for run in share) == sorted(grid)
         assert all(not set(a) & set(b) for a in shares for b in shares if a is not b)
 
+    def test_the_shares_differ_in_size_by_at_most_one_however_few_runs_there_are(self):
+        """The leftover of a wave is a few dozen runs; a hash taken modulo the workers
+        left one worker with none and another with a third of them."""
+        for runs in (7, 71, 100):
+            grid = [(str(i), "g", 0) for i in range(runs)]
+            sizes = [len(compare.share(grid, index, 8)) for index in range(8)]
+            assert max(sizes) - min(sizes) <= 1 and sum(sizes) == runs
+
     def test_a_share_holds_every_arm_and_keeps_the_tasks_first_order(self):
         """By stride, three arms and three workers would hand each worker one
         arm: lose a notebook and an arm is gone."""
@@ -124,11 +132,11 @@ class TestTheGrid:
             assert {arm for _task, arm, _seed in share} == {"g", "gd", "gd_ch"}
             assert share == [run for run in grid if run in set(share)]
 
-    def test_a_share_is_the_same_on_every_machine(self):
-        """crc32 of the run, not hash(): the latter differs between processes."""
-        import zlib
-        assert compare.share([("a", "g", 0)], zlib.crc32(b"a|g|0") % 5, 5) == [("a", "g", 0)]
-        assert compare.share([("a", "g", 0)], (zlib.crc32(b"a|g|0") + 1) % 5, 5) == []
+    def test_a_share_is_the_same_whatever_order_or_process_asks(self):
+        """Hash by crc32 and not hash(), and by the runs themselves and not their position."""
+        grid = compare.run_grid({str(i): {} for i in range(10)}, ["g", "gd"])
+        assert compare.share(grid, 1, 4) == compare.share(list(reversed(grid)), 1, 4)[::-1]
+        assert compare.share(grid, 1, 4) == compare.share(grid, 1, 4)
 
 
 class TestResuming:
@@ -198,6 +206,25 @@ class TestResuming:
         monkeypatch.setattr(compare, "time", types.SimpleNamespace(time=lambda: clock[0]))
         compare._work({"a": {}, "b": {}}, ["g"], 10, 0, 1, tmp_path / "o.jsonl", (0, 1, 2), 1000.0)
         assert len(ran) == 2
+
+    def test_the_shares_are_cut_from_what_the_skip_files_leave_not_from_what_this_worker_wrote(
+            self, tmp_path, monkeypatch):
+        """Two notebooks of one wave, given the same skip file, between them do exactly
+        what it leaves - and a notebook restarted with its own output does not
+        move the cuts."""
+        ran = []
+        monkeypatch.setattr(compare, "one_run", self._fake(ran))
+        configs = {str(i): {} for i in range(6)}
+        other = tmp_path / "other.jsonl"
+        other.write_text("".join(json.dumps({"task": str(i), "arm": "g", "seed": 0, "held_out": 0.0,
+                                             "train": []}) + "\n" for i in range(3)))
+        for worker in range(2):
+            compare._work(configs, ["g"], 10, worker, 2, tmp_path / f"w{worker}.jsonl", (0, 1), None, skip=[other])
+        left = [run for run in compare.run_grid(configs, ["g"], (0, 1)) if run[2] != 0 or int(run[0]) >= 3]
+        assert sorted(ran) == sorted(left)
+        before = len(ran)
+        compare._work(configs, ["g"], 10, 0, 2, tmp_path / "w0.jsonl", (0, 1), None, skip=[other])
+        assert len(ran) == before
 
     def test_runs_in_the_skip_files_are_done(self, tmp_path, monkeypatch):
         ran = []

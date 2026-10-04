@@ -63,6 +63,22 @@ The arms, and what each was for:
     gd_ch       the deltas as planes of the grid encoder's convolutions
     gd_wide     the same, with the two convolutions 32 wide instead of 8 and 16
 
+The second series, how the objects are processed (OBJECT_ARMS), each one change
+from `default` and run only on the tasks where the object arms respond, with
+`default`'s runs of the first series as the reference:
+
+    o_nopos     the object branch without absolute position: a rule is
+                mostly translation invariant, and position is a field a policy
+                can fit without transferring
+    o_noself    without self-attention among the objects
+    o_nocross   without the branch's cross-attention
+    o_drop3     dropout 0.3 in the object branch instead of 0.1
+    o_spatial   the grid map read over each object's box (SpatialBackbone, 32
+                channels)
+    o_factored  per-slot scoring heads: the slot an action names is scored from
+                its own embedding rather than from the pooled vector
+    o_pointer64 per-object rows for the pointer heads 64 wide instead of 32
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -72,6 +88,7 @@ from __future__ import annotations
 import argparse
 import collections
 import contextlib
+import copy
 import io
 import json
 import multiprocessing
@@ -89,6 +106,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 DATA = REPO_ROOT / "data" / "datasets" / "ARC"
 DELTAS = ["delta_input", "delta_target"]
+DEFAULT_ELEMENTS = ["objects_emb", "relations_emb", *DELTAS]
 #: Steps of one run: the full length, not the shortened series' 100k.
 STEPS = 250_000
 #: What a worker assumes a run takes before it has finished one (seconds).
@@ -108,18 +126,31 @@ SHORT_TASKS = ("05f2a901", "dc433765", "a48eeaf7")
 ARMS = {
     "objonly": (["objects_emb"], {}),
     "objrel": (["objects_emb", "relations_emb"], {}),
-    "default": (["objects_emb", "relations_emb", *DELTAS], {}),
+    "default": (DEFAULT_ELEMENTS, {}),
     "g": ([], {}),
     "gd": (DELTAS, {}),
     "gd_ch": (DELTAS, {"delta_in_grid": True}),
     "gd_wide": (DELTAS, {"delta_in_grid": True, "extr_arch": "wide"}),
+    # The second series: how the objects are processed, each arm one change
+    # from `default` (same observation). The settings are PPO config keys.
+    "o_nopos": (DEFAULT_ELEMENTS, {"object_arch": {"use_position": False}}),
+    "o_noself": (DEFAULT_ELEMENTS, {"object_arch": {"self_attention": False}}),
+    "o_nocross": (DEFAULT_ELEMENTS, {"object_arch": {"cross_attention": False}}),
+    "o_drop3": (DEFAULT_ELEMENTS, {"object_arch": {"dropout": 0.3}}),
+    "o_spatial": (DEFAULT_ELEMENTS, {"spatial_channels": 32}),
+    "o_factored": (DEFAULT_ELEMENTS, {"object_heads": "factored"}),
+    "o_pointer64": (DEFAULT_ELEMENTS, {"pointer_dim": 64}),
 }
+#: The arms of the first series, what `train` runs unless told which.
+OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
+#: The second series, run against `default`'s runs already made.
+OBJECT_ARMS = tuple(arm for arm in ARMS if arm.startswith("o_"))
 
 
 def arm_settings(arm):
     """The PPO settings of an arm, with the named encoder built."""
     elements, settings = ARMS[arm]
-    settings = dict(settings)
+    settings = copy.deepcopy(settings)
     if settings.get("extr_arch") == "wide":
         from data.configs.rl_configs import lin
         settings["extr_arch"] = partial(lin, widths=(32, 32))
@@ -355,7 +386,7 @@ def main():
     narrowing.add_argument("--out", default="rl_compare_configs.json")
     training = sub.add_parser("train", help="run one shard of the (task, arm, seed) grid")
     training.add_argument("--configs", default="rl_compare_configs.json")
-    training.add_argument("--arms", nargs="+", default=list(ARMS), choices=sorted(ARMS))
+    training.add_argument("--arms", nargs="+", default=list(OBSERVATION_ARMS), choices=sorted(ARMS))
     training.add_argument("--tasks", nargs="*", help="only these tasks of the configs file")
     training.add_argument("--steps", type=int, default=STEPS)
     training.add_argument("--shard", type=int, default=0, help="this machine's number, of --shards")

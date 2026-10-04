@@ -73,10 +73,12 @@ class RLModule:
         # known without the answer. The held-out accuracy in train_metrics is
         # measured against the target, which exists only when an experiment
         # scores itself, so a gate on it would open in the benchmark and
-        # nowhere else. The gate is not certainty: over 72 runs that closed
-        # every training pair, 47 also closed the held-out pair (0.65), which
-        # is why the orchestration ranks this below the symbolic solvers and
-        # above an unchecked model.
+        # nowhere else. The gate is not certainty: over 945 comparison runs,
+        # 47 of the 201 that closed every training pair also closed the
+        # held-out pair (0.23), and on most tasks none did - a policy fits
+        # each pair with its own actions without finding the rule. So the
+        # orchestration offers this grid to a second model before taking it
+        # (orchestration.hierarchy).
         solved = bool(accs) and all(acc == 1.0 for acc in accs.values())
         return {
             "solution": train_metrics.get("test_grid") if solved else None,

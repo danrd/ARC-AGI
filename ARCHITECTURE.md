@@ -49,7 +49,7 @@ nothing.
 | you want | start at |
 | --- | --- |
 | run the whole pipeline on one task | `orchestration/__main__.py`, `orchestration/graph.py`; with the order of trust below, `orchestration/hierarchy.py:solve_with_hierarchy` |
-| who is believed when the sources disagree | `orchestration/hierarchy.py`: symbolic (checked against the training pairs), then RL (closed every training pair - `rl/rl_module.py`), then the model only if a second model agrees (`subsymbolic/answer_check.py:LlmVerifier`) |
+| who is believed when the sources disagree | `orchestration/hierarchy.py`: symbolic (checked against the training pairs), then RL (closed every training pair - `rl/rl_module.py`) and the model, each only if a second model agrees (`subsymbolic/answer_check.py:LlmVerifier`) |
 | how a grid becomes objects | `symbolic/objects_analysis.py` (`GridObject`, the component retrieval) |
 | what the analyser claims about a task | `symbolic/findings.py`, then `symbolic/summaries.py` |
 | the action vocabulary | `data/configs/env_configs.py`, expanded by `rl/utils.py:define_feasible_actions` and `rl/search_hints.py:build_vocabulary` |
@@ -103,8 +103,9 @@ paths - symbolic first, then RL in a background process beside the model -
 and leaves the choice of answer to a decision function; `hierarchy` is the
 one that ranks them by what each can show for its answer without the target
 (symbolic: its rule reproduces every training pair; RL: the policy closed
-every training pair, a gate that about two runs in three also pass on the
-held-out pair; the model: nothing, until a second model agrees). `context`
+every training pair, a gate that on 945 runs the held-out pair followed in
+one case of four - so a second model must agree; the model: nothing, until a
+second model agrees). `context`
 adds the search's verified hint to the model's prompt.
 
 **`data`** is configuration and datasets: the action vocabulary and agent

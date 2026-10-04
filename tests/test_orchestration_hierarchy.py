@@ -72,12 +72,21 @@ def dispatch(symbolic, texts):
 
 
 class Verifier:
-    def __init__(self, *verdicts):
-        self.verdicts, self.calls = list(verdicts), []
+    """The second model: `verdicts` are its answers to the first model's grids in turn
+    (the last one again), `rl` its answer to RL_GRID, whenever that is put to it."""
+
+    def __init__(self, *verdicts, rl=True):
+        self.verdicts, self.rl, self.calls = list(verdicts), rl, []
+
+    def of(self, grid):
+        return [call for call in self.calls if np.array_equal(call[1], grid)]
 
     def __call__(self, task, grid):
         self.calls.append((task, grid))
-        return self.verdicts[min(len(self.calls) - 1, len(self.verdicts) - 1)]
+        if np.array_equal(grid, RL_GRID):
+            return self.rl
+        asked = len(self.calls) - len(self.of(RL_GRID))
+        return self.verdicts[min(asked - 1, len(self.verdicts) - 1)]
 
 
 NO_SYMBOLIC = {"solution": "", "module_results": {"error": "no rule"}}
@@ -103,16 +112,35 @@ class TestTheOrderOfTrust:
         assert result["accepted_source"] == "symbolic" and np.array_equal(result["solution"], GRID)
         assert result["started"] == [] and verify.calls == []
 
-    def test_rl_that_is_ready_is_taken_over_the_model_which_is_not_asked_about(self, arc_task):
+    def test_rl_that_is_ready_and_agreed_to_is_taken_over_the_model_which_is_not_asked_about(self, arc_task):
         verify, handle = Verifier(True), Handle(ready=ok())
         result = solve(arc_task, verify, dispatch(NO_SYMBOLIC, [TEXT]), handle)
         assert result["accepted_source"] == "rl" and np.array_equal(result["solution"], RL_GRID)
-        assert verify.calls == [] and handle.waited == 0
+        assert len(verify.calls) == 1 and len(verify.of(RL_GRID)) == 1 and handle.waited == 0
+
+    def test_rl_the_second_model_refuses_leaves_the_first_model_to_be_checked(self, arc_task):
+        verify, handle = Verifier(True, rl=False), Handle(ready=ok())
+        result = solve(arc_task, verify, dispatch(NO_SYMBOLIC, [TEXT]), handle)
+        assert result["accepted_source"] == "llm" and result["solution"] == TEXT
+        assert len(verify.of(RL_GRID)) == 1 and len(verify.of(GRID)) == 1
+
+    def test_a_refused_rl_grid_is_not_put_to_the_second_model_again_on_a_retry(self, arc_task):
+        verify, handle = Verifier(False, True, rl=False), Handle(ready=ok())
+        result = solve(arc_task, verify, dispatch(NO_SYMBOLIC, [TEXT]), handle, max_iterations=4)
+        assert result["accepted_source"] == "llm" and len(verify.of(GRID)) == 2
+        assert len(verify.of(RL_GRID)) == 1
+
+    def test_rl_that_is_not_a_grid_is_never_put_to_the_second_model(self, arc_task):
+        verify = Verifier(True)
+        handle = Handle(ready={"status": "ok", "solution": np.array([1, 2, 3])})
+        result = solve(arc_task, verify, dispatch(NO_SYMBOLIC, [TEXT]), handle)
+        assert result["accepted_source"] == "llm" and len(verify.calls) == 1
 
     def test_rl_still_training_is_waited_for_once_and_taken_when_it_arrives(self, arc_task):
         verify, handle = Verifier(True), Handle(late=ok())
         result = solve(arc_task, verify, dispatch(NO_SYMBOLIC, [TEXT]), handle)
-        assert result["accepted_source"] == "rl" and handle.waited == 1 and verify.calls == []
+        assert result["accepted_source"] == "rl" and handle.waited == 1
+        assert len(verify.of(RL_GRID)) == 1 and len(verify.of(GRID)) == 0
 
     def test_rl_that_does_not_arrive_in_time_leaves_the_model_to_be_checked(self, arc_task):
         verify, handle = Verifier(True), Handle(late=None)
@@ -173,7 +201,7 @@ class TestTheModelIsCheckedNotTrusted:
     def test_rl_that_arrives_while_the_model_is_retried_is_taken(self, arc_task):
         """Not ready at the first answer, timed out at the one wait, ready by the third."""
         handle = Handle(late=None)
-        verify, run = Verifier(False), dispatch(NO_SYMBOLIC, [TEXT])
+        verify, run = Verifier(False, rl=True), dispatch(NO_SYMBOLIC, [TEXT])
 
         original = handle.wait
 
@@ -217,3 +245,21 @@ class TestTheDecisionFunction:
         verify = Verifier(True)
         assert hierarchical_decision_fn(verify)(self.state(solution=GRID))["source"] == "llm"
         assert np.array_equal(verify.calls[0][1], GRID)
+
+    def test_a_verdict_is_remembered_for_that_task_and_that_grid_only(self):
+        """Another grid of the same task, or the same grid of another task, is a new question."""
+        asked = []
+
+        def verify(task, grid):
+            asked.append((task.label, grid.tobytes()))
+            return False
+
+        class Task:
+            def __init__(self, label):
+                self.label = label
+
+        decide = hierarchical_decision_fn(verify)
+        first, other = Task("a"), Task("b")
+        for task, grid in ((first, GRID), (first, GRID), (first, RL_GRID), (other, GRID)):
+            decide(self.state(task=task, rl_status="ok", rl_solution=grid, solution=""))
+        assert len(asked) == 3

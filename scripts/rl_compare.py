@@ -242,12 +242,17 @@ def run_grid(configs, arms, seeds=(0, 1, 2)):
 def share(grid, index, total):
     """The runs of `grid` that worker `index` of `total` does.
 
-    By a hash of the run and not by position: the grid runs through the arms
-    in turn, so a stride that divides by the number of arms would give a
-    worker one arm and lose that arm whole if its notebook dies. Stable
-    across machines (crc32, not hash()), and a worker's runs keep the
-    grid's tasks-first order."""
-    return [run for run in grid if zlib.crc32("|".join(map(str, run)).encode()) % total == index]
+    The runs are put in the order of a hash of each and dealt out like cards,
+    so the shares differ in size by at most one run however few runs there are
+    - the leftover of a wave can be a few dozen - and every share is a mixture
+    of arms: dealt in the grid's own order, a stride that divides by the number
+    of arms would give a worker one arm and lose that arm whole if its
+    notebook died. The hash is crc32, not hash(), the same on every machine;
+    a worker's runs are returned in the grid's tasks-first order, so a partial
+    file covers every arm on the tasks it reached."""
+    ranked = sorted(grid, key=lambda run: (zlib.crc32("|".join(map(str, run)).encode()), run))
+    mine = set(ranked[index::total])
+    return [run for run in grid if run in mine]
 
 
 def read_runs(path):
@@ -300,12 +305,18 @@ def _work(configs, arms, steps, index, total, out, seeds, deadline, skip=()):
     import torch
 
     torch.set_num_threads(1)   # one thread a worker: several workers share the cores
-    done = read_runs(out)
+    skipped = {}
     for path in skip:
-        done.update(read_runs(path))
+        skipped.update(read_runs(path))
+    # The shares are cut from what the skip files leave, so that every
+    # notebook of a wave, given the same files, cuts the same; what this
+    # worker has already written is taken out after, or a restart would move
+    # the cuts and hand it other workers' runs.
+    grid = [run for run in run_grid(configs, arms, seeds) if run not in skipped]
+    done = read_runs(out)
     longest = None
     with open(out, "a", buffering=1) as handle:
-        for task_id, arm, seed in share(run_grid(configs, arms, seeds), index, total):
+        for task_id, arm, seed in share(grid, index, total):
             if (task_id, arm, seed) in done:
                 continue
             if deadline is not None and time.time() + (longest or FIRST_RUN_SECONDS) > deadline:

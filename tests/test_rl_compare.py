@@ -75,7 +75,7 @@ class TestTheArms:
     def test_what_train_runs_by_default_is_the_first_series(self):
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
-        series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS)
+        series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -92,6 +92,18 @@ class TestTheArms:
         assert elements == default and settings == {"delta_in_grid": True, "spatial_channels": 32}
         elements, settings = compare.arm_settings("s_grid")
         assert elements == compare.DELTAS and settings == {"spatial_channels": 32} and ppo["spatial_channels"] == 0
+
+    def test_every_map_arm_is_o_spatial_with_at_most_one_change(self):
+        """o_spatial is default with the map; the fourth series moves one thing from it."""
+        base_elements, base_settings = compare.arm_settings("default")[0], {"spatial_channels": 32}
+        assert compare.MAP_ARMS
+        for arm in compare.MAP_ARMS:
+            elements, settings = compare.arm_settings(arm)
+            changed = {key for key in {*settings, *base_settings} if settings.get(key) != base_settings.get(key)}
+            moved = len(changed) + (elements != base_elements)
+            assert moved == 1, (arm, changed)
+        assert set(compare.arm_settings("m_norel")[0]) == {"objects_emb", *compare.DELTAS}
+        assert compare.arm_settings("m_nopos")[1]["object_arch"] == {"use_position": False}
 
     def test_a_train_command_without_arms_runs_the_first_series(self, tmp_path, monkeypatch):
         configs = tmp_path / "c.json"

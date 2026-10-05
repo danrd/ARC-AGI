@@ -90,6 +90,9 @@ lets each object read it over its box:
     s_ch        default with the deltas as planes of the pooled grid encoder
                 instead of the readouts: the channels beside objects, without
                 the map
+    s_chmap     the deltas only as planes - of the pooled grid encoder and of the
+                map - with no readout of their own: o_spatial without the
+                readouts, the channels read at full resolution and nothing else
 
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
@@ -159,6 +162,7 @@ ARMS = {
     "s_grid": (DELTAS, {"spatial_channels": 32}),
     "s_nodelta": (["objects_emb", "relations_emb"], {"spatial_channels": 32}),
     "s_ch": (DEFAULT_ELEMENTS, {"delta_in_grid": True}),
+    "s_chmap": (DEFAULT_ELEMENTS, {"delta_in_grid": True, "spatial_channels": 32}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")

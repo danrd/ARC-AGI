@@ -88,6 +88,8 @@ class TestTheArms:
         assert elements == default and settings == {"delta_in_grid": True} and ppo["delta_in_grid"] is False
         elements, settings = compare.arm_settings("s_nodelta")
         assert set(default) - set(elements) == set(compare.DELTAS) and settings == {"spatial_channels": 32}
+        elements, settings = compare.arm_settings("s_chmap")
+        assert elements == default and settings == {"delta_in_grid": True, "spatial_channels": 32}
         elements, settings = compare.arm_settings("s_grid")
         assert elements == compare.DELTAS and settings == {"spatial_channels": 32} and ppo["spatial_channels"] == 0
 

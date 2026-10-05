@@ -94,6 +94,14 @@ lets each object read it over its box:
                 map - with no readout of their own: o_spatial without the
                 readouts, the channels read at full resolution and nothing else
 
+The fourth series, around o_spatial (MAP_ARMS), each one change from it:
+
+    m_norel     without the relations between objects: are they needed beside the map
+    m_w16       the map 16 channels wide instead of 32
+    m_w64       the map 64 channels wide
+    m_nopos     without absolute position in the object branch: the map now says where
+    m_ptr64     per-object rows for the pointer heads 64 wide
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -163,6 +171,13 @@ ARMS = {
     "s_nodelta": (["objects_emb", "relations_emb"], {"spatial_channels": 32}),
     "s_ch": (DEFAULT_ELEMENTS, {"delta_in_grid": True}),
     "s_chmap": (DEFAULT_ELEMENTS, {"delta_in_grid": True, "spatial_channels": 32}),
+    # The fourth series, around o_spatial (default with the map, 32 channels):
+    # each arm one change from it.
+    "m_norel": (["objects_emb", *DELTAS], {"spatial_channels": 32}),
+    "m_w16": (DEFAULT_ELEMENTS, {"spatial_channels": 16}),
+    "m_w64": (DEFAULT_ELEMENTS, {"spatial_channels": 64}),
+    "m_nopos": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_arch": {"use_position": False}}),
+    "m_ptr64": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "pointer_dim": 64}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
@@ -170,6 +185,8 @@ OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide
 OBJECT_ARMS = tuple(arm for arm in ARMS if arm.startswith("o_"))
 #: The third series, against `default`'s and `o_spatial`'s runs.
 GRID_ARMS = tuple(arm for arm in ARMS if arm.startswith("s_"))
+#: The fourth series, against `o_spatial`.
+MAP_ARMS = tuple(arm for arm in ARMS if arm.startswith("m_"))
 
 
 def arm_settings(arm):

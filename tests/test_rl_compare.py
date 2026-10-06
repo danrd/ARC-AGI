@@ -114,6 +114,16 @@ class TestTheArms:
         compare.main()
         assert tuple(seen["arms"]) == compare.OBSERVATION_ARMS
 
+    def test_a_train_command_runs_the_seeds_it_is_given_and_three_by_default(self, tmp_path, monkeypatch):
+        configs = tmp_path / "c.json"
+        configs.write_text(json.dumps({"a": {}}))
+        seen = []
+        monkeypatch.setattr(compare, "train", lambda configs, arms, *args, **kwargs: seen.append(kwargs["seeds"]))
+        for extra in ([], ["--seeds", "4"], ["--seeds", "1", "2"]):
+            monkeypatch.setattr(sys, "argv", ["rl_compare.py", "train", "--configs", str(configs), *extra])
+            compare.main()
+        assert seen == [(0, 1, 2), (4,), (1, 2)]
+
     def test_an_arms_settings_are_its_own_copy(self):
         """A run that edited its object_arch must not change the next arm's."""
         _elements, settings = compare.arm_settings("o_nopos")

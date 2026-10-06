@@ -173,3 +173,23 @@ class TestTheFile:
         monkeypatch.setattr("builtins.print", lambda *args, **kw: printed.append(args[0]))
         census.run("evaluation", path, workers=1, timeout=1)
         assert "1 tasks already" in printed[0] and "0 to go" in printed[0]
+
+
+class TestSharing:
+    def test_the_shards_between_them_take_every_task_once_and_none_twice(self, monkeypatch):
+        ids = {str(i): [] for i in range(11)}
+        monkeypatch.setattr(census, "load_tasks", lambda split: ids)
+        shares = [census.tasks_to_run("training", {}, shard=shard, shards=3) for shard in range(3)]
+        flat = [task for share in shares for _split, task in share]
+        assert sorted(flat) == sorted(ids) and len(flat) == len(set(flat))
+        assert max(map(len, shares)) - min(map(len, shares)) <= 1
+
+    def test_a_task_a_shard_has_already_done_is_left_out_of_its_share(self, monkeypatch):
+        monkeypatch.setattr(census, "load_tasks", lambda split: {str(i): [] for i in range(6)})
+        done = {("training", "0"): {}, ("training", "3"): {}}
+        assert census.tasks_to_run("training", done, shard=0, shards=3) == []
+        assert census.tasks_to_run("training", done, shard=1, shards=3) == [("training", "1"), ("training", "4")]
+
+    def test_one_shard_of_one_is_the_whole_split(self, monkeypatch):
+        monkeypatch.setattr(census, "load_tasks", lambda split: {"a": [], "b": []})
+        assert census.tasks_to_run("training", {}) == [("training", "a"), ("training", "b")]

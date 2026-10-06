@@ -24,6 +24,9 @@ is missing.
     python scripts/search_census.py --split evaluation --out census.jsonl
     python scripts/search_census.py --summary-only --out census.jsonl
 
+Several notebooks share a split with `--shard k --shards K`, each writing its
+own file; read_records of any one of them, or the lines of all, make the table.
+
 One JSON line per task as it finishes; a task already in the file is not run
 again, so a run cut short resumes. Tasks whose grids change size are recorded
 as skipped: every object action paints inside the grid it is given.
@@ -222,10 +225,18 @@ def render(summary):
     return "\n".join(lines)
 
 
-def run(split, out, workers, timeout, limit=0):
-    done = read_records(out)
-    todo = [(split, task_id) for task_id in list(load_tasks(split))[:limit or None]
+def tasks_to_run(split, done, limit=0, shard=0, shards=1):
+    """The tasks of one share of the split not yet in `done`: every `shards`-th
+    task of the file from `shard` on, so the notebooks of one census each take
+    a mixed lot - the tasks that change size cost nothing and the others up to
+    the timeout."""
+    return [(split, task_id) for task_id in list(load_tasks(split))[:limit or None][shard::shards]
             if (split, task_id) not in done]
+
+
+def run(split, out, workers, timeout, limit=0, shard=0, shards=1):
+    done = read_records(out)
+    todo = tasks_to_run(split, done, limit, shard, shards)
     print(f"{len(done)} tasks already in {out}; {len(todo)} to go", flush=True)
     breaks = 0
     with open(out, "a", buffering=1) as handle:
@@ -255,10 +266,12 @@ def main():
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=60, help="seconds one search may take")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--shard", type=int, default=0, help="this notebook's number, of --shards")
+    parser.add_argument("--shards", type=int, default=1, help="how many notebooks share the split")
     parser.add_argument("--summary-only", action="store_true")
     args = parser.parse_args()
     records = read_records(args.out) if args.summary_only else run(
-        args.split, args.out, args.workers, args.timeout, args.limit)
+        args.split, args.out, args.workers, args.timeout, args.limit, args.shard, args.shards)
     print(render(summarise([r for r in records.values() if r["split"] == args.split])))
 
 

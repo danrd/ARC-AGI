@@ -53,6 +53,16 @@ The narrowed configs are data/experiments/rl_compare_configs.json, made once by
 `narrow` and kept: the search that narrows a task's vocabulary is random, and
 every arm, seed and notebook has to train over the same one.
 
+Screening more tasks. data/experiments/rl_compare_configs_screen.json holds the
+narrowed configs of the tasks the search verifies on the training split
+(screen_tasks.txt) and RL has not been run on. RL solves a task all or nothing,
+so one seed says whether it is solvable at all, and a second wave of three
+seeds confirms the ones that were:
+
+    !python scripts/rl_compare.py train --arms default --seeds 0 \\
+        --configs data/experiments/rl_compare_configs_screen.json \\
+        --shard 0 --shards 5 --workers 4 --hours 11 --out /kaggle/working/screen_0.jsonl
+
 The arms, and what each was for:
 
     objonly     the grid and the objects, nothing else added
@@ -442,6 +452,8 @@ def main():
     training.add_argument("--arms", nargs="+", default=list(OBSERVATION_ARMS), choices=sorted(ARMS))
     training.add_argument("--tasks", nargs="*", help="only these tasks of the configs file")
     training.add_argument("--steps", type=int, default=STEPS)
+    training.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2],
+                          help="seeds of every task and arm; one is enough to see whether a task is solvable at all")
     training.add_argument("--shard", type=int, default=0, help="this machine's number, of --shards")
     training.add_argument("--shards", type=int, default=1, help="how many machines or notebooks share the grid")
     training.add_argument("--workers", type=int, default=1, help="processes on this machine")
@@ -471,7 +483,7 @@ def main():
         if args.tasks:
             configs = {task: configs[task] for task in args.tasks}
         train(configs, args.arms, args.steps, args.shard, args.shards, args.out,
-              workers=args.workers, hours=args.hours, skip=args.skip)
+              seeds=tuple(args.seeds), workers=args.workers, hours=args.hours, skip=args.skip)
     else:
         runs = {}
         for path in args.out:

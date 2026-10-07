@@ -63,6 +63,11 @@ seeds confirms the ones that were:
         --configs data/experiments/rl_compare_configs_screen.json \\
         --shard 0 --shards 5 --workers 4 --hours 11 --out /kaggle/working/screen_0.jsonl
 
+Longer runs. `--steps 500000` trains each run twice as long; the record has the
+`steps` it was trained for, but `read_runs` keys runs by task, arm and seed, so a
+wave of another length goes to its own files and is not given the others in
+`--skip` or in `summary`.
+
 The arms, and what each was for:
 
     objonly     the grid and the objects, nothing else added
@@ -346,7 +351,7 @@ def one_run(config, arm, seed, steps, task_id):
     return {"task": task_id, "arm": arm, "seed": seed, "held_out": round(float(metrics["test_acc"]), 4),
             "train": [round(float(a), 4) for a in accuracies.values()],
             "steps_to_solve": [round(float(v), 2) for v in lengths.values()],
-            "seconds": round(time.time() - started, 1)}
+            "steps": steps, "seconds": round(time.time() - started, 1)}
 
 
 def _work(configs, arms, steps, index, total, out, seeds, deadline, skip=()):

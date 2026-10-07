@@ -180,7 +180,7 @@ graph TD
   symbolic["symbolic (9)"]
   tests["tests (69)"]
   utils["utils (3)"]
-  tests -->|95| rl
+  tests -->|96| rl
   tests -->|32| symbolic
   tests -->|30| subsymbolic
   tests -->|19| data
@@ -236,7 +236,7 @@ graph TD
 | `rl.rl_job` | 5 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 14 |
-| `rl.training` | 12 |
+| `rl.training` | 13 |
 | `rl.utils` | 10 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |

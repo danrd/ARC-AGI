@@ -359,3 +359,19 @@ class TestSelectingTasks:
 
     def test_a_run_is_the_full_length_by_default(self):
         assert compare.STEPS == 250_000
+
+    def test_a_run_records_how_long_it_trained(self, monkeypatch):
+        """Runs of 250k and of 500k steps share a task, an arm and a seed: the
+        record is what tells them apart."""
+        import rl.training
+        seen = {}
+
+        def fake(task, config, ppo, show_plots):
+            seen["steps"] = config["total_steps"]
+            return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5}
+
+        monkeypatch.setattr(rl.training, "train_on_task", fake)
+        monkeypatch.setattr(compare, "load_task", lambda task_id: None)
+        config = {"feasible_actions": {"0": [0]}}
+        record = compare.one_run(config, "default", 0, 500_000, "a")
+        assert seen["steps"] == 500_000 and record["steps"] == 500_000

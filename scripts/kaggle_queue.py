@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 QUEUE = ROOT / "data" / "experiments" / "queue.json"
-CAPACITY = {"cpu": 5, "gpu": 1}
+CAPACITY = {"cpu": 5, "gpu": 1, "tpu": 1}
 BUSY = {"RUNNING", "QUEUED", "NEW", "STARTING"}
 ENDED = {"COMPLETE", "ERROR", "CANCEL_ACKNOWLEDGED", "CANCELLED"}
 
@@ -114,7 +114,8 @@ def real_status(job: Job) -> List[str]:
 
 def real_start(job: Job) -> None:
     import kaggle_launch as launch
-    launch.start(job.name, job.shards, gpu=job.resource == "gpu", extras=job.extras, setup=job.setup)
+    launch.start(job.name, job.shards, gpu=job.resource == "gpu", extras=job.extras, setup=job.setup,
+                 tpu=job.resource == "tpu")
 
 
 def real_collect(job: Job) -> List[str]:

@@ -211,18 +211,18 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (15)"]
+  orchestration["orchestration (16)"]
   rl["rl (20)"]
-  scripts["scripts (17)"]
+  scripts["scripts (18)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (82)"]
+  tests["tests (83)"]
   utils["utils (3)"]
   tests -->|99| rl
   tests -->|42| subsymbolic
+  tests -->|33| orchestration
   tests -->|33| symbolic
-  tests -->|32| orchestration
-  orchestration -->|24| subsymbolic
+  orchestration -->|25| subsymbolic
   tests -->|21| data
   scripts -->|13| rl
   rl -->|11| data
@@ -256,8 +256,9 @@ graph TD
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
 | `orchestration.assemble` | 3 |
+| `orchestration.bench` | 0 |
 | `orchestration.blocks` | 3 |
-| `orchestration.configs` | 12 |
+| `orchestration.configs` | 13 |
 | `orchestration.context` | 1 |
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 12 |
@@ -266,7 +267,7 @@ graph TD
 | `orchestration.refine` | 2 |
 | `orchestration.roster` | 3 |
 | `orchestration.run` | 0 |
-| `orchestration.tools` | 4 |
+| `orchestration.tools` | 5 |
 | `orchestration.trace` | 10 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
@@ -304,6 +305,7 @@ graph TD
 | `scripts.solved_by_source` | 0 |
 | `scripts.symbolic_coverage` | 1 |
 | `scripts.sync_llm_kit` | 0 |
+| `scripts.tpu_gemma_probe` | 0 |
 | `subsymbolic.analyst` | 4 |
 | `subsymbolic.answer_check` | 2 |
 | `subsymbolic.arc_evaluators` | 1 |
@@ -311,7 +313,7 @@ graph TD
 | `subsymbolic.arc_resolvers` | 3 |
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 6 |
-| `subsymbolic.llm_setup` | 7 |
+| `subsymbolic.llm_setup` | 8 |
 | `subsymbolic.local_config` | 3 |
 | `subsymbolic.logging` | 1 |
 | `subsymbolic.prompt_builder` | 24 |

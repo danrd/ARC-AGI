@@ -64,3 +64,12 @@ def test_the_gpu_install_script_is_valid_shell_and_checks_for_the_gpu_at_the_end
     text = script.read_text()
     assert text.index("--only-binary=:all:") < text.index("DGGML_CUDA=on") < text.index("llama_supports_gpu_offload")
     assert "raise SystemExit(0 if ok else 3)" in text
+
+
+def test_a_tpu_notebook_asks_for_the_tpu_and_not_the_gpu_and_installs_no_extras_when_given_none():
+    meta = launch.metadata("me", "j", 0, tpu=True)
+    assert meta["enable_tpu"] == "true" and meta["enable_gpu"] == "false"
+    assert launch.metadata("me", "j", 0)["enable_tpu"] == "false"
+    code = launch.script("j", 0, 1, extras="")
+    compile(code, "worker.py", "exec")
+    assert "if e]" in code

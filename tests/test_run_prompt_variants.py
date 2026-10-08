@@ -121,7 +121,8 @@ class TestRunning:
 
 
 def test_a_model_is_loaded_the_way_the_gpu_notebooks_load_it():
-    config = rpv.experiment("unsloth/M-GGUF:M-Q4.gguf", "org/M", max_tokens=700)
+    from subsymbolic.local_config import local_model_config
+    config = local_model_config("unsloth/M-GGUF:M-Q4.gguf", "org/M", max_tokens=700)
     assert (config.llm.model, config.llm.quant_file, config.llm.tokenizer_model) == ("unsloth/M-GGUF", "M-Q4.gguf", "org/M")
     assert config.llm.n_gpu_layers == 999 and config.llm.flash_attn and config.base.device == "cpu"
     assert config.generation.max_tokens == 700 and config.generation.temperature == 0.0

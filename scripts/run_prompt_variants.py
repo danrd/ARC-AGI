@@ -158,22 +158,6 @@ def write_prompts(directory):
                        check=True)
 
 
-def experiment(model, tokenizer, max_tokens=1200):
-    """The config of the GPU notebooks, for one model: llama.cpp with every layer on the
-    cards, flash attention, thinking off, greedy, the output held to the grid grammar."""
-    from orchestration.configs import ExperimentConfig
-    from subsymbolic.utils import build_grid_grammar
-
-    repo, quant_file = model.split(":")
-    return ExperimentConfig.from_dict({
-        "base": {"device": "cpu", "server_ready_timeout": 1000.0, "request_timeout": 6000.0},
-        "llm": {"framework": "llama_cpp", "model": repo, "quant_file": quant_file, "tokenizer_model": tokenizer,
-                "max_context": 10000, "n_gpu_layers": 999, "flash_attn": True, "use_mlock": False},
-        "generation": {"temperature": 0.0, "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False},
-                       "grammar": build_grid_grammar(colors_str=False)},
-    })
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", default="prompt_tests")
@@ -186,8 +170,9 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=1200)
     args = parser.parse_args()
     from subsymbolic.llm_setup import build_runner
+    from subsymbolic.local_config import local_model_config
 
-    runner = build_runner(experiment(args.model, args.tokenizer, args.max_tokens))
+    runner = build_runner(local_model_config(args.model, args.tokenizer, args.max_tokens))
     if not prompts(args.out):
         write_prompts(args.out)
     try:

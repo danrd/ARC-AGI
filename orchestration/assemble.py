@@ -27,7 +27,7 @@ went: the symbolic solvers, the model, the second model, the decision, the wait 
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional
 
@@ -85,8 +85,12 @@ def timed_dispatch(dispatch_fn: Callable, tracer: Optional[Tracer]) -> Callable:
 
     def dispatch(state: Dict[str, Any]) -> Dict[str, Any]:
         name = state["current_module"].module_name.lower()
-        with traced(tracer, "symbolic" if name == "symbolic" else "llm", name):
-            return dispatch_fn(state)
+        if name == "symbolic":
+            with tracer.span("symbolic", name):
+                return dispatch_fn(state)
+        result = dispatch_fn(state)
+        tracer.record_module(result.get("module_results"), name)
+        return result
 
     return dispatch
 
@@ -148,7 +152,7 @@ def assemble(options: OrchestrationOptions, module, verify: Callable[[Any, np.nd
     dispatch = make_module_dispatch_fn(symbolic_module=symbolic_module, subsymbolic_module=solver)
     dispatch = timed_dispatch(dispatch, tracer)
     if options.feedback:
-        dispatch = with_feedback(dispatch, verdict, parse, tracer)
+        dispatch = with_feedback(dispatch, verdict, parse)
 
     rule = hierarchical_decision_fn(verdict, parse)
     if options.decision == "llm":

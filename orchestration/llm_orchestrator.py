@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
-from orchestration.feedback import NOT_ACCEPTED, UNREADABLE, render_history, review
+from orchestration.feedback import UNREADABLE, review
 from orchestration.graph import AgentInvConfig, ModuleInvConfig
 from orchestration.hierarchy import _read_grid, _rl_grid
 from orchestration.tools import without_grammar

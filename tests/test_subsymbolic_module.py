@@ -70,3 +70,19 @@ def test_close_tears_down_an_injected_runner_and_forgets_it(tiny_tokenizer):
 
     assert injected.closed is True
     assert module._runner is None
+
+
+def test_a_solve_reports_what_the_call_cost(tiny_tokenizer, arc_task):
+    from orchestration.configs import ExperimentConfig
+    from subsymbolic.prompt_builder import PromptingConfig
+    from subsymbolic.subsymbolic_module import SubsymbolicModule
+
+    class Runner:
+        def generate(self, prompt):
+            return "one two three"
+
+    config = ExperimentConfig(prompt=PromptingConfig(blocks=["general_instruction", "output_format"], token_limit=20000))
+    result = SubsymbolicModule(config, tiny_tokenizer, runner=Runner()).solve(arc_task)
+    stats = result["module_results"]
+    assert result["solution"] == "one two three" and stats["reply_tokens"] == 3 and stats["prompt_tokens"] > 3
+    assert stats["prompt_seconds"] >= 0 and stats["generate_seconds"] >= 0

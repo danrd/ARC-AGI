@@ -26,6 +26,7 @@ project (see prompt_builder.py's module docstring).
 """
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Optional
 
 from subsymbolic.llm_setup import build_runner
@@ -48,11 +49,19 @@ class SubsymbolicModule:
         return self._runner
 
     def solve(self, task, context: Optional[dict] = None) -> Dict[str, Any]:
+        """The model's answer, and in `module_results` what the call cost: the prompt's and the reply's
+        tokens and the seconds spent building the prompt and generating, for whoever times a run."""
+        started = time.perf_counter()
         prompt = self.builder.build(task, context=context or {})
         if prompt is None:
             return {"solution": "", "module_results": {"error": "prompt didn't fit token_limit"}}
+        built = time.perf_counter()
         text = self.runner.generate(prompt)
-        return {"solution": text, "module_results": {}}
+        generated = time.perf_counter()
+        return {"solution": text, "module_results": {
+            "prompt_tokens": self.builder.count_tokens(prompt),
+            "reply_tokens": self.builder.count_tokens(text) if isinstance(text, str) else 0,
+            "prompt_seconds": built - started, "generate_seconds": generated - built}}
 
     def close(self) -> None:
         if self._runner is not None:

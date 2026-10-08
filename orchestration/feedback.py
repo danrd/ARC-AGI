@@ -19,9 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 
-from orchestration.blocks import install_blocks
 from orchestration.hierarchy import _read_grid
-from orchestration.trace import Tracer, traced
 from subsymbolic.utils import parse_llm_output
 from symbolic.invariants import STRONG, Invariants, Violation, check, learn
 
@@ -45,7 +43,7 @@ class Attempt:
 
 
 def review(task, grid: Optional[np.ndarray], invariants: Optional[Invariants] = None,
-           verify: Optional[Callable[[Any, np.ndarray], bool]] = None, tracer: Optional[Tracer] = None):
+           verify: Optional[Callable[[Any, np.ndarray], bool]] = None):
     """(notes, strong, weak): why `grid` is not accepted. No notes: nothing was found wrong.
 
     The second model is asked only about an answer the symbolic checks leave standing, since
@@ -58,9 +56,7 @@ def review(task, grid: Optional[np.ndarray], invariants: Optional[Invariants] = 
     notes = [v.message for v in violations]
     strong = sum(v.severity == STRONG for v in violations)
     if strong == 0 and verify is not None:
-        with traced(tracer, "verify", "second model"):
-            accepted = bool(verify(task, grid))
-        if not accepted:
+        if not verify(task, grid):
             notes.append(NOT_ACCEPTED)
             strong += 1
     return notes, strong, len(violations) - sum(v.severity == STRONG for v in violations)
@@ -105,8 +101,7 @@ def best_attempt(attempts: Sequence[Attempt]) -> Optional[Attempt]:
 
 def with_feedback(dispatch_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
                   verify: Optional[Callable[[Any, np.ndarray], bool]] = None,
-                  parse: Callable[[str], Any] = parse_llm_output,
-                  tracer: Optional[Tracer] = None) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+                  parse: Callable[[str], Any] = parse_llm_output) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """`dispatch_fn` that tells the model, on each call after the first for a task, what its
     earlier answers got wrong.
 
@@ -133,7 +128,7 @@ def with_feedback(dispatch_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
         grid = _read_grid(parse, solution) if solution not in (None, "") else None
         if key not in learnt:
             learnt[key] = learn([(s.train_inp, s.train_out) for s in task.subtasks])
-        notes, strong, weak = review(task, grid, learnt[key], verify, tracer)
+        notes, strong, weak = review(task, grid, learnt[key], verify)
         history.append(Attempt(len(history) + 1, solution if isinstance(solution, str) else "", grid, notes,
                                strong, weak))
         return result

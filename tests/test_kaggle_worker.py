@@ -36,6 +36,12 @@ class TestTheCommand:
         assert command[1:3] == ["scripts/x.py", "--out"] and command[4:] == ["--shard", "1/3"]
         assert command[3] == str(worker.out_path("j", step, 1).with_suffix("")) and "." not in command[3].split("/")[-1]
 
+    def test_an_argument_that_is_json_is_left_alone(self):
+        step = {"name": "p", "command": ["m.py", "--options", '{"a": {"b": 1}}', "--empty", "{}", "--out", "{out}.jsonl"]}
+        command = worker.train_command("j", step, 0, 2)
+        assert command[3] == '{"a": {"b": 1}}' and command[5] == "{}"
+        assert command[-1].endswith("j_p_0.jsonl") and "{out}" not in command[-1]
+
     def test_a_secret_is_read_under_the_name_the_step_gives(self, monkeypatch):
         import sys
         import types
@@ -144,3 +150,15 @@ class TestWhatTheyAreFor:
         monkeypatch.setattr(worker, "publish", lambda *a, **k: (_ for _ in ()).throw(AssertionError("pushed")))
         worker.run("j", 0, 1, push_every=0.1, root=clone, copy_to=tmp_path / "out")
         assert (tmp_path / "out" / "j_a_0.jsonl").read_text() == "a\n"
+
+
+    def test_a_run_leaves_the_working_directory_where_it_found_it(self, tmp_path, monkeypatch):
+        import os
+        import sys
+        origin, clone = make_clone(tmp_path)
+        (clone / "data/experiments/jobs").mkdir(parents=True)
+        (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": [{"name": "a", "args": []}]}))
+        monkeypatch.setattr(worker, "train_command", lambda *a: [sys.executable, "-c", "import os; open('here', 'w').write(os.getcwd())"])
+        before = os.getcwd()
+        worker.run("j", 0, 1, push_every=0.1, root=clone, copy_to=tmp_path / "out")
+        assert os.getcwd() == before and (clone / "here").read_text() == str(clone)

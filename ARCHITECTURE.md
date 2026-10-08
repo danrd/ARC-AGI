@@ -199,6 +199,7 @@ graph TD
   data -->|1| symbolic
   data -->|1| utils
   orchestration -->|1| symbolic
+  scripts -->|1| orchestration
   scripts -->|1| symbolic
   scripts -->|1| utils
   subsymbolic -->|1| data
@@ -216,7 +217,7 @@ graph TD
 | `data.configs.rl_configs` | 13 |
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
-| `orchestration.configs` | 6 |
+| `orchestration.configs` | 7 |
 | `orchestration.context` | 1 |
 | `orchestration.graph` | 5 |
 | `orchestration.hierarchy` | 1 |
@@ -260,8 +261,8 @@ graph TD
 | `subsymbolic.arc_grid_formatting` | 4 |
 | `subsymbolic.arc_resolvers` | 2 |
 | `subsymbolic.llm_run` | 4 |
-| `subsymbolic.llm_runtime` | 6 |
-| `subsymbolic.llm_setup` | 5 |
+| `subsymbolic.llm_runtime` | 5 |
+| `subsymbolic.llm_setup` | 6 |
 | `subsymbolic.logging` | 1 |
 | `subsymbolic.prompt_builder` | 15 |
 | `subsymbolic.registry` | 6 |

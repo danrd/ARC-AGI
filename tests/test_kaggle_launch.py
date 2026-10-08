@@ -28,3 +28,9 @@ def test_a_worker_without_a_token_copies_its_files_instead_of_pushing_them(tmp_p
     worker.copy_out(tmp_path, tmp_path / "out")
     assert (tmp_path / "out" / "j_a_0.jsonl").read_text() == "x\n"
     worker.copy_out(tmp_path, None)
+
+
+def test_setup_commands_run_after_the_install_and_before_the_worker():
+    code = launch.script("j", 0, 1, setup=["pip install llama-cpp-python"])
+    assert code.index("optional-dependencies") < code.index("llama-cpp-python") < code.index("kaggle_worker.py")
+    compile(code, "worker.py", "exec")

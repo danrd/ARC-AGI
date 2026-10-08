@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Send the prompt variants of prompt_variants.py to a hosted model and keep the answers.
+"""Send the prompt variants of prompt_variants.py to a local model and keep the answers.
 
 prompt_variants.py writes <dir>/<task>/<variant>[_perm].txt for a person to paste
-into a model. This does the pasting: every prompt goes to each model through
-OpenRouter, the reply is kept beside the prompt as
-<variant>[_perm].<model>.response.txt for reading, and compared with
-answer[_perm].txt. One line per reply goes to <dir>/results.jsonl and a table of
-task by variant to <dir>/report.md. A request that fails (a free model's rate limit most often)
-is tried again after a pause, and left for the next run if it keeps failing. A reply that is already on disk is not asked
-for again, so a run that stops is continued by running it again.
+into a model. This does the pasting, on the models the system itself uses: the
+model is loaded the way the GPU notebooks load it (llama.cpp, every layer on the
+cards, the answer held to the grid grammar, thinking off), every prompt goes to
+it, the reply is kept beside the prompt as <variant>[_perm].<model>.response.txt
+for reading, and compared with answer[_perm].txt. One line per reply goes to
+<dir>/results.jsonl and a table of task by variant to <dir>/report.md. A reply that
+is already on disk is not asked for again, so a run that stops is continued by
+running it again.
 
-    python scripts/run_prompt_variants.py --out prompt_tests --models google/gemma-4-26b-a4b-it
+    python scripts/run_prompt_variants.py --out prompt_tests \\
+        --model unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf --tokenizer Qwen/Qwen3.8-27B
 
-The key is read from OPENROUTER_API_KEY (pip install -e '.[openrouter]' for the client). Prompts not yet written are written first,
-with the colours as they are and shuffled. `solved` is the grid equal to the answer
-and nothing else: a reply that does not parse is `parsed: false`, not a near miss.
+`--model` is the GGUF repository and the quantisation file, joined by a colon.
+Prompts not yet written are written first, with the colours as they are and
+shuffled. `solved` is the grid equal to the answer and nothing else: a reply that
+does not parse is `parsed: false`, not a near miss.
 """
 import argparse
 import json
@@ -155,25 +158,43 @@ def write_prompts(directory):
                        check=True)
 
 
+def experiment(model, tokenizer, max_tokens=1200):
+    """The config of the GPU notebooks, for one model: llama.cpp with every layer on the
+    cards, flash attention, thinking off, greedy, the output held to the grid grammar."""
+    from orchestration.configs import ExperimentConfig
+    from subsymbolic.utils import build_grid_grammar
+
+    repo, quant_file = model.split(":")
+    return ExperimentConfig.from_dict({
+        "base": {"device": "cpu", "server_ready_timeout": 1000.0, "request_timeout": 6000.0},
+        "llm": {"framework": "llama_cpp", "model": repo, "quant_file": quant_file, "tokenizer_model": tokenizer,
+                "max_context": 10000, "n_gpu_layers": 999, "flash_attn": True, "use_mlock": False},
+        "generation": {"temperature": 0.0, "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False},
+                       "grammar": build_grid_grammar(colors_str=False)},
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", default="prompt_tests")
-    parser.add_argument("--models", nargs="+", required=True)
+    parser.add_argument("--model", required=True, help="GGUF repository and file: REPO:FILE")
+    parser.add_argument("--tokenizer", help="the model's own repository, for its chat template")
     parser.add_argument("--tasks", nargs="*")
     parser.add_argument("--variants", nargs="*")
     parser.add_argument("--perm", choices=["both", "no", "only"], default="both",
                         help="the prompts with the colours as they are, shuffled, or both")
-    parser.add_argument("--max-tokens", type=int, default=8000)
-    parser.add_argument("--workers", type=int, default=2, help="free models limit the requests a minute")
+    parser.add_argument("--max-tokens", type=int, default=1200)
     args = parser.parse_args()
-    from subsymbolic.llm_runtime import OpenRouterRunner
+    from subsymbolic.llm_setup import build_runner
 
-    def make_runner(model):
-        return OpenRouterRunner([model], {"max_tokens": args.max_tokens, "temperature": 0}, timeout=300.0)
-
+    runner = build_runner(experiment(args.model, args.tokenizer, args.max_tokens))
     if not prompts(args.out):
         write_prompts(args.out)
-    run(args.out, args.models, make_runner, args.tasks, args.variants, args.workers, perm=args.perm)
+    try:
+        run(args.out, [args.model], lambda model: runner, args.tasks, args.variants, workers=1, perm=args.perm,
+            attempts=1, pause=0.0)
+    finally:
+        runner.close()
     print(report(args.out))
 
 

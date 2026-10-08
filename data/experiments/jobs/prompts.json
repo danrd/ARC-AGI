@@ -1,6 +1,8 @@
 {"steps": [
-  {"name": "variants",
+  {"name": "qwen",
    "command": ["scripts/run_prompt_variants.py", "--out", "{out}",
-               "--models", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free"],
-   "secrets": {"OPENROUTER_API_KEY": "OpenRouter"}}
+               "--model", "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf", "--tokenizer", "Qwen/Qwen3.8-27B"]},
+  {"name": "gemma",
+   "command": ["scripts/run_prompt_variants.py", "--out", "{out}",
+               "--model", "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf", "--tokenizer", "google/gemma-4-31B-it"]}
 ]}

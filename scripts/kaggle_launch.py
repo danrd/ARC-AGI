@@ -31,7 +31,7 @@ def slug(job, shard):
     return f"arc-worker-{job}-{shard}".replace("_", "-")
 
 
-def script(job, shard, shards, extras="rl"):
+def script(job, shard, shards, extras="rl", setup=()):
     """The code of one notebook. The package is not installed (pip cannot build its flat
     layout): its requirements are, and the worker runs from the clone with it on the path."""
     install = ("import tomllib, subprocess, sys; "
@@ -44,6 +44,7 @@ def script(job, shard, shards, extras="rl"):
         "run = lambda command: subprocess.run(command, shell=True, check=True)\n"
         f"run('git clone {REPO}')\n"
         f"run({('python -c ' + repr(install))!r})\n"
+        + "".join(f"run({command!r})\n" for command in setup) +
         f"run('cd ARC-AGI && PYTHONPATH=. python scripts/kaggle_worker.py {job} --shard {shard} --shards {shards} "
         f"--copy-to /kaggle/working')\n")
 
@@ -72,11 +73,11 @@ def username():
     return out[1].split(",")[0].split("/")[0] if len(out) > 1 else sys.exit("no Kaggle account: set KAGGLE_USERNAME")
 
 
-def start(job, shards, gpu=False, extras="rl"):
+def start(job, shards, gpu=False, extras="rl", setup=()):
     user = username()
     for shard in range(shards):
         with tempfile.TemporaryDirectory() as folder:
-            (Path(folder) / "worker.py").write_text(script(job, shard, shards, extras))
+            (Path(folder) / "worker.py").write_text(script(job, shard, shards, extras, setup))
             (Path(folder) / "kernel-metadata.json").write_text(json.dumps(metadata(user, job, shard, gpu)))
             result = kaggle("kernels", "push", "-p", folder)
         print(slug(job, shard), (result.stdout + result.stderr).strip().splitlines()[-1])
@@ -108,10 +109,11 @@ def main():
     parser.add_argument("job")
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--gpu", action="store_true")
+    parser.add_argument("--setup", action="append", default=[], help="a shell command to run before the worker; repeatable")
     parser.add_argument("--extras", default="rl", help="the extras of the package to install")
     args = parser.parse_args()
     if args.command == "start":
-        start(args.job, args.shards, args.gpu, args.extras)
+        start(args.job, args.shards, args.gpu, args.extras, args.setup)
     elif args.command == "status":
         print(status(args.job, args.shards))
     else:

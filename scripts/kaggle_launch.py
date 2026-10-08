@@ -33,19 +33,21 @@ def slug(job, shard):
 
 def script(job, shard, shards, extras="rl", setup=()):
     """The code of one notebook. The package is not installed (pip cannot build its flat
-    layout): its requirements are, and the worker runs from the clone with it on the path."""
+    layout): its requirements are, and the worker runs from the clone with it on the path. The
+    clone is in /tmp, not in the working folder: what is there is the notebook's output, and
+    the repository is not to be downloaded with every result."""
     install = ("import tomllib, subprocess, sys; "
-               "project = tomllib.load(open('ARC-AGI/pyproject.toml', 'rb'))['project']; "
+               "project = tomllib.load(open('/tmp/ARC-AGI/pyproject.toml', 'rb'))['project']; "
                f"extras = {extras!r}.split(','); "
                "needs = project['dependencies'] + [r for e in extras for r in project['optional-dependencies'][e]]; "
                "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', *needs], check=True)")
     return (
         "import subprocess\n"
         "run = lambda command: subprocess.run(command, shell=True, check=True)\n"
-        f"run('git clone {REPO}')\n"
+        f"run('git clone {REPO} /tmp/ARC-AGI')\n"
         f"run({('python -c ' + repr(install))!r})\n"
         + "".join(f"run({command!r})\n" for command in setup) +
-        f"run('cd ARC-AGI && PYTHONPATH=. python scripts/kaggle_worker.py {job} --shard {shard} --shards {shards} "
+        f"run('cd /tmp/ARC-AGI && PYTHONPATH=. python scripts/kaggle_worker.py {job} --shard {shard} --shards {shards} "
         f"--copy-to /kaggle/working')\n")
 
 

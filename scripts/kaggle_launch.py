@@ -92,16 +92,20 @@ def status(job, shards):
 
 
 def collect(job, shards):
-    """Download every notebook's output; returns the files put in RUNS."""
+    """Download every notebook's output; returns the files put in RUNS (the output's own folders kept)."""
     user = username()
     RUNS.mkdir(parents=True, exist_ok=True)
     got = []
     for shard in range(shards):
         with tempfile.TemporaryDirectory() as folder:
             kaggle("kernels", "output", f"{user}/{slug(job, shard)}", "-p", folder)
-            for path in Path(folder).glob("*.jsonl"):
-                shutil.copy(path, RUNS / path.name)
-                got.append(RUNS / path.name)
+            for path in sorted(Path(folder).rglob("*")):
+                if path.is_dir() or path.suffix == ".log" or path.name == "__results__.html":
+                    continue
+                target = RUNS / path.relative_to(folder)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(path, target)
+                got.append(target)
     return got
 
 

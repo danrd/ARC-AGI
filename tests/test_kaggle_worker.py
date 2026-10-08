@@ -42,6 +42,16 @@ class TestTheCommand:
         assert command[3] == '{"a": {"b": 1}}' and command[5] == "{}"
         assert command[-1].endswith("j_p_0.jsonl") and "{out}" not in command[-1]
 
+    def test_a_glob_in_a_train_step_is_expanded_where_the_job_runs(self, tmp_path):
+        (tmp_path / "runs").mkdir()
+        for name in ("b.jsonl", "a.jsonl", "c.txt"):
+            (tmp_path / "runs" / name).write_text("")
+        step = {"name": "p", "args": ["--skip", "runs/*.jsonl", "--tasks", "x", "--none", "missing/*.jsonl"]}
+        command = worker.train_command("j", step, 0, 1, root=tmp_path)
+        assert command[command.index("--skip") + 1:command.index("--tasks")] == ["runs/a.jsonl", "runs/b.jsonl"]
+        assert "--none" in command and "missing/*.jsonl" not in command
+        assert worker.expand_globs(['{"a": "*"}', "[*]"]) == ['{"a": "*"}', "[*]"]
+
     def test_a_secret_is_read_under_the_name_the_step_gives(self, monkeypatch):
         import sys
         import types
@@ -95,7 +105,7 @@ class TestTheWholeRun:
         steps = [{"name": "a", "args": []}, {"name": "b", "args": []}]
         (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": steps}))
 
-        def command(job, step, shard, shards):
+        def command(job, step, shard, shards, root=None):
             out = worker.out_path(job, step, shard)
             return [sys.executable, "-c", f"open({str(out)!r}, 'a').write({step['name']!r} + '\\n')"]
 
@@ -119,7 +129,7 @@ class TestWhatTheyAreFor:
         origin, clone = make_clone(tmp_path)
         (clone / "data/experiments/jobs").mkdir(parents=True)
         (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": [{"name": "a", "args": []}]}))
-        monkeypatch.setattr(worker, "train_command", lambda *a: [sys.executable, "-c", "import time; time.sleep(1.5)"])
+        monkeypatch.setattr(worker, "train_command", lambda *a, **k: [sys.executable, "-c", "import time; time.sleep(1.5)"])
         calls = []
         monkeypatch.setattr(worker, "publish", lambda *a, **k: calls.append(1))
         worker.run("j", 0, 1, push_every=0.2, token="t", root=clone)
@@ -143,7 +153,7 @@ class TestWhatTheyAreFor:
         (clone / "data/experiments/jobs").mkdir(parents=True)
         (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": [{"name": "a", "args": []}]}))
 
-        def command(job, step, shard, shards):
+        def command(job, step, shard, shards, root=None):
             return [sys.executable, "-c", f"open({str(worker.out_path(job, step, shard))!r}, 'a').write('a\\n')"]
 
         monkeypatch.setattr(worker, "train_command", command)
@@ -158,7 +168,7 @@ class TestWhatTheyAreFor:
         origin, clone = make_clone(tmp_path)
         (clone / "data/experiments/jobs").mkdir(parents=True)
         (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": [{"name": "a", "args": []}]}))
-        monkeypatch.setattr(worker, "train_command", lambda *a: [sys.executable, "-c", "import os; open('here', 'w').write(os.getcwd())"])
+        monkeypatch.setattr(worker, "train_command", lambda *a, **k: [sys.executable, "-c", "import os; open('here', 'w').write(os.getcwd())"])
         before = os.getcwd()
         worker.run("j", 0, 1, push_every=0.1, root=clone, copy_to=tmp_path / "out")
         assert os.getcwd() == before and (clone / "here").read_text() == str(clone)

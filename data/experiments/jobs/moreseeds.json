@@ -1,0 +1,7 @@
+{"steps": [
+  {"name": "pair",
+   "args": ["--configs", "data/experiments/rl_compare_configs_panel.json",
+            "--arms", "default", "m_w16", "--seeds", "3", "4",
+            "--skip", "data/experiments/runs/*.jsonl", "data/experiments/runs/kaggle/*.jsonl",
+            "--workers", "4", "--hours", "9"]}
+]}

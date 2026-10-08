@@ -1,0 +1,34 @@
+{
+ "steps": [
+  {
+   "name": "core2",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_panel.json",
+    "--tasks",
+    "60b61512",
+    "f76d97a5",
+    "dc1df850",
+    "bb43febb",
+    "50cb2852",
+    "4347f46a",
+    "3aa6fb7a",
+    "--arms",
+    "m_w64",
+    "m_ptr64",
+    "m_nopos",
+    "m_norel",
+    "--seeds",
+    "3",
+    "4",
+    "--skip",
+    "data/experiments/runs/*.jsonl",
+    "data/experiments/runs/kaggle/*.jsonl",
+    "--workers",
+    "4",
+    "--hours",
+    "9"
+   ]
+  }
+ ]
+}

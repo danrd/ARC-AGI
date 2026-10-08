@@ -1,6 +1,6 @@
 {"steps": [
   {"name": "variants",
    "command": ["scripts/run_prompt_variants.py", "--out", "{out}",
-               "--models", "google/gemma-4-26b-a4b-it", "nvidia/nemotron-3-ultra-550b-a55b"],
+               "--models", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3-ultra-550b-a55b:free"],
    "secrets": {"OPENROUTER_API_KEY": "OpenRouter"}}
 ]}

@@ -73,7 +73,7 @@ class TestRunning:
             def generate(self, prompt):
                 raise RuntimeError("down")
 
-        assert rpv.run(tmp_path, ["m"], lambda model: Broken()) == []
+        assert rpv.run(tmp_path, ["m"], lambda model: Broken(), pause=0) == []
         assert not list((tmp_path / "t").glob("*.response.txt"))
 
     def test_the_report_marks_solved_wrong_and_unparsed(self, tmp_path):
@@ -84,3 +84,18 @@ class TestRunning:
             for v, p, s in rows + [("p5", False, False)]))
         text = rpv.report(tmp_path)
         assert "| t | S | x | - |" in text and "1 of 3 solved" in text
+
+    def test_a_request_that_fails_once_is_tried_again(self, tmp_path):
+        write_task(tmp_path, names=("p0",))
+
+        class Once:
+            calls = 0
+
+            def generate(self, prompt):
+                Once.calls += 1
+                if Once.calls == 1:
+                    raise RuntimeError("429")
+                return GOOD
+
+        records = rpv.run(tmp_path, ["m"], lambda model: Once(), pause=0)
+        assert len(records) == 1 and records[0]["solved"] and Once.calls == 2

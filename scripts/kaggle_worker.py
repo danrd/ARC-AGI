@@ -25,6 +25,10 @@ and at the end commits the files and pushes them to the branch kaggle/JOB-K
 its file back from that branch first, and rl_compare then does only what is not
 in it. Fetching kaggle/* and copying the files into runs/ is the other end.
 
+A notebook run through the API (kaggle_launch.py) has no secrets and so no push:
+it is given --copy-to /kaggle/working instead, and what it copies there is what
+`kaggle kernels output` brings back.
+
 The push needs a token in the Kaggle secret Github: a fine-grained token for
 this repo alone, with write access to its contents. It goes to git as a header
 of the one push command, never into the remote or a file.
@@ -33,6 +37,7 @@ import argparse
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -101,11 +106,18 @@ def publish(root, job, shard, token=None, remote="origin"):
     return True
 
 
-def run(job, shard, shards, push_every=300.0, token=None, root=ROOT):
+def copy_out(root, destination):
+    """Copy the notebook's files where a Kaggle notebook keeps its output."""
+    if destination:
+        shutil.copytree(Path(root) / RUNS, destination, dirs_exist_ok=True)
+
+
+def run(job, shard, shards, push_every=300.0, token=None, root=ROOT, copy_to=None):
     root = Path(root)
     os.chdir(root)
     (root / RUNS).mkdir(parents=True, exist_ok=True)
-    restore(root, job, shard)
+    if token:
+        restore(root, job, shard)
     for step in load_job(job, root):
         process = subprocess.Popen(train_command(job, step, shard, shards), env=secrets_env(step, token))
         while process.poll() is None:
@@ -113,10 +125,14 @@ def run(job, shard, shards, push_every=300.0, token=None, root=ROOT):
                 process.wait(timeout=push_every)
             except subprocess.TimeoutExpired:
                 pass
-            publish(root, job, shard, token)
+            if token:
+                publish(root, job, shard, token)
+            copy_out(root, copy_to)
         if process.returncode:
             print(f"step {step['name']} ended with {process.returncode}", file=sys.stderr)
-    publish(root, job, shard, token)
+    if token:
+        publish(root, job, shard, token)
+    copy_out(root, copy_to)
 
 
 def main():
@@ -125,17 +141,18 @@ def main():
     parser.add_argument("--shard", type=int, required=True)
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--push-every", type=float, default=300.0)
+    parser.add_argument("--copy-to", help="also copy the files here (/kaggle/working: what a notebook run through the API gives back)")
     args = parser.parse_args()
     token = os.environ.get("GH_TOKEN")
     if not token:
         try:
             from kaggle_secrets import UserSecretsClient
             token = UserSecretsClient().get_secret("Github")
-        except ImportError:
+        except Exception:  # not a notebook, or one run through the API, which has no secrets
             pass
-    if not token:
-        sys.exit("no token: add the Kaggle secret Github (or set GH_TOKEN), or its runs cannot leave the notebook")
-    run(args.job, args.shard, args.shards, args.push_every, token)
+    if not token and not args.copy_to:
+        sys.exit("no token: add the Kaggle secret Github (or set GH_TOKEN), or give --copy-to, or its runs cannot leave the notebook")
+    run(args.job, args.shard, args.shards, args.push_every, token, copy_to=args.copy_to)
 
 
 if __name__ == "__main__":

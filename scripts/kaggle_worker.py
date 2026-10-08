@@ -18,7 +18,7 @@ and at the end commits the files and pushes them to the branch kaggle/JOB-K
 its file back from that branch first, and rl_compare then does only what is not
 in it. Fetching kaggle/* and copying the files into runs/ is the other end.
 
-The push needs a token in the Kaggle secret GH_TOKEN: a fine-grained token for
+The push needs a token in the Kaggle secret Github: a fine-grained token for
 this repo alone, with write access to its contents. It goes to git as a header
 of the one push command, never into the remote or a file.
 """
@@ -107,11 +107,11 @@ def main():
     if not token:
         try:
             from kaggle_secrets import UserSecretsClient
-            token = UserSecretsClient().get_secret("GH_TOKEN")
+            token = UserSecretsClient().get_secret("Github")
         except ImportError:
             pass
     if not token:
-        sys.exit("no GH_TOKEN: add it as a Kaggle secret, or its runs cannot leave the notebook")
+        sys.exit("no token: add the Kaggle secret Github (or set GH_TOKEN), or its runs cannot leave the notebook")
     run(args.job, args.shard, args.shards, args.push_every, token)
 
 

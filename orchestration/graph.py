@@ -103,6 +103,7 @@ class AgentState(TypedDict, total=False):
     rl_status: Optional[str]               # None (not resolved yet) | 'ok' | 'error'
     rl_wait_used: bool
 
+    agent_name: str                        # who is running: its role text is what makes one agent's prompt differ from another's
     rl_enabled: bool                       # False: this agent has no interactive (RL) module; no job is started
     status: str
     validated: bool
@@ -486,6 +487,7 @@ def _run_agent_node(state: SystemState) -> Dict[str, Any]:
         "rl_start_fn": state.get("rl_start_fn", default_rl_start_fn),
         "decision_fn": state.get("agent_decision_fn", default_decision_fn),
         "rl_enabled": rl_enabled,
+        "agent_name": agent.agent_name,
     }
     agent_result = AGENT_GRAPH.invoke(agent_state)
     solution = agent_result.get("solution", "")

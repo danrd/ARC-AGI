@@ -98,6 +98,23 @@ def rank_roster(task, module, registry, context: Optional[Dict[str, Any]] = None
     return order_by_analyst(registry, shortlist), shortlist
 
 
+def with_role(dispatch_fn: Callable) -> Callable:
+    """`dispatch_fn` that gives the model, in the context, the role text of the agent that is running
+    (data.configs.agents_config.ROLE_INSTRUCTIONS), for the `role_instruction` block. Without it every agent
+    of a roster asks the model the same thing, and a model that answers the same prompt the same way is asked
+    five times for one answer. An agent with no role text, and a call for any module but the model, pass through."""
+    from data.configs.agents_config import ROLE_INSTRUCTIONS
+
+    def dispatch(state: Dict[str, Any]) -> Dict[str, Any]:
+        role = ROLE_INSTRUCTIONS.get(state.get("agent_name"))
+        if role and state["current_module"].module_name.lower() == "subsymbolic":
+            context = {**(state.get("auxiliary_info") or {}), "role_text": role}
+            return dispatch_fn({**state, "auxiliary_info": context})
+        return dispatch_fn(state)
+
+    return dispatch
+
+
 def no_rl(task):
     """An RL start that starts nothing: the graph then has no job to poll or wait for."""
     return None
@@ -174,8 +191,12 @@ def assemble(options: OrchestrationOptions, module, verify: Callable[[Any, np.nd
     if options.refine_rounds and options.refine_rounds > 1:
         solver = RefiningModule(solver, rounds=options.refine_rounds, verify=verdict, parse=parse, tracer=tracer)
 
+    if agent_factory is not None:
+        install_blocks(solver, ["role_instruction"])
     dispatch = make_module_dispatch_fn(symbolic_module=symbolic_module, subsymbolic_module=solver)
     dispatch = timed_dispatch(dispatch, tracer)
+    if agent_factory is not None:
+        dispatch = with_role(dispatch)
     if options.feedback:
         dispatch = with_feedback(dispatch, verdict, parse)
 

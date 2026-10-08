@@ -118,3 +118,33 @@ class TestTheRoleOfTheAgent:
         monkeypatch.delitem(ROLE_INSTRUCTIONS, "Generalizer")
         prompts, _ = self.run(tiny_tokenizer, agents=[AGENTS_REGISTRY[0]])
         assert prompts and all("Role:" not in p for p in prompts)
+
+
+class TestEveryOptionOverTheRoster:
+    @staticmethod
+    def solve(tiny_tokenizer, options, replies):
+        from data.configs.agents_config import AGENTS_REGISTRY
+        from orchestration.assemble import solve_with_orchestration
+        m = module(tiny_tokenizer, replies)
+        run = assemble(options, m, judge, rl_start_fn=lambda task: None, agent_factory=agent_factory(AGENTS_REGISTRY))
+        by_name = {a["name"]: a for a in AGENTS_REGISTRY}
+        context = {"grid_repr_type": "concise", "test_input_grid": make_task().test_subtask.train_inp}
+        solve_with_orchestration(make_task(), run, agents=[by_name["Modifier"], by_name["Highlighter"]],
+                                 auxiliary_info=context,
+                                 system_run_config=SystemRunConfig(max_system_iterations=2,
+                                                                   agent_run_config=AgentRunConfig(max_agent_iterations=1)))
+        return m.runner.prompts
+
+    def test_the_refinement_loop_and_the_roles_work_together(self, tiny_tokenizer):
+        prompts = self.solve(tiny_tokenizer, OrchestrationOptions(rl=False, refine_rounds=2, feedback=True),
+                             ["1,3:\n1 001"])
+        assert any("Role:" in p for p in prompts) and any("Attempt 1" in p for p in prompts)
+
+    def test_the_tools_and_the_roles_work_together(self, tiny_tokenizer):
+        prompts = self.solve(tiny_tokenizer, OrchestrationOptions(rl=False, info_tools=True), ["1,3:\n1 001"])
+        assert any("Role:" in p and "REQUEST: <tool>" in p for p in prompts)
+
+    def test_the_model_made_decisions_and_the_roles_work_together(self, tiny_tokenizer):
+        options = OrchestrationOptions(rl=False, decision="llm", coordinator="llm")
+        prompts = self.solve(tiny_tokenizer, options, ["1,3:\n1 001"])
+        assert prompts and any("Role:" in p for p in prompts)

@@ -1939,19 +1939,23 @@
    "name": "system_gpu",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
    "note": "\u044d\u0442\u0430\u043f 1 \u0441 \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f\u043c\u0438: llama.cpp \u043d\u0430 GPU (\u0441 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u043e\u0439), \u0440\u043e\u043b\u0438 \u0430\u0433\u0435\u043d\u0442\u043e\u0432 \u0432 \u043f\u0440\u043e\u043c\u043f\u0442\u0435; gemma E2B \u0431\u0435\u0437 RL, 3 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0430",
-   "result": []
+   "result": [
+    "data/experiments/runs/kaggle/system_gpu_base_0.jsonl",
+    "data/experiments/runs/kaggle/system_gpu_llm_0.jsonl",
+    "data/experiments/runs/kaggle/system_gpu_refine_0.jsonl"
+   ]
   },
   {
    "name": "system_refine",
    "resource": "gpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
@@ -1975,11 +1979,13 @@
    "name": "otherseeds_o",
    "resource": "cpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "\u0441\u0438\u0434\u044b 3 \u0438 4 \u0434\u043b\u044f o_spatial \u043d\u0430 \u043f\u0430\u043d\u0435\u043b\u0438 \u0438\u0437 21 \u0437\u0430\u0434\u0430\u0447\u0438, 42 \u0437\u0430\u043f\u0443\u0441\u043a\u0430",
-   "result": []
+   "result": [
+    "data/experiments/runs/kaggle/otherseeds_o_seeds_0.jsonl"
+   ]
   },
   {
    "name": "otherseeds_s",

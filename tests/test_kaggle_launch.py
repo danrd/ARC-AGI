@@ -8,7 +8,8 @@ from scripts import kaggle_worker as worker
 def test_a_notebook_runs_its_shard_of_the_job_and_leaves_its_files_in_the_output():
     code = launch.script("gaps", 2, 5)
     assert "kaggle_worker.py gaps --shard 2 --shards 5 --copy-to /kaggle/working" in code
-    assert "ARC-AGI[rl]" in code and launch.REPO in code
+    assert "optional-dependencies" in code and launch.REPO in code and "PYTHONPATH=." in code
+    assert "pip install -e" not in code
     compile(code, "worker.py", "exec")
 
 

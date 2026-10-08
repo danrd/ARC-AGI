@@ -95,7 +95,7 @@ class TestTheWholeRun:
 
         monkeypatch.setattr(worker, "train_command", command)
         monkeypatch.setattr(worker, "_git", lambda root, *args, token=None, check=True: _local(origin, root, *args, check=check))
-        worker.run("j", 0, 1, push_every=0.1, root=clone)
+        worker.run("j", 0, 1, push_every=0.1, token="t", root=clone)
         shown = git(origin, "show", f"{worker.branch_of('j', 0)}:{worker.RUNS}/j_b_0.jsonl")
         assert shown == "b\n"
         assert git(origin, "show", f"{worker.branch_of('j', 0)}:{worker.RUNS}/j_a_0.jsonl") == "a\n"
@@ -116,7 +116,7 @@ class TestWhatTheyAreFor:
         monkeypatch.setattr(worker, "train_command", lambda *a: [sys.executable, "-c", "import time; time.sleep(1.5)"])
         calls = []
         monkeypatch.setattr(worker, "publish", lambda *a, **k: calls.append(1))
-        worker.run("j", 0, 1, push_every=0.2, root=clone)
+        worker.run("j", 0, 1, push_every=0.2, token="t", root=clone)
         assert len(calls) >= 4
 
     def test_a_notebook_started_again_replaces_its_branch(self, tmp_path):
@@ -129,3 +129,18 @@ class TestWhatTheyAreFor:
         (other / worker.RUNS).mkdir(parents=True)
         (other / worker.RUNS / "j_a_0.jsonl").write_text("two\n")
         assert worker.publish(other, "j", 0, remote=str(origin))
+
+
+    def test_without_a_token_nothing_is_pushed_and_the_files_are_copied(self, tmp_path, monkeypatch):
+        import sys
+        origin, clone = make_clone(tmp_path)
+        (clone / "data/experiments/jobs").mkdir(parents=True)
+        (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": [{"name": "a", "args": []}]}))
+
+        def command(job, step, shard, shards):
+            return [sys.executable, "-c", f"open({str(worker.out_path(job, step, shard))!r}, 'a').write('a\\n')"]
+
+        monkeypatch.setattr(worker, "train_command", command)
+        monkeypatch.setattr(worker, "publish", lambda *a, **k: (_ for _ in ()).throw(AssertionError("pushed")))
+        worker.run("j", 0, 1, push_every=0.1, root=clone, copy_to=tmp_path / "out")
+        assert (tmp_path / "out" / "j_a_0.jsonl").read_text() == "a\n"

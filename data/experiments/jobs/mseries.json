@@ -1,0 +1,10 @@
+{"steps": [
+  {"name": "core",
+   "args": ["--configs", "data/experiments/rl_compare_configs_panel.json",
+            "--tasks", "60b61512", "f76d97a5", "dc1df850", "bb43febb", "50cb2852", "4347f46a", "3aa6fb7a",
+            "--arms", "m_norel", "m_w64", "m_nopos", "m_ptr64", "--seeds", "0", "1", "2",
+            "--skip", "data/experiments/runs/wave1.jsonl", "data/experiments/runs/wave2.jsonl", "data/experiments/runs/wave3.jsonl",
+            "data/experiments/runs/step2_a.jsonl", "data/experiments/runs/step2_b.jsonl",
+            "data/experiments/runs/step3.jsonl", "data/experiments/runs/step4.jsonl",
+            "--workers", "4", "--hours", "9"]}
+]}

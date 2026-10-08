@@ -54,7 +54,22 @@ def out_path(job, step, shard):
     return RUNS / f"{job}_{step['name']}_{shard}.jsonl"
 
 
-def train_command(job, step, shard, shards):
+def expand_globs(args, root=None):
+    """`args` with every argument that has a `*` replaced by the files it names, in order, relative to `root`
+    (a job's arguments are not read by a shell, so `--skip runs/*.jsonl` would otherwise stay a literal)."""
+    import glob
+
+    out = []
+    for arg in args:
+        if "*" in arg and not arg.lstrip().startswith(("{", "[")):
+            matches = sorted(glob.glob(str(Path(root or ".") / arg)))
+            out.extend(str(Path(m).relative_to(root)) if root else m for m in matches)
+        else:
+            out.append(arg)
+    return out
+
+
+def train_command(job, step, shard, shards, root=None):
     if "command" in step:
         fill = {"{out}": str(out_path(job, step, shard).with_suffix("")), "{shard}": str(shard),
                 "{shards}": str(shards)}
@@ -65,7 +80,7 @@ def train_command(job, step, shard, shards):
             return part
 
         return [sys.executable, *(filled(part) for part in step["command"])]
-    return [sys.executable, "scripts/rl_compare.py", "train", *step["args"],
+    return [sys.executable, "scripts/rl_compare.py", "train", *expand_globs(step["args"], root),
             "--shard", str(shard), "--shards", str(shards), "--out", str(out_path(job, step, shard))]
 
 
@@ -124,7 +139,7 @@ def run(job, shard, shards, push_every=300.0, token=None, root=ROOT, copy_to=Non
     if token:
         restore(root, job, shard)
     for step in load_job(job, root):
-        process = subprocess.Popen(train_command(job, step, shard, shards), env=secrets_env(step, token), cwd=root)
+        process = subprocess.Popen(train_command(job, step, shard, shards, root), env=secrets_env(step, token), cwd=root)
         while process.poll() is None:
             try:
                 process.wait(timeout=push_every)

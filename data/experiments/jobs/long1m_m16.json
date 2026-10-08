@@ -1,0 +1,22 @@
+{
+ "steps": [
+  {
+   "name": "long",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_long.json",
+    "--arms",
+    "m_w16",
+    "--seeds",
+    "0",
+    "1",
+    "--steps",
+    "1000000",
+    "--workers",
+    "4",
+    "--hours",
+    "11"
+   ]
+  }
+ ]
+}

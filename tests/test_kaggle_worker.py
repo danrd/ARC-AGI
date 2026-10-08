@@ -30,6 +30,20 @@ class TestTheCommand:
         assert worker.out_path("j", step, 2) != worker.out_path("j", step, 3)
         assert worker.out_path("j", step, 2) != worker.out_path("j", {"name": "other"}, 2)
 
+    def test_a_step_that_is_another_script_gets_its_places_filled_in(self):
+        step = {"name": "p", "command": ["scripts/x.py", "--out", "{out}", "--shard", "{shard}/{shards}"]}
+        command = worker.train_command("j", step, 1, 3)
+        assert command[1:3] == ["scripts/x.py", "--out"] and command[4:] == ["--shard", "1/3"]
+        assert command[3] == str(worker.out_path("j", step, 1).with_suffix("")) and "." not in command[3].split("/")[-1]
+
+    def test_a_secret_is_read_under_the_name_the_step_gives(self, monkeypatch):
+        import sys
+        import types
+        client = types.SimpleNamespace(get_secret=lambda name: {"OpenRouter": "k"}[name])
+        monkeypatch.setitem(sys.modules, "kaggle_secrets", types.SimpleNamespace(UserSecretsClient=lambda: client))
+        env = worker.secrets_env({"secrets": {"OPENROUTER_API_KEY": "OpenRouter"}}, None)
+        assert env["OPENROUTER_API_KEY"] == "k"
+
     def test_a_notebook_has_its_own_branch(self):
         assert worker.branch_of("j", 0) != worker.branch_of("j", 1)
 

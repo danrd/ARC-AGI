@@ -11,6 +11,13 @@ arguments of `rl_compare.py train` without --shard, --shards and --out:
 
     {"steps": [{"name": "panel", "args": ["--configs", "...", "--arms", "default"]}]}
 
+A step that is another script gives its `command` (the arguments of python, with
+{out}, {shard} and {shards} filled in; {out} is a directory the files of the step
+go to) and the Kaggle `secrets` it needs, as {"VARIABLE": "secret name"}:
+
+    {"name": "prompts", "command": ["scripts/run_prompt_variants.py", "--out", "{out}", "--models", "..."],
+     "secrets": {"OPENROUTER_API_KEY": "OpenRouter"}}
+
 The worker runs the steps in turn, each into its own file under
 data/experiments/runs/kaggle/JOB_STEP_K.jsonl, and every `--push-every` seconds
 and at the end commits the files and pushes them to the branch kaggle/JOB-K
@@ -44,8 +51,24 @@ def out_path(job, step, shard):
 
 
 def train_command(job, step, shard, shards):
+    if "command" in step:
+        fill = {"out": str(out_path(job, step, shard).with_suffix("")), "shard": shard, "shards": shards}
+        return [sys.executable, *(part.format(**fill) for part in step["command"])]
     return [sys.executable, "scripts/rl_compare.py", "train", *step["args"],
             "--shard", str(shard), "--shards", str(shards), "--out", str(out_path(job, step, shard))]
+
+
+def secrets_env(step, token):
+    """The environment a step gets: the Kaggle secrets it names, under the names it gives."""
+    env = dict(os.environ)
+    for variable, secret in step.get("secrets", {}).items():
+        try:
+            from kaggle_secrets import UserSecretsClient
+            env[variable] = UserSecretsClient().get_secret(secret)
+        except ImportError:
+            if variable not in env:
+                sys.exit(f"{variable} is not set, and this is not a Kaggle notebook to read the secret {secret} from")
+    return env
 
 
 def branch_of(job, shard):
@@ -84,7 +107,7 @@ def run(job, shard, shards, push_every=300.0, token=None, root=ROOT):
     (root / RUNS).mkdir(parents=True, exist_ok=True)
     restore(root, job, shard)
     for step in load_job(job, root):
-        process = subprocess.Popen(train_command(job, step, shard, shards))
+        process = subprocess.Popen(train_command(job, step, shard, shards), env=secrets_env(step, token))
         while process.poll() is None:
             try:
                 process.wait(timeout=push_every)

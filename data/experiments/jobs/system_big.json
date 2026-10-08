@@ -1,0 +1,67 @@
+{
+ "steps": [
+  {
+   "name": "base",
+   "command": [
+    "-m",
+    "orchestration.run",
+    "--tasks-file",
+    "data/experiments/system_tasks.txt",
+    "--split",
+    "evaluation",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--options",
+    "{}",
+    "--roster",
+    "--no-rl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "refine",
+   "command": [
+    "-m",
+    "orchestration.run",
+    "--tasks-file",
+    "data/experiments/system_tasks.txt",
+    "--split",
+    "evaluation",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--options",
+    "{\"refine_rounds\": 3, \"feedback\": true}",
+    "--roster",
+    "--no-rl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "llm",
+   "command": [
+    "-m",
+    "orchestration.run",
+    "--tasks-file",
+    "data/experiments/system_tasks.txt",
+    "--split",
+    "evaluation",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--options",
+    "{\"decision\": \"llm\", \"coordinator\": \"llm\", \"info_tools\": true}",
+    "--roster",
+    "--no-rl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

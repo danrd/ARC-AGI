@@ -1,0 +1,48 @@
+{
+ "steps": [
+  {
+   "name": "base",
+   "command": [
+    "-m",
+    "orchestration.run",
+    "--tasks-file",
+    "data/experiments/system_tasks.txt",
+    "--split",
+    "evaluation",
+    "--model",
+    "unsloth/gemma-4-E2B-it-GGUF:gemma-4-E2B-it-Q4_K_M.gguf",
+    "--tokenizer",
+    "unsloth/gemma-4-E2B-it",
+    "--options",
+    "{}",
+    "--roster",
+    "--rl-steps",
+    "50000",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "refine",
+   "command": [
+    "-m",
+    "orchestration.run",
+    "--tasks-file",
+    "data/experiments/system_tasks.txt",
+    "--split",
+    "evaluation",
+    "--model",
+    "unsloth/gemma-4-E2B-it-GGUF:gemma-4-E2B-it-Q4_K_M.gguf",
+    "--tokenizer",
+    "unsloth/gemma-4-E2B-it",
+    "--options",
+    "{\"refine_rounds\": 3, \"feedback\": true}",
+    "--roster",
+    "--rl-steps",
+    "50000",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

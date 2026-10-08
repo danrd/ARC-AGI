@@ -278,7 +278,7 @@ def llm_coordinator_fn(decider, agent_factory: Callable[[Mapping[str, Any]], Age
                            for a in untried)
         context = {
             "agents_info_text": roster,
-            "auxiliary_info": state.get("auxiliary_info") or {},
+            "auxiliary_info": {k: v for k, v in (state.get("auxiliary_info") or {}).items() if isinstance(v, str)},
             "history_text": render_records(state.get("history")),
             "current_iteration": state.get("iteration", 0),
             "current_solution": state.get("solution") if isinstance(state.get("solution"), str) else "(a grid)",

@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from orchestration.assemble import assemble, solve_with_orchestration
+from orchestration.assemble import assemble, rank_roster, solve_with_orchestration
 from orchestration.configs import AgentRunConfig, OrchestrationOptions, SystemRunConfig
 from orchestration.hierarchy import _read_grid
 from orchestration.trace import Tracer, render
@@ -47,8 +47,8 @@ def load_task(split: str, task_id: str) -> ARCTask:
                    test_out=np.array(solutions[task_id][0]))
 
 
-def key_of(task_id: str, options: OrchestrationOptions, rl: bool) -> str:
-    return json.dumps({"task": task_id, "options": vars(options), "rl": rl}, sort_keys=True)
+def key_of(task_id: str, options: OrchestrationOptions, roster: bool = False) -> str:
+    return json.dumps({"task": task_id, "options": vars(options), "roster": roster}, sort_keys=True)
 
 
 def done_keys(path) -> set:
@@ -71,14 +71,30 @@ def answer_of(result: Dict[str, Any], parse=parse_llm_output) -> Optional[np.nda
 
 
 def run_task(task: ARCTask, options: OrchestrationOptions, module, verify, rl_start_fn, max_iterations: int = 3,
-             rl_wait: float = 600.0, parse=parse_llm_output) -> Dict[str, Any]:
-    """One task through the system; returns the record of the run (without its key)."""
+             rl_wait: float = 600.0, parse=parse_llm_output, registry=None, max_agents: int = 5) -> Dict[str, Any]:
+    """One task through the system; returns the record of the run (without its key).
+
+    With a `registry` of agents (data.configs.agents_config.AGENTS_REGISTRY) the run is over the agents: the
+    analyst orders them for the task, the coordinator hands the task from one to the next, and each has the
+    modules the registry gives it - without the interactive one, and so without RL, when `options.rl` is off.
+    Without one, a single agent holds the symbolic solvers and the model."""
     tracer = Tracer()
-    run = assemble(options, module, verify, tracer=tracer, parse=parse, rl_start_fn=rl_start_fn)
     context = {"grid_repr_type": "concise", "test_input_grid": task.test_subtask.train_inp}
+    agents, factory, analyst = None, None, None
     started = time.perf_counter()
-    result = solve_with_orchestration(task, run, auxiliary_info=context, system_run_config=SystemRunConfig(
-        agent_run_config=AgentRunConfig(max_agent_iterations=max_iterations, rl_wait_timeout=rl_wait)))
+    if registry is not None:
+        from orchestration.roster import agent_factory, without_module
+        roster = registry if options.rl else without_module(registry, "Interactive")
+        factory = agent_factory(roster)
+        agents, analyst = rank_roster(task, module, roster, context, tracer)
+        context = {**context, **analyst.as_auxiliary_info()}
+    run = assemble(options, module, verify, tracer=tracer, parse=parse, rl_start_fn=rl_start_fn,
+                   agent_factory=factory)
+    result = solve_with_orchestration(task, run, agents=agents, auxiliary_info=context,
+                                      system_run_config=SystemRunConfig(
+                                          max_system_iterations=max_agents,
+                                          agent_run_config=AgentRunConfig(max_agent_iterations=max_iterations,
+                                                                          rl_wait_timeout=rl_wait)))
     seconds = time.perf_counter() - started
     grid = answer_of(result, parse)
     refinements = [{"attempts": len(r.attempts), "accepted": r.accepted, "notes": [a.notes for a in r.attempts]}
@@ -88,7 +104,9 @@ def run_task(task: ARCTask, options: OrchestrationOptions, module, verify, rl_st
             "validated": bool(result.get("validated")), "source": result.get("accepted_source"),
             "iterations": result.get("iteration"), "seconds": round(seconds, 2),
             "trace": {phase: {k: round(v, 2) for k, v in row.items()} for phase, row in tracer.summary().items()},
-            "decisions": run.decisions, "refinements": refinements}
+            "decisions": run.decisions, "refinements": refinements,
+            "agents": [r.name for r in result.get("history", []) if r.level == "agent"],
+            "analyst": list(analyst.agents) if analyst is not None else None}
 
 
 def summarise(lines: List[Dict[str, Any]]) -> str:
@@ -130,7 +148,8 @@ def main():
     parser.add_argument("--model", help="GGUF repository and file: REPO:FILE")
     parser.add_argument("--tokenizer")
     parser.add_argument("--options", default="{}", help="OrchestrationOptions fields as JSON")
-    parser.add_argument("--no-rl", action="store_true", help="no RL job beside the model")
+    parser.add_argument("--no-rl", action="store_true", help="no RL job, and no agent has the interactive module")
+    parser.add_argument("--roster", action="store_true", help="run over the agents of the registry, not one agent")
     parser.add_argument("--rl-steps", type=int, default=50_000, help="training steps of the RL job")
     parser.add_argument("--rl-wait", type=float, default=600.0)
     parser.add_argument("--max-iterations", type=int, default=3)
@@ -142,10 +161,13 @@ def main():
         return
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    options = OrchestrationOptions(**json.loads(args.options))
+    params = json.loads(args.options)
+    if args.no_rl:
+        params["rl"] = False
+    options = OrchestrationOptions(**params)
     ids = list(args.tasks) + (Path(args.tasks_file).read_text().split() if args.tasks_file else [])
     finished = done_keys(args.out)
-    todo = [t for t in ids if key_of(t, options, not args.no_rl) not in finished]
+    todo = [t for t in ids if key_of(t, options, args.roster) not in finished]
     if not todo:
         print("nothing to run")
         return
@@ -159,12 +181,17 @@ def main():
     try:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True)
-    except Exception:  # noqa: BLE001 - counting tokens approximately is enough to run
+    except Exception as error:  # noqa: BLE001 - counting tokens approximately is enough to run
+        print(f"no tokenizer for {args.tokenizer} ({type(error).__name__}); counting tokens by whitespace", flush=True)
         from subsymbolic.prompt_builder import ApproxTokenizer
         tokenizer = ApproxTokenizer()
     module = SubsymbolicModule(config, tokenizer)
     verify = LlmVerifier(without_grammar(module.runner), tokenizer, prompt=config.prompt)
-    if args.no_rl:
+    registry = None
+    if args.roster:
+        from data.configs.agents_config import AGENTS_REGISTRY
+        registry = AGENTS_REGISTRY
+    if not options.rl:
         rl_start = lambda task: None  # noqa: E731
     else:
         from data.configs.rl_configs import rl_config
@@ -175,9 +202,9 @@ def main():
     try:
         for task_id in todo:
             record = run_task(load_task(args.split, task_id), options, module, verify, rl_start,
-                              args.max_iterations, args.rl_wait)
-            record.update({"key": key_of(task_id, options, not args.no_rl), "options": vars(options),
-                           "rl": not args.no_rl, "model": args.model, "split": args.split})
+                              args.max_iterations, args.rl_wait, registry=registry)
+            record.update({"key": key_of(task_id, options, args.roster), "options": vars(options),
+                           "roster": args.roster, "model": args.model, "split": args.split})
             with open(args.out, "a") as handle:
                 handle.write(json.dumps(record) + "\n")
             print(f"{task_id}: solved={record['solved']} source={record['source']} {record['seconds']}s", flush=True)

@@ -211,19 +211,19 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (14)"]
+  orchestration["orchestration (15)"]
   rl["rl (20)"]
   scripts["scripts (16)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (80)"]
+  tests["tests (81)"]
   utils["utils (3)"]
   tests -->|99| rl
-  tests -->|40| subsymbolic
+  tests -->|41| subsymbolic
   tests -->|33| symbolic
-  tests -->|27| orchestration
-  orchestration -->|23| subsymbolic
-  tests -->|19| data
+  tests -->|32| orchestration
+  orchestration -->|24| subsymbolic
+  tests -->|21| data
   scripts -->|13| rl
   rl -->|11| data
   rl -->|11| symbolic
@@ -231,6 +231,7 @@ graph TD
   scripts -->|6| subsymbolic
   orchestration -->|4| symbolic
   data -->|3| rl
+  orchestration -->|3| data
   rl -->|3| utils
   scripts -->|3| data
   tests -->|3| scripts
@@ -238,7 +239,6 @@ graph TD
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
-  orchestration -->|1| data
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -250,23 +250,24 @@ graph TD
 
 | module | imported by |
 | --- | ---: |
-| `data.configs.agents_config` | 2 |
+| `data.configs.agents_config` | 6 |
 | `data.configs.env_configs` | 15 |
 | `data.configs.rl_configs` | 14 |
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
-| `orchestration.assemble` | 2 |
+| `orchestration.assemble` | 3 |
 | `orchestration.blocks` | 3 |
-| `orchestration.configs` | 11 |
+| `orchestration.configs` | 12 |
 | `orchestration.context` | 1 |
 | `orchestration.feedback` | 4 |
-| `orchestration.graph` | 10 |
+| `orchestration.graph` | 12 |
 | `orchestration.hierarchy` | 7 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
+| `orchestration.roster` | 3 |
 | `orchestration.run` | 0 |
 | `orchestration.tools` | 4 |
-| `orchestration.trace` | 9 |
+| `orchestration.trace` | 10 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
@@ -302,7 +303,7 @@ graph TD
 | `scripts.solved_by_source` | 0 |
 | `scripts.symbolic_coverage` | 1 |
 | `scripts.sync_llm_kit` | 0 |
-| `subsymbolic.analyst` | 2 |
+| `subsymbolic.analyst` | 4 |
 | `subsymbolic.answer_check` | 2 |
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 4 |

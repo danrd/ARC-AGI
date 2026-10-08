@@ -55,3 +55,12 @@ def test_a_clone_left_in_a_notebooks_output_is_not_collected(tmp_path, monkeypat
     monkeypatch.setattr(launch, "RUNS", tmp_path / "runs")
     got = launch.collect("j", 1)
     assert sorted(p.relative_to(tmp_path / "runs").as_posix() for p in got) == ["j_a_0.jsonl", "j_a_0/x.txt"]
+
+
+def test_the_gpu_install_script_is_valid_shell_and_checks_for_the_gpu_at_the_end():
+    script = Path(launch.ROOT / "scripts" / "install_llama_gpu.sh")
+    import subprocess
+    assert subprocess.run(["bash", "-n", str(script)]).returncode == 0
+    text = script.read_text()
+    assert text.index("--only-binary=:all:") < text.index("DGGML_CUDA=on") < text.index("llama_supports_gpu_offload")
+    assert "raise SystemExit(0 if ok else 3)" in text

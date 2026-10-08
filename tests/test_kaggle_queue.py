@@ -72,7 +72,7 @@ def test_a_job_with_a_notebook_still_running_is_not_collected_but_the_notebook_t
     fake.tick(jobs)
     assert jobs[0].status == "running" and fake.collected == []
     assert fake.started == ["b"]                       # the four left after the one still running
-    assert slots_used(jobs[:1], {"a": ["COMPLETE", "RUNNING"]}) == {"cpu": 1, "gpu": 0}
+    assert slots_used(jobs[:1], {"a": ["COMPLETE", "RUNNING"]}) == {"cpu": 1, "gpu": 0, "tpu": 0}
     assert Fake(a=["COMPLETE", "RUNNING"]).tick([Job("a", "cpu", 2, "running"), Job("c", "cpu", 5)])[0].startswith("c: waits")
 
 
@@ -93,4 +93,4 @@ def test_the_queue_is_a_file_that_comes_back_as_it_was(tmp_path):
     jobs = [Job("a", "gpu", 1, "queued", ["pip install x"], "rl", "why", []), Job("b", "cpu", 3, "done", result=["f"])]
     save(jobs, path)
     assert load(path) == jobs and load(tmp_path / "none.json") == []
-    assert queue.CAPACITY == {"cpu": 5, "gpu": 1}
+    assert queue.CAPACITY == {"cpu": 5, "gpu": 1, "tpu": 1}

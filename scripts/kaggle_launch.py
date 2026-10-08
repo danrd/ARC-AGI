@@ -38,7 +38,7 @@ def script(job, shard, shards, extras="rl", setup=()):
     the repository is not to be downloaded with every result."""
     install = ("import tomllib, subprocess, sys; "
                "project = tomllib.load(open('/tmp/ARC-AGI/pyproject.toml', 'rb'))['project']; "
-               f"extras = {extras!r}.split(','); "
+               f"extras = [e for e in {extras!r}.split(',') if e]; "
                "needs = project['dependencies'] + [r for e in extras for r in project['optional-dependencies'][e]]; "
                "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', *needs], check=True)")
     return (
@@ -51,10 +51,10 @@ def script(job, shard, shards, extras="rl", setup=()):
         f"--copy-to /kaggle/working')\n")
 
 
-def metadata(username, job, shard, gpu=False):
+def metadata(username, job, shard, gpu=False, tpu=False):
     return {"id": f"{username}/{slug(job, shard)}", "title": slug(job, shard).replace("-", " "),
             "code_file": "worker.py", "language": "python", "kernel_type": "script", "is_private": "true",
-            "enable_gpu": str(gpu).lower(), "enable_tpu": "false", "enable_internet": "true",
+            "enable_gpu": str(gpu).lower(), "enable_tpu": str(tpu).lower(), "enable_internet": "true",
             "dataset_sources": [], "competition_sources": [], "kernel_sources": []}
 
 
@@ -75,12 +75,12 @@ def username():
     return out[1].split(",")[0].split("/")[0] if len(out) > 1 else sys.exit("no Kaggle account: set KAGGLE_USERNAME")
 
 
-def start(job, shards, gpu=False, extras="rl", setup=()):
+def start(job, shards, gpu=False, extras="rl", setup=(), tpu=False):
     user = username()
     for shard in range(shards):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "worker.py").write_text(script(job, shard, shards, extras, setup))
-            (Path(folder) / "kernel-metadata.json").write_text(json.dumps(metadata(user, job, shard, gpu)))
+            (Path(folder) / "kernel-metadata.json").write_text(json.dumps(metadata(user, job, shard, gpu, tpu)))
             result = kaggle("kernels", "push", "-p", folder)
         print(slug(job, shard), (result.stdout + result.stderr).strip().splitlines()[-1])
 
@@ -117,11 +117,12 @@ def main():
     parser.add_argument("job")
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--gpu", action="store_true")
+    parser.add_argument("--tpu", action="store_true")
     parser.add_argument("--setup", action="append", default=[], help="a shell command to run before the worker; repeatable")
     parser.add_argument("--extras", default="rl", help="the extras of the package to install")
     args = parser.parse_args()
     if args.command == "start":
-        start(args.job, args.shards, args.gpu, args.extras, args.setup)
+        start(args.job, args.shards, args.gpu, args.extras, args.setup, args.tpu)
     elif args.command == "status":
         print(status(args.job, args.shards))
     else:

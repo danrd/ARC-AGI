@@ -37,8 +37,8 @@ class LocalModelConfig(BaseModel):
 
 def gpu_notebook_params(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200) -> Dict[str, Any]:
     """The settings of the GPU notebooks for one model, as the dict ExperimentConfig.from_dict reads:
-    llama.cpp with every layer on the cards and flash attention, greedy, thinking off, and the output
-    held to the grid grammar. `model` is the GGUF repository and the quantisation file joined by a colon."""
+    llama.cpp with every layer on the cards and flash attention, greedy, thinking off, the output
+    held to the grid grammar, and the notebooks' prompt. `model` is the GGUF repository and the quantisation file joined by a colon."""
     repo, quant_file = model.split(":")
     return {
         "base": {"device": "cpu", "server_ready_timeout": 1000.0, "request_timeout": 6000.0},
@@ -47,6 +47,10 @@ def gpu_notebook_params(model: str, tokenizer: Optional[str] = None, max_tokens:
         "generation": {"temperature": 0.0, "max_tokens": max_tokens,
                        "chat_template_kwargs": {"enable_thinking": False},
                        "grammar": build_grid_grammar(colors_str=False)},
+        # the prompt of the notebooks: without its filters and resolvers the `examples` block cannot be rendered
+        "prompt": {"blocks": ["general_instruction", "examples_intro", "examples", "summary", "task_repr",
+                              "search_hints", "output_format"],
+                   "token_limit": 9000, "filters": ["grid"], "resolvers": ["examples", "summary", "search_hints"]},
     }
 
 

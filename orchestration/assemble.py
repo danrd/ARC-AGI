@@ -183,6 +183,8 @@ def assemble(options: OrchestrationOptions, module, verify: Callable[[Any, np.nd
     verdict = memoize_verdicts(timed_verify(verify, tracer))
     decider = decider or module
 
+    if agent_factory is not None:
+        install_blocks(module, ["role_instruction"])     # before any wrapper: a wrapper's builder is its own, or read-only
     solver = module
     if options.info_tools:
         solver = ToolUsingModule(solver, default_tools(), options.max_info_requests, tracer)
@@ -191,8 +193,6 @@ def assemble(options: OrchestrationOptions, module, verify: Callable[[Any, np.nd
     if options.refine_rounds and options.refine_rounds > 1:
         solver = RefiningModule(solver, rounds=options.refine_rounds, verify=verdict, parse=parse, tracer=tracer)
 
-    if agent_factory is not None:
-        install_blocks(solver, ["role_instruction"])
     dispatch = make_module_dispatch_fn(symbolic_module=symbolic_module, subsymbolic_module=solver)
     dispatch = timed_dispatch(dispatch, tracer)
     if agent_factory is not None:

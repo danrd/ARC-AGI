@@ -375,3 +375,34 @@ class TestSelectingTasks:
         config = {"feasible_actions": {"0": [0]}}
         record = compare.one_run(config, "default", 0, 500_000, "a")
         assert seen["steps"] == 500_000 and record["steps"] == 500_000
+
+
+class TestWhatIsReadAsARun:
+    def test_a_line_that_is_not_a_run_is_ignored_like_a_torn_one(self, tmp_path):
+        path = tmp_path / "mixed.jsonl"
+        path.write_text('{"task": "a", "arm": "g", "seed": 0, "held_out": 1.0}\n'
+                        '{"task": "a", "solved": true, "options": {}}\n'          # a line of the system's runs
+                        '[1, 2]\n{"task": "b"\n')
+        assert list(compare.read_runs(path)) == [("a", "g", 0)]
+
+    def test_workers_that_die_make_the_shard_fail_and_not_look_done(self, tmp_path, monkeypatch):
+        import pytest
+
+        class Dead:
+            exitcode = 1
+
+            def __init__(self, *a, **k):
+                pass
+
+            def start(self):
+                pass
+
+            def join(self):
+                pass
+
+        class Context:
+            Process = Dead
+
+        monkeypatch.setattr(compare.multiprocessing, "get_context", lambda name: Context)
+        with pytest.raises(RuntimeError, match="2 of 2 workers died"):
+            compare.train({"a": {}}, ["g"], 10, 0, 1, tmp_path / "o.jsonl", workers=2)

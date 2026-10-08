@@ -172,3 +172,22 @@ class TestWhatTheyAreFor:
         before = os.getcwd()
         worker.run("j", 0, 1, push_every=0.1, root=clone, copy_to=tmp_path / "out")
         assert os.getcwd() == before and (clone / "here").read_text() == str(clone)
+
+
+    def test_only_what_the_job_wrote_is_copied_out_and_a_failed_step_is_reported(self, tmp_path, monkeypatch):
+        import sys
+        origin, clone = make_clone(tmp_path)
+        (clone / worker.RUNS).mkdir(parents=True)
+        (clone / worker.RUNS / "older_x_0.jsonl").write_text("old\n")
+        (clone / "data/experiments/jobs").mkdir(parents=True)
+        steps = [{"name": "a", "args": []}, {"name": "b", "args": []}]
+        (clone / "data/experiments/jobs/j.json").write_text(json.dumps({"steps": steps}))
+
+        def command(job, step, shard, shards, root=None):
+            out = worker.out_path(job, step, shard)
+            code = "raise SystemExit(3)" if step["name"] == "a" else f"open({str(out)!r}, 'a').write('b\\n')"
+            return [sys.executable, "-c", code]
+
+        monkeypatch.setattr(worker, "train_command", command)
+        failed = worker.run("j", 0, 1, push_every=0.1, root=clone, copy_to=tmp_path / "out")
+        assert failed == ["a"] and sorted(p.name for p in (tmp_path / "out").iterdir()) == ["j_b_0.jsonl"]

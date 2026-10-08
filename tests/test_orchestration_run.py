@@ -5,8 +5,9 @@ import numpy as np
 
 from orchestration import run as driver
 from orchestration.configs import OrchestrationOptions
+from subsymbolic.subsymbolic_module import SubsymbolicModule
 
-from tests.test_orchestration_assemble import GOOD, WRONG_SHAPE, judge, make_task, module
+from tests.test_orchestration_assemble import GOOD, WRONG_SHAPE, Runner, judge, make_task, module
 
 
 def test_a_task_of_the_dataset_is_loaded_with_its_answer():
@@ -91,3 +92,15 @@ def test_the_registry_without_the_interactive_module_has_no_agent_that_needs_rl(
     record = driver.run_task(make_task(), OrchestrationOptions(rl=False), m, judge, lambda task: None,
                              registry=AGENTS_REGISTRY, max_agents=1)
     assert "Connector" not in record["agents"] and record["analyst"] == []
+
+
+def test_the_config_of_the_gpu_notebooks_renders_a_prompt_of_a_real_task(tiny_tokenizer):
+    """The settings of the notebooks hold the filters and resolvers the prompt blocks need: without them the first
+    prompt of a run raises on the `grid` filter, which is what a run on the GPU did."""
+    from orchestration.configs import local_experiment
+
+    config = local_experiment("a/b-GGUF:b.gguf", "x/b")
+    task = driver.load_task("training", "007bbfb7")
+    result = SubsymbolicModule(config, tiny_tokenizer, runner=Runner(["9,9:\n1 000000000"])).solve(
+        task, {"grid_repr_type": "concise", "test_input_grid": task.test_subtask.train_inp})
+    assert "error" not in result["module_results"] and result["solution"].startswith("9,9:")

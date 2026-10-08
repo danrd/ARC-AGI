@@ -41,6 +41,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import List
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = Path("data/experiments/runs/kaggle")
@@ -127,10 +128,20 @@ def publish(root, job, shard, token=None, remote="origin"):
     return True
 
 
-def copy_out(root, destination):
-    """Copy the notebook's files where a Kaggle notebook keeps its output."""
-    if destination:
-        shutil.copytree(Path(root) / RUNS, destination, dirs_exist_ok=True)
+def copy_out(root, destination, job=None):
+    """Copy the notebook's files where a Kaggle notebook keeps its output. With a `job`, only what that job
+    wrote (its names start with the job's): the clone also holds the results of earlier jobs, already in the repo."""
+    if not destination:
+        return
+    source = Path(root) / RUNS
+    destination = Path(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in sorted(source.glob(f"{job}_*" if job else "*")):
+        target = destination / path.name
+        if path.is_dir():
+            shutil.copytree(path, target, dirs_exist_ok=True)
+        else:
+            shutil.copy(path, target)
 
 
 def run(job, shard, shards, push_every=300.0, token=None, root=ROOT, copy_to=None):
@@ -138,6 +149,7 @@ def run(job, shard, shards, push_every=300.0, token=None, root=ROOT, copy_to=Non
     (root / RUNS).mkdir(parents=True, exist_ok=True)
     if token:
         restore(root, job, shard)
+    failed: List[str] = []
     for step in load_job(job, root):
         process = subprocess.Popen(train_command(job, step, shard, shards, root), env=secrets_env(step, token), cwd=root)
         while process.poll() is None:
@@ -147,12 +159,14 @@ def run(job, shard, shards, push_every=300.0, token=None, root=ROOT, copy_to=Non
                 pass
             if token:
                 publish(root, job, shard, token)
-            copy_out(root, copy_to)
+            copy_out(root, copy_to, job)
         if process.returncode:
+            failed.append(step["name"])
             print(f"step {step['name']} ended with {process.returncode}", file=sys.stderr)
     if token:
         publish(root, job, shard, token)
-    copy_out(root, copy_to)
+    copy_out(root, copy_to, job)
+    return failed
 
 
 def main():
@@ -172,7 +186,9 @@ def main():
             pass
     if not token and not args.copy_to:
         sys.exit("no token: add the Kaggle secret Github (or set GH_TOKEN), or give --copy-to, or its runs cannot leave the notebook")
-    run(args.job, args.shard, args.shards, args.push_every, token, copy_to=args.copy_to)
+    failed = run(args.job, args.shard, args.shards, args.push_every, token, copy_to=args.copy_to)
+    if failed:
+        sys.exit(f"steps that failed: {', '.join(failed)}")
 
 
 if __name__ == "__main__":

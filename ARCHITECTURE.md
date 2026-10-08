@@ -213,13 +213,13 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (15)"]
   rl["rl (20)"]
-  scripts["scripts (16)"]
+  scripts["scripts (17)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (81)"]
+  tests["tests (82)"]
   utils["utils (3)"]
   tests -->|99| rl
-  tests -->|41| subsymbolic
+  tests -->|42| subsymbolic
   tests -->|33| symbolic
   tests -->|32| orchestration
   orchestration -->|24| subsymbolic
@@ -292,6 +292,7 @@ graph TD
 | `scripts.compare_reward_approaches` | 2 |
 | `scripts.harvest_traces` | 0 |
 | `scripts.kaggle_launch` | 0 |
+| `scripts.kaggle_queue` | 0 |
 | `scripts.kaggle_worker` | 0 |
 | `scripts.module_map` | 0 |
 | `scripts.prompt_oracles` | 0 |
@@ -315,7 +316,7 @@ graph TD
 | `subsymbolic.logging` | 1 |
 | `subsymbolic.prompt_builder` | 24 |
 | `subsymbolic.registry` | 12 |
-| `subsymbolic.subsymbolic_module` | 4 |
+| `subsymbolic.subsymbolic_module` | 5 |
 | `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |

@@ -1,7 +1,7 @@
 """The registry's agents as the graph runs them, and a run without the interactive module."""
 from data.configs.agents_config import AGENTS_REGISTRY
 from orchestration.assemble import assemble
-from orchestration.configs import OrchestrationOptions
+from orchestration.configs import AgentRunConfig, OrchestrationOptions, SystemRunConfig
 from orchestration.graph import AgentInvConfig, ModuleInvConfig, solve_task
 from orchestration.trace import Tracer
 from orchestration.roster import agent_factory, order_by_analyst, without_module
@@ -88,3 +88,33 @@ class TestAStrictAgent:
         agent = AgentInvConfig(0, "a", ModuleInvConfig(0, "symbolic"), [{"index": 0, "name": "symbolic"}])
         solve_task(make_task(), initial_agent=agent, available_agents=[{"index": 0, "name": "a"}], **run.kwargs())
         assert m.runner.prompts == []        # the fallback is the old behaviour: the one module it has runs in both steps
+
+
+class TestTheRoleOfTheAgent:
+    AGENTS = [{"index": 8, "name": "Modifier"}, {"index": 6, "name": "Highlighter"}]
+
+    def run(self, tiny_tokenizer, agents=None):
+        from data.configs.agents_config import AGENTS_REGISTRY, ROLE_INSTRUCTIONS
+        m = module(tiny_tokenizer, [WRONG_SHAPE])
+        run = assemble(OrchestrationOptions(rl=False), m, judge, rl_start_fn=lambda task: None,
+                       agent_factory=agent_factory(AGENTS_REGISTRY))
+        from orchestration.assemble import solve_with_orchestration
+        by_name = {a["name"]: a for a in AGENTS_REGISTRY}
+        entries = [by_name["Modifier"], by_name["Highlighter"]] if agents is None else agents
+        context = {"grid_repr_type": "concise", "test_input_grid": make_task().test_subtask.train_inp}
+        solve_with_orchestration(make_task(), run, agents=entries, auxiliary_info=context,
+                                 system_run_config=SystemRunConfig(max_system_iterations=3,
+                                                                   agent_run_config=AgentRunConfig(max_agent_iterations=1)))
+        return m.runner.prompts, ROLE_INSTRUCTIONS
+
+    def test_each_agent_is_asked_with_its_own_role(self, tiny_tokenizer):
+        prompts, roles = self.run(tiny_tokenizer)
+        assert len(prompts) == 2 and prompts[0] != prompts[1]
+        assert roles["Modifier"].splitlines()[0] in prompts[0] and roles["Highlighter"].splitlines()[0] in prompts[1]
+        assert roles["Highlighter"].splitlines()[0] not in prompts[0]
+
+    def test_an_agent_with_no_role_text_is_asked_without_one(self, tiny_tokenizer, monkeypatch):
+        from data.configs.agents_config import AGENTS_REGISTRY, ROLE_INSTRUCTIONS
+        monkeypatch.delitem(ROLE_INSTRUCTIONS, "Generalizer")
+        prompts, _ = self.run(tiny_tokenizer, agents=[AGENTS_REGISTRY[0]])
+        assert prompts and all("Role:" not in p for p in prompts)

@@ -1,0 +1,6 @@
+{% if evidence_text is defined and evidence_text %}## Evidence
+What each source can show for its answer, checked by the system and not by you:
+{{ evidence_text }}
+
+Open actions: {{ open_actions | default("none") }}.
+{% endif %}

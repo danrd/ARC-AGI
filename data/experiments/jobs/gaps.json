@@ -1,0 +1,8 @@
+{"steps": [
+  {"name": "three",
+   "args": ["--configs", "data/experiments/rl_compare_configs_screen.json",
+            "--tasks", "ce22a75a", "a61f2674", "1caeab9d",
+            "--arms", "default", "m_w16", "--seeds", "0", "1", "2",
+            "--skip", "data/experiments/runs/first_unsolved.jsonl", "data/experiments/runs/screen.jsonl",
+            "--workers", "4", "--hours", "5"]}
+]}

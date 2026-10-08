@@ -175,10 +175,10 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (6)"]
   rl["rl (20)"]
-  scripts["scripts (12)"]
+  scripts["scripts (13)"]
   subsymbolic["subsymbolic (14)"]
   symbolic["symbolic (9)"]
-  tests["tests (69)"]
+  tests["tests (70)"]
   utils["utils (3)"]
   tests -->|96| rl
   tests -->|32| symbolic
@@ -203,6 +203,7 @@ graph TD
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
   symbolic -->|1| rl
+  tests -->|1| scripts
   tests -->|1| utils
   utils -->|1| data
   utils -->|1| symbolic
@@ -241,6 +242,7 @@ graph TD
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
 | `scripts.harvest_traces` | 0 |
+| `scripts.kaggle_worker` | 0 |
 | `scripts.module_map` | 0 |
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |

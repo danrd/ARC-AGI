@@ -1,13 +1,12 @@
 {
  "steps": [
   {
-   "name": "others",
+   "name": "seeds",
    "args": [
     "--configs",
     "data/experiments/rl_compare_configs_panel.json",
     "--arms",
     "o_spatial",
-    "s_chmap",
     "--seeds",
     "3",
     "4",

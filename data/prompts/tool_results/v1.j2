@@ -1,0 +1,4 @@
+{% if tool_results is defined and tool_results %}## Requested information
+{% for name, text in tool_results.items() %}### {{ name }}
+{{ text }}
+{% endfor %}{% endif %}

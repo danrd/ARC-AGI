@@ -173,34 +173,34 @@ being read.
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (6)"]
+  orchestration["orchestration (8)"]
   rl["rl (20)"]
-  scripts["scripts (15)"]
+  scripts["scripts (16)"]
   subsymbolic["subsymbolic (14)"]
-  symbolic["symbolic (9)"]
-  tests["tests (72)"]
+  symbolic["symbolic (10)"]
+  tests["tests (76)"]
   utils["utils (3)"]
   tests -->|96| rl
-  tests -->|32| symbolic
-  tests -->|30| subsymbolic
+  tests -->|33| symbolic
+  tests -->|32| subsymbolic
   tests -->|19| data
   scripts -->|13| rl
+  tests -->|13| orchestration
   rl -->|11| data
   rl -->|11| symbolic
-  tests -->|10| orchestration
-  orchestration -->|5| subsymbolic
+  orchestration -->|8| subsymbolic
+  orchestration -->|5| rl
   scripts -->|5| subsymbolic
-  orchestration -->|4| rl
   data -->|3| rl
   rl -->|3| utils
   scripts -->|3| data
   tests -->|3| scripts
+  scripts -->|2| symbolic
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
   orchestration -->|1| symbolic
   scripts -->|1| orchestration
-  scripts -->|1| symbolic
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -221,6 +221,8 @@ graph TD
 | `orchestration.context` | 1 |
 | `orchestration.graph` | 5 |
 | `orchestration.hierarchy` | 1 |
+| `orchestration.tools` | 1 |
+| `orchestration.trace` | 3 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
@@ -237,9 +239,10 @@ graph TD
 | `rl.policy` | 4 |
 | `rl.rl_job` | 5 |
 | `rl.rl_module` | 5 |
-| `rl.search_hints` | 14 |
+| `rl.search_hints` | 15 |
 | `rl.training` | 13 |
 | `rl.utils` | 10 |
+| `scripts.check_invariants` | 0 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
 | `scripts.harvest_traces` | 0 |
@@ -259,18 +262,19 @@ graph TD
 | `subsymbolic.answer_check` | 1 |
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 4 |
-| `subsymbolic.arc_resolvers` | 2 |
+| `subsymbolic.arc_resolvers` | 3 |
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 5 |
 | `subsymbolic.llm_setup` | 6 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 15 |
-| `subsymbolic.registry` | 6 |
+| `subsymbolic.prompt_builder` | 17 |
+| `subsymbolic.registry` | 8 |
 | `subsymbolic.subsymbolic_module` | 2 |
 | `subsymbolic.utils` | 5 |
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |
+| `symbolic.invariants` | 2 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
 | `symbolic.summaries` | 10 |

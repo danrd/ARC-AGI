@@ -1,0 +1,3 @@
+{% if tools_info_text is defined and tools_info_text %}## Tools
+You may ask for more information about the task before you answer. To ask, reply with one line and nothing else: `REQUEST: <tool>`. The result is added to the prompt and you are asked again. You may ask at most {{ max_requests | default(1) }} time(s); once you have what you need, or have nothing to ask, answer as instructed.
+{{ tools_info_text }}{% endif %}

@@ -1,0 +1,42 @@
+{
+ "steps": [
+  {
+   "name": "e2b",
+   "command": [
+    "-m",
+    "orchestration.bench",
+    "--prompts",
+    "data/experiments/runs/kaggle/prompts_gemma_0",
+    "--n",
+    "6",
+    "--tokens",
+    "160",
+    "--model",
+    "unsloth/gemma-4-E2B-it-GGUF:gemma-4-E2B-it-Q4_K_M.gguf",
+    "--tokenizer",
+    "unsloth/gemma-4-E2B-it",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "qwen",
+   "command": [
+    "-m",
+    "orchestration.bench",
+    "--prompts",
+    "data/experiments/runs/kaggle/prompts_gemma_0",
+    "--n",
+    "6",
+    "--tokens",
+    "160",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

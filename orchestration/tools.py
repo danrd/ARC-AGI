@@ -39,7 +39,7 @@ from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
 _REQUEST = re.compile(r"^\s*REQUEST:\s*([A-Za-z_][\w-]*)\s*$", re.MULTILINE)
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
-_GRAMMAR_KEYS = ("grammar", "guided_grammar")
+GRAMMAR_KEYS = ("grammar", "guided_grammar")
 
 
 @dataclass(frozen=True)
@@ -87,10 +87,10 @@ def without_grammar(runner):
     it has none to leave out. The copy shares the server; nothing is restarted."""
     kwargs = getattr(runner, "generation_kwargs", None)
     body = (kwargs or {}).get("extra_body") or {}
-    if not any(key in body for key in _GRAMMAR_KEYS):
+    if not any(key in body for key in GRAMMAR_KEYS):
         return runner
     free = copy.copy(runner)
-    free.generation_kwargs = {**kwargs, "extra_body": {k: v for k, v in body.items() if k not in _GRAMMAR_KEYS}}
+    free.generation_kwargs = {**kwargs, "extra_body": {k: v for k, v in body.items() if k not in GRAMMAR_KEYS}}
     return free
 
 

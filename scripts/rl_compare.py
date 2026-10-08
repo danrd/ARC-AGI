@@ -313,7 +313,7 @@ def share(grid, index, total):
 
 
 def read_runs(path):
-    """The runs already in `path`, by (task, arm, seed); a torn line is ignored."""
+    """The runs already in `path`, by (task, arm, seed); a torn line, or a line that is not a run, is ignored."""
     runs = {}
     if not Path(path).exists():
         return runs
@@ -321,9 +321,9 @@ def read_runs(path):
         for line in handle:
             try:
                 run = json.loads(line)
-            except ValueError:
-                continue
-            runs[(run["task"], run["arm"], run["seed"])] = run
+                runs[(run["task"], run["arm"], run["seed"])] = run
+            except (ValueError, KeyError, TypeError):
+                continue                        # a torn line, or a line of another kind of file in the same folder
     return runs
 
 
@@ -402,6 +402,10 @@ def train(configs, arms, steps, shard, shards, out, seeds=(0, 1, 2), workers=1, 
         process.start()
     for process in processes:
         process.join()
+    failed = [p.exitcode for p in processes if getattr(p, "exitcode", 0)]
+    if failed:
+        raise RuntimeError(f"{len(failed)} of {workers} workers died (exit codes {failed}): "
+                           f"the runs of this shard are not all done")
 
 
 # ---------------------------------------------------------------------------

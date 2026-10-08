@@ -2004,11 +2004,13 @@
    "name": "otherseeds_s",
    "resource": "cpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "\u0441\u0438\u0434\u044b 3 \u0438 4 \u0434\u043b\u044f s_chmap \u043d\u0430 \u043f\u0430\u043d\u0435\u043b\u0438 \u0438\u0437 21 \u0437\u0430\u0434\u0430\u0447\u0438, 42 \u0437\u0430\u043f\u0443\u0441\u043a\u0430",
-   "result": []
+   "result": [
+    "data/experiments/runs/kaggle/otherseeds_s_seeds_0.jsonl"
+   ]
   },
   {
    "name": "mseries2",
@@ -2044,10 +2046,30 @@
    "name": "tpu_gemma",
    "resource": "tpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "",
    "note": "TPU v5e-8: Gemma \u0447\u0435\u0440\u0435\u0437 Keras+JAX, \u0432\u0435\u0441\u0430 \u043f\u043e \u0432\u043e\u0441\u044c\u043c\u0438 \u0447\u0438\u043f\u0430\u043c; \u043a\u0430\u043a\u043e\u0439 \u043f\u0440\u0435\u0441\u0435\u0442 \u0432\u043b\u0435\u0437\u0430\u0435\u0442 \u0438 \u043a\u0430\u043a \u0431\u044b\u0441\u0442\u0440\u043e \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442",
+   "result": []
+  },
+  {
+   "name": "coreseeds_a",
+   "resource": "cpu",
+   "shards": 1,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "default \u0438 m_w16 \u043d\u0430 7 \u0442\u0440\u0443\u0434\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447\u0430\u0445: \u0441\u0438\u0434\u044b 5-7, 42 \u0437\u0430\u043f\u0443\u0441\u043a\u0430 (\u0441\u0443\u0436\u0430\u0435\u043c \u0438\u043d\u0442\u0435\u0440\u0432\u0430\u043b \u0433\u043b\u0430\u0432\u043d\u043e\u0433\u043e \u0441\u0440\u0430\u0432\u043d\u0435\u043d\u0438\u044f)",
+   "result": []
+  },
+  {
+   "name": "coreseeds_b",
+   "resource": "cpu",
+   "shards": 1,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "\u0442\u043e \u0436\u0435: \u0441\u0438\u0434\u044b 8-9, 28 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u0432",
    "result": []
   }
  ]

@@ -32,8 +32,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
+from orchestration.blocks import with_blocks
 from orchestration.trace import Tracer, traced
-from subsymbolic.prompt_builder import BlockSpec, PromptBuilder
+from subsymbolic.prompt_builder import PromptBuilder
 from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
 _REQUEST = re.compile(r"^\s*REQUEST:\s*([A-Za-z_][\w-]*)\s*$", re.MULTILINE)
@@ -109,14 +110,12 @@ def tools_description(tools: Sequence[InfoTool]) -> str:
     return "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
 
 
+TOOL_BLOCKS = ("tools_info", "tool_results")
+
+
 def with_tool_blocks(config):
     """The prompting config with `tools_info` and `tool_results` added before `output_format`."""
-    names = [BlockSpec.parse(spec).name for spec in config.blocks]
-    blocks = list(config.blocks)
-    if "tools_info" in names:
-        return config
-    at = names.index("output_format") if "output_format" in names else len(blocks)
-    return config.model_copy(update={"blocks": blocks[:at] + ["tools_info", "tool_results"] + blocks[at:]})
+    return with_blocks(config, TOOL_BLOCKS)
 
 
 class ToolUsingModule:

@@ -6,7 +6,7 @@
     python scripts/kaggle_launch.py collect JOB --shards 5    # runs into data/experiments/runs/kaggle/
 
 Each shard is a private script notebook, arc-worker-JOB-K, that clones this repo,
-installs it and runs `kaggle_worker.py JOB --shard K --shards N --copy-to
+installs its requirements and runs `kaggle_worker.py JOB --shard K --shards N --copy-to
 /kaggle/working`. A notebook run through the API gets no Kaggle secrets, so the
 files do not go to GitHub: `collect` downloads each notebook's output and puts the
 files where `rl_compare.py summary` and `--skip` expect them. `--gpu` asks for a GPU.
@@ -32,13 +32,19 @@ def slug(job, shard):
 
 
 def script(job, shard, shards, extras="rl"):
-    """The code of one notebook."""
+    """The code of one notebook. The package is not installed (pip cannot build its flat
+    layout): its requirements are, and the worker runs from the clone with it on the path."""
+    install = ("import tomllib, subprocess, sys; "
+               "project = tomllib.load(open('ARC-AGI/pyproject.toml', 'rb'))['project']; "
+               f"extras = {extras!r}.split(','); "
+               "needs = project['dependencies'] + [r for e in extras for r in project['optional-dependencies'][e]]; "
+               "subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', *needs], check=True)")
     return (
         "import subprocess\n"
-        f"run = lambda command: subprocess.run(command, shell=True, check=True)\n"
+        "run = lambda command: subprocess.run(command, shell=True, check=True)\n"
         f"run('git clone {REPO}')\n"
-        f"run('pip install -q -e \"ARC-AGI[{extras}]\"')\n"
-        f"run('cd ARC-AGI && python scripts/kaggle_worker.py {job} --shard {shard} --shards {shards} "
+        f"run({('python -c ' + repr(install))!r})\n"
+        f"run('cd ARC-AGI && PYTHONPATH=. python scripts/kaggle_worker.py {job} --shard {shard} --shards {shards} "
         f"--copy-to /kaggle/working')\n")
 
 

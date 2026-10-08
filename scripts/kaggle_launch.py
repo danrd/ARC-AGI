@@ -100,9 +100,11 @@ def collect(job, shards):
         with tempfile.TemporaryDirectory() as folder:
             kaggle("kernels", "output", f"{user}/{slug(job, shard)}", "-p", folder)
             for path in sorted(Path(folder).rglob("*")):
-                if path.is_dir() or path.suffix == ".log" or path.name == "__results__.html":
+                relative = path.relative_to(folder)
+                if path.is_dir() or path.suffix == ".log" or path.name == "__results__.html" \
+                        or relative.parts[0] == "ARC-AGI":           # a notebook that cloned into its working folder
                     continue
-                target = RUNS / path.relative_to(folder)
+                target = RUNS / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(path, target)
                 got.append(target)

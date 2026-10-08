@@ -1,6 +1,8 @@
 """The notebooks the launcher makes: what they run, and where their output goes."""
 import json
 
+from pathlib import Path
+
 from scripts import kaggle_launch as launch
 from scripts import kaggle_worker as worker
 
@@ -35,3 +37,21 @@ def test_setup_commands_run_after_the_install_and_before_the_worker():
     code = launch.script("j", 0, 1, setup=["pip install llama-cpp-python"])
     assert code.index("optional-dependencies") < code.index("llama-cpp-python") < code.index("kaggle_worker.py")
     compile(code, "worker.py", "exec")
+
+
+def test_a_clone_left_in_a_notebooks_output_is_not_collected(tmp_path, monkeypatch):
+    def fake(*args):
+        folder = Path(args[args.index("-p") + 1])
+        (folder / "ARC-AGI" / "data").mkdir(parents=True)
+        (folder / "ARC-AGI" / "data" / "wave1.jsonl").write_text("old\n")
+        (folder / "j_a_0.jsonl").write_text("new\n")
+        (folder / "j_a_0").mkdir()
+        (folder / "j_a_0" / "x.txt").write_text("x")
+        (folder / "run.log").write_text("log")
+        return type("R", (), {"stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(launch, "kaggle", fake)
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "RUNS", tmp_path / "runs")
+    got = launch.collect("j", 1)
+    assert sorted(p.relative_to(tmp_path / "runs").as_posix() for p in got) == ["j_a_0.jsonl", "j_a_0/x.txt"]

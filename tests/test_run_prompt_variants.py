@@ -99,3 +99,22 @@ class TestRunning:
 
         records = rpv.run(tmp_path, ["m"], lambda model: Once(), pause=0)
         assert len(records) == 1 and records[0]["solved"] and Once.calls == 2
+
+    def test_an_empty_reply_is_a_failure_and_not_an_answer_that_is_wrong(self, tmp_path):
+        write_task(tmp_path, names=("p0",))
+        for empty in (None, "", "  \n"):
+            assert rpv.run(tmp_path, ["m"], lambda model: Fake(empty), attempts=2, pause=0) == []
+            assert not list((tmp_path / "t").glob("*.response.txt"))
+
+    def test_the_last_grid_of_a_reply_that_thinks_aloud_is_the_answer(self):
+        answer = np.array([[1, 2], [3, 4]])
+        draft = "Let me try:\n2,2:\n1 99\n2 99\nNo, wait.\n" + GOOD
+        assert rpv.grade(draft, answer)["solved"]
+        assert not rpv.grade(GOOD + "\nHmm, actually:\n2,2:\n1 98\n2 98", answer)["solved"]
+        assert rpv.grade("2,2:\n1 12\n2 34\nand then the draft 2,2:\nbroken", answer)["solved"]
+
+    def test_the_shuffled_prompts_or_the_plain_ones_can_be_left_out(self, tmp_path):
+        write_task(tmp_path)
+        assert [p for _, _, p, _, _ in rpv.prompts(tmp_path, perm="no")] == [False]
+        assert [p for _, _, p, _, _ in rpv.prompts(tmp_path, perm="only")] == [True]
+        assert len(rpv.prompts(tmp_path)) == 2

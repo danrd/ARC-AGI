@@ -12,7 +12,7 @@ for again, so a run that stops is continued by running it again.
 
     python scripts/run_prompt_variants.py --out prompt_tests --models google/gemma-4-26b-a4b-it
 
-The key is read from OPENROUTER_API_KEY. Prompts not yet written are written first,
+The key is read from OPENROUTER_API_KEY (pip install -e '.[openrouter]' for the client). Prompts not yet written are written first,
 with the colours as they are and shuffled. `solved` is the grid equal to the answer
 and nothing else: a reply that does not parse is `parsed: false`, not a near miss.
 """
@@ -45,7 +45,7 @@ def read_answer(path):
 
 def grade(reply, answer):
     """{'parsed', 'solved', 'shape_ok', 'cells_right'} of a reply against the answer grid."""
-    grid = parse_llm_output(_without_thinking(reply)) if reply else ""
+    grid = last_grid(_without_thinking(reply)) if reply else ""
     if not isinstance(grid, np.ndarray):
         return {"parsed": False, "solved": False, "shape_ok": False, "cells_right": 0.0}
     same_shape = grid.shape == answer.shape
@@ -53,23 +53,37 @@ def grade(reply, answer):
             "cells_right": round(float((grid == answer).mean()), 4) if same_shape else 0.0}
 
 
+def last_grid(text):
+    """The last grid in the text in the asked-for format: a model that thinks aloud
+    before it answers has its answer at the end, and a grid it drafted on the way is
+    not it."""
+    starts = [match.start() for match in re.finditer(r"^[ \t]*\d+,\d+:[ \t]*$", text, flags=re.M)]
+    for start in reversed(starts):
+        grid = parse_llm_output(text[start:].strip())
+        if isinstance(grid, np.ndarray):
+            return grid
+    return parse_llm_output(text)
+
+
 def _without_thinking(reply):
     return re.sub(r"<think>.*?</think>", "", reply, flags=re.S)
 
 
-def prompts(directory, tasks=None, variants=None):
+def prompts(directory, tasks=None, variants=None, perm="both"):
     """(task, variant, perm, prompt path, answer path) for every prompt on disk."""
     found = []
     for path in sorted(Path(directory).glob("*/*.txt")):
         name = path.stem
         if name.startswith("answer") or "." in name:
             continue
-        perm = name.endswith("_perm")
-        variant = name[:-5] if perm else name
+        is_perm = perm_name = name.endswith("_perm")
+        variant = name[:-5] if perm_name else name
         if (tasks and path.parent.name not in tasks) or (variants and variant not in variants):
             continue
-        found.append((path.parent.name, variant, perm, path,
-                      path.parent / ("answer_perm.txt" if perm else "answer.txt")))
+        if (perm == "no" and is_perm) or (perm == "only" and not is_perm):
+            continue
+        found.append((path.parent.name, variant, perm_name, path,
+                      path.parent / ("answer_perm.txt" if perm_name else "answer.txt")))
     return found
 
 
@@ -77,10 +91,10 @@ def response_path(prompt_path, model):
     return prompt_path.with_name(f"{prompt_path.stem}.{slug(model)}.response.txt")
 
 
-def run(directory, models, make_runner, tasks=None, variants=None, workers=2, attempts=3, pause=30.0):
+def run(directory, models, make_runner, tasks=None, variants=None, workers=2, attempts=3, pause=30.0, perm="both"):
     """Ask every model every prompt that has no reply yet; returns the records of the new replies."""
     runners = {model: make_runner(model) for model in models}
-    work = [(model, *item) for model in models for item in prompts(directory, tasks, variants)
+    work = [(model, *item) for model in models for item in prompts(directory, tasks, variants, perm)
             if not response_path(item[3], model).exists()]
     results = Path(directory) / "results.jsonl"
 
@@ -89,6 +103,8 @@ def run(directory, models, make_runner, tasks=None, variants=None, workers=2, at
         for attempt in range(attempts):
             try:
                 reply = runners[model].generate(prompt_path.read_text())
+                if not reply or not reply.strip():
+                    raise ValueError("an empty reply (a reasoning model out of tokens, most often)")
                 break
             except Exception as error:  # noqa: BLE001 - one failed request must not end the run
                 print(f"{task} {variant} {model}, try {attempt + 1}: {error}", file=sys.stderr)
@@ -145,6 +161,8 @@ def main():
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--tasks", nargs="*")
     parser.add_argument("--variants", nargs="*")
+    parser.add_argument("--perm", choices=["both", "no", "only"], default="both",
+                        help="the prompts with the colours as they are, shuffled, or both")
     parser.add_argument("--max-tokens", type=int, default=8000)
     parser.add_argument("--workers", type=int, default=2, help="free models limit the requests a minute")
     args = parser.parse_args()
@@ -155,7 +173,7 @@ def main():
 
     if not prompts(args.out):
         write_prompts(args.out)
-    run(args.out, args.models, make_runner, args.tasks, args.variants, args.workers)
+    run(args.out, args.models, make_runner, args.tasks, args.variants, args.workers, perm=args.perm)
     print(report(args.out))
 
 

@@ -38,10 +38,26 @@ class AgentRunConfig:
 
 
 @dataclass
+class OrchestrationOptions:
+    """How the system decides, on top of the deterministic rule that is its default.
+
+    Every field's default is the system as it was before: the rule decides, the model is asked
+    once, nothing is added to its prompt. Each option adds something and none removes the rule -
+    it stays the fallback whenever the added piece cannot answer (orchestration.assemble)."""
+    decision: str = "deterministic"      # "llm": a model chooses among the open actions (the rule still validates)
+    coordinator: str = "deterministic"   # "llm": a model picks the next agent when one fails
+    refine_rounds: int = 0               # > 1: the model is asked again with its answer and what was wrong, up to this many calls
+    feedback: bool = False               # the graph's own retries carry the earlier answers and what was wrong with them
+    info_tools: bool = False             # the model may reply REQUEST: summary / search_hints before it answers
+    max_info_requests: int = 1
+
+
+@dataclass
 class SystemRunConfig:
     """Execution settings for the system-level (agent) loop."""
     max_system_iterations: int = 5
     agent_run_config: AgentRunConfig = field(default_factory=AgentRunConfig)
+    orchestration: OrchestrationOptions = field(default_factory=OrchestrationOptions)
     verbose: bool = True
 
 
@@ -110,7 +126,8 @@ class ExperimentConfig(BaseModel):
         logging = WandbLogConfig(**exp_params.get("logging", {}))
         system_params = dict(exp_params.get("system", {}))
         agent_run_config = AgentRunConfig(**system_params.pop("agent_run_config", {}))
-        system = SystemRunConfig(agent_run_config=agent_run_config, **system_params)
+        orchestration = OrchestrationOptions(**system_params.pop("orchestration", {}))
+        system = SystemRunConfig(agent_run_config=agent_run_config, orchestration=orchestration, **system_params)
         return cls(base=base, llm=llm, generation=generation, prompt=prompt, rl=rl,
                     logging=logging, system=system)
 

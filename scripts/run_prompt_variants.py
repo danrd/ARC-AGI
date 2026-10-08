@@ -6,7 +6,8 @@ into a model. This does the pasting: every prompt goes to each model through
 OpenRouter, the reply is kept beside the prompt as
 <variant>[_perm].<model>.response.txt for reading, and compared with
 answer[_perm].txt. One line per reply goes to <dir>/results.jsonl and a table of
-task by variant to <dir>/report.md. A reply that is already on disk is not asked
+task by variant to <dir>/report.md. A request that fails (a free model's rate limit most often)
+is tried again after a pause, and left for the next run if it keeps failing. A reply that is already on disk is not asked
 for again, so a run that stops is continued by running it again.
 
     python scripts/run_prompt_variants.py --out prompt_tests --models google/gemma-4-26b-a4b-it
@@ -20,6 +21,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -75,7 +77,7 @@ def response_path(prompt_path, model):
     return prompt_path.with_name(f"{prompt_path.stem}.{slug(model)}.response.txt")
 
 
-def run(directory, models, make_runner, tasks=None, variants=None, workers=4):
+def run(directory, models, make_runner, tasks=None, variants=None, workers=2, attempts=3, pause=30.0):
     """Ask every model every prompt that has no reply yet; returns the records of the new replies."""
     runners = {model: make_runner(model) for model in models}
     work = [(model, *item) for model in models for item in prompts(directory, tasks, variants)
@@ -84,10 +86,14 @@ def run(directory, models, make_runner, tasks=None, variants=None, workers=4):
 
     def one(job):
         model, task, variant, perm, prompt_path, answer_path = job
-        try:
-            reply = runners[model].generate(prompt_path.read_text())
-        except Exception as error:  # noqa: BLE001 - one failed request must not end the run
-            print(f"{task} {variant} {model}: {error}", file=sys.stderr)
+        for attempt in range(attempts):
+            try:
+                reply = runners[model].generate(prompt_path.read_text())
+                break
+            except Exception as error:  # noqa: BLE001 - one failed request must not end the run
+                print(f"{task} {variant} {model}, try {attempt + 1}: {error}", file=sys.stderr)
+                time.sleep(pause * (attempt + 1))
+        else:
             return None
         response_path(prompt_path, model).write_text(reply or "")
         return {"task": task, "variant": variant, "perm": perm, "model": model,
@@ -140,7 +146,7 @@ def main():
     parser.add_argument("--tasks", nargs="*")
     parser.add_argument("--variants", nargs="*")
     parser.add_argument("--max-tokens", type=int, default=8000)
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=2, help="free models limit the requests a minute")
     args = parser.parse_args()
     from subsymbolic.llm_runtime import OpenRouterRunner
 

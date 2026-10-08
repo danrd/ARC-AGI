@@ -1,0 +1,175 @@
+<ROLE_INSTRUCTION>
+You are participating in the ARC-AGI benchmark.
+</ROLE_INSTRUCTION>
+<GRID_DESCRIPTION>
+The puzzle-like inputs and outputs present a grid with height and width between 1 and 30 where each cell can be one of ten colors.
+Here is the colors representation: 0=black, 1=blue, 2=red, 3=green, 4=yellow, 5=gray, 6=magenta, 7=orange, 8=sky, 9=brown.
+Any color could be a background color.
+Groups of identically colored cells form objects: lines, rectangles, diagonals and tetris-like shapes (e.g. L-shape).
+Each object has its own color, size and specific position on the grid.
+</GRID_DESCRIPTION>
+<GENERAL_INSTRUCTION>
+You are a helpful AI reasoning assistant. Your job is to solve tasks from the Abstraction and Reasoning Challenge (ARC).
+</GENERAL_INSTRUCTION>
+<KNOWLEDGE>
+Hint about the transformation:
+The interior of every square ring of colour 3 is filled with 1.
+</KNOWLEDGE>
+<EXAMPLES_INTRO>
+Here are the example input and output pairs from which you should learn the underlying transformation to later predict the output for the given test input:
+</EXAMPLES_INTRO>
+<EXAMPLES>
+Training example 1:
+Input:
+grid shape: 7,7
+1 3333300
+2 3000300
+3 3030300
+4 3000300
+5 3333300
+6 0000000
+7 0000000
+
+Output:
+grid shape: 7,7
+1 3333300
+2 3111300
+3 3131300
+4 3111300
+5 3333300
+6 0000000
+7 0000000
+
+Training example 2:
+Input:
+grid shape: 9,9
+1 333333300
+2 300000300
+3 300000300
+4 300300300
+5 300000300
+6 300000300
+7 333333300
+8 000000000
+9 000000000
+
+Output:
+grid shape: 9,9
+1 333333300
+2 399999300
+3 399999300
+4 399399300
+5 399999300
+6 399999300
+7 333333300
+8 000000000
+9 000000000
+
+Training example 3:
+Input:
+grid shape: 15,15
+1 000000333333333
+2 000000300000003
+3 000000300000003
+4 000000300000003
+5 000000300030003
+6 000000300000003
+7 000000300000003
+8 000000300000003
+9 000000333333333
+10 000000000000000
+11 033333000000000
+12 030003000000000
+13 030303000000000
+14 030003000000000
+15 033333000000000
+
+Output:
+grid shape: 15,15
+1 000000333333333
+2 000000322222223
+3 000000322222223
+4 000000322222223
+5 000000322232223
+6 000000322222223
+7 000000322222223
+8 000000322222223
+9 000000333333333
+10 000000000000000
+11 033333000000000
+12 031113000000000
+13 031313000000000
+14 031113000000000
+15 033333000000000
+
+Training example 4:
+Input:
+grid shape: 13,13
+1 0333330000000
+2 0300030000000
+3 0303030000000
+4 0300030000000
+5 0333330000000
+6 0000000000000
+7 0000033333330
+8 0000030000030
+9 0000030000030
+10 0000030030030
+11 0000030000030
+12 0000030000030
+13 0000033333330
+
+Output:
+grid shape: 13,13
+1 0333330000000
+2 0311130000000
+3 0313130000000
+4 0311130000000
+5 0333330000000
+6 0000000000000
+7 0000033333330
+8 0000039999930
+9 0000039999930
+10 0000039939930
+11 0000039999930
+12 0000039999930
+13 0000033333330
+
+
+</EXAMPLES>
+<TASK_REPR>
+Now, based on the transformation rules deduced from the training examples, solve the following puzzle:
+Input:
+grid shape: 20,20
+1 00000000000333330000
+2 03333333330300030000
+3 03000000030303030000
+4 03000000030300030000
+5 03000000030333330000
+6 03000300030000000000
+7 03000000030000000000
+8 03000000030003333300
+9 03000000030003000300
+10 03333333330003030300
+11 00000000000003000300
+12 00000000000003333300
+13 00000333333300000000
+14 00000300000300000000
+15 00000300000300000000
+16 00000300300300000000
+17 00000300000300000000
+18 00000300000300000000
+19 00000333333300000000
+20 00000000000000000000
+
+</TASK_REPR>
+<OUTPUT_FORMAT>
+Return *only* the predicted output grid in the specified format below. Do not include any reasoning, explanations, comments, or any text before or after the grid.
+The format is:
+n,m:
+1 x_1 ... x_m
+...
+n x_1 ... x_m
+
+Where 'n' is the number of rows, 'm' is the number of columns, and x_i are the cell values (colors).
+</OUTPUT_FORMAT>

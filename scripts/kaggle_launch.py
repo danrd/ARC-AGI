@@ -99,7 +99,7 @@ def collect(job, shards):
     for shard in range(shards):
         with tempfile.TemporaryDirectory() as folder:
             kaggle("kernels", "output", f"{user}/{slug(job, shard)}", "-p", folder)
-            for path in Path(folder).rglob("*.jsonl"):
+            for path in Path(folder).glob("*.jsonl"):
                 shutil.copy(path, RUNS / path.name)
                 got.append(RUNS / path.name)
     return got

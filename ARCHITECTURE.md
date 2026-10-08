@@ -63,6 +63,11 @@ nothing.
 | PPO training | `rl/training.py`, `rl/policy.py`, launched by `rl/rl_job.py`, which narrows the vocabulary per task |
 | how a prompt is assembled | `subsymbolic/prompt_builder.py`, blocks in `data/prompts`, resolvers in `subsymbolic/registry.py` |
 | running a model over many tasks | `subsymbolic/llm_run.py`, backend in `subsymbolic/llm_setup.py` and `llm_runtime.py` |
+| a model's answer checked without a second model | `symbolic/invariants.py` (what every example agrees on); measured by `scripts/check_invariants.py` |
+| the orchestrator as a model, guarded by the rule | `orchestration/llm_orchestrator.py`: `llm_decision_fn`, `llm_coordinator_fn`; the options in `orchestration/configs.py:OrchestrationOptions`, put together by `orchestration/assemble.py` |
+| asking the model again with what was wrong | `orchestration/refine.py` (the loop), `orchestration/feedback.py` (the history, the reasons) |
+| the model asking for information | `orchestration/tools.py` (`REQUEST: summary` / `search_hints`) |
+| where a run's time goes | `orchestration/trace.py`, read by `orchestration/run.py` (the driver) |
 | comparing two prompt arms | `scripts/compare_llm_arms.py` |
 | which tasks each way of solving solves, and what they add to one another | `scripts/solved_by_source.py`, reading the files the measuring scripts write |
 | measuring the search over the dataset | `scripts/compare_reward_approaches.py`, `scripts/search_budget.py`, then `scripts/harvest_traces.py` |
@@ -129,6 +134,39 @@ each exists because a question came up that the code could not answer by
 being read.
 
 **`utils`** is plotting and small shared helpers.
+
+## Hypotheses, evidence, and who decides
+
+A task is treated as a set of hypotheses about the rule, from three generators (the object search, the
+learned policy, the language model), and an answer is a hypothesis's prediction on the test input. What
+makes a hypothesis believed is the evidence it can show *without the target*, which differs by source and
+is what `orchestration/hierarchy.py` ranks: a solver's rule that reproduces every training pair with that
+pair held out; a policy that closed every pair and whose answer a second model accepted; a model's
+answer that a second model accepted. The facts are separated from the assumptions in the code, not
+in prose: acceptance is the deterministic rule's and is never the model's.
+
+Around that rule there are options, each off by default and each leaving the rule as the fallback.
+
+- **The orchestrator as a model** (`llm_orchestrator`). A model is shown the evidence and the actions that
+  are open - retry the model, wait once for RL, give up - and chooses among them. It cannot open a closed
+  action and cannot validate what the evidence does not support; a reply it cannot make sense of is
+  the rule's choice, and the log records that. The coordinator that hands a task to the next agent works
+  the same way.
+- **Checking an answer without a model** (`symbolic/invariants`). What every training pair does - the
+  output's shape, the colours it brings in, a symmetry, how much is left alone - is held against the
+  answer. It can refuse and cannot confirm. Measured on ARC's own tasks (`scripts/check_invariants.py`): the
+  real test output is refused in 0.7% of tasks, the output of another task in 95-97%, a test input handed
+  back unchanged in 26-28%, and a near miss (1-3 cells recoloured with the answer's own colours) in
+  7-9% - flagged by a weak condition in about 36%. So it catches the gross failures and almost none of the
+  fine ones, which is where a second model, or a search, is still wanted.
+- **The refinement loop** (`refine`, `feedback`). The model is asked again with its answer and the reasons
+  the checks gave, "the answer is 5x5, the examples give 3x3", and not just the fact of a refusal. Whether
+  this helps is a measurement the driver makes, with the attempts of every run kept.
+- **Tools the model may ask for** (`tools`): the symbolic summary, the search's hint. Given up front,
+  both moved little on the evaluation tasks (the summary: 5 won, 2 lost, p = 0.45); asking for them on
+  demand is built and has not been shown to pay.
+- **A trace** (`trace`). Every piece reports the time and tokens of its phase, so a run says whether the
+  seconds went to the solvers, the prompt, the model, the second model, the decisions or the wait for RL.
 
 ## Things that bite
 

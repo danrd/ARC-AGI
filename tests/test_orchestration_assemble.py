@@ -1,7 +1,7 @@
 """The options, run through the real graph with the model, the second model and RL canned."""
 import numpy as np
 
-from orchestration.assemble import Orchestration, assemble, solve_with_orchestration
+from orchestration.assemble import assemble, solve_with_orchestration
 from orchestration.configs import AgentRunConfig, ExperimentConfig, OrchestrationOptions, SystemRunConfig
 from orchestration.trace import Tracer
 from rl.arc_task import ARCSubtask, ARCTask

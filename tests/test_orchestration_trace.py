@@ -27,7 +27,7 @@ def test_a_span_that_raises_is_recorded_with_the_error_and_the_error_goes_on():
     clock = Clock()
     tracer = Tracer(clock)
     with pytest.raises(ValueError):
-        with tracer.span("verify") as span:
+        with tracer.span("verify"):
             clock.now += 1.0
             raise ValueError("no")
     assert tracer.spans[0].seconds == 1.0 and "ValueError: no" in tracer.spans[0].error
@@ -63,3 +63,13 @@ def test_the_table_gives_each_phase_its_share_of_the_time():
             clock.now += seconds
     text = render(tracer.summary())
     assert "75%" in text and "25%" in text
+
+
+def test_what_a_module_reports_about_a_call_becomes_a_prompt_span_and_a_generation_span():
+    tracer = Tracer()
+    tracer.record_module({"prompt_seconds": 0.5, "generate_seconds": 4.0, "prompt_tokens": 900, "reply_tokens": 30}, "m")
+    assert [(s.phase, s.seconds) for s in tracer.spans] == [("prompt", 0.5), ("llm", 4.0)]
+    assert (tracer.spans[1].tokens_in, tracer.spans[1].tokens_out) == (900, 30)
+    tracer.record_module({"error": "x"}, "m")
+    tracer.record_module(None)
+    assert len(tracer.spans) == 2 and list(tracer.summary()) == ["prompt", "llm"]

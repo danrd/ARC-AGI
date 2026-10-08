@@ -30,7 +30,7 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from orchestration.blocks import with_blocks
 from orchestration.trace import Tracer, traced

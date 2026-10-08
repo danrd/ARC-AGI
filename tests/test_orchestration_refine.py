@@ -7,7 +7,6 @@ from orchestration.feedback import (NOT_ACCEPTED, UNREADABLE, Attempt, best_atte
                                     render_history, review, with_feedback)
 from orchestration.graph import ModuleInvConfig
 from orchestration.refine import RefiningModule, loop
-from orchestration.trace import Tracer
 from rl.arc_task import ARCSubtask, ARCTask
 from subsymbolic.prompt_builder import PromptBuilder, PromptingConfig
 from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
@@ -48,11 +47,6 @@ class TestReview:
 
     def test_an_unreadable_answer_says_so(self):
         assert review(make_task(), None) == ([UNREADABLE], 1, 0)
-
-    def test_the_second_model_is_timed_when_there_is_a_tracer(self):
-        tracer = Tracer()
-        review(make_task(), fmt(GOOD), verify=lambda t, g: True, tracer=tracer)
-        assert [s.phase for s in tracer.spans] == ["verify"]
 
 
 class TestHistory:
@@ -137,6 +131,7 @@ class TestTheModule:
         assert result["solution"] == GOOD
         assert result["module_results"]["rounds"] == 2 and result["module_results"]["accepted"] is True
         assert "history_text" not in calls[0] and "1x3" in calls[1]["history_text"]
+        assert refined.runs == [refined.last]
 
     def test_the_block_is_empty_without_a_history_and_carries_it_with_one(self, tiny_tokenizer):
         inner, _ = self.make(tiny_tokenizer, [GOOD])

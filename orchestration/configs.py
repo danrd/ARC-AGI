@@ -15,12 +15,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
-from typing import Any, Dict
+from pydantic import Field, model_validator
+from typing import Any, Dict, Optional
 
 from rl.rl_module import RlConfig
 from subsymbolic.llm_run import WandbLogConfig
 from subsymbolic.llm_setup import BaseConfig, LlmConfig
+from subsymbolic.local_config import LocalModelConfig, gpu_notebook_params
 from subsymbolic.llm_runtime import GenerationConfig
 from subsymbolic.prompt_builder import PromptingConfig
 
@@ -61,7 +62,7 @@ class SystemRunConfig:
     verbose: bool = True
 
 
-class ExperimentConfig(BaseModel):
+class ExperimentConfig(LocalModelConfig):
     """Main config for guiding system setup and processing."""
     base: BaseConfig = Field(default_factory=BaseConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
@@ -88,18 +89,6 @@ class ExperimentConfig(BaseModel):
         elif self.prompt.chat_template_kwargs and not self.generation.chat_template_kwargs:
             self.generation.chat_template_kwargs = dict(self.prompt.chat_template_kwargs)
         return self
-
-    def to_llama_cpp(self) -> dict:
-        return self.generation.to_llama_cpp(seed=self.base.seed)
-
-    def to_vllm(self) -> dict:
-        return self.generation.to_vllm(seed=self.base.seed)
-
-    def to_hf(self) -> dict:
-        return self.generation.to_hf(seed=self.base.seed)
-
-    def to_chat_completions(self, grammar_backend: str = "llama_cpp") -> dict:
-        return self.generation.to_chat_completions(seed=self.base.seed, grammar_backend=grammar_backend)
 
     def to_wandb_config(self) -> Dict[str, Any]:
         """LLM-relevant slice for subsymbolic.llm_run.run_llm_over_tasks'
@@ -135,3 +124,8 @@ class ExperimentConfig(BaseModel):
     def from_yaml(cls, path: str) -> "ExperimentConfig":
         with open(path) as f:
             return cls.from_dict(yaml.safe_load(f))
+
+
+def local_experiment(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200) -> ExperimentConfig:
+    """An ExperimentConfig for one model as the GPU notebooks load it (subsymbolic.local_config)."""
+    return ExperimentConfig.from_dict(gpu_notebook_params(model, tokenizer, max_tokens))

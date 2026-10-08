@@ -26,7 +26,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterator, List, Optional
 
 #: The phases the pieces use, in the order a table lists them.
-PHASES = ("symbolic", "hints", "tools", "llm", "verify", "decide", "rl_wait", "other")
+PHASES = ("symbolic", "hints", "tools", "prompt", "llm", "verify", "decide", "rl_wait", "other")
 
 
 @dataclass
@@ -59,6 +59,18 @@ class Tracer:
         finally:
             span.seconds = self._clock() - started
             self.spans.append(span)
+
+    def record(self, phase: str, name: str = "", seconds: float = 0.0, tokens_in: int = 0, tokens_out: int = 0) -> None:
+        """A span whose time was measured by someone else (a module's own report of what a call cost)."""
+        self.spans.append(Span(phase=phase, name=name, seconds=seconds, tokens_in=tokens_in, tokens_out=tokens_out))
+
+    def record_module(self, results, name: str = "") -> None:
+        """The spans a SubsymbolicModule's `module_results` report: building the prompt, then generating."""
+        if not results or "generate_seconds" not in results:
+            return
+        self.record("prompt", name, results.get("prompt_seconds", 0.0))
+        self.record("llm", name, results["generate_seconds"], results.get("prompt_tokens", 0),
+                    results.get("reply_tokens", 0))
 
     def summary(self) -> Dict[str, Dict[str, float]]:
         """Per phase: calls, seconds in all, the longest single call, tokens in and out, errors."""

@@ -219,4 +219,6 @@ def test_make_module_dispatch_fn_routes_symbolic_and_subsymbolic(arc_task, tiny_
     subsymbolic_result = dispatch({
         "current_module": ModuleInvConfig(0, "subsymbolic"), "task": arc_task, "auxiliary_info": context,
     })
-    assert subsymbolic_result == {"solution": "FAKE_OUTPUT", "module_results": {}}
+    assert subsymbolic_result["solution"] == "FAKE_OUTPUT"
+    assert "error" not in subsymbolic_result["module_results"]             # what the call cost is reported, not an error
+    assert subsymbolic_result["module_results"]["reply_tokens"] == 1

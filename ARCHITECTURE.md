@@ -173,24 +173,24 @@ being read.
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (13)"]
+  orchestration["orchestration (14)"]
   rl["rl (20)"]
   scripts["scripts (16)"]
-  subsymbolic["subsymbolic (14)"]
+  subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (79)"]
+  tests["tests (80)"]
   utils["utils (3)"]
   tests -->|99| rl
-  tests -->|39| subsymbolic
+  tests -->|40| subsymbolic
   tests -->|33| symbolic
-  tests -->|26| orchestration
+  tests -->|27| orchestration
+  orchestration -->|23| subsymbolic
   tests -->|19| data
-  orchestration -->|18| subsymbolic
   scripts -->|13| rl
   rl -->|11| data
   rl -->|11| symbolic
-  orchestration -->|5| rl
-  scripts -->|5| subsymbolic
+  orchestration -->|7| rl
+  scripts -->|6| subsymbolic
   orchestration -->|4| symbolic
   data -->|3| rl
   rl -->|3| utils
@@ -200,7 +200,7 @@ graph TD
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
-  scripts -->|1| orchestration
+  orchestration -->|1| data
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -214,24 +214,25 @@ graph TD
 | --- | ---: |
 | `data.configs.agents_config` | 2 |
 | `data.configs.env_configs` | 15 |
-| `data.configs.rl_configs` | 13 |
+| `data.configs.rl_configs` | 14 |
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
-| `orchestration.assemble` | 1 |
-| `orchestration.blocks` | 4 |
-| `orchestration.configs` | 10 |
+| `orchestration.assemble` | 2 |
+| `orchestration.blocks` | 3 |
+| `orchestration.configs` | 11 |
 | `orchestration.context` | 1 |
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 10 |
-| `orchestration.hierarchy` | 6 |
+| `orchestration.hierarchy` | 7 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
-| `orchestration.tools` | 3 |
-| `orchestration.trace` | 10 |
+| `orchestration.run` | 0 |
+| `orchestration.tools` | 4 |
+| `orchestration.trace` | 9 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 37 |
+| `rl.arc_task` | 38 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -242,7 +243,7 @@ graph TD
 | `rl.optimization` | 2 |
 | `rl.plotting` | 4 |
 | `rl.policy` | 4 |
-| `rl.rl_job` | 5 |
+| `rl.rl_job` | 6 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 15 |
 | `rl.training` | 13 |
@@ -264,18 +265,19 @@ graph TD
 | `scripts.symbolic_coverage` | 1 |
 | `scripts.sync_llm_kit` | 0 |
 | `subsymbolic.analyst` | 2 |
-| `subsymbolic.answer_check` | 1 |
+| `subsymbolic.answer_check` | 2 |
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 4 |
 | `subsymbolic.arc_resolvers` | 3 |
 | `subsymbolic.llm_run` | 4 |
-| `subsymbolic.llm_runtime` | 5 |
-| `subsymbolic.llm_setup` | 6 |
+| `subsymbolic.llm_runtime` | 6 |
+| `subsymbolic.llm_setup` | 7 |
+| `subsymbolic.local_config` | 3 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 23 |
+| `subsymbolic.prompt_builder` | 24 |
 | `subsymbolic.registry` | 12 |
-| `subsymbolic.subsymbolic_module` | 3 |
-| `subsymbolic.utils` | 10 |
+| `subsymbolic.subsymbolic_module` | 4 |
+| `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 4 |

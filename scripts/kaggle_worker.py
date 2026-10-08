@@ -40,7 +40,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,8 +56,15 @@ def out_path(job, step, shard):
 
 def train_command(job, step, shard, shards):
     if "command" in step:
-        fill = {"out": str(out_path(job, step, shard).with_suffix("")), "shard": shard, "shards": shards}
-        return [sys.executable, *(part.format(**fill) for part in step["command"])]
+        fill = {"{out}": str(out_path(job, step, shard).with_suffix("")), "{shard}": str(shard),
+                "{shards}": str(shards)}
+
+        def filled(part):
+            for placeholder, value in fill.items():       # not str.format: an argument may be JSON, full of braces
+                part = part.replace(placeholder, value)
+            return part
+
+        return [sys.executable, *(filled(part) for part in step["command"])]
     return [sys.executable, "scripts/rl_compare.py", "train", *step["args"],
             "--shard", str(shard), "--shards", str(shards), "--out", str(out_path(job, step, shard))]
 
@@ -114,12 +120,11 @@ def copy_out(root, destination):
 
 def run(job, shard, shards, push_every=300.0, token=None, root=ROOT, copy_to=None):
     root = Path(root)
-    os.chdir(root)
     (root / RUNS).mkdir(parents=True, exist_ok=True)
     if token:
         restore(root, job, shard)
     for step in load_job(job, root):
-        process = subprocess.Popen(train_command(job, step, shard, shards), env=secrets_env(step, token))
+        process = subprocess.Popen(train_command(job, step, shard, shards), env=secrets_env(step, token), cwd=root)
         while process.poll() is None:
             try:
                 process.wait(timeout=push_every)

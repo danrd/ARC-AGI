@@ -50,7 +50,7 @@ class RefineResult:
 def loop(task, ask: Callable[[Dict[str, Any]], str], rounds: int = 3,
          verify: Optional[Callable[[Any, np.ndarray], bool]] = None,
          parse: Callable[[str], Any] = parse_llm_output, context: Optional[Dict[str, Any]] = None,
-         invariants: Optional[Invariants] = None, tracer: Optional[Tracer] = None) -> RefineResult:
+         invariants: Optional[Invariants] = None) -> RefineResult:
     """`ask(context) -> text` up to `rounds` times; each call after the first has the attempts so far
     in `context["history_text"]`. Stops at the first attempt nothing is found wrong with."""
     invariants = invariants if invariants is not None else learn([(s.train_inp, s.train_out) for s in task.subtasks])
@@ -63,7 +63,7 @@ def loop(task, ask: Callable[[Dict[str, Any]], str], rounds: int = 3,
         text = ask(call)
         text = text if isinstance(text, str) else ""
         grid = _read_grid(parse, text) if text.strip() else None
-        notes, strong, weak = review(task, grid, invariants, verify, tracer)
+        notes, strong, weak = review(task, grid, invariants, verify)
         attempts.append(Attempt(len(attempts) + 1, text, grid, notes, strong, weak))
         if attempts[-1].clean:
             break
@@ -78,6 +78,7 @@ class RefiningModule:
         self.module = module
         self.rounds, self.verify, self.parse, self.tracer = rounds, verify, parse, tracer
         self.last: Optional[RefineResult] = None
+        self.runs: List[RefineResult] = []        # every call's loop, for reading a run afterwards
         install_blocks(module, ["memory"])
 
     @property
@@ -96,11 +97,14 @@ class RefiningModule:
 
         def ask(call: Dict[str, Any]) -> str:
             result = self.module.solve(task, context=call)
+            if self.tracer is not None:
+                self.tracer.record_module(result.get("module_results"), "refine")
             if "error" in (result.get("module_results") or {}):
                 errors.append(str(result["module_results"]["error"]))
             return result.get("solution", "")
 
-        self.last = loop(task, ask, self.rounds, self.verify, self.parse, context, tracer=self.tracer)
+        self.last = loop(task, ask, self.rounds, self.verify, self.parse, context)
+        self.runs.append(self.last)
         if not self.last.attempts or (not self.last.solution and errors):
             return {"solution": "", "module_results": {"error": errors[-1] if errors else "no answer"}}
         return {"solution": self.last.solution,

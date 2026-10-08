@@ -51,6 +51,7 @@ class OrchestrationOptions:
     feedback: bool = False               # the graph's own retries carry the earlier answers and what was wrong with them
     info_tools: bool = False             # the model may reply REQUEST: summary / search_hints before it answers
     max_info_requests: int = 1
+    rl: bool = True                      # False: no RL job, and in a run over the agent registry no agent has the interactive module
 
 
 @dataclass

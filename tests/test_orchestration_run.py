@@ -50,11 +50,11 @@ def test_the_answer_is_read_from_text_or_from_a_grid():
 def test_a_run_is_kept_once_per_task_and_options(tmp_path):
     one, other = OrchestrationOptions(), OrchestrationOptions(feedback=True)
     path = tmp_path / "s.jsonl"
-    path.write_text(json.dumps({"key": driver.key_of("a", one, True)}) + "\n{torn")
+    path.write_text(json.dumps({"key": driver.key_of("a", one)}) + "\n{torn")
     keys = driver.done_keys(path)
-    assert driver.key_of("a", one, True) in keys
-    assert driver.key_of("a", other, True) not in keys and driver.key_of("a", one, False) not in keys
-    assert driver.key_of("b", one, True) not in keys and driver.done_keys(tmp_path / "none") == set()
+    assert driver.key_of("a", one) in keys
+    assert driver.key_of("a", other) not in keys and driver.key_of("a", one, True) not in keys
+    assert driver.key_of("b", one) not in keys and driver.done_keys(tmp_path / "none") == set()
 
 
 def test_the_summary_adds_the_phases_over_the_runs_and_counts_the_solved(tiny_tokenizer):
@@ -66,3 +66,28 @@ def test_the_summary_adds_the_phases_over_the_runs_and_counts_the_solved(tiny_to
         lines.append(r)
     text = driver.summarise(lines)
     assert "solved 1 of 2" in text and "llm" in text and "share" in text
+
+
+def test_a_run_over_the_registry_tries_the_agents_in_the_analysts_order_without_rl_when_it_is_off(tiny_tokenizer):
+    from data.configs.agents_config import AGENTS_REGISTRY
+
+    started = []
+
+    def rl_start(task):
+        started.append(1)
+
+    analyst = '{"shortlist": ["Mapper", "Generalizer"], "reasoning": "r"}'
+    m = module(tiny_tokenizer, [analyst, WRONG_SHAPE])
+    record = driver.run_task(make_task(), OrchestrationOptions(rl=False), m, judge, rl_start, max_iterations=1,
+                             registry=AGENTS_REGISTRY, max_agents=2)
+    assert record["analyst"] == ["Mapper", "Generalizer"] and record["agents"] == ["Mapper", "Generalizer"]
+    assert started == [] and "decide" in record["trace"]
+
+
+def test_the_registry_without_the_interactive_module_has_no_agent_that_needs_rl(tiny_tokenizer):
+    from data.configs.agents_config import AGENTS_REGISTRY
+
+    m = module(tiny_tokenizer, ['{"shortlist": ["Connector"]}', GOOD])
+    record = driver.run_task(make_task(), OrchestrationOptions(rl=False), m, judge, lambda task: None,
+                             registry=AGENTS_REGISTRY, max_agents=1)
+    assert "Connector" not in record["agents"] and record["analyst"] == []

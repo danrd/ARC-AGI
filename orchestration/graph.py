@@ -52,11 +52,19 @@ class ModuleInvConfig:
 
 @dataclass
 class AgentInvConfig:
-    """Identifies an agent invocation (which agent, its modules)."""
+    """Identifies an agent invocation (which agent, its modules).
+
+    `strict` makes `available_modules` the whole truth. By default a module the agent does not list
+    falls back to `initial_module`, which is how a one-module agent still runs both steps of the
+    graph. A strict agent has what it lists and nothing else: without a symbolic module it skips the
+    symbolic gate, without a subsymbolic one it never calls the model, and without an `interactive`
+    one (the RL module) no RL job is started.
+    """
     agent_index: int
     agent_name: str
     initial_module: ModuleInvConfig
     available_modules: List[Dict]
+    strict: bool = False
 
 
 @dataclass
@@ -95,6 +103,7 @@ class AgentState(TypedDict, total=False):
     rl_status: Optional[str]               # None (not resolved yet) | 'ok' | 'error'
     rl_wait_used: bool
 
+    rl_enabled: bool                       # False: this agent has no interactive (RL) module; no job is started
     status: str
     validated: bool
     accepted_source: Optional[str]         # 'symbolic' | 'llm' | 'rl'
@@ -226,7 +235,7 @@ def _decide_symbolic_node(state: AgentState) -> Dict[str, Any]:
 
 def _dispatch_parallel_node(state: AgentState) -> Dict[str, Any]:
     rl_start_fn = state.get("rl_start_fn", default_rl_start_fn)
-    rl_handle = rl_start_fn(state["task"])
+    rl_handle = rl_start_fn(state["task"]) if state.get("rl_enabled", True) else None
 
     iteration = state.get("iteration", 0) + 1
     dispatch_fn = state.get("module_dispatch_fn", default_module_dispatch)
@@ -347,8 +356,17 @@ def _decide_final_node(state: AgentState) -> Dict[str, Any]:
 
 # -- routing ------------------------------------------------------------------
 
+def _route_start(state: AgentState) -> str:
+    """The symbolic gate when the agent has one, the model when it has only that, nothing when neither."""
+    if state.get("symbolic_module") is not None:
+        return "execute_symbolic"
+    return "dispatch_parallel" if state.get("llm_module") is not None else END
+
+
 def _route_after_symbolic(state: AgentState) -> str:
-    return END if state.get("validated") else "dispatch_parallel"
+    if state.get("validated") or state.get("llm_module") is None:
+        return END
+    return "dispatch_parallel"
 
 
 def _route_after_llm_decision(state: AgentState) -> str:
@@ -380,7 +398,7 @@ def build_agent_graph():
     graph.add_node("wait_for_rl", _wait_for_rl_node)
     graph.add_node("decide_final", _decide_final_node)
 
-    graph.add_edge(START, "execute_symbolic")
+    graph.add_conditional_edges(START, _route_start)
     graph.add_edge("execute_symbolic", "decide_symbolic")
     graph.add_conditional_edges("decide_symbolic", _route_after_symbolic)
 
@@ -447,8 +465,12 @@ def _run_agent_node(state: SystemState) -> Dict[str, Any]:
     agent = state["current_agent"]
     run_config: SystemRunConfig = state.get("run_config") or SystemRunConfig()
 
-    symbolic_module = _find_module_by_type(agent.available_modules, "symbolic") or agent.initial_module
-    llm_module = _find_module_by_type(agent.available_modules, "subsymbolic") or agent.initial_module
+    symbolic_module = _find_module_by_type(agent.available_modules, "symbolic")
+    llm_module = _find_module_by_type(agent.available_modules, "subsymbolic")
+    if not agent.strict:
+        symbolic_module = symbolic_module or agent.initial_module
+        llm_module = llm_module or agent.initial_module
+    rl_enabled = not agent.strict or _find_module_by_type(agent.available_modules, "interactive") is not None
 
     agent_state: AgentState = {
         "task": state["task"],
@@ -463,6 +485,7 @@ def _run_agent_node(state: SystemState) -> Dict[str, Any]:
         "module_dispatch_fn": state.get("module_dispatch_fn", default_module_dispatch),
         "rl_start_fn": state.get("rl_start_fn", default_rl_start_fn),
         "decision_fn": state.get("agent_decision_fn", default_decision_fn),
+        "rl_enabled": rl_enabled,
     }
     agent_result = AGENT_GRAPH.invoke(agent_state)
     solution = agent_result.get("solution", "")

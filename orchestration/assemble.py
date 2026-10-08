@@ -42,7 +42,7 @@ from orchestration.hierarchy import hierarchical_decision_fn
 from orchestration.llm_orchestrator import (COORDINATOR_BLOCKS, decision_config, delegating_coordinator_fn,
                                             llm_coordinator_fn, llm_decision_fn)
 from orchestration.refine import RefiningModule
-from orchestration.tools import ToolUsingModule, default_tools
+from orchestration.tools import ToolUsingModule, default_tools, without_grammar
 from orchestration.trace import Tracer, traced
 from subsymbolic.prompt_builder import PromptBuilder
 from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
@@ -60,6 +60,7 @@ class Orchestration:
     tracer: Optional[Tracer] = None
     module: Any = None
     verify: Optional[Callable] = None
+    agent_factory: Optional[Callable] = None
 
     def kwargs(self) -> Dict[str, Any]:
         return {"module_dispatch_fn": self.module_dispatch_fn, "agent_decision_fn": self.agent_decision_fn,
@@ -70,12 +71,36 @@ class Orchestration:
         return list(getattr(self.agent_decision_fn, "log", []))
 
 
-def make_decider(module, blocks=None):
-    """`module`'s runner with a builder for the decision (or other `blocks`): the shape llm_decision_fn takes."""
+def make_decider(module, blocks=None, resolvers=(), filters=()):
+    """`module`'s runner with a builder for the decision (or other `blocks`): the shape llm_decision_fn takes.
+    The output grammar, if the runner has one, is left off: what is asked for here is not a grid."""
     config = decision_config(module.builder.config, blocks) if blocks else decision_config(module.builder.config)
+    config = config.model_copy(update={"resolvers": list(resolvers), "filters": list(filters)})
     builder = PromptBuilder(config, module.builder.tokenizer, resolver_registry=RESOLVER_REGISTRY,
                             filter_registry=FILTER_REGISTRY)
-    return SimpleNamespace(builder=builder, runner=module.runner)
+    return SimpleNamespace(builder=builder, runner=without_grammar(module.runner))
+
+
+def rank_roster(task, module, registry, context: Optional[Dict[str, Any]] = None, tracer: Optional[Tracer] = None):
+    """(registry with the analyst's agents first, the shortlist). The analyst is a call to `module`; a reply
+    it cannot read leaves the registry in its own order."""
+    from data.configs.agents_config import ROLE_INSTRUCTIONS
+    from subsymbolic.analyst import ANALYST_BLOCKS, AgentShortlist, rank_agents
+
+    from orchestration.roster import order_by_analyst
+
+    analyst = make_decider(module, ANALYST_BLOCKS, resolvers=["examples", "summary"], filters=["grid"])
+    try:
+        with traced(tracer, "decide", "analyst"):
+            shortlist = rank_agents(task, analyst, registry, ROLE_INSTRUCTIONS, context=context)
+    except Exception as error:  # noqa: BLE001 - a failed analyst is the registry's own order
+        shortlist = AgentShortlist(error=f"{type(error).__name__}: {error}")
+    return order_by_analyst(registry, shortlist), shortlist
+
+
+def no_rl(task):
+    """An RL start that starts nothing: the graph then has no job to poll or wait for."""
+    return None
 
 
 def timed_dispatch(dispatch_fn: Callable, tracer: Optional[Tracer]) -> Callable:
@@ -169,18 +194,23 @@ def assemble(options: OrchestrationOptions, module, verify: Callable[[Any, np.nd
     else:
         coordinator = default_coordinator_fn
 
+    if not options.rl:
+        rl_start_fn = no_rl
     return Orchestration(options=options, module_dispatch_fn=dispatch, agent_decision_fn=decision,
                          coordinator_fn=coordinator, rl_start_fn=timed_rl_start(rl_start_fn, tracer),
-                         tracer=tracer, module=solver, verify=verdict)
+                         tracer=tracer, module=solver, verify=verdict, agent_factory=agent_factory)
 
 
 def solve_with_orchestration(task, run: Orchestration, agents: Optional[List[Dict[str, Any]]] = None,
                              **solve_kwargs) -> Dict[str, Any]:
     """graph.solve_task with the assembled functions. With no `agents`, one agent holds the symbolic
     solvers and the model, as in `solve_with_hierarchy`."""
-    modules = [{"index": 0, "name": "symbolic"}, {"index": 1, "name": "subsymbolic"}]
     agents = agents or [{"index": 0, "name": "hierarchy"}]
     first = agents[0]
-    agent = AgentInvConfig(agent_index=first["index"], agent_name=first["name"],
-                           initial_module=ModuleInvConfig(0, "symbolic"), available_modules=modules)
+    if run.agent_factory is not None and "available_modules" in first:
+        agent = run.agent_factory(first)
+    else:
+        modules = [{"index": 0, "name": "symbolic"}, {"index": 1, "name": "subsymbolic"}]
+        agent = AgentInvConfig(agent_index=first["index"], agent_name=first["name"],
+                               initial_module=ModuleInvConfig(0, "symbolic"), available_modules=modules)
     return solve_task(task, initial_agent=agent, available_agents=agents, **run.kwargs(), **solve_kwargs)

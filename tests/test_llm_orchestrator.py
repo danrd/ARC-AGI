@@ -223,6 +223,14 @@ class TestTheCoordinator:
         (prompt,) = d.runner.prompts
         assert "2. Highlighter" in prompt and "3. Shifter" in prompt and "1. Constructor" not in prompt
 
+    def test_only_text_of_the_auxiliary_information_goes_to_the_model(self, tiny_tokenizer):
+        d = decider(tiny_tokenizer, '{"status": "INVALID", "delegate_to_agent": 3}', COORDINATOR_BLOCKS)
+        crowded = system_state([agent_record("Constructor", "INVALID")])
+        crowded["auxiliary_info"] = {"test_input_grid": np.zeros((2, 2), int), "Agents worth trying": "1. Shifter"}
+        llm_coordinator_fn(d, factory)(crowded)
+        (prompt,) = d.runner.prompts
+        assert "1. Shifter" in prompt and "test_input_grid" not in prompt
+
     def test_an_agent_already_tried_or_unknown_is_not_taken(self, tiny_tokenizer):
         for reply in ('{"status": "INVALID", "delegate_to_agent": 1}', '{"status": "INVALID", "delegate_to_agent": 9}',
                       "gibberish"):

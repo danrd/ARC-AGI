@@ -52,11 +52,22 @@ class TestWhatTheModelIsGiven:
         assert "hint" not in prompt.lower() and "summary" not in prompt.lower()
 
 
-class TestTheOrder:
+class TestTheTasks:
+    def test_the_tasks_are_the_370_of_the_earlier_runs_by_difficulty(self):
+        import collections
+        difficulties = llm_only.task_difficulties()
+        assert len(difficulties) == 370
+        assert collections.Counter(difficulties.values()) == {"easy": 95, "medium": 53, "hard": 67,
+                                                              "impossible": 68, "very_hard": 87}
+        everything = json.loads((llm_only.ROOT / "data/datasets/ARC/evaluation_difficulty.json").read_text())
+        assert all(everything[t] == d for t, d in difficulties.items())
+        assert not {"symbolic", "oversized"} & set(difficulties.values())
+
     def test_a_fixed_shuffle_that_is_not_the_files_order(self):
-        first, again = llm_only.shuffled_tasks("evaluation", 0), llm_only.shuffled_tasks("evaluation", 0)
-        assert first == again and len(first) == 400 and first != sorted(first)
-        assert llm_only.shuffled_tasks("evaluation", 1) != first
+        difficulties = llm_only.task_difficulties()
+        first, again = llm_only.shuffled_tasks(difficulties, 0), llm_only.shuffled_tasks(difficulties, 0)
+        assert first == again and sorted(first) == sorted(difficulties) and first != sorted(first)
+        assert llm_only.shuffled_tasks(difficulties, 1) != first
 
 
 class TestGrading:
@@ -99,6 +110,15 @@ class TestARun:
 
     def test_the_summary_counts_what_was_solved(self):
         text = llm_only.summarise([{"solved": True, "shape_ok": True, "parsed": True, "seconds": 3600,
-                                    "prompt_tokens": 10, "reply_tokens": 2},
-                                   {"solved": False, "shape_ok": False, "parsed": False, "seconds": 0}])
-        assert "2 tasks: solved 1 (50.0%)" in text
+                                    "prompt_tokens": 10, "reply_tokens": 2, "difficulty": "easy"},
+                                   {"solved": False, "shape_ok": False, "parsed": False, "seconds": 0,
+                                    "difficulty": "hard"}])
+        assert text.splitlines()[0].startswith("solved 1 of 2")
+        assert "easy       solved 1 of 1" in text and "hard       solved 0 of 1" in text
+        assert "medium" not in text
+
+    def test_the_difficulty_of_a_task_is_kept_in_its_line(self, tmp_path):
+        module = Module({"a": "x"})
+        records = llm_only.run(["a"], module, str(tmp_path / "o.jsonl"), loader=self.loader,
+                               difficulties={"a": "very_hard"})
+        assert records[0]["difficulty"] == "very_hard"

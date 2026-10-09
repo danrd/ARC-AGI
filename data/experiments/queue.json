@@ -2219,7 +2219,7 @@
    "name": "llm_only_qwen",
    "resource": "gpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],

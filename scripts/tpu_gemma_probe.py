@@ -12,6 +12,7 @@ each idea gets.
 """
 import argparse
 import json
+import re
 import time
 import traceback
 from pathlib import Path
@@ -37,11 +38,25 @@ def step(name):
     return wrap
 
 
+def gemma_layout_map(mesh):
+    """How to split a Gemma decoder over the `model` axis when the backbone has no `get_layout_map` of its own (Gemma 3
+    has none): the attention projections by head, the feed-forward by its hidden width, the embedding by its width -
+    the recipe keras-hub gives for Gemma 2, by the names of the weights."""
+    import keras
+    layout = keras.distribution.LayoutMap(mesh)
+    layout["token_embedding/embeddings"] = (None, "model")
+    layout["decoder_block.*attention.*(query|key|value)/kernel"] = ("model", None, None)
+    layout["decoder_block.*attention_output/kernel"] = ("model", None, None)
+    layout["decoder_block.*ffw_gating.*/kernel"] = ("batch", "model")
+    layout["decoder_block.*ffw_linear/kernel"] = ("model", "batch")
+    return layout
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prompt", default="data/experiments/runs/kaggle/prompts_gemma_0/009d5c81/p0.txt")
     parser.add_argument("--out", default="tpu_probe.json")
-    parser.add_argument("--max-gb", type=float, default=24.0, help="the largest model to load, in parameters x 2 bytes")
+    parser.add_argument("--max-gb", type=float, default=60.0, help="the largest model to load, in parameters x 2 bytes")
     parser.add_argument("--new-tokens", type=int, default=64)
     args = parser.parse_args()
 
@@ -64,13 +79,12 @@ def main():
     options = []
     for cls_name, names in found.items():
         for preset in names:
-            if "instruct" in preset or "_it" in preset or preset.endswith("it"):
+            if re.fullmatch(r"gemma\d*_instruct_\d+(\.\d+)?b", preset):     # not the translate, med, function or text-only presets
                 options.append((cls_name, preset))
     report["options"] = options
     print("instruction-tuned presets:", options, flush=True)
 
     def size_of(preset):
-        import re
         match = re.search(r"(\d+(?:\.\d+)?)b", preset.lower())
         return float(match.group(1)) if match else None
 
@@ -94,7 +108,7 @@ def main():
         devs = keras.distribution.list_devices()
         mesh = keras.distribution.DeviceMesh((1, len(devs)), ["batch", "model"], devs)
         backbone = getattr(keras_hub.models, cls_name.replace("CausalLM", "Backbone"))
-        layout = backbone.get_layout_map(mesh)
+        layout = backbone.get_layout_map(mesh) if hasattr(backbone, "get_layout_map") else gemma_layout_map(mesh)
         keras.distribution.set_distribution(keras.distribution.ModelParallel(layout_map=layout, batch_dim_name="batch"))
         model = getattr(keras_hub.models, cls_name).from_preset(preset)
         report["_model"] = model

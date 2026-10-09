@@ -11,7 +11,7 @@ class Fake:
     """The notebooks: what each job's are doing, what was started, what was collected."""
 
     def __init__(self, **states):
-        self.states, self.started, self.collected = states, [], []
+        self.states, self.started, self.collected, self.deleted = states, [], [], []
 
     def status(self, job):
         return self.states.get(job.name, [])
@@ -24,8 +24,13 @@ class Fake:
         self.collected.append(job.name)
         return [f"{job.name}_0.jsonl"]
 
-    def tick(self, jobs, capacity=None):
-        return tick(jobs, self.status, self.start, self.collect, capacity or {"cpu": 5, "gpu": 1})
+    def delete(self, job):
+        self.deleted.append(job.name)
+        return job.name != "stuck"
+
+    def tick(self, jobs, capacity=None, delete=True):
+        return tick(jobs, self.status, self.start, self.collect, capacity or {"cpu": 5, "gpu": 1},
+                    delete_fn=self.delete if delete else None)
 
 
 def test_a_queued_job_is_started_when_its_notebooks_are_free():
@@ -94,3 +99,41 @@ def test_the_queue_is_a_file_that_comes_back_as_it_was(tmp_path):
     save(jobs, path)
     assert load(path) == jobs and load(tmp_path / "none.json") == []
     assert queue.CAPACITY == {"cpu": 5, "gpu": 1, "tpu": 1}
+
+
+def test_the_notebooks_of_a_job_that_is_done_with_files_are_deleted_once():
+    fake = Fake(a=["COMPLETE"])
+    jobs = [Job("a", "cpu", 1, "running")]
+    events = fake.tick(jobs)
+    assert fake.deleted == ["a"] and jobs[0].cleaned and "a: 1 notebook(s) deleted from Kaggle" in events
+    fake.tick(jobs)
+    assert fake.deleted == ["a"]
+
+
+def test_a_failed_job_and_a_job_with_no_files_keep_their_notebooks_for_the_logs():
+    class NoFiles(Fake):
+        def collect(self, job):
+            return []
+
+    failed = Fake(a=["ERROR"])
+    jobs = [Job("a", "cpu", 1, "running")]
+    failed.tick(jobs)
+    empty = NoFiles(b=["COMPLETE"])
+    other = [Job("b", "cpu", 1, "running")]
+    empty.tick(other)
+    assert failed.deleted == [] and empty.deleted == [] and not jobs[0].cleaned and not other[0].cleaned
+
+
+def test_a_notebook_that_could_not_be_deleted_is_tried_again_at_the_next_tick():
+    fake = Fake()
+    jobs = [Job("stuck", "cpu", 1, "done", result=["f"])]
+    fake.tick(jobs)
+    fake.tick(jobs)
+    assert fake.deleted == ["stuck", "stuck"] and not jobs[0].cleaned
+
+
+def test_without_a_delete_function_nothing_is_deleted():
+    fake = Fake()
+    jobs = [Job("a", "cpu", 1, "done", result=["f"])]
+    fake.tick(jobs, delete=False)
+    assert fake.deleted == [] and not jobs[0].cleaned

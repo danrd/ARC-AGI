@@ -91,6 +91,20 @@ def status(job, shards):
             .replace("KernelWorkerStatus.", "") for shard in range(shards)}
 
 
+def delete(job, shards):
+    """Delete the job's notebooks from Kaggle. True when every one is gone (one that was already gone counts)."""
+    user = username()
+    gone = True
+    for shard in range(shards):
+        result = kaggle("kernels", "delete", "-y", f"{user}/{slug(job, shard)}")
+        text = (result.stdout + result.stderr).lower()
+        if result.returncode != 0 and "deleted successfully" not in text and "not found" not in text \
+                and "permission" not in text:
+            print(slug(job, shard), "not deleted:", text.strip().splitlines()[-1] if text.strip() else "?")
+            gone = False
+    return gone
+
+
 def collect(job, shards):
     """Download every notebook's output; returns the files put in RUNS (the output's own folders kept)."""
     user = username()
@@ -113,7 +127,7 @@ def collect(job, shards):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["start", "status", "collect"])
+    parser.add_argument("command", choices=["start", "status", "collect", "delete"])
     parser.add_argument("job")
     parser.add_argument("--shards", type=int, required=True)
     parser.add_argument("--gpu", action="store_true")
@@ -125,6 +139,8 @@ def main():
         start(args.job, args.shards, args.gpu, args.extras, args.setup, args.tpu)
     elif args.command == "status":
         print(status(args.job, args.shards))
+    elif args.command == "delete":
+        print(delete(args.job, args.shards))
     else:
         for path in collect(args.job, args.shards):
             print(path)

@@ -211,18 +211,18 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (16)"]
+  orchestration["orchestration (17)"]
   rl["rl (20)"]
   scripts["scripts (18)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (84)"]
+  tests["tests (85)"]
   utils["utils (3)"]
-  tests -->|99| rl
-  tests -->|42| subsymbolic
-  tests -->|33| orchestration
+  tests -->|100| rl
+  tests -->|45| subsymbolic
+  tests -->|35| orchestration
   tests -->|33| symbolic
-  orchestration -->|25| subsymbolic
+  orchestration -->|28| subsymbolic
   tests -->|21| data
   scripts -->|13| rl
   rl -->|11| data
@@ -258,21 +258,22 @@ graph TD
 | `orchestration.assemble` | 3 |
 | `orchestration.bench` | 0 |
 | `orchestration.blocks` | 3 |
-| `orchestration.configs` | 13 |
+| `orchestration.configs` | 15 |
 | `orchestration.context` | 1 |
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 12 |
 | `orchestration.hierarchy` | 7 |
+| `orchestration.llm_only` | 0 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
 | `orchestration.roster` | 3 |
-| `orchestration.run` | 0 |
+| `orchestration.run` | 1 |
 | `orchestration.tools` | 5 |
 | `orchestration.trace` | 10 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 38 |
+| `rl.arc_task` | 39 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -314,11 +315,11 @@ graph TD
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 6 |
 | `subsymbolic.llm_setup` | 8 |
-| `subsymbolic.local_config` | 3 |
+| `subsymbolic.local_config` | 5 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 24 |
-| `subsymbolic.registry` | 12 |
-| `subsymbolic.subsymbolic_module` | 5 |
+| `subsymbolic.prompt_builder` | 26 |
+| `subsymbolic.registry` | 13 |
+| `subsymbolic.subsymbolic_module` | 6 |
 | `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |

@@ -2129,12 +2129,14 @@
    "name": "tpu_gemma2",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "",
    "note": "TPU: \u043f\u0440\u043e\u0431\u0430 Gemma \u0437\u0430\u043d\u043e\u0432\u043e, \u043f\u043e\u0441\u043b\u0435 \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u043e\u0448\u0438\u0431\u043a\u0438 \u0432 \u043f\u0440\u043e\u0431\u0435 ('dict' object is not callable)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/tpu_gemma2_gemma_0.json"
+   ],
+   "cleaned": true
   },
   {
    "name": "bench2",

@@ -26,8 +26,8 @@ def test_each_timing_asks_the_runner_for_what_it_is_named():
 
     spy = Spy({"grammar": "g", "top_k": 3})
     result = bench.run(spy, ["p1", "p2"], tokens=160)
-    assert seen == [(1, False)] * 2 + [(160, False)] * 2 + [(160, True)] * 2
-    assert set(result) == {"prefill", "free", "grammar"} and result["free"]["calls"] == 2
+    assert seen == [(1, False)] * 2 + [(160, False)] * 2 + [(160, True)] * 2 * (1 + len(bench.SIMPLE_GRAMMARS))
+    assert set(result) == {"prefill", "free", "grammar", *bench.SIMPLE_GRAMMARS} and result["free"]["calls"] == 2
     assert spy.generation_kwargs["max_tokens"] == 1200 and "grammar" in spy.generation_kwargs["extra_body"]
     assert runner.generation_kwargs["extra_body"]["top_k"] == 3
 
@@ -46,3 +46,21 @@ def test_the_summary_and_the_report_say_what_the_grammar_costs():
               "grammar": {**summary, "mean_seconds": 9.0}}
     text = bench.render("m", result, 160)
     assert "the grammar adds +6.00 s (3.0x the free reply" in text and "writing the reply (free minus prefill): 2.00 s" in text
+
+
+def test_a_simpler_grammar_replaces_the_runners_own_in_the_copy_only():
+    runner = Runner({"grammar": "root ::= long", "top_k": 3})
+    flat = bench.with_limits(runner, 7, grammar="root ::= [0-9]+")
+    assert flat.generation_kwargs["extra_body"] == {"grammar": "root ::= [0-9]+", "top_k": 3}
+    assert flat.generation_kwargs["max_tokens"] == 7
+    assert runner.generation_kwargs["extra_body"]["grammar"] == "root ::= long"
+    assert all(isinstance(text, str) and text.startswith("root ::=") for text in bench.SIMPLE_GRAMMARS.values())
+
+
+def test_the_report_compares_each_simple_grammar_with_free_and_with_the_systems():
+    one = {"calls": 1, "mean_seconds": 1.0, "median_seconds": 1.0, "mean_reply_chars": 10, "mean_prompt_chars": 100}
+    result = {"prefill": one, "free": {**one, "mean_seconds": 2.0}, "grammar": {**one, "mean_seconds": 8.0},
+              "flat": {**one, "mean_seconds": 4.0}, "rows": {**one, "mean_seconds": 6.0}}
+    text = bench.render("m", result, 160)
+    assert "flat grammar: +2.00 s against free (2.0x), -4.00 s against the system's grammar" in text
+    assert "rows grammar: +4.00 s against free (3.0x), -2.00 s against the system's grammar" in text

@@ -216,7 +216,7 @@ graph TD
   scripts["scripts (18)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (83)"]
+  tests["tests (84)"]
   utils["utils (3)"]
   tests -->|99| rl
   tests -->|42| subsymbolic
@@ -230,11 +230,11 @@ graph TD
   orchestration -->|7| rl
   scripts -->|6| subsymbolic
   orchestration -->|4| symbolic
+  tests -->|4| scripts
   data -->|3| rl
   orchestration -->|3| data
   rl -->|3| utils
   scripts -->|3| data
-  tests -->|3| scripts
   scripts -->|2| symbolic
   subsymbolic -->|2| symbolic
   data -->|1| symbolic

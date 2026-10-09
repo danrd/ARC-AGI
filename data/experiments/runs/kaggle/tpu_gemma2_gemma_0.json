@@ -1,0 +1,346 @@
+{
+ "steps": [
+  {
+   "step": "devices",
+   "ok": true,
+   "seconds": 24.2,
+   "value": [
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    }
+   ]
+  },
+  {
+   "step": "presets",
+   "ok": true,
+   "seconds": 45.1,
+   "value": {
+    "Gemma3CausalLM": [
+     "embedding_gemma3_300m",
+     "function_gemma_instruct_270m",
+     "gemma3_12b",
+     "gemma3_12b_text",
+     "gemma3_1b",
+     "gemma3_270m",
+     "gemma3_27b",
+     "gemma3_27b_text",
+     "gemma3_4b",
+     "gemma3_4b_text",
+     "gemma3_instruct_12b",
+     "gemma3_instruct_12b_text",
+     "gemma3_instruct_1b",
+     "gemma3_instruct_270m",
+     "gemma3_instruct_27b",
+     "gemma3_instruct_27b_text",
+     "gemma3_instruct_4b",
+     "gemma3_instruct_4b_text",
+     "harrier_embedding_oss_270m",
+     "medgemma_1.5_instruct_4b",
+     "medgemma_4b",
+     "medgemma_instruct_27b",
+     "medgemma_instruct_27b_text",
+     "medgemma_instruct_4b",
+     "translategemma_12b_it",
+     "translategemma_27b_it",
+     "translategemma_4b_it"
+    ],
+    "Gemma3nCausalLM": [
+     "gemma3n_e2b",
+     "gemma3n_e2b_it",
+     "gemma3n_e4b",
+     "gemma3n_e4b_it"
+    ],
+    "Gemma4AssistantCausalLM": [
+     "gemma4_26b_a4b",
+     "gemma4_2b",
+     "gemma4_31b",
+     "gemma4_4b",
+     "gemma4_instruct_26b_a4b",
+     "gemma4_instruct_26b_a4b_assistant",
+     "gemma4_instruct_2b",
+     "gemma4_instruct_2b_assistant",
+     "gemma4_instruct_31b",
+     "gemma4_instruct_31b_assistant",
+     "gemma4_instruct_4b",
+     "gemma4_instruct_4b_assistant"
+    ],
+    "Gemma4CausalLM": [
+     "gemma4_26b_a4b",
+     "gemma4_2b",
+     "gemma4_31b",
+     "gemma4_4b",
+     "gemma4_instruct_26b_a4b",
+     "gemma4_instruct_26b_a4b_assistant",
+     "gemma4_instruct_2b",
+     "gemma4_instruct_2b_assistant",
+     "gemma4_instruct_31b",
+     "gemma4_instruct_31b_assistant",
+     "gemma4_instruct_4b",
+     "gemma4_instruct_4b_assistant"
+    ],
+    "GemmaCausalLM": [
+     "c2s_scale_gemma_2_27b_en",
+     "c2s_scale_gemma_2_2b_en",
+     "code_gemma_1.1_2b_en",
+     "code_gemma_1.1_instruct_7b_en",
+     "code_gemma_2b_en",
+     "code_gemma_7b_en",
+     "code_gemma_instruct_7b_en",
+     "gemma2_27b_en",
+     "gemma2_2b_en",
+     "gemma2_9b_en",
+     "gemma2_instruct_27b_en",
+     "gemma2_instruct_2b_en",
+     "gemma2_instruct_9b_en",
+     "gemma_1.1_instruct_2b_en",
+     "gemma_1.1_instruct_7b_en",
+     "gemma_2b_en",
+     "gemma_7b_en",
+     "gemma_instruct_2b_en",
+     "gemma_instruct_7b_en",
+     "shieldgemma_27b_en",
+     "shieldgemma_2b_en",
+     "shieldgemma_9b_en",
+     "vault_gemma_1b_en"
+    ],
+    "PaliGemmaCausalLM": [
+     "pali_gemma2_ft_docci_10b_448",
+     "pali_gemma2_mix_10b_224",
+     "pali_gemma2_mix_10b_448",
+     "pali_gemma2_mix_28b_224",
+     "pali_gemma2_mix_28b_448",
+     "pali_gemma2_mix_3b_224",
+     "pali_gemma2_mix_3b_448",
+     "pali_gemma2_pt_10b_224",
+     "pali_gemma2_pt_10b_448",
+     "pali_gemma2_pt_10b_896",
+     "pali_gemma2_pt_28b_224",
+     "pali_gemma2_pt_28b_448",
+     "pali_gemma2_pt_28b_896",
+     "pali_gemma2_pt_3b_224",
+     "pali_gemma2_pt_3b_448",
+     "pali_gemma2_pt_3b_896",
+     "pali_gemma_2_ft_docci_3b_448",
+     "pali_gemma_3b_224",
+     "pali_gemma_3b_448",
+     "pali_gemma_3b_896",
+     "pali_gemma_3b_mix_224",
+     "pali_gemma_3b_mix_448"
+    ]
+   }
+  },
+  {
+   "step": "shard and load",
+   "ok": false,
+   "seconds": 0.0,
+   "error": "AttributeError: type object 'Gemma3Backbone' has no attribute 'get_layout_map'"
+  }
+ ],
+ "options": [
+  [
+   "Gemma3CausalLM",
+   "function_gemma_instruct_270m"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_12b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_12b_text"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_1b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_270m"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_27b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_27b_text"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_4b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_4b_text"
+  ],
+  [
+   "Gemma3CausalLM",
+   "medgemma_1.5_instruct_4b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "medgemma_instruct_27b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "medgemma_instruct_27b_text"
+  ],
+  [
+   "Gemma3CausalLM",
+   "medgemma_instruct_4b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "translategemma_12b_it"
+  ],
+  [
+   "Gemma3CausalLM",
+   "translategemma_27b_it"
+  ],
+  [
+   "Gemma3CausalLM",
+   "translategemma_4b_it"
+  ],
+  [
+   "Gemma3nCausalLM",
+   "gemma3n_e2b_it"
+  ],
+  [
+   "Gemma3nCausalLM",
+   "gemma3n_e4b_it"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_26b_a4b"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_26b_a4b_assistant"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_2b"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_2b_assistant"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_31b"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_31b_assistant"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_4b"
+  ],
+  [
+   "Gemma4AssistantCausalLM",
+   "gemma4_instruct_4b_assistant"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_26b_a4b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_26b_a4b_assistant"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_2b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_2b_assistant"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_31b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_31b_assistant"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_4b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_4b_assistant"
+  ],
+  [
+   "GemmaCausalLM",
+   "code_gemma_1.1_instruct_7b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "code_gemma_instruct_7b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma2_instruct_27b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma2_instruct_2b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma2_instruct_9b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma_1.1_instruct_2b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma_1.1_instruct_7b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma_instruct_2b_en"
+  ],
+  [
+   "GemmaCausalLM",
+   "gemma_instruct_7b_en"
+  ]
+ ],
+ "chosen": [
+  "Gemma3CausalLM",
+  "translategemma_12b_it"
+ ]
+}

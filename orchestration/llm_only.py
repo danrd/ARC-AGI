@@ -21,7 +21,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-import numpy as np
 
 from orchestration.run import answer_of, load_task, read_lines
 from subsymbolic.local_config import gpu_notebook_params

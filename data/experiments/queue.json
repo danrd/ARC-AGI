@@ -12,7 +12,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "добор по трём задачам; собран вручную в runs/gaps.jsonl",
+   "note": "\u0434\u043e\u0431\u043e\u0440 \u043f\u043e \u0442\u0440\u0451\u043c \u0437\u0430\u0434\u0430\u0447\u0430\u043c; \u0441\u043e\u0431\u0440\u0430\u043d \u0432\u0440\u0443\u0447\u043d\u0443\u044e \u0432 runs/gaps.jsonl",
    "result": []
   },
   {
@@ -22,7 +22,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "варианты карты m_* на 7 трудных задачах, 69 запусков",
+   "note": "\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b \u043a\u0430\u0440\u0442\u044b m_* \u043d\u0430 7 \u0442\u0440\u0443\u0434\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447\u0430\u0445, 69 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u0432",
    "result": [
     "data/experiments/runs/kaggle/ARC-AGI/.git/HEAD",
     "data/experiments/runs/kaggle/ARC-AGI/.git/config",
@@ -1361,7 +1361,7 @@
     "pip install -q \"llama-cpp-python[server]\" huggingface_hub --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124"
    ],
    "extras": "rl",
-   "note": "промпты на Qwen3.8-27B и gemma-4-31B, 120 промптов на модель",
+   "note": "\u043f\u0440\u043e\u043c\u043f\u0442\u044b \u043d\u0430 Qwen3.8-27B \u0438 gemma-4-31B, 120 \u043f\u0440\u043e\u043c\u043f\u0442\u043e\u0432 \u043d\u0430 \u043c\u043e\u0434\u0435\u043b\u044c",
    "result": [
     "data/experiments/runs/kaggle/prompts_gemma_0/009d5c81/answer.txt",
     "data/experiments/runs/kaggle/prompts_gemma_0/009d5c81/answer_perm.txt",
@@ -1898,7 +1898,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "сиды 3 и 4 для default и m_w16 на панели из 21 задачи, 84 запуска",
+   "note": "\u0441\u0438\u0434\u044b 3 \u0438 4 \u0434\u043b\u044f default \u0438 m_w16 \u043d\u0430 \u043f\u0430\u043d\u0435\u043b\u0438 \u0438\u0437 21 \u0437\u0430\u0434\u0430\u0447\u0438, 84 \u0437\u0430\u043f\u0443\u0441\u043a\u0430",
    "result": [
     "data/experiments/runs/kaggle/moreseeds_pair_0.jsonl",
     "data/experiments/runs/kaggle/moreseeds_pair_1.jsonl"
@@ -1913,7 +1913,7 @@
     "pip install -q \"llama-cpp-python[server]\" huggingface_hub --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124"
    ],
    "extras": "rl",
-   "note": "этап 1 заново: первый запуск упал на конфиге промпта (исправлено), вся система на gemma-4-E2B без RL",
+   "note": "\u044d\u0442\u0430\u043f 1 \u0437\u0430\u043d\u043e\u0432\u043e: \u043f\u0435\u0440\u0432\u044b\u0439 \u0437\u0430\u043f\u0443\u0441\u043a \u0443\u043f\u0430\u043b \u043d\u0430 \u043a\u043e\u043d\u0444\u0438\u0433\u0435 \u043f\u0440\u043e\u043c\u043f\u0442\u0430 (\u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e), \u0432\u0441\u044f \u0441\u0438\u0441\u0442\u0435\u043c\u0430 \u043d\u0430 gemma-4-E2B \u0431\u0435\u0437 RL",
    "result": [
     "data/experiments/runs/kaggle/system_base_0.jsonl",
     "data/experiments/runs/kaggle/system_llm_0.jsonl",
@@ -1930,7 +1930,7 @@
     "pip install -q \"llama-cpp-python[server]\" huggingface_hub --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124"
    ],
    "extras": "rl",
-   "note": "этап 2: вся система на gemma-4-E2B с RL (50k шагов), два варианта",
+   "note": "\u044d\u0442\u0430\u043f 2: \u0432\u0441\u044f \u0441\u0438\u0441\u0442\u0435\u043c\u0430 \u043d\u0430 gemma-4-E2B \u0441 RL (50k \u0448\u0430\u0433\u043e\u0432), \u0434\u0432\u0430 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0430",
    "result": [
     "data/experiments/runs/kaggle/system_rl_base_0.jsonl",
     "data/experiments/runs/kaggle/system_rl_refine_0.jsonl"
@@ -1945,7 +1945,7 @@
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "этап 1 с исправлениями: llama.cpp на GPU (с проверкой), роли агентов в промпте; gemma E2B без RL, 3 варианта",
+   "note": "\u044d\u0442\u0430\u043f 1 \u0441 \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f\u043c\u0438: llama.cpp \u043d\u0430 GPU (\u0441 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u043e\u0439), \u0440\u043e\u043b\u0438 \u0430\u0433\u0435\u043d\u0442\u043e\u0432 \u0432 \u043f\u0440\u043e\u043c\u043f\u0442\u0435; gemma E2B \u0431\u0435\u0437 RL, 3 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0430",
    "result": [
     "data/experiments/runs/kaggle/system_gpu_base_0.jsonl",
     "data/experiments/runs/kaggle/system_gpu_llm_0.jsonl",
@@ -1961,7 +1961,7 @@
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "шаг refine этапа 1 заново: цикл уточнения вместе с ролями агентов (упал из-за порядка установки блоков)",
+   "note": "\u0448\u0430\u0433 refine \u044d\u0442\u0430\u043f\u0430 1 \u0437\u0430\u043d\u043e\u0432\u043e: \u0446\u0438\u043a\u043b \u0443\u0442\u043e\u0447\u043d\u0435\u043d\u0438\u044f \u0432\u043c\u0435\u0441\u0442\u0435 \u0441 \u0440\u043e\u043b\u044f\u043c\u0438 \u0430\u0433\u0435\u043d\u0442\u043e\u0432 (\u0443\u043f\u0430\u043b \u0438\u0437-\u0437\u0430 \u043f\u043e\u0440\u044f\u0434\u043a\u0430 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u0431\u043b\u043e\u043a\u043e\u0432)",
    "result": [
     "data/experiments/runs/kaggle/system_refine_refine_0.jsonl"
    ]
@@ -1975,7 +1975,7 @@
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "замер скорости: чтение промпта, свободная запись и запись под грамматикой, на gemma E2B и Qwen 27B",
+   "note": "\u0437\u0430\u043c\u0435\u0440 \u0441\u043a\u043e\u0440\u043e\u0441\u0442\u0438: \u0447\u0442\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u043c\u043f\u0442\u0430, \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u0430\u044f \u0437\u0430\u043f\u0438\u0441\u044c \u0438 \u0437\u0430\u043f\u0438\u0441\u044c \u043f\u043e\u0434 \u0433\u0440\u0430\u043c\u043c\u0430\u0442\u0438\u043a\u043e\u0439, \u043d\u0430 gemma E2B \u0438 Qwen 27B",
    "result": [
     "data/experiments/runs/kaggle/bench_e2b_0.jsonl",
     "data/experiments/runs/kaggle/bench_qwen_0.jsonl"
@@ -1990,7 +1990,7 @@
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "этап 3: вся система на Qwen3.8-27B без RL, три варианта",
+   "note": "\u044d\u0442\u0430\u043f 3: \u0432\u0441\u044f \u0441\u0438\u0441\u0442\u0435\u043c\u0430 \u043d\u0430 Qwen3.8-27B \u0431\u0435\u0437 RL, \u0442\u0440\u0438 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0430",
    "result": [
     "data/experiments/runs/kaggle/system_big_base_0.jsonl",
     "data/experiments/runs/kaggle/system_big_llm_0.jsonl",
@@ -2004,7 +2004,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "сиды 3 и 4 для o_spatial на панели из 21 задачи, 42 запуска",
+   "note": "\u0441\u0438\u0434\u044b 3 \u0438 4 \u0434\u043b\u044f o_spatial \u043d\u0430 \u043f\u0430\u043d\u0435\u043b\u0438 \u0438\u0437 21 \u0437\u0430\u0434\u0430\u0447\u0438, 42 \u0437\u0430\u043f\u0443\u0441\u043a\u0430",
    "result": [
     "data/experiments/runs/kaggle/otherseeds_o_seeds_0.jsonl"
    ]
@@ -2016,7 +2016,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "сиды 3 и 4 для s_chmap на панели из 21 задачи, 42 запуска",
+   "note": "\u0441\u0438\u0434\u044b 3 \u0438 4 \u0434\u043b\u044f s_chmap \u043d\u0430 \u043f\u0430\u043d\u0435\u043b\u0438 \u0438\u0437 21 \u0437\u0430\u0434\u0430\u0447\u0438, 42 \u0437\u0430\u043f\u0443\u0441\u043a\u0430",
    "result": [
     "data/experiments/runs/kaggle/otherseeds_s_seeds_0.jsonl"
    ]
@@ -2028,7 +2028,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "варианты карты m_w64, m_ptr64, m_nopos, m_norel: сиды 3 и 4 на 7 трудных задачах, 56 запусков",
+   "note": "\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u044b \u043a\u0430\u0440\u0442\u044b m_w64, m_ptr64, m_nopos, m_norel: \u0441\u0438\u0434\u044b 3 \u0438 4 \u043d\u0430 7 \u0442\u0440\u0443\u0434\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447\u0430\u0445, 56 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u0432",
    "result": [
     "data/experiments/runs/kaggle/mseries2_core2_0.jsonl"
    ]
@@ -2040,7 +2040,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "1M шагов, default: 8 задач, где политика подгоняет пары, но не правило; сиды 0 и 1",
+   "note": "1M \u0448\u0430\u0433\u043e\u0432, default: 8 \u0437\u0430\u0434\u0430\u0447, \u0433\u0434\u0435 \u043f\u043e\u043b\u0438\u0442\u0438\u043a\u0430 \u043f\u043e\u0434\u0433\u043e\u043d\u044f\u0435\u0442 \u043f\u0430\u0440\u044b, \u043d\u043e \u043d\u0435 \u043f\u0440\u0430\u0432\u0438\u043b\u043e; \u0441\u0438\u0434\u044b 0 \u0438 1",
    "result": [
     "data/experiments/runs/kaggle/long1m_default_long_0.jsonl"
    ]
@@ -2052,7 +2052,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "1M шагов, m_w16: те же 8 задач и сиды",
+   "note": "1M \u0448\u0430\u0433\u043e\u0432, m_w16: \u0442\u0435 \u0436\u0435 8 \u0437\u0430\u0434\u0430\u0447 \u0438 \u0441\u0438\u0434\u044b",
    "result": [
     "data/experiments/runs/kaggle/long1m_m16_long_0.jsonl"
    ]
@@ -2064,7 +2064,7 @@
    "status": "failed",
    "setup": [],
    "extras": "",
-   "note": "TPU v5e-8: Gemma через Keras+JAX, веса по восьми чипам; какой пресет влезает и как быстро отвечает",
+   "note": "TPU v5e-8: Gemma \u0447\u0435\u0440\u0435\u0437 Keras+JAX, \u0432\u0435\u0441\u0430 \u043f\u043e \u0432\u043e\u0441\u044c\u043c\u0438 \u0447\u0438\u043f\u0430\u043c; \u043a\u0430\u043a\u043e\u0439 \u043f\u0440\u0435\u0441\u0435\u0442 \u0432\u043b\u0435\u0437\u0430\u0435\u0442 \u0438 \u043a\u0430\u043a \u0431\u044b\u0441\u0442\u0440\u043e \u043e\u0442\u0432\u0435\u0447\u0430\u0435\u0442",
    "result": []
   },
   {
@@ -2074,7 +2074,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "default и m_w16 на 7 трудных задачах: сиды 5-7, 42 запуска (сужаем интервал главного сравнения) (заново: первый запуск упал на файлах системы в --skip, исправлено)",
+   "note": "default \u0438 m_w16 \u043d\u0430 7 \u0442\u0440\u0443\u0434\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447\u0430\u0445: \u0441\u0438\u0434\u044b 5-7, 42 \u0437\u0430\u043f\u0443\u0441\u043a\u0430 (\u0441\u0443\u0436\u0430\u0435\u043c \u0438\u043d\u0442\u0435\u0440\u0432\u0430\u043b \u0433\u043b\u0430\u0432\u043d\u043e\u0433\u043e \u0441\u0440\u0430\u0432\u043d\u0435\u043d\u0438\u044f) (\u0437\u0430\u043d\u043e\u0432\u043e: \u043f\u0435\u0440\u0432\u044b\u0439 \u0437\u0430\u043f\u0443\u0441\u043a \u0443\u043f\u0430\u043b \u043d\u0430 \u0444\u0430\u0439\u043b\u0430\u0445 \u0441\u0438\u0441\u0442\u0435\u043c\u044b \u0432 --skip, \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e)",
    "result": [
     "data/experiments/runs/kaggle/coreseeds_a_core_0.jsonl"
    ]
@@ -2086,7 +2086,7 @@
    "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "то же: сиды 8-9, 28 запусков (заново: первый запуск упал на файлах системы в --skip, исправлено)",
+   "note": "\u0442\u043e \u0436\u0435: \u0441\u0438\u0434\u044b 8-9, 28 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u0432 (\u0437\u0430\u043d\u043e\u0432\u043e: \u043f\u0435\u0440\u0432\u044b\u0439 \u0437\u0430\u043f\u0443\u0441\u043a \u0443\u043f\u0430\u043b \u043d\u0430 \u0444\u0430\u0439\u043b\u0430\u0445 \u0441\u0438\u0441\u0442\u0435\u043c\u044b \u0432 --skip, \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u043e)",
    "result": [
     "data/experiments/runs/kaggle/coreseeds_b_core_0.jsonl"
    ]
@@ -2098,39 +2098,39 @@
    "status": "running",
    "setup": [],
    "extras": "rl",
-   "note": "чтение карты: o_spatial, r_deep, r_shallow, r_peak, r_noctx, r_nobox на 7 трудных задачах, сиды 0-2 (до 105 запусков)",
+   "note": "\u0447\u0442\u0435\u043d\u0438\u0435 \u043a\u0430\u0440\u0442\u044b: o_spatial, r_deep, r_shallow, r_peak, r_noctx, r_nobox \u043d\u0430 7 \u0442\u0440\u0443\u0434\u043d\u044b\u0445 \u0437\u0430\u0434\u0430\u0447\u0430\u0445, \u0441\u0438\u0434\u044b 0-2 (\u0434\u043e 105 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u0432)",
    "result": []
   },
   {
    "name": "tpu_gemma2",
    "resource": "tpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "",
-   "note": "TPU: проба Gemma заново, после исправления ошибки в пробе ('dict' object is not callable)",
+   "note": "TPU: \u043f\u0440\u043e\u0431\u0430 Gemma \u0437\u0430\u043d\u043e\u0432\u043e, \u043f\u043e\u0441\u043b\u0435 \u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044f \u043e\u0448\u0438\u0431\u043a\u0438 \u0432 \u043f\u0440\u043e\u0431\u0435 ('dict' object is not callable)",
    "result": []
   },
   {
    "name": "bench2",
    "resource": "gpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "замер скорости: к грамматике системы добавлены две упрощённые (flat, rows), gemma E2B и Qwen 27B",
+   "note": "\u0437\u0430\u043c\u0435\u0440 \u0441\u043a\u043e\u0440\u043e\u0441\u0442\u0438: \u043a \u0433\u0440\u0430\u043c\u043c\u0430\u0442\u0438\u043a\u0435 \u0441\u0438\u0441\u0442\u0435\u043c\u044b \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u0434\u0432\u0435 \u0443\u043f\u0440\u043e\u0449\u0451\u043d\u043d\u044b\u0435 (flat, rows), gemma E2B \u0438 Qwen 27B",
    "result": []
   },
   {
    "name": "wide_base",
    "resource": "cpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
-   "note": "карта на всех 103 задачах: default и o_spatial, сиды 0-2 (то, чего ещё нет)",
+   "note": "\u043a\u0430\u0440\u0442\u0430 \u043d\u0430 \u0432\u0441\u0435\u0445 103 \u0437\u0430\u0434\u0430\u0447\u0430\u0445: default \u0438 o_spatial, \u0441\u0438\u0434\u044b 0-2 (\u0442\u043e, \u0447\u0435\u0433\u043e \u0435\u0449\u0451 \u043d\u0435\u0442)",
    "result": []
   },
   {
@@ -2140,7 +2140,7 @@
    "status": "queued",
    "setup": [],
    "extras": "rl",
-   "note": "карта на всех 103 задачах: чтение карты r_peak, r_deep, r_noctx, r_nobox, r_shallow, сиды 0-2",
+   "note": "\u043a\u0430\u0440\u0442\u0430 \u043d\u0430 \u0432\u0441\u0435\u0445 103 \u0437\u0430\u0434\u0430\u0447\u0430\u0445: \u0447\u0442\u0435\u043d\u0438\u0435 \u043a\u0430\u0440\u0442\u044b r_peak, r_deep, r_noctx, r_nobox, r_shallow, \u0441\u0438\u0434\u044b 0-2",
    "result": []
   }
  ]

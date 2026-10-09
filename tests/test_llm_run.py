@@ -54,7 +54,28 @@ class _FakeArtifact:
         return self._dir
 
 
+class _FakeLogged:
+    """What run.log_artifact returns: the artifact being uploaded, with the version it will have."""
+
+    def __init__(self, artifact, version):
+        self.artifact, self.version = artifact, version
+
+    def wait(self):
+        return self
+
+
+class _FakeVersion:
+    def __init__(self, version, deleted):
+        self.version, self._deleted = version, deleted
+
+    def delete(self, delete_aliases=False):
+        self._deleted.append((self.version, delete_aliases))
+
+
 class _FakeRun:
+    entity = "fake-entity"
+    project = "fake-project"
+
     def __init__(self, run_id, artifact_root):
         self.id = run_id or "fake-run-id"
         self._artifact_root = artifact_root
@@ -68,7 +89,9 @@ class _FakeRun:
         return _FakeArtifact(base_name, type, storage_dir)
 
     def log_artifact(self, artifact):
+        number = sum(a.type == artifact.type for a in self.logged_artifacts)
         self.logged_artifacts.append(artifact)
+        return _FakeLogged(artifact, version=f"v{number}")
 
 
 class _FakeTable:
@@ -97,6 +120,7 @@ class FakeWandb:
         self.run: Optional[_FakeRun] = None
         self.logged: List[Dict[str, Any]] = []
         self.finished = False
+        self.deleted: List[Any] = []
         self.init_kwargs: Dict[str, Any] = {}
 
     def init(self, **kwargs):
@@ -112,6 +136,15 @@ class FakeWandb:
 
     def log(self, payload):
         self.logged.append(payload)
+
+    def Api(self):
+        return self
+
+    def artifacts(self, type_name, name):
+        """The versions of the checkpoint collection, as many as the run has logged so far."""
+        self.asked = (type_name, name)
+        saved = [a for a in self.run.logged_artifacts if a.type == "checkpoint"]
+        return [_FakeVersion(f"v{i}", self.deleted) for i in range(len(saved))]
 
     def finish(self):
         self.finished = True
@@ -799,3 +832,32 @@ def test_run_llm_over_tasks_returns_a_compactly_printing_summary(fake_wandb):
 
     assert isinstance(summary, LlmRunSummary)
     assert repr(summary).startswith("LlmRunSummary(")
+
+
+def test_only_the_latest_checkpoint_version_is_kept(fake_wandb):
+    """A checkpoint after every task is a copy of the whole state each time; once the new version is up the
+    earlier ones are deleted, in the run's own collection."""
+    tasks = [_FakeTask(f"t{i}") for i in range(4)]
+    module = _fake_module({t.id: f"prompt-{t.id}" for t in tasks}, {f"prompt-{t.id}": "CORRECT" for t in tasks})
+    run_llm_over_tasks(tasks=tasks, subsymbolic_module=module, evaluator=_exact_match_evaluator,
+                       log_config=WandbLogConfig(project="test-proj", checkpoint_interval=1), run_id="r1")
+
+    assert fake_wandb.asked == ("checkpoint", "fake-entity/fake-project/checkpoint-r1")
+    checkpoints = [a for a in fake_wandb.run.logged_artifacts if a.type == "checkpoint"]
+    assert len(checkpoints) == 4
+    # after the n-th save the versions before the n-th go: v0 once, v0 and v1 ... in all 0+1+2+3 deletions
+    assert len(fake_wandb.deleted) == 0 + 1 + 2 + 3
+    assert all(aliases is True for _version, aliases in fake_wandb.deleted)
+    assert ("v3", True) not in fake_wandb.deleted
+
+
+def test_a_failure_to_delete_old_checkpoints_does_not_stop_the_run(fake_wandb, capsys):
+    def broken(type_name, name):
+        raise ConnectionError("offline")
+
+    fake_wandb.artifacts = broken
+    module = _fake_module({"t1": "prompt-1"}, {"prompt-1": "CORRECT"})
+    summary = run_llm_over_tasks(tasks=[_FakeTask("t1")], subsymbolic_module=module, evaluator=_exact_match_evaluator,
+                                 log_config=WandbLogConfig(project="test-proj", checkpoint_interval=1), run_id="r2")
+    assert summary["solved_tasks"] == ["t1"]
+    assert "Could not delete earlier checkpoint versions: ConnectionError" in capsys.readouterr().out

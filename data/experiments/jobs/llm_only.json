@@ -1,0 +1,23 @@
+{
+ "steps": [
+  {
+   "name": "gemma31b",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--max-tokens",
+    "1200",
+    "--hours",
+    "8",
+    "--skip",
+    "data/experiments/runs/kaggle/llm_only_*.jsonl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

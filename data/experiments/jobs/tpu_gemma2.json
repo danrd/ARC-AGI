@@ -1,0 +1,12 @@
+{
+ "steps": [
+  {
+   "name": "gemma",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ]
+}

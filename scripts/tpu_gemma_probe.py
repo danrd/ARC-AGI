@@ -20,6 +20,7 @@ report = {"steps": []}
 
 
 def step(name):
+    """Runs the function it decorates at once; the name is then bound to its result (None if it failed)."""
     def wrap(fn):
         started = time.time()
         try:
@@ -59,7 +60,7 @@ def main():
                 found[name] = sorted(cls.presets)
         return found
 
-    found = presets() or {}
+    found = presets or {}
     options = []
     for cls_name, names in found.items():
         for preset in names:
@@ -100,7 +101,7 @@ def main():
         used = [(d.memory_stats() or {}).get("bytes_in_use", 0) for d in jax.devices()]
         return {"preset": preset, "gb_in_use_per_chip": [round(u / 1e9, 2) for u in used]}
 
-    if load() is not None:
+    if load is not None:
         model = report.pop("_model")
 
         @step("generate")

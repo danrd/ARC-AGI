@@ -1,0 +1,25 @@
+{
+ "steps": [
+  {
+   "name": "wide_base",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_all.json",
+    "--arms",
+    "default",
+    "o_spatial",
+    "--seeds",
+    "0",
+    "1",
+    "2",
+    "--skip",
+    "data/experiments/runs/*.jsonl",
+    "data/experiments/runs/kaggle/*.jsonl",
+    "--workers",
+    "4",
+    "--hours",
+    "11"
+   ]
+  }
+ ]
+}

@@ -103,6 +103,7 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                          # The shared map over the grid, 0 for none - see
                          # SpatialBackbone.
                          'spatial_channels': PPO_config['spatial_channels'],
+                         'spatial_arch': PPO_config['spatial_arch'],
                          'delta_in_grid': PPO_config['delta_in_grid'],
                          'object_arch': PPO_config['object_arch'],
                          # How relations enter when the observation has

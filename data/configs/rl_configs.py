@@ -190,6 +190,9 @@ def load_PPO_config():
     # rl.features.SpatialBackbone - or 0 for none, the per-key encoders
     # alone. Off until measured against them.
     'spatial_channels': 0,
+    # How that map is built and read - keys of rl.features.SPATIAL_ARCH,
+    # each one change from it. Empty is the map as it was first measured.
+    'spatial_arch': {},
     # Whether the deltas go into the grid encoder as planes beside the ten
     # colours, or each through a DeltaReadout of its own - see
     # ARCCombinedExtractor. Being measured against each other.

@@ -1133,10 +1133,10 @@ class SpatialBackbone(nn.Module):
         return torch.cat([mean, peak], dim=1)
 
     @staticmethod
-    def over_boxes(features, objects, observation):
-        """(batch, slots, channels): the mean of F over each object's
-        bounding box, read back from objects_emb, whose box is normalised
-        by the true grid's size. An empty slot is zeros."""
+    def box_masks(features, objects, observation):
+        """(batch, slots, rows, cols) float: 1 inside each object's bounding
+        box, read back from objects_emb, whose box is normalised by the
+        true grid's size. An empty slot is all zeros."""
         from symbolic.objects_analysis import OBJECT_SCHEMA
         index, position = {}, 0
         for name, _group, arity in OBJECT_SCHEMA:
@@ -1154,9 +1154,26 @@ class SpatialBackbone(nn.Module):
         in_rows = (rows.view(1, 1, -1) >= top.unsqueeze(-1)) & (rows.view(1, 1, -1) <= bottom.unsqueeze(-1))
         in_cols = (cols.view(1, 1, -1) >= left.unsqueeze(-1)) & (cols.view(1, 1, -1) <= right.unsqueeze(-1))
         present = (objects.abs().sum(dim=-1) != 0).float()
-        boxes = (in_rows.unsqueeze(-1) & in_cols.unsqueeze(-2)).float() * present[..., None, None]
+        return (in_rows.unsqueeze(-1) & in_cols.unsqueeze(-2)).float() * present[..., None, None]
+
+    @staticmethod
+    def over_boxes(features, objects, observation, peak: bool = False):
+        """(batch, slots, channels): the mean of F over each object's
+        bounding box. With `peak`, (batch, slots, 2 * channels): the mean
+        and then the max, which says that something in the box fired where
+        the mean says how much of it did. An empty slot is zeros."""
+        boxes = SpatialBackbone.box_masks(features, objects, observation)
         total = torch.einsum("bshw,bchw->bsc", boxes, features)
-        return total / boxes.sum(dim=(2, 3)).clamp(min=1).unsqueeze(-1)
+        mean = total / boxes.sum(dim=(2, 3)).clamp(min=1).unsqueeze(-1)
+        if not peak:
+            return mean
+        # One slot at a time: all of them at once is a (batch, slots,
+        # channels, rows, cols) tensor.
+        tops = []
+        for slot in range(boxes.shape[1]):
+            inside = boxes[:, slot].unsqueeze(1) > 0
+            tops.append(features.masked_fill(~inside, 0.0).amax(dim=(2, 3)))
+        return torch.cat([mean, torch.stack(tops, dim=1)], dim=-1)
 
     @staticmethod
     def over_lines(features, valid):
@@ -1273,6 +1290,10 @@ class CoordinateRows(nn.Module):
             torch.cat([cols, col_mask.unsqueeze(-1)], dim=2).flatten(1)], dim=1)
 
 
+#: How the map is built and read when `spatial_arch` says nothing.
+SPATIAL_ARCH = {"layers": 3, "box_peak": False, "context": True, "boxes": True}
+
+
 class ARCCombinedExtractor(BaseFeaturesExtractor):
     """The grid-shaped observations get one encoder each, of the shape
     `extr_arch` describes; the object and relation embeddings get their own.
@@ -1291,7 +1312,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                  pointer_dim: int = 32, object_arch=None,
                  relation_mode: str = "flat", relation_arch=None,
                  coordinate_dim: int = 0, factored_tail: bool = False,
-                 spatial_channels: int = 0, delta_in_grid: bool = False):
+                 spatial_channels: int = 0, delta_in_grid: bool = False, spatial_arch=None):
         """`delta_in_grid` hands the deltas to the grid encoder as planes
         beside the ten colours, instead of to a DeltaReadout each: one
         stack of convolutions reads a cell's colour and whether it differs
@@ -1301,6 +1322,11 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         `spatial_channels` builds a SpatialBackbone of that width over
         every grid-shaped key the observation holds, and has the context,
         the objects and the coordinate rows read from it; 0 builds none.
+        `spatial_arch` changes how it is built and read, each key one change
+        from SPATIAL_ARCH: `layers` of convolutions, `box_peak` (the objects
+        read the max over their box as well as the mean), `context` (the
+        pooled map joins the context), `boxes` (the objects read the map
+        at all).
 
         `relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
@@ -1426,21 +1452,29 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         #: per-key branches, ahead of every tail.
         self.spatial = None
         self.spatial_objects = None
+        self.spatial_context = None
+        unknown = set(spatial_arch or {}) - set(SPATIAL_ARCH)
+        if unknown:
+            raise ValueError(f"spatial_arch has no {sorted(unknown)}; it has {sorted(SPATIAL_ARCH)}")
+        self.spatial_arch = {**SPATIAL_ARCH, **(spatial_arch or {})}
         if spatial_channels and "grid" in observation_space.spaces:
+            arch = self.spatial_arch
             self.spatial = SpatialBackbone(
                 [key for key in GRID_KEYS if key in observation_space.spaces],
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
-                channels=spatial_channels)
-            total_concat_size += 2 * spatial_channels
-            #: The pooled map into the context, through a projection that
-            #: starts at zero - see start_without_the_map.
-            self.spatial_context = nn.Linear(2 * spatial_channels, 2 * spatial_channels)
-            if "objects_emb" in extractors:
+                channels=spatial_channels, layers=arch["layers"])
+            if arch["context"]:
+                total_concat_size += 2 * spatial_channels
+                #: The pooled map into the context, through a projection that
+                #: starts at zero - see start_without_the_map.
+                self.spatial_context = nn.Linear(2 * spatial_channels, 2 * spatial_channels)
+            if arch["boxes"] and "objects_emb" in extractors:
                 # Into the object branch's hidden width, added to each
                 # object's own encoding before the objects attend to one
                 # another: see ObjectSetProcessor.spatial_rows.
                 self.spatial_objects = nn.Linear(
-                    spatial_channels, extractors["objects_emb"].processor.hidden_dim)
+                    spatial_channels * (2 if arch["box_peak"] else 1),
+                    extractors["objects_emb"].processor.hidden_dim)
         #: The rows and columns the coordinate heads score, or None. Built
         #: over the observation's own grid shape - which coordinate
         #: addressing pads to the action space's - from the colours and
@@ -1485,7 +1519,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 # Before the loop, where the object branch runs - the same
                 # side channel as the relation bias below.
                 boxes = SpatialBackbone.over_boxes(spatial[0], observation["objects_emb"],
-                                                   observation)
+                                                   observation, peak=self.spatial_arch["box_peak"])
                 self.extractors["objects_emb"].processor.spatial_rows = \
                     self.spatial_objects(boxes)
         if self.relation_bias is not None:
@@ -1536,7 +1570,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             encoded_tensor_list.append(res)
         if self.relation_messages is not None and object_slot is not None:
             encoded_tensor_list[object_slot] = self.pass_messages(observation)
-        if spatial is not None:
+        if spatial is not None and self.spatial_context is not None:
             encoded_tensor_list.append(self.spatial_context(SpatialBackbone.pooled(*spatial)))
         if self.pointer_slots is not None:
             encoded_tensor_list.append(self.pointer_tail())

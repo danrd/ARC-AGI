@@ -1,0 +1,23 @@
+{
+ "steps": [
+  {
+   "name": "qwen27b",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--max-tokens",
+    "1200",
+    "--hours",
+    "4",
+    "--skip",
+    "data/experiments/runs/kaggle/llm_only_qwen_*.jsonl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

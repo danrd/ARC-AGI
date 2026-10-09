@@ -11,6 +11,8 @@ be run often, by anyone: it
        downloads what they wrote and marks the job done (or failed, when a notebook ended in error)
     2. counts the free notebooks of each resource
     3. starts, in the order of the file, each queued job that fits
+    4. deletes from Kaggle the notebooks of every job that is done and gave files (what they wrote is in the
+       repository; a failed job keeps them, their logs say why)
 
 A job that does not fit waits, and jobs behind it that do fit go first: a queue that stops at the first job too
 big for the free slots leaves them idle. The state is the file, not a process, so a tick can be run from any
@@ -46,6 +48,7 @@ class Job:
     extras: str = "rl"
     note: str = ""
     result: List[str] = field(default_factory=list)       # the files collected
+    cleaned: bool = False            # the job's notebooks have been deleted from Kaggle
 
 
 def load(path=QUEUE) -> List[Job]:
@@ -70,8 +73,13 @@ def slots_used(jobs: List[Job], statuses: Dict[str, List[str]]) -> Dict[str, int
 
 
 def tick(jobs: List[Job], status_fn: Callable[[Job], List[str]], start_fn: Callable[[Job], None],
-         collect_fn: Callable[[Job], List[str]], capacity: Optional[Dict[str, int]] = None) -> List[str]:
-    """One pass over the queue; changes `jobs` and returns what it did, a line each."""
+         collect_fn: Callable[[Job], List[str]], capacity: Optional[Dict[str, int]] = None,
+         delete_fn: Optional[Callable[[Job], bool]] = None) -> List[str]:
+    """One pass over the queue; changes `jobs` and returns what it did, a line each.
+
+    With `delete_fn`, the notebooks of a job that is done and gave files are deleted from Kaggle (it returns
+    whether it did): what they wrote is in the repository and they only pile up. A job that failed, or finished
+    with no files, keeps its notebooks, since their logs are what says why."""
     capacity = capacity or CAPACITY
     events: List[str] = []
     statuses: Dict[str, List[str]] = {}
@@ -86,6 +94,12 @@ def tick(jobs: List[Job], status_fn: Callable[[Job], List[str]], start_fn: Calla
             job.status = "done" if all(s == "COMPLETE" for s in seen) else "failed"
             events.append(f"{job.name}: {job.status}, {len(job.result)} files collected")
             statuses[job.name] = seen
+
+    if delete_fn is not None:
+        for job in jobs:
+            if job.status == "done" and job.result and not job.cleaned and delete_fn(job):
+                job.cleaned = True
+                events.append(f"{job.name}: {job.shards} notebook(s) deleted from Kaggle")
 
     used = slots_used(jobs, statuses)
     for job in jobs:
@@ -118,6 +132,11 @@ def real_start(job: Job) -> None:
                  tpu=job.resource == "tpu")
 
 
+def real_delete(job: Job) -> bool:
+    import kaggle_launch as launch
+    return launch.delete(job.name, job.shards)
+
+
 def real_collect(job: Job) -> List[str]:
     import kaggle_launch as launch
     return [str(p.relative_to(ROOT)) for p in launch.collect(job.name, job.shards)]
@@ -142,7 +161,7 @@ def main():
                         args.setup, args.extras, args.note))
         save(jobs)
     elif args.command == "tick":
-        for line in tick(jobs, real_status, real_start, real_collect):
+        for line in tick(jobs, real_status, real_start, real_collect, delete_fn=real_delete):
             print(line)
         save(jobs)
     for job in jobs:

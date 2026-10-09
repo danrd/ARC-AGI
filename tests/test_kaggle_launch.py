@@ -73,3 +73,27 @@ def test_a_tpu_notebook_asks_for_the_tpu_and_not_the_gpu_and_installs_no_extras_
     code = launch.script("j", 0, 1, extras="")
     compile(code, "worker.py", "exec")
     assert "if e]" in code
+
+
+def test_deleting_a_jobs_notebooks_names_each_and_counts_one_already_gone_as_deleted(monkeypatch):
+    calls = []
+
+    class Result:
+        def __init__(self, code, text):
+            self.returncode, self.stdout, self.stderr = code, text, ""
+
+    answers = iter([Result(0, "Kernel x deleted successfully"), Result(1, "404 not found")])
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "kaggle", lambda *args: calls.append(args) or next(answers))
+    assert launch.delete("some_job", 2) is True
+    assert calls == [("kernels", "delete", "-y", "me/arc-worker-some-job-0"),
+                     ("kernels", "delete", "-y", "me/arc-worker-some-job-1")]
+
+
+def test_a_notebook_that_fails_to_delete_makes_the_whole_delete_false(monkeypatch):
+    class Result:
+        returncode, stdout, stderr = 1, "", "timeout talking to kaggle"
+
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "kaggle", lambda *args: Result())
+    assert launch.delete("j", 1) is False

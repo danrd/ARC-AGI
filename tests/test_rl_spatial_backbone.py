@@ -168,6 +168,23 @@ class TestAnAgent:
         finally:
             vec_env.close()
 
+    def test_spatial_arch_reaches_the_extractor_and_the_agent_learns(self):
+        """Every way of reading the map, through the config an arm sets, builds an agent that trains."""
+        for arch in ({"layers": 5}, {"box_peak": True}, {"context": False}, {"boxes": False}):
+            vec_env = create_vec_env(two_objects(), n_envs=1, max_episode_len=4,
+                                     feasible_actions={0: "submit", 1: "blue_recolor"},
+                                     observation_space_elements=["objects_emb"], repr_level=1,
+                                     input_pattern="start")
+            try:
+                agent = create_agent({"model_type": "PPO"}, vec_env,
+                                     {"n_steps": 16, "batch_size": 8, "verbose": 0,
+                                      "spatial_channels": 8, "spatial_arch": arch})
+                extractor = agent.policy.features_extractor
+                assert {k: extractor.spatial_arch[k] for k in arch} == arch
+                agent.learn(total_timesteps=32)
+            finally:
+                vec_env.close()
+
     def test_the_answer_s_delta_is_the_critic_s_alone(self):
         from tests.test_rl_coordinate_policy import coordinate_agent_with
         agent, vec_env = coordinate_agent_with({"spatial_channels": 8})
@@ -228,3 +245,57 @@ class TestStartingWithoutTheMap:
             assert extractor.spatial_context.weight.grad.abs().sum() > 0
         finally:
             vec_env.close()
+
+
+class TestHowTheMapIsRead:
+    """`spatial_arch`: each key changes what the extractor builds and reads, and a key it does not have is refused."""
+
+    def _extractor(self, **arch):
+        torch.manual_seed(0)
+        space = spaces.Dict({
+            "grid": spaces.Box(0, 10, shape=(5, 5), dtype=np.int64),
+            "objects_emb": spaces.Box(0, 1, shape=(2, OBJECT_DIM), dtype=np.float32)})
+        return ARCCombinedExtractor(space, spatial_channels=8, spatial_arch=arch).eval()
+
+    def _features(self, extractor):
+        objects = np.stack([object_row((1, 1, 3, 3), (5, 5)), np.zeros(OBJECT_DIM)])
+        return extractor(observation([np.zeros((5, 5), int)], objects=[objects]))
+
+    def test_the_default_is_the_map_as_first_measured(self):
+        plain, named = self._extractor(), self._extractor(layers=3, box_peak=False, context=True, boxes=True)
+        assert torch.allclose(self._features(plain), self._features(named))
+        assert len(plain.spatial.convs) == 3
+
+    def test_layers_is_the_number_of_convolutions(self):
+        assert len(self._extractor(layers=5).spatial.convs) == 5
+        assert len(self._extractor(layers=2).spatial.convs) == 2
+
+    def test_without_the_context_the_features_are_narrower_by_the_pooled_map(self):
+        base, without = self._extractor(), self._extractor(context=False)
+        assert without.spatial_context is None
+        assert base.features_dim - without.features_dim == 16
+        assert self._features(without).shape[1] == without.features_dim
+
+    def test_without_the_boxes_the_objects_do_not_read_the_map(self):
+        without = self._extractor(boxes=False)
+        assert without.spatial_objects is None and without.spatial_context is not None
+        assert self._features(without).shape[1] == without.features_dim
+
+    def test_the_peak_adds_the_max_over_the_box_to_the_mean(self):
+        features = torch.zeros(1, 2, 4, 4)
+        features[0, 0, 1, 1] = 5.0
+        features[0, 0, 2, 2] = 1.0
+        objects = np.stack([object_row((1, 1, 2, 3), (4, 4)), np.zeros(OBJECT_DIM)])
+        view = observation([np.zeros((4, 4), int)])
+        boxes = SpatialBackbone.over_boxes(features, torch.tensor(objects[None]), view, peak=True)
+        assert boxes.shape == (1, 2, 4)
+        assert torch.allclose(boxes[0, 0, :2], SpatialBackbone.over_boxes(features, torch.tensor(objects[None]), view)[0, 0])
+        assert boxes[0, 0, 2].item() == 5.0 and boxes[0, 0, 3].item() == 0.0
+        assert boxes[0, 1].abs().sum() == 0
+        peaked = self._extractor(box_peak=True)
+        assert peaked.spatial_objects.in_features == 16
+        assert self._features(peaked).shape[1] == peaked.features_dim
+
+    def test_a_key_that_is_not_one_is_refused(self):
+        with pytest.raises(ValueError, match="spatial_arch has no"):
+            self._extractor(depth=4)

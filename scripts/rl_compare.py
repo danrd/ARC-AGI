@@ -117,6 +117,16 @@ The fourth series, around o_spatial (MAP_ARMS), each one change from it:
     m_nopos     without absolute position in the object branch: the map now says where
     m_ptr64     per-object rows for the pointer heads 64 wide
 
+The fifth series, how the map is read (READ_ARMS), each one change from o_spatial
+(`spatial_arch`, rl.features.SPATIAL_ARCH). m_w16 .. m_ptr64 moved sizes and left
+the map's use as it was; these move the use:
+
+    r_deep      five convolutions instead of three: a wider view of the neighbourhood
+    r_shallow   two convolutions: less of it
+    r_peak      the objects read the max over their box beside the mean
+    r_noctx     the pooled map is not given to the context: only the objects read it
+    r_nobox     the objects do not read it: only the context (and the coordinate rows)
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -193,6 +203,13 @@ ARMS = {
     "m_w64": (DEFAULT_ELEMENTS, {"spatial_channels": 64}),
     "m_nopos": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_arch": {"use_position": False}}),
     "m_ptr64": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "pointer_dim": 64}),
+    # The fifth series, how the map is read: each arm one change to
+    # `spatial_arch` from o_spatial.
+    "r_deep": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"layers": 5}}),
+    "r_shallow": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"layers": 2}}),
+    "r_peak": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"box_peak": True}}),
+    "r_noctx": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"context": False}}),
+    "r_nobox": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"boxes": False}}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
@@ -202,6 +219,8 @@ OBJECT_ARMS = tuple(arm for arm in ARMS if arm.startswith("o_"))
 GRID_ARMS = tuple(arm for arm in ARMS if arm.startswith("s_"))
 #: The fourth series, against `o_spatial`.
 MAP_ARMS = tuple(arm for arm in ARMS if arm.startswith("m_"))
+#: The fifth series, against `o_spatial`.
+READ_ARMS = tuple(arm for arm in ARMS if arm.startswith("r_"))
 
 
 def arm_settings(arm):

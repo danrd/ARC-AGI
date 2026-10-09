@@ -75,7 +75,8 @@ class TestTheArms:
     def test_what_train_runs_by_default_is_the_first_series(self):
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
-        series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS)
+        series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS,
+                  compare.READ_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -104,6 +105,17 @@ class TestTheArms:
             assert moved == 1, (arm, changed)
         assert set(compare.arm_settings("m_norel")[0]) == {"objects_emb", *compare.DELTAS}
         assert compare.arm_settings("m_nopos")[1]["object_arch"] == {"use_position": False}
+
+    def test_every_reading_arm_is_o_spatial_with_one_spatial_arch_key_changed(self):
+        from rl.features import SPATIAL_ARCH
+        base_elements = compare.arm_settings("default")[0]
+        assert len(compare.READ_ARMS) == 5
+        for arm in compare.READ_ARMS:
+            elements, settings = compare.arm_settings(arm)
+            assert elements == base_elements and settings["spatial_channels"] == 32, arm
+            arch = settings["spatial_arch"]
+            assert len(arch) == 1 and set(arch) <= set(SPATIAL_ARCH), arm
+            assert arch != {key: SPATIAL_ARCH[key] for key in arch}, arm
 
     def test_a_train_command_without_arms_runs_the_first_series(self, tmp_path, monkeypatch):
         configs = tmp_path / "c.json"

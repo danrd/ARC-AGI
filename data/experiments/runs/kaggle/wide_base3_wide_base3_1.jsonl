@@ -1,0 +1,24 @@
+{"task": "a5f85a15", "arm": "default", "seed": 2, "held_out": -0.1818, "train": [1.0, 0.0, 0.3333], "steps_to_solve": [1.0, 1.0, 2.0], "steps": 250000, "seconds": 2011.6}
+{"task": "6e82a1ae", "arm": "o_spatial", "seed": 1, "held_out": 0.2222, "train": [0.6111, 0.75, 0.6364], "steps_to_solve": [5.0, 5.0, 4.0], "steps": 250000, "seconds": 2653.4}
+{"task": "794b24be", "arm": "default", "seed": 2, "held_out": 0.3333, "train": [1.0, 0.3333, 0.25, 0.3333, 1.0, 0.25, 0.4, 0.1667, 0.3333, 0.5714], "steps_to_solve": [2.0, 2.0, 25.0, 2.0, 3.0, 25.0, 2.0, 25.0, 2.0, 25.0], "steps": 250000, "seconds": 920.7}
+{"task": "868de0fa", "arm": "o_spatial", "seed": 0, "held_out": 0.0, "train": [0.6429, 1.0, 0.0, 0.0, 0.6098], "steps_to_solve": [2.0, 2.0, 25.0, 1.0, 25.0], "steps": 250000, "seconds": 4246.8}
+{"task": "b230c067", "arm": "o_spatial", "seed": 1, "held_out": 0.72, "train": [1.0, 1.0, 1.0], "steps_to_solve": [3.0, 3.0, 3.0], "steps": 250000, "seconds": 2492.9}
+{"task": "913fb3ed", "arm": "default", "seed": 2, "held_out": 1.0, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [3.0, 1.0, 2.0, 1.0], "steps": 250000, "seconds": 2108.3}
+{"task": "72322fa7", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 6519.5}
+{"task": "ce22a75a", "arm": "o_spatial", "seed": 1, "held_out": 1.0, "train": [1.0, 1.0], "steps_to_solve": [6.0, 8.0], "steps": 250000, "seconds": 3147.6}
+{"task": "a61f2674", "arm": "o_spatial", "seed": 1, "held_out": 0.2857, "train": [1.0, 1.0], "steps_to_solve": [5.0, 4.0], "steps": 250000, "seconds": 3030.3}
+{"task": "d23f8c26", "arm": "o_spatial", "seed": 2, "held_out": 0.5385, "train": [1.0, 0.5556, 0.625], "steps_to_solve": [3.0, 3.0, 2.0], "steps": 250000, "seconds": 2387.0}
+{"task": "af902bf9", "arm": "o_spatial", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3925.1}
+{"task": "7df24a62", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0, 1.0], "steps": 250000, "seconds": 7581.0}
+{"task": "b230c067", "arm": "o_spatial", "seed": 2, "held_out": 0.36, "train": [1.0, 1.0, 1.0], "steps_to_solve": [3.0, 3.0, 3.0], "steps": 250000, "seconds": 2457.3}
+{"task": "ddf7fa4f", "arm": "default", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 1900.7}
+{"task": "bda2d7a6", "arm": "o_spatial", "seed": 2, "held_out": 0.1111, "train": [1.0, 0.4722, 0.9375], "steps_to_solve": [3.0, 25.0, 4.0], "steps": 250000, "seconds": 2407.4}
+{"task": "913fb3ed", "arm": "o_spatial", "seed": 2, "held_out": 0.3333, "train": [0.3333, 1.0, 0.5, 1.0], "steps_to_solve": [2.0, 1.0, 2.0, 1.0], "steps": 250000, "seconds": 3380.5}
+{"task": "ded97339", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2666.6}
+{"task": "b27ca6d3", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0], "steps_to_solve": [1.0, 1.0], "steps": 250000, "seconds": 5826.3}
+{"task": "ea786f4a", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2604.5}
+{"task": "ba26e723", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0, 1.0, 1.0], "steps": 250000, "seconds": 2743.1}
+{"task": "d43fd935", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2144.3}
+{"task": "bda2d7a6", "arm": "default", "seed": 2, "held_out": 0.0, "train": [1.0, 0.8889, 0.75], "steps_to_solve": [3.0, 25.0, 25.0], "steps": 250000, "seconds": 1220.0}
+{"task": "d90796e8", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [1.0, 0.0, 0.0], "steps_to_solve": [2.0, 1.0, 1.0], "steps": 250000, "seconds": 1940.0}
+{"task": "ddf7fa4f", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [0.0, 0.2222, 0.0], "steps_to_solve": [1.0, 2.0, 1.0], "steps": 250000, "seconds": 1702.7}

@@ -2234,6 +2234,17 @@
     "data/experiments/runs/kaggle/llm_only_qwen_qwen27b_0.jsonl"
    ],
    "cleaned": true
+  },
+  {
+   "name": "wide_read2",
+   "resource": "cpu",
+   "shards": 4,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "\u0447\u0442\u0435\u043d\u0438\u0435 \u043a\u0430\u0440\u0442\u044b \u043d\u0430 103 \u0437\u0430\u0434\u0430\u0447\u0430\u0445: \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0435\u043d\u0438\u0435 wide_read (\u043b\u0438\u043c\u0438\u0442 \u0447\u0430\u0441\u043e\u0432 \u0432\u044b\u0448\u0435\u043b \u0440\u0430\u043d\u044c\u0448\u0435 \u043a\u043e\u043d\u0446\u0430), \u0442\u043e, \u0447\u0435\u0433\u043e \u0435\u0449\u0451 \u043d\u0435\u0442",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

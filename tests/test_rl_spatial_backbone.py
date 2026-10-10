@@ -14,7 +14,7 @@ import torch
 from gymnasium import spaces
 
 from rl.arc_task import ARCSubtask
-from rl.features import ARCCombinedExtractor, CoordinateRows, SpatialBackbone, true_cells
+from rl.features import ARCCombinedExtractor, CoordinateRows, ObjectCellAttention, SpatialBackbone, true_cells
 from rl.training import create_agent, create_vec_env
 from symbolic.objects_analysis import OBJECT_DIM, OBJECT_SCHEMA
 
@@ -299,3 +299,127 @@ class TestHowTheMapIsRead:
     def test_a_key_that_is_not_one_is_refused(self):
         with pytest.raises(ValueError, match="spatial_arch has no"):
             self._extractor(depth=4)
+
+
+class TestWhatAnObjectReadsTheMapOver:
+    """`spatial_arch["read"]`: the box (as it was), the object's own cells, the cells and the ring around them,
+    or attention over the whole grid."""
+
+    def _l_shaped(self):
+        """An L of colour 1 in a 4x4 grid whose box is rows 0-2, cols 0-2: its empty corner holds a 2."""
+        grid = np.zeros((4, 4), dtype=int)
+        grid[0:3, 0] = 1
+        grid[2, 0:3] = 1
+        grid[0, 2] = 2
+        obs = observation([grid], objects=[np.stack([object_row((0, 0, 2, 2), (4, 4)), np.zeros(OBJECT_DIM)])])
+        return grid, obs
+
+    def test_the_cells_of_an_object_are_the_cells_of_its_colour_in_its_box_and_not_the_whole_box(self):
+        grid, obs = self._l_shaped()
+        features = torch.zeros(1, 1, 4, 4)
+        cells = SpatialBackbone.cell_masks(features, obs["objects_emb"], obs)
+        assert cells[0, 0].sum() == 5 and cells[0, 0, 0, 0] == 1 and cells[0, 0, 0, 2] == 0   # the 2 in the corner is not it
+        assert cells[0, 1].sum() == 0
+        boxes = SpatialBackbone.box_masks(features, obs["objects_emb"], obs)
+        assert boxes[0, 0].sum() == 9
+
+    def test_a_slot_whose_colour_is_not_in_its_box_falls_back_to_the_box(self):
+        grid, obs = self._l_shaped()
+        obs["grid"] = torch.zeros_like(obs["grid"])                       # the object's colour is nowhere now
+        cells = SpatialBackbone.cell_masks(torch.zeros(1, 1, 4, 4), obs["objects_emb"], obs)
+        assert cells[0, 0].sum() == 9
+
+    def test_the_mean_over_cells_ignores_what_the_box_takes_in(self):
+        grid, obs = self._l_shaped()
+        features = torch.zeros(1, 1, 4, 4)
+        features[0, 0, 0, 2] = 90.0                                       # a loud cell inside the box, not the object's
+        features[0, 0, 0, 0] = 1.0
+        by_cells = SpatialBackbone.over_cells(features, obs["objects_emb"], obs)
+        by_box = SpatialBackbone.over_boxes(features, obs["objects_emb"], obs)
+        assert abs(by_cells[0, 0, 0].item() - 0.2) < 1e-6
+        assert by_box[0, 0, 0].item() > 10
+
+    def test_the_ring_is_the_cells_one_step_out_on_the_grid_and_not_the_object(self):
+        grid, obs = self._l_shaped()
+        features = torch.zeros(1, 1, 4, 4)
+        features[0, 0, 3, :] = 2.0                                        # the row below the object's lowest row
+        features[0, 0, 1, 1] = 4.0                                        # inside the L's bend: next to it
+        out = SpatialBackbone.over_cells(features, obs["objects_emb"], obs, ring=True)
+        assert out.shape == (1, 2, 2)
+        inside_the_object = out[0, 0, 0].item()
+        around = out[0, 0, 1].item()
+        assert inside_the_object == 0.0 and around > 0
+        assert out[0, 1].abs().sum() == 0                                  # an empty slot reads nothing
+
+    def test_the_ring_does_not_leave_the_grid(self):
+        grid = np.ones((3, 3), dtype=int)
+        obs = observation([grid], objects=[np.stack([object_row((0, 0, 2, 2), (3, 3))])], shapes=[[3, 3]])
+        out = SpatialBackbone.over_cells(torch.ones(1, 1, 3, 3), obs["objects_emb"], obs, ring=True)
+        assert out[0, 0, 1].item() == 0.0                                  # the object is the whole grid: nothing around it
+
+    def test_attention_reads_a_weighted_mean_of_the_whole_grid_and_an_empty_slot_reads_zero(self):
+        torch.manual_seed(0)
+        grid, obs = self._l_shaped()
+        reader = ObjectCellAttention(OBJECT_DIM, 1)
+        features = torch.full((1, 1, 4, 4), 3.0)
+        valid = true_cells(obs)
+        out = reader(features, valid, obs["objects_emb"])
+        assert torch.allclose(out[0, 0], torch.tensor([3.0]), atol=1e-5) and out[0, 1].abs().sum() == 0
+
+    def test_attention_does_not_look_at_padding(self):
+        torch.manual_seed(0)
+        grid = np.full((4, 4), 10)
+        grid[:2, :2] = 1
+        obs = observation([grid], shapes=[[2, 2]], objects=[np.stack([object_row((0, 0, 1, 1), (2, 2))])])
+        features = torch.zeros(1, 1, 4, 4)
+        features[0, 0, :2, :2] = 1.0
+        features[0, 0, 2:, :] = 500.0                                      # in the padding
+        out = ObjectCellAttention(OBJECT_DIM, 1)(features, true_cells(obs), obs["objects_emb"])
+        assert abs(out[0, 0, 0].item() - 1.0) < 1e-5
+
+    def _extractor(self, **arch):
+        torch.manual_seed(0)
+        space = spaces.Dict({
+            "grid": spaces.Box(0, 10, shape=(5, 5), dtype=np.int64),
+            "objects_emb": spaces.Box(0, 1, shape=(2, OBJECT_DIM), dtype=np.float32)})
+        return ARCCombinedExtractor(space, spatial_channels=8, spatial_arch=arch).eval()
+
+    @pytest.mark.parametrize("read", ["box", "cells", "ring", "attn"])
+    def test_every_read_builds_and_gives_features_of_the_declared_width(self, read):
+        extractor = self._extractor(read=read)
+        objects = np.stack([object_row((1, 1, 3, 3), (5, 5)), np.zeros(OBJECT_DIM)])
+        out = extractor(observation([np.zeros((5, 5), int)], objects=[objects]))
+        assert out.shape[1] == extractor.features_dim
+        assert extractor.spatial_objects.in_features == (16 if read == "ring" else 8)
+        assert (extractor.object_attention is not None) == (read == "attn")
+
+    def test_the_extractor_reads_the_map_the_way_its_arch_says(self):
+        """A loud cell in the object's box that is not the object: the box read takes it in, the cell read does not."""
+        grid, obs = self._l_shaped()
+        features = torch.zeros(1, 8, 4, 4)
+        features[0, 0, 0, 2] = 90.0
+        features[0, 0, 0, 0] = 1.0
+        by_box = self._extractor(read="box").read_map((features, true_cells(obs)), obs)
+        by_cells = self._extractor(read="cells").read_map((features, true_cells(obs)), obs)
+        assert by_box[0, 0, 0].item() > 5 and abs(by_cells[0, 0, 0].item() - 0.2) < 1e-6
+
+    def test_an_unknown_read_and_a_peak_with_a_cell_read_are_refused(self):
+        with pytest.raises(ValueError, match="read is"):
+            self._extractor(read="mask")
+        with pytest.raises(ValueError, match="box_peak"):
+            self._extractor(read="cells", box_peak=True)
+
+    def test_each_read_reaches_an_agent_that_learns(self):
+        for read in ("cells", "ring", "attn"):
+            vec_env = create_vec_env(two_objects(), n_envs=1, max_episode_len=4,
+                                     feasible_actions={0: "submit", 1: "blue_recolor"},
+                                     observation_space_elements=["objects_emb"], repr_level=1,
+                                     input_pattern="start")
+            try:
+                agent = create_agent({"model_type": "PPO"}, vec_env,
+                                     {"n_steps": 16, "batch_size": 8, "verbose": 0,
+                                      "spatial_channels": 8, "spatial_arch": {"read": read}})
+                assert agent.policy.features_extractor.spatial_arch["read"] == read
+                agent.learn(total_timesteps=32)
+            finally:
+                vec_env.close()

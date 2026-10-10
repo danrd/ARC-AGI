@@ -1,0 +1,24 @@
+{"task": "67385a82", "arm": "o_spatial", "seed": 0, "held_out": 0.4444, "train": [0.3333, 0.5, 0.375, 0.8571], "steps_to_solve": [2.0, 2.0, 25.0, 2.0], "steps": 250000, "seconds": 1604.8}
+{"task": "72322fa7", "arm": "default", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2656.4}
+{"task": "776ffc46", "arm": "o_spatial", "seed": 1, "held_out": -0.9, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [2.0, 2.0, 2.0, 1.0], "steps": 250000, "seconds": 3308.6}
+{"task": "7df24a62", "arm": "o_spatial", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0, 1.0], "steps": 250000, "seconds": 4887.3}
+{"task": "a699fb00", "arm": "default", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2281.2}
+{"task": "7df24a62", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0, 1.0], "steps": 250000, "seconds": 5183.2}
+{"task": "868de0fa", "arm": "o_spatial", "seed": 1, "held_out": 0.7463, "train": [0.6429, 0.9412, 0.4, 0.0714, 1.0], "steps_to_solve": [2.0, 25.0, 25.0, 2.0, 2.0], "steps": 250000, "seconds": 2806.3}
+{"task": "7b6016b9", "arm": "o_spatial", "seed": 2, "held_out": 0.5035, "train": [0.5843, 0.654, 0.514], "steps_to_solve": [25.0, 2.0, 25.0], "steps": 250000, "seconds": 5435.5}
+{"task": "af902bf9", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2732.6}
+{"task": "9dfd6313", "arm": "default", "seed": 2, "held_out": 0.0, "train": [0.5, 0.5, 0.5], "steps_to_solve": [2.0, 3.0, 4.0], "steps": 250000, "seconds": 1389.9}
+{"task": "82819916", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0, 1.0], "steps": 250000, "seconds": 2904.3}
+{"task": "9dfd6313", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.5, 0.5, 0.5], "steps_to_solve": [2.0, 3.0, 4.0], "steps": 250000, "seconds": 1725.3}
+{"task": "bda2d7a6", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [1.0, 1.0, 0.8125], "steps_to_solve": [3.0, 3.0, 25.0], "steps": 250000, "seconds": 1734.4}
+{"task": "b230c067", "arm": "default", "seed": 2, "held_out": 0.64, "train": [1.0, 1.0, 0.7143], "steps_to_solve": [3.0, 3.0, 25.0], "steps": 250000, "seconds": 1266.4}
+{"task": "a5f85a15", "arm": "o_spatial", "seed": 1, "held_out": 0.0, "train": [1.0, 0.0, 0.3333], "steps_to_solve": [1.0, 1.0, 2.0], "steps": 250000, "seconds": 2069.2}
+{"task": "ea32f347", "arm": "o_spatial", "seed": 1, "held_out": 0.3571, "train": [0.7857, 0.8333, 0.7857, 0.4375], "steps_to_solve": [3.0, 3.0, 3.0, 2.0], "steps": 250000, "seconds": 1541.8}
+{"task": "d90796e8", "arm": "o_spatial", "seed": 0, "held_out": 0.1667, "train": [1.0, 0.5, 0.1667], "steps_to_solve": [2.0, 3.0, 2.0], "steps": 250000, "seconds": 2214.7}
+{"task": "ded97339", "arm": "default", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 1366.7}
+{"task": "ea32f347", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.7857, 0.8333, 0.7857, 0.75], "steps_to_solve": [25.0, 25.0, 25.0, 25.0], "steps": 250000, "seconds": 1501.0}
+{"task": "ef135b50", "arm": "default", "seed": 2, "held_out": 0.4286, "train": [1.0, 0.7692, 0.0], "steps_to_solve": [2.0, 2.0, 1.0], "steps": 250000, "seconds": 1314.9}
+{"task": "b27ca6d3", "arm": "o_spatial", "seed": 0, "held_out": 0.2083, "train": [1.0, 0.3684], "steps_to_solve": [1.0, 2.0], "steps": 250000, "seconds": 4406.0}
+{"task": "f15e1fac", "arm": "o_spatial", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3487.6}
+{"task": "f15e1fac", "arm": "o_spatial", "seed": 2, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3384.7}
+{"task": "dc433765", "arm": "o_spatial", "seed": 0, "held_out": 0.5, "train": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "steps_to_solve": [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0], "steps": 250000, "seconds": 1268.4}

@@ -1176,6 +1176,39 @@ class SpatialBackbone(nn.Module):
         return torch.cat([mean, torch.stack(tops, dim=1)], dim=-1)
 
     @staticmethod
+    def cell_masks(features, objects, observation):
+        """(batch, slots, rows, cols) float: the cells of each object, as far as the observation says them - the
+        cells inside its bounding box whose colour is one of its colours (`color_shares`). A bounding box takes in
+        the empty corner of an L and whatever lies in it; this takes only what is the object's colour. Another
+        object of the same colour inside the box is still taken in. A slot whose colours are nowhere in its box
+        (a grid that has changed under it) falls back to the box."""
+        boxes = SpatialBackbone.box_masks(features, objects, observation)
+        shares = objects.float()[..., :10]
+        colours = torch.cat([(shares > 0).float(), torch.zeros_like(shares[..., :1])], dim=-1)   # the pad value is none
+        grid = observation["grid"].to(torch.int64).clamp(0, 10)
+        batch, slots = shares.shape[:2]
+        same = torch.gather(colours, 2, grid.reshape(batch, 1, -1).expand(batch, slots, -1)).view_as(boxes)
+        cells = boxes * same
+        empty = cells.sum(dim=(2, 3), keepdim=True) == 0
+        return torch.where(empty, boxes, cells)
+
+    @staticmethod
+    def over_cells(features, objects, observation, ring: bool = False):
+        """(batch, slots, channels): the mean of F over each object's own cells (cell_masks). With `ring`,
+        (batch, slots, 2 * channels): then the mean over the cells around it, one step out in each direction and
+        on the grid - what the object lies next to, which a box that is mostly the object cannot say."""
+        cells = SpatialBackbone.cell_masks(features, objects, observation)
+        mean = torch.einsum("bshw,bchw->bsc", cells, features) / cells.sum(dim=(2, 3)).clamp(min=1).unsqueeze(-1)
+        if not ring:
+            return mean
+        batch, slots, rows, cols = cells.shape
+        grown = torch.nn.functional.max_pool2d(cells.reshape(batch * slots, 1, rows, cols), 3, 1, 1)
+        around = (grown.view_as(cells) - cells).clamp(min=0) * true_cells(observation).unsqueeze(1).float()
+        around = around * (cells.sum(dim=(2, 3), keepdim=True) > 0).float()
+        outside = torch.einsum("bshw,bchw->bsc", around, features) / around.sum(dim=(2, 3)).clamp(min=1).unsqueeze(-1)
+        return torch.cat([mean, outside], dim=-1)
+
+    @staticmethod
     def over_lines(features, valid):
         """((batch, rows, 2 * channels), (batch, cols, 2 * channels)): mean
         and max of F along each row and along each column, over true cells."""
@@ -1186,6 +1219,27 @@ class SpatialBackbone(nn.Module):
         rows = torch.cat([row_mean, masked.amax(dim=3)], dim=1).transpose(1, 2)
         cols = torch.cat([col_mean, masked.amax(dim=2)], dim=1).transpose(1, 2)
         return rows, cols
+
+
+class ObjectCellAttention(nn.Module):
+    """Each object asks the map where to look: its own numbers make a query, the map's cells are the keys and the
+    values, and what it reads is the softmax-weighted mean of the cells - over the whole grid, so an object far
+    from the cell that matters can still find it, which a box or the object's own cells cannot do. An empty slot
+    reads zeros."""
+
+    def __init__(self, object_dim: int, channels: int):
+        super().__init__()
+        self.query = nn.Linear(object_dim, channels)
+        self.scale = channels ** -0.5
+
+    def forward(self, features, valid, objects):
+        batch, channels, rows, cols = features.shape
+        queries = self.query(objects.float())                                         # (batch, slots, channels)
+        scores = torch.einsum("bsc,bchw->bshw", queries, features) * self.scale
+        scores = scores.masked_fill(~valid.unsqueeze(1), float("-inf"))
+        weights = torch.softmax(scores.flatten(2), dim=-1).view_as(scores)
+        read = torch.einsum("bshw,bchw->bsc", weights, features)
+        return read * (objects.abs().sum(dim=-1) != 0).float().unsqueeze(-1)
 
 
 class CoordinateRows(nn.Module):
@@ -1291,7 +1345,10 @@ class CoordinateRows(nn.Module):
 
 
 #: How the map is built and read when `spatial_arch` says nothing.
-SPATIAL_ARCH = {"layers": 3, "box_peak": False, "context": True, "boxes": True}
+SPATIAL_ARCH = {"layers": 3, "box_peak": False, "context": True, "boxes": True, "read": "box"}
+#: How an object reads the map: the mean over its bounding box, over its own cells, over its cells and the ring
+#: around them, or by attention over the whole grid.
+READS = ("box", "cells", "ring", "attn")
 
 
 class ARCCombinedExtractor(BaseFeaturesExtractor):
@@ -1326,7 +1383,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         from SPATIAL_ARCH: `layers` of convolutions, `box_peak` (the objects
         read the max over their box as well as the mean), `context` (the
         pooled map joins the context), `boxes` (the objects read the map
-        at all).
+        at all), `read` (what they read it over: READS).
 
         `relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
@@ -1453,10 +1510,15 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         self.spatial = None
         self.spatial_objects = None
         self.spatial_context = None
+        self.object_attention = None
         unknown = set(spatial_arch or {}) - set(SPATIAL_ARCH)
         if unknown:
             raise ValueError(f"spatial_arch has no {sorted(unknown)}; it has {sorted(SPATIAL_ARCH)}")
         self.spatial_arch = {**SPATIAL_ARCH, **(spatial_arch or {})}
+        if self.spatial_arch["read"] not in READS:
+            raise ValueError(f"spatial_arch read is {self.spatial_arch['read']!r}; it is one of {READS}")
+        if self.spatial_arch["read"] != "box" and self.spatial_arch["box_peak"]:
+            raise ValueError("box_peak is for the box read")
         if spatial_channels and "grid" in observation_space.spaces:
             arch = self.spatial_arch
             self.spatial = SpatialBackbone(
@@ -1472,9 +1534,12 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 # Into the object branch's hidden width, added to each
                 # object's own encoding before the objects attend to one
                 # another: see ObjectSetProcessor.spatial_rows.
+                wide = arch["box_peak"] or arch["read"] == "ring"
                 self.spatial_objects = nn.Linear(
-                    spatial_channels * (2 if arch["box_peak"] else 1),
-                    extractors["objects_emb"].processor.hidden_dim)
+                    spatial_channels * (2 if wide else 1), extractors["objects_emb"].processor.hidden_dim)
+                if arch["read"] == "attn":
+                    self.object_attention = ObjectCellAttention(
+                        observation_space.spaces["objects_emb"].shape[-1], spatial_channels)
         #: The rows and columns the coordinate heads score, or None. Built
         #: over the observation's own grid shape - which coordinate
         #: addressing pads to the action space's - from the colours and
@@ -1518,8 +1583,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             if self.spatial_objects is not None:
                 # Before the loop, where the object branch runs - the same
                 # side channel as the relation bias below.
-                boxes = SpatialBackbone.over_boxes(spatial[0], observation["objects_emb"],
-                                                   observation, peak=self.spatial_arch["box_peak"])
+                boxes = self.read_map(spatial, observation)
                 self.extractors["objects_emb"].processor.spatial_rows = \
                     self.spatial_objects(boxes)
         if self.relation_bias is not None:
@@ -1583,6 +1647,19 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         if self.factored_width:
             encoded_tensor_list.append(self.factored_tail(observation))
         return torch.cat(encoded_tensor_list, dim=1)
+
+    def read_map(self, spatial, observation) -> torch.Tensor:
+        """What each object reads of the map, by `spatial_arch["read"]`: (batch, slots, channels or twice that)."""
+        features, valid = spatial
+        objects = observation["objects_emb"]
+        read = self.spatial_arch["read"]
+        if read == "cells":
+            return SpatialBackbone.over_cells(features, objects, observation)
+        if read == "ring":
+            return SpatialBackbone.over_cells(features, objects, observation, ring=True)
+        if read == "attn":
+            return self.object_attention(features, valid, objects)
+        return SpatialBackbone.over_boxes(features, objects, observation, peak=self.spatial_arch["box_peak"])
 
     def start_without_the_map(self):
         """Zero the projections the map enters the objects and the context

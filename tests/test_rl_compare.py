@@ -109,7 +109,7 @@ class TestTheArms:
     def test_every_reading_arm_is_o_spatial_with_one_spatial_arch_key_changed(self):
         from rl.features import SPATIAL_ARCH
         base_elements = compare.arm_settings("default")[0]
-        assert len(compare.READ_ARMS) == 5
+        assert set(compare.READ_ARMS) == {"r_deep", "r_shallow", "r_peak", "r_noctx", "r_nobox", "r_cells", "r_ring", "r_attn"}
         for arm in compare.READ_ARMS:
             elements, settings = compare.arm_settings(arm)
             assert elements == base_elements and settings["spatial_channels"] == 32, arm

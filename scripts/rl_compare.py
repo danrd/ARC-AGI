@@ -127,6 +127,13 @@ the map's use as it was; these move the use:
     r_noctx     the pooled map is not given to the context: only the objects read it
     r_nobox     the objects do not read it: only the context (and the coordinate rows)
 
+and three that change what an object reads the map over - not the size or depth of the map, which the
+others and the m_ series moved, but the way it is read:
+
+    r_cells     the mean over the object's own cells (the cells of its colours in its box) instead of its box
+    r_ring      that, and the mean over the ring of cells around it: what it lies next to
+    r_attn      attention: the object's numbers make a query, and it reads a weighted mean of the whole grid
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -210,6 +217,9 @@ ARMS = {
     "r_peak": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"box_peak": True}}),
     "r_noctx": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"context": False}}),
     "r_nobox": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"boxes": False}}),
+    "r_cells": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"read": "cells"}}),
+    "r_ring": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"read": "ring"}}),
+    "r_attn": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"read": "attn"}}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")

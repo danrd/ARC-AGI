@@ -2171,12 +2171,17 @@
    "name": "wide_read",
    "resource": "cpu",
    "shards": 4,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "\u043a\u0430\u0440\u0442\u0430 \u043d\u0430 \u0432\u0441\u0435\u0445 103 \u0437\u0430\u0434\u0430\u0447\u0430\u0445: \u0447\u0442\u0435\u043d\u0438\u0435 \u043a\u0430\u0440\u0442\u044b r_peak, r_deep, r_noctx, r_nobox, r_shallow, \u0441\u0438\u0434\u044b 0-2",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/wide_read_wide_read_0.jsonl",
+    "data/experiments/runs/kaggle/wide_read_wide_read_1.jsonl",
+    "data/experiments/runs/kaggle/wide_read_wide_read_2.jsonl",
+    "data/experiments/runs/kaggle/wide_read_wide_read_3.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "llm_only",

@@ -1,0 +1,28 @@
+{"task": "4258a5f9", "arm": "r_cells", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0], "steps_to_solve": [3.0, 4.0], "steps": 250000, "seconds": 3264.7}
+{"task": "4258a5f9", "arm": "r_ring", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0], "steps_to_solve": [3.0, 4.0], "steps": 250000, "seconds": 3300.9}
+{"task": "05f2a901", "arm": "r_ring", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3605.3}
+{"task": "4347f46a", "arm": "r_ring", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [4.0, 1.0, 2.0], "steps": 250000, "seconds": 4582.7}
+{"task": "3c9b0459", "arm": "r_cells", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [2.0, 2.0, 2.0, 2.0], "steps": 250000, "seconds": 1715.8}
+{"task": "6d75e8bb", "arm": "r_cells", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 3.0], "steps": 250000, "seconds": 3136.4}
+{"task": "44d8ac46", "arm": "r_ring", "seed": 5, "held_out": 1.0, "train": [0.8, 0.7619, 1.0, 1.0], "steps_to_solve": [2.0, 2.0, 1.0, 1.0], "steps": 250000, "seconds": 2642.0}
+{"task": "4347f46a", "arm": "o_spatial", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [4.0, 1.0, 2.0], "steps": 250000, "seconds": 4390.2}
+{"task": "60b61512", "arm": "o_spatial", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0], "steps_to_solve": [2.0, 2.0], "steps": 250000, "seconds": 2776.6}
+{"task": "6d75e8bb", "arm": "r_ring", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 3.0], "steps": 250000, "seconds": 3210.6}
+{"task": "67385a82", "arm": "r_ring", "seed": 5, "held_out": 0.2222, "train": [0.3333, 0.0, 0.625, 0.2857], "steps_to_solve": [2.0, 1.0, 3.0, 2.0], "steps": 250000, "seconds": 2369.5}
+{"task": "50cb2852", "arm": "o_spatial", "seed": 5, "held_out": 0.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [3.0, 2.0, 3.0], "steps": 250000, "seconds": 3620.5}
+{"task": "50cb2852", "arm": "r_ring", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [3.0, 2.0, 3.0], "steps": 250000, "seconds": 3758.8}
+{"task": "74dd1130", "arm": "r_cells", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [2.0, 2.0, 2.0, 2.0], "steps": 250000, "seconds": 1781.0}
+{"task": "67385a82", "arm": "o_spatial", "seed": 6, "held_out": 0.2222, "train": [0.3333, 0.25, 0.75, 0.4286], "steps_to_solve": [2.0, 2.0, 4.0, 3.0], "steps": 250000, "seconds": 2334.1}
+{"task": "6d75e8bb", "arm": "o_spatial", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 3.0], "steps": 250000, "seconds": 3098.0}
+{"task": "b1948b0a", "arm": "o_spatial", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2561.0}
+{"task": "a2fd1cf0", "arm": "r_ring", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3997.5}
+{"task": "c8f0f002", "arm": "r_cells", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2427.1}
+{"task": "dc1df850", "arm": "o_spatial", "seed": 5, "held_out": 0.3333, "train": [0.7273, 0.7273, 1.0], "steps_to_solve": [2.0, 2.0, 1.0], "steps": 250000, "seconds": 3005.1}
+{"task": "913fb3ed", "arm": "o_spatial", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [3.0, 1.0, 2.0, 1.0], "steps": 250000, "seconds": 3566.2}
+{"task": "810b9b61", "arm": "r_ring", "seed": 6, "held_out": 0.4167, "train": [1.0, 1.0, 1.0], "steps_to_solve": [4.0, 1.0, 1.0], "steps": 250000, "seconds": 4276.9}
+{"task": "ce22a75a", "arm": "o_spatial", "seed": 5, "held_out": 0.9722, "train": [1.0, 1.0], "steps_to_solve": [6.0, 8.0], "steps": 250000, "seconds": 3119.6}
+{"task": "f76d97a5", "arm": "r_ring", "seed": 6, "held_out": 0.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [2.0, 2.0, 2.0], "steps": 250000, "seconds": 2315.4}
+{"task": "b1948b0a", "arm": "r_cells", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2415.3}
+{"task": "a2fd1cf0", "arm": "r_ring", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3126.6}
+{"task": "c8f0f002", "arm": "o_spatial", "seed": 6, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 1610.3}
+{"task": "d4a91cb9", "arm": "o_spatial", "seed": 5, "held_out": 1.0, "train": [1.0, 1.0, 1.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 2121.5}

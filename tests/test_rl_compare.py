@@ -109,12 +109,13 @@ class TestTheArms:
     def test_every_reading_arm_is_o_spatial_with_one_spatial_arch_key_changed(self):
         from rl.features import SPATIAL_ARCH
         base_elements = compare.arm_settings("default")[0]
-        assert set(compare.READ_ARMS) == {"r_deep", "r_shallow", "r_peak", "r_noctx", "r_nobox", "r_cells", "r_ring", "r_attn"}
+        assert set(compare.READ_ARMS) == {"r_deep", "r_shallow", "r_peak", "r_noctx", "r_nobox", "r_cells", "r_ring", "r_attn",
+                                         "r_dilated", "r_pyramid", "r_resid", "r_norm", "r_resnorm"}
         for arm in compare.READ_ARMS:
             elements, settings = compare.arm_settings(arm)
             assert elements == base_elements and settings["spatial_channels"] == 32, arm
             arch = settings["spatial_arch"]
-            assert len(arch) == 1 and set(arch) <= set(SPATIAL_ARCH), arm
+            assert len(arch) == (2 if arm == "r_resnorm" else 1) and set(arch) <= set(SPATIAL_ARCH), arm   # r_resnorm is r_resid and r_norm together
             assert arch != {key: SPATIAL_ARCH[key] for key in arch}, arm
 
     def test_a_train_command_without_arms_runs_the_first_series(self, tmp_path, monkeypatch):

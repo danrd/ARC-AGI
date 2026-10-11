@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import torch
 from gymnasium import spaces
+from torch import nn
 
 from rl.arc_task import ARCSubtask
 from rl.features import ARCCombinedExtractor, CoordinateRows, ObjectCellAttention, SpatialBackbone, true_cells
@@ -420,6 +421,89 @@ class TestWhatAnObjectReadsTheMapOver:
                                      {"n_steps": 16, "batch_size": 8, "verbose": 0,
                                       "spatial_channels": 8, "spatial_arch": {"read": read}})
                 assert agent.policy.features_extractor.spatial_arch["read"] == read
+                agent.learn(total_timesteps=32)
+            finally:
+                vec_env.close()
+
+
+class TestHowTheMapIsBuilt:
+    """`dilations`, `scales`, `residual`, `norm`: a wider view, coarser paths, a shortcut and a per-cell normalisation -
+    each leaves padding out of what a true cell reads."""
+
+    def _influence(self, distance, **arch):
+        """Does changing one cell `distance` columns away change the map at the middle of a 1x21 strip?"""
+        torch.manual_seed(0)
+        backbone = SpatialBackbone(["grid"], [], channels=4, **arch).eval()
+        base = np.zeros((1, 21), dtype=int)
+        changed = base.copy()
+        changed[0, 10 + distance] = 3
+        with torch.no_grad():
+            a, _ = backbone(observation([base], shapes=[[1, 21]]))
+            b, _ = backbone(observation([changed], shapes=[[1, 21]]))
+        return (a[0, :, 0, 10] - b[0, :, 0, 10]).abs().sum().item() > 1e-7
+
+    def test_three_plain_layers_see_three_cells_either_way_and_dilated_ones_seven(self):
+        assert self._influence(3, layers=3) and not self._influence(4, layers=3)
+        assert self._influence(7, layers=3, dilations=(1, 2, 4)) and not self._influence(8, layers=3, dilations=(1, 2, 4))
+
+    def test_a_coarse_path_lets_a_far_cell_be_heard(self):
+        assert not self._influence(8, layers=3)
+        assert self._influence(8, layers=3, scales=2)
+
+    def test_residual_adds_the_layers_input_from_the_second_layer_on(self):
+        torch.manual_seed(0)
+        backbone = SpatialBackbone(["grid"], [], channels=4, residual=True).eval()
+        first = SpatialBackbone(["grid"], [], channels=4, layers=1).eval()
+        first.convs[0].load_state_dict(backbone.convs[0].state_dict())
+        for conv in backbone.convs[1:]:
+            nn.init.zeros_(conv.weight)
+            nn.init.zeros_(conv.bias)
+        grid = np.array([[1, 2, 0], [0, 3, 1], [4, 0, 2]])
+        with torch.no_grad():
+            through, _ = backbone(observation([grid], shapes=[[3, 3]]))
+            once, _ = first(observation([grid], shapes=[[3, 3]]))
+        assert torch.allclose(through, once, atol=1e-6) and once.abs().sum() > 0
+
+    @pytest.mark.parametrize("arch", [{"dilations": (1, 2, 4)}, {"scales": 2}, {"residual": True}, {"norm": "cell"},
+                                      {"residual": True, "norm": "cell", "scales": 1}])
+    def test_padding_does_not_change_what_a_true_cell_reads(self, arch):
+        torch.manual_seed(0)
+        backbone = SpatialBackbone(["grid"], [], channels=4, **arch).eval()
+        small = np.array([[1, 0, 2, 5, 1], [0, 3, 0, 2, 2], [4, 0, 5, 1, 0], [1, 1, 0, 3, 2], [2, 0, 1, 0, 4]])
+        padded = np.full((9, 8), 10)
+        padded[:5, :5] = small
+        with torch.no_grad():
+            alone, _ = backbone(observation([small], shapes=[[5, 5]]))
+            inside, _ = backbone(observation([padded], shapes=[[5, 5]]))
+        assert torch.allclose(alone[0], inside[0, :, :5, :5], atol=1e-5)
+        assert inside[0, :, 5:, :].abs().sum() == 0 and inside[0, :, :, 5:].abs().sum() == 0
+
+    def test_the_cell_norm_changes_what_the_map_computes(self):
+        torch.manual_seed(0)
+        plain, normed = SpatialBackbone(["grid"], [], channels=4).eval(), SpatialBackbone(["grid"], [], channels=4, norm="cell").eval()
+        normed.load_state_dict(plain.state_dict())
+        grid = np.random.RandomState(0).randint(0, 10, size=(5, 5))
+        with torch.no_grad():
+            a, _ = plain(observation([grid]))
+            b, _ = normed(observation([grid]))
+        assert not torch.allclose(a, b)
+
+    def test_a_dilations_list_of_the_wrong_length_and_an_unknown_norm_are_refused(self):
+        with pytest.raises(ValueError, match="dilations"):
+            SpatialBackbone(["grid"], [], channels=4, layers=3, dilations=(1, 2))
+        with pytest.raises(ValueError, match="norm"):
+            SpatialBackbone(["grid"], [], channels=4, norm="batch")
+
+    def test_each_way_of_building_it_reaches_an_agent_that_learns(self):
+        for arch in ({"dilations": [1, 2, 4]}, {"scales": 2}, {"residual": True, "norm": "cell"}):
+            vec_env = create_vec_env(two_objects(), n_envs=1, max_episode_len=4,
+                                     feasible_actions={0: "submit", 1: "blue_recolor"},
+                                     observation_space_elements=["objects_emb"], repr_level=1,
+                                     input_pattern="start")
+            try:
+                agent = create_agent({"model_type": "PPO"}, vec_env,
+                                     {"n_steps": 16, "batch_size": 8, "verbose": 0,
+                                      "spatial_channels": 8, "spatial_arch": arch})
                 agent.learn(total_timesteps=32)
             finally:
                 vec_env.close()

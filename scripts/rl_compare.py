@@ -134,6 +134,14 @@ others and the m_ series moved, but the way it is read:
     r_ring      that, and the mean over the ring of cells around it: what it lies next to
     r_attn      attention: the object's numbers make a query, and it reads a weighted mean of the whole grid
 
+and five that change how the map itself is built (SpatialBackbone):
+
+    r_dilated   dilations 1, 2, 4 in the three layers: 15 cells across instead of 7, with the same layers
+    r_pyramid   two coarser paths (by 2 and by 4), convolved, upsampled and added: a far cell is heard by a short way
+    r_resid     each layer's input added to its output from the second on
+    r_norm      each cell's channels normalised, one cell at a time (padding stays out of it)
+    r_resnorm   both
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -220,6 +228,11 @@ ARMS = {
     "r_cells": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"read": "cells"}}),
     "r_ring": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"read": "ring"}}),
     "r_attn": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"read": "attn"}}),
+    "r_dilated": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"dilations": [1, 2, 4]}}),
+    "r_pyramid": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"scales": 2}}),
+    "r_resid": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"residual": True}}),
+    "r_norm": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"norm": "cell"}}),
+    "r_resnorm": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"residual": True, "norm": "cell"}}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")

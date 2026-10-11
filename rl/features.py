@@ -1079,14 +1079,28 @@ class SpatialBackbone(nn.Module):
     critic's the answer's too, so the same class reads what each may.
     """
 
-    def __init__(self, grid_keys, delta_keys, channels: int = 32, layers: int = 3):
+    def __init__(self, grid_keys, delta_keys, channels: int = 32, layers: int = 3, dilations=None, scales: int = 0,
+                 residual: bool = False, norm: str = "none"):
+        """`dilations` gives each convolution a spacing (1 is the plain 3x3): (1, 2, 4) sees 15 cells across with
+        the same three layers where (1, 1, 1) sees 7. `scales` adds that many coarser paths (the map pooled by 2,
+        by 4 ...), convolved and upsampled back and added in, so a cell hears of what is far off by a short way.
+        `residual` adds each layer's input to its output from the second on, and `norm` ("cell") normalises each
+        cell's channels - one cell at a time, so padding stays out of every statistic."""
         super().__init__()
         self.grid_keys = tuple(grid_keys)
         self.delta_keys = tuple(delta_keys)
         inputs = 10 * len(self.grid_keys) + len(self.delta_keys) + 3
         widths = [inputs] + [channels] * layers
-        self.convs = nn.ModuleList(nn.Conv2d(a, b, kernel_size=3, padding=1)
-                                   for a, b in zip(widths, widths[1:]))
+        dilations = tuple(dilations) if dilations else (1,) * layers
+        if len(dilations) != layers:
+            raise ValueError(f"dilations has {len(dilations)} entries for {layers} layers")
+        if norm not in ("none", "cell"):
+            raise ValueError(f"norm is {norm!r}; it is 'none' or 'cell'")
+        self.convs = nn.ModuleList(nn.Conv2d(a, b, kernel_size=3, padding=d, dilation=d)
+                                   for (a, b), d in zip(zip(widths, widths[1:]), dilations))
+        self.coarse = nn.ModuleList(nn.Conv2d(channels, channels, kernel_size=3, padding=1) for _ in range(scales))
+        self.residual = residual
+        self.norm = norm
         self.channels = channels
 
     def planes(self, observation, valid):
@@ -1119,8 +1133,22 @@ class SpatialBackbone(nn.Module):
         valid = true_cells(observation)
         mask = valid.unsqueeze(1).float()
         features = self.planes(observation, valid)
-        for conv in self.convs:
-            features = torch.relu(conv(features)) * mask
+        for number, conv in enumerate(self.convs):
+            out = conv(features)
+            if self.norm == "cell":
+                out = torch.nn.functional.layer_norm(out.permute(0, 2, 3, 1), (out.shape[1],)).permute(0, 3, 1, 2)
+            out = torch.relu(out)
+            if self.residual and number > 0:
+                out = out + features
+            features = out * mask
+        for level, conv in enumerate(self.coarse):
+            step = 2 ** (level + 1)
+            # the mean over the true cells of each block, so the padding is no part of it
+            counts = torch.nn.functional.avg_pool2d(mask, step, ceil_mode=True)
+            far = torch.nn.functional.avg_pool2d(features, step, ceil_mode=True) / counts.clamp(min=1e-6)
+            far = torch.relu(conv(far * (counts > 0).float()))
+            far = torch.nn.functional.interpolate(far, scale_factor=step, mode="nearest")
+            features = features + far[:, :, :features.shape[2], :features.shape[3]] * mask
         return features, valid
 
     @staticmethod
@@ -1345,7 +1373,8 @@ class CoordinateRows(nn.Module):
 
 
 #: How the map is built and read when `spatial_arch` says nothing.
-SPATIAL_ARCH = {"layers": 3, "box_peak": False, "context": True, "boxes": True, "read": "box"}
+SPATIAL_ARCH = {"layers": 3, "box_peak": False, "context": True, "boxes": True, "read": "box",
+                "dilations": None, "scales": 0, "residual": False, "norm": "none"}
 #: How an object reads the map: the mean over its bounding box, over its own cells, over its cells and the ring
 #: around them, or by attention over the whole grid.
 READS = ("box", "cells", "ring", "attn")
@@ -1383,7 +1412,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         from SPATIAL_ARCH: `layers` of convolutions, `box_peak` (the objects
         read the max over their box as well as the mean), `context` (the
         pooled map joins the context), `boxes` (the objects read the map
-        at all), `read` (what they read it over: READS).
+        at all), `read` (what they read it over: READS), and how the map is built: `dilations`, `scales`,
+        `residual`, `norm` (see SpatialBackbone).
 
         `relation_mode` decides how 'relations_emb' enters, when the
         observation carries it at all:
@@ -1524,7 +1554,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             self.spatial = SpatialBackbone(
                 [key for key in GRID_KEYS if key in observation_space.spaces],
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
-                channels=spatial_channels, layers=arch["layers"])
+                channels=spatial_channels, layers=arch["layers"], dilations=arch["dilations"], scales=arch["scales"],
+                residual=arch["residual"], norm=arch["norm"])
             if arch["context"]:
                 total_concat_size += 2 * spatial_channels
                 #: The pooled map into the context, through a projection that

@@ -2334,7 +2334,7 @@
    "name": "maps_a",
    "resource": "cpu",
    "shards": 2,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "\u043a\u0430\u0440\u0442\u0430: r_dilated \u0438 r_pyramid \u043d\u0430 23 \u0437\u0430\u0434\u0430\u0447\u0430\u0445, \u0441\u0438\u0434\u044b 3-4 (92 \u0437\u0430\u043f\u0443\u0441\u043a\u0430): \u0448\u0438\u0440\u0435 \u043e\u0431\u0437\u043e\u0440 \u0438 \u0431\u043e\u043b\u0435\u0435 \u0433\u0440\u0443\u0431\u044b\u0435 \u043f\u0443\u0442\u0438",

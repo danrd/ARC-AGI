@@ -87,3 +87,14 @@ def test_the_layout_map_shards_the_attention_and_the_feed_forward_over_the_model
     layout = probe.gemma_layout_map("mesh")
     assert layout["decoder_block.*attention.*(query|key|value)/kernel"][0] == "model"
     assert set(layout) >= {"token_embedding/embeddings", "decoder_block.*ffw_gating.*/kernel"}
+
+
+def test_the_largest_instruct_preset_is_the_gemma_4_31b_and_the_default_budget_holds_it(monkeypatch, tmp_path):
+    fake_modules(monkeypatch, {"gemma3_instruct_27b": object(), "gemma4_instruct_31b": object(),
+                               "gemma4_instruct_26b_a4b": object(), "gemma4_instruct_31b_assistant": object()})
+    out = tmp_path / "r.json"
+    monkeypatch.setattr(sys, "argv", ["probe", "--out", str(out)])
+    probe.main()
+    written = json.loads(out.read_text())
+    assert written["chosen"] == ["GemmaCausalLM", "gemma4_instruct_31b"]
+    assert sorted(p for _, p in written["options"]) == ["gemma3_instruct_27b", "gemma4_instruct_31b"]

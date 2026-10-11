@@ -56,7 +56,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prompt", default="data/experiments/runs/kaggle/prompts_gemma_0/009d5c81/p0.txt")
     parser.add_argument("--out", default="tpu_probe.json")
-    parser.add_argument("--max-gb", type=float, default=60.0, help="the largest model to load, in parameters x 2 bytes")
+    parser.add_argument("--max-gb", type=float, default=70.0, help="the largest model to load, in parameters x 2 bytes")
     parser.add_argument("--new-tokens", type=int, default=64)
     args = parser.parse_args()
 
@@ -79,7 +79,7 @@ def main():
     options = []
     for cls_name, names in found.items():
         for preset in names:
-            if re.fullmatch(r"gemma\d*_instruct_\d+(\.\d+)?b", preset):     # not the translate, med, function or text-only presets
+            if re.fullmatch(r"gemma\d*_instruct_\d+(\.\d+)?b", preset):     # not the translate, med, function, MoE or text-only presets
                 options.append((cls_name, preset))
     report["options"] = options
     print("instruction-tuned presets:", options, flush=True)
@@ -88,7 +88,9 @@ def main():
         match = re.search(r"(\d+(?:\.\d+)?)b", preset.lower())
         return float(match.group(1)) if match else None
 
-    sized = sorted(((size_of(p), c, p) for c, p in options if size_of(p)), reverse=True)
+    # the newest family first at equal size: Gemma 4 over Gemma 3
+    sized = sorted(((size_of(p), p, c) for c, p in options if size_of(p)), reverse=True)
+    sized = [(s, c, p) for s, p, c in sized]
     chosen = next(((c, p) for s, c, p in sized if s * 2 <= args.max_gb), None)
     report["chosen"] = chosen
     print("chosen:", chosen, flush=True)

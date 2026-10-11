@@ -1,0 +1,49 @@
+{
+ "steps": [
+  {
+   "name": "cells_repeat",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_all.json",
+    "--tasks",
+    "05f2a901",
+    "3c9b0459",
+    "4258a5f9",
+    "42a50994",
+    "4347f46a",
+    "44d8ac46",
+    "50cb2852",
+    "60b61512",
+    "67385a82",
+    "68b16354",
+    "694f12f3",
+    "6d75e8bb",
+    "74dd1130",
+    "810b9b61",
+    "913fb3ed",
+    "a2fd1cf0",
+    "a79310a0",
+    "b1948b0a",
+    "c8f0f002",
+    "ce22a75a",
+    "d4a91cb9",
+    "dc1df850",
+    "f76d97a5",
+    "--arms",
+    "o_spatial",
+    "r_cells",
+    "r_ring",
+    "--seeds",
+    "5",
+    "6",
+    "--skip",
+    "data/experiments/runs/*.jsonl",
+    "data/experiments/runs/kaggle/*.jsonl",
+    "--workers",
+    "4",
+    "--hours",
+    "10"
+   ]
+  }
+ ]
+}

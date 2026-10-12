@@ -2945,7 +2945,7 @@
    "name": "tpu_gemma4b",
    "resource": "tpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "pip install -q -U 'keras-hub>=0.32'"
    ],

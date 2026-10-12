@@ -14,6 +14,10 @@ model and read the answer of - the analysis is by hand.
     P5   plus a plausible but wrong rule: does prose beat the examples?
     P6   plus a draft answer that is half right, to be corrected
     P7   the examples as lists of changed cells instead of output grids
+    P4a  P4 taken apart, each from the answer as P4 is: WHERE the test input changes (the regions, no colours)
+    P4b  ... WHAT changes (which colour becomes which, how many cells, no places)
+    P4c  ... the full walk-through of P4 without the rule sentence
+    P8   the system's own summary (the symbolic analyser's findings) in place of a hand-written rule
     P10a P10b P10c   the baseline with the grid written another way
 
 P3 against P0 asks whether knowing the rule is enough. P4 against P3 asks how
@@ -60,7 +64,7 @@ BASE_BLOCKS = ["role_instruction", "grid_description", "general_instruction", "e
                "examples", "task_repr", "output_format"]
 COLOUR_NAMES = "0=black, 1=blue, 2=red, 3=green, 4=yellow, 5=gray, 6=magenta, 7=orange, 8=sky, 9=brown"
 FIRST_PASS = ("p0", "p1", "p3", "p4", "p5", "p6")
-ALL_VARIANTS = ("p0", "p1", "p3", "p3b", "p4", "p5", "p6", "p7", "p10a", "p10b", "p10c")
+ALL_VARIANTS = ("p0", "p1", "p3", "p3b", "p4", "p4a", "p4b", "p4c", "p5", "p6", "p7", "p8", "p10a", "p10b", "p10c")
 GRID_TYPES = {"p10a": "ascii", "p10b": "color_text", "p10c": "text_ascii"}
 
 
@@ -143,6 +147,25 @@ def walkthrough(before, after):
     return "On the test input these cells change (rows and columns counted from 1):\n" + "\n".join(lines)
 
 
+def where_it_changes(before, after):
+    """P4a: the regions of the test input that change, by rows and columns - no colours, no counts."""
+    lines = []
+    for mask in change_regions(before, after):
+        rows, cols = np.where(mask)
+        lines.append(f"Rows {rows.min() + 1}-{rows.max() + 1}, columns {cols.min() + 1}-{cols.max() + 1}.")
+    return "On the test input, changes happen in these regions (rows and columns counted from 1):\n" + "\n".join(lines)
+
+
+def what_changes(before, after):
+    """P4b: which colour becomes which on the test input and how many cells of each, with no places."""
+    moves = {}
+    for r, c in np.argwhere(before != after):
+        key = (int(before[r, c]), int(after[r, c]))
+        moves[key] = moves.get(key, 0) + 1
+    lines = [f"{n} cell{'s' if n > 1 else ''} {a} -> {b}" for (a, b), n in sorted(moves.items())]
+    return "On the test input, in all, these changes are made:\n" + "\n".join(lines)
+
+
 def draft(before, after):
     """The answer with about half of it left undone: every second changed
     region reverted, or half the cells of the only region there is."""
@@ -175,9 +198,9 @@ def diff_examples(task):
 # a prompt
 # ---------------------------------------------------------------------------
 
-def builder(blocks, join_format="xml"):
+def builder(blocks, join_format="xml", resolvers=("examples",)):
     config = PromptingConfig(blocks=blocks, join_format=join_format, token_limit=10 ** 6,
-                             min_examples=1, filters=["grid"], resolvers=["examples"])
+                             min_examples=1, filters=["grid"], resolvers=list(resolvers))
     return PromptBuilder(config, ApproxTokenizer(), resolver_registry=RESOLVER_REGISTRY,
                          filter_registry=FILTER_REGISTRY)
 
@@ -198,7 +221,15 @@ def make_prompt(task_id, variant, permute=False, grid_type="concise", join_forma
     blocks, overrides = list(BASE_BLOCKS), {}
     grid_type = GRID_TYPES.get(variant, grid_type)
 
-    if variant in ("p3", "p4", "p5"):
+    resolvers = ("examples",)
+    if variant in ("p4a", "p4b", "p4c"):
+        text = {"p4a": where_it_changes, "p4b": what_changes, "p4c": walkthrough}[variant](test_input, answer)
+        blocks = _insert(blocks, "knowledge", "general_instruction")
+        overrides["knowledge"] = "Hint about the transformation:\n" + text
+    elif variant == "p8":
+        blocks = _insert(blocks, "summary", "examples")
+        resolvers = ("examples", "summary")
+    elif variant in ("p3", "p4", "p5"):
         text = oracle.wrong(shown) if variant == "p5" else oracle.rule(shown)
         if variant == "p4":
             text += "\n" + walkthrough(test_input, answer)
@@ -221,7 +252,7 @@ def make_prompt(task_id, variant, permute=False, grid_type="concise", join_forma
     context = {"role_text": "You are participating in the ARC-AGI benchmark.",
                "color_mapping_text": COLOUR_NAMES, "grid_repr_type": grid_type,
                "test_input_grid": test_input}
-    prompt = builder(blocks, join_format).build(task, context=context, overrides=overrides)
+    prompt = builder(blocks, join_format, resolvers).build(task, context=context, overrides=overrides)
     return prompt, format_grid(answer, repr_type="concise")
 
 

@@ -152,10 +152,11 @@ def report(directory):
     return "\n".join(out)
 
 
-def write_prompts(directory):
+def write_prompts(directory, variants=None):
+    """The prompts of `variants` (the first pass when not given), as they are and shuffled."""
     for extra in ([], ["--permute"]):
-        subprocess.run([sys.executable, str(ROOT / "scripts/prompt_variants.py"), "--out", str(directory), *extra],
-                       check=True)
+        subprocess.run([sys.executable, str(ROOT / "scripts/prompt_variants.py"), "--out", str(directory),
+                        *(["--variants", *variants] if variants else []), *extra], check=True)
 
 
 def main():
@@ -173,8 +174,8 @@ def main():
     from subsymbolic.local_config import local_model_config
 
     runner = build_runner(local_model_config(args.model, args.tokenizer, args.max_tokens))
-    if not prompts(args.out):
-        write_prompts(args.out)
+    if not prompts(args.out, variants=args.variants):
+        write_prompts(args.out, args.variants)
     try:
         run(args.out, [args.model], lambda model: runner, args.tasks, args.variants, workers=1, perm=args.perm,
             attempts=1, pause=0.0)

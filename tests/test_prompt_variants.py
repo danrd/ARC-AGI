@@ -128,3 +128,40 @@ class TestTheFiles:
 
     def test_the_first_pass_is_six_variants(self):
         assert variants.FIRST_PASS == ("p0", "p1", "p3", "p4", "p5", "p6")
+
+
+def knowledge(prompt):
+    """The text of the KNOWLEDGE block, without its tags."""
+    return prompt.split("<KNOWLEDGE>")[1].split("</KNOWLEDGE>")[0]
+
+
+class TestTheTakenApartWalkthrough:
+    """P4 holds the rule and a walk-through made from the answer. P4a, P4b, P4c each hold a part of it, so that what
+    the walk-through gives is known; P8 is the system's own summary, which holds nothing taken from the answer."""
+
+    def test_where_holds_the_regions_and_no_colours_and_no_counts(self):
+        prompt, _ = variants.make_prompt(TASK, "p4a")
+        text = knowledge(prompt)
+        assert "changes happen in these regions" in text and "Rows " in text
+        assert "->" not in text and "cell" not in text and variants.ORACLES[TASK].rule(str) not in prompt
+
+    def test_what_holds_the_colour_changes_and_no_places(self):
+        prompt, _ = variants.make_prompt(TASK, "p4b")
+        text = knowledge(prompt)
+        assert "->" in text and "Rows " not in text and variants.ORACLES[TASK].rule(str) not in prompt
+
+    def test_the_walk_through_alone_is_p4_without_its_rule(self):
+        whole, _ = variants.make_prompt(TASK, "p4")
+        alone, _ = variants.make_prompt(TASK, "p4c")
+        rule = variants.ORACLES[TASK].rule(str)
+        assert rule in knowledge(whole) and rule not in knowledge(alone)
+        assert knowledge(whole).endswith(knowledge(alone).split("transformation:\n", 1)[1])
+
+    def test_the_systems_own_summary_comes_from_the_analyser_and_not_from_the_answer(self):
+        prompt, answer = variants.make_prompt(TASK, "p8")
+        assert "<SUMMARY>" in prompt and "<KNOWLEDGE>" not in prompt
+        assert "Rows " not in prompt and variants.ORACLES[TASK].rule(str) not in prompt
+
+    def test_every_new_variant_is_known_to_the_runner(self):
+        assert {"p4a", "p4b", "p4c", "p8"} <= set(variants.ALL_VARIANTS)
+        assert variants.FIRST_PASS == ("p0", "p1", "p3", "p4", "p5", "p6")

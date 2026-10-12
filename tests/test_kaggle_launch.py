@@ -97,3 +97,16 @@ def test_a_notebook_that_fails_to_delete_makes_the_whole_delete_false(monkeypatc
     monkeypatch.setattr(launch, "username", lambda: "me")
     monkeypatch.setattr(launch, "kaggle", lambda *args: Result())
     assert launch.delete("j", 1) is False
+
+
+def test_a_job_that_names_models_has_them_attached_in_the_metadata(tmp_path, monkeypatch):
+    jobs = tmp_path / "data" / "experiments" / "jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "with.json").write_text('{"steps": [], "model_sources": ["keras/gemma4/keras/gemma4_instruct_31b/2"]}')
+    (jobs / "without.json").write_text('{"steps": []}')
+    monkeypatch.setattr(launch, "ROOT", tmp_path)
+    assert launch.model_sources("with") == ["keras/gemma4/keras/gemma4_instruct_31b/2"]
+    assert launch.model_sources("without") == [] and launch.model_sources("missing") == []
+    assert launch.metadata("me", "with", 0, tpu=True, models=launch.model_sources("with"))["model_sources"] == [
+        "keras/gemma4/keras/gemma4_instruct_31b/2"]
+    assert launch.metadata("me", "without", 0)["model_sources"] == []

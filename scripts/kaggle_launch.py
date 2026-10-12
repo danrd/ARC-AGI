@@ -51,11 +51,20 @@ def script(job, shard, shards, extras="rl", setup=()):
         f"--copy-to /kaggle/working')\n")
 
 
-def metadata(username, job, shard, gpu=False, tpu=False):
+def model_sources(job):
+    """Kaggle models a job's file asks to have attached ("model_sources": ["owner/model/framework/variation/version"]).
+
+    A notebook started through the API cannot attach a model while it runs (the hub answers "New Models cannot be
+    attached in non-interactive sessions"), so what a job loads from the model hub has to be named here, at push."""
+    path = ROOT / "data" / "experiments" / "jobs" / f"{job}.json"
+    return list(json.loads(path.read_text()).get("model_sources", [])) if path.exists() else []
+
+
+def metadata(username, job, shard, gpu=False, tpu=False, models=()):
     return {"id": f"{username}/{slug(job, shard)}", "title": slug(job, shard).replace("-", " "),
             "code_file": "worker.py", "language": "python", "kernel_type": "script", "is_private": "true",
             "enable_gpu": str(gpu).lower(), "enable_tpu": str(tpu).lower(), "enable_internet": "true",
-            "dataset_sources": [], "competition_sources": [], "kernel_sources": []}
+            "dataset_sources": [], "competition_sources": [], "kernel_sources": [], "model_sources": list(models)}
 
 
 def kaggle(*args):
@@ -80,7 +89,7 @@ def start(job, shards, gpu=False, extras="rl", setup=(), tpu=False):
     for shard in range(shards):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "worker.py").write_text(script(job, shard, shards, extras, setup))
-            (Path(folder) / "kernel-metadata.json").write_text(json.dumps(metadata(user, job, shard, gpu, tpu)))
+            (Path(folder) / "kernel-metadata.json").write_text(json.dumps(metadata(user, job, shard, gpu, tpu, model_sources(job))))
             result = kaggle("kernels", "push", "-p", folder)
         print(slug(job, shard), (result.stdout + result.stderr).strip().splitlines()[-1])
 

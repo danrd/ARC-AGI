@@ -165,3 +165,29 @@ class TestTheTakenApartWalkthrough:
     def test_every_new_variant_is_known_to_the_runner(self):
         assert {"p4a", "p4b", "p4c", "p8"} <= set(variants.ALL_VARIANTS)
         assert variants.FIRST_PASS == ("p0", "p1", "p3", "p4", "p5", "p6")
+
+
+class TestTheSystemsOwnHints:
+    """P11 and P12 give only what the system itself produces: the search hint, and with P12 the summary too."""
+
+    def test_p11_holds_the_search_hint_after_the_test_input_and_nothing_from_the_answer(self):
+        prompt, _ = variants.make_prompt(TASK, "p11")
+        assert "<SEARCH_HINTS>" in prompt and "<KNOWLEDGE>" not in prompt and "<SUMMARY>" not in prompt
+        assert tags(prompt).index("SEARCH_HINTS") > tags(prompt).index("TASK_REPR")
+        assert variants.ORACLES[TASK].rule(str) not in prompt and "Rows " not in prompt
+
+    def test_p12_adds_the_summary_to_p11(self):
+        prompt, _ = variants.make_prompt(TASK, "p12")
+        assert "<SEARCH_HINTS>" in prompt and "<SUMMARY>" in prompt
+
+    def test_the_shuffled_twin_gets_the_hint_made_for_it(self):
+        task = "009d5c81"
+        plain_prompt, _ = variants.make_prompt(task, "p11")
+        twin, _ = variants.make_prompt(task, "p11", permute=True)
+        hints = variants.json.loads(variants.SYSTEM_HINTS.read_text())
+        assert hints[task]["search_hint"] in plain_prompt and hints[task + "_perm"]["search_hint"] in twin
+        assert hints[task + "_perm"]["search_hint"] not in plain_prompt
+
+    def test_a_task_without_a_hint_is_refused_not_asked_without_one(self):
+        with pytest.raises(ValueError, match="no system search hint"):
+            variants.system_hint("00000000", False)

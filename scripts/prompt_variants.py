@@ -18,6 +18,8 @@ model and read the answer of - the analysis is by hand.
     P4b  ... WHAT changes (which colour becomes which, how many cells, no places)
     P4c  ... the full walk-through of P4 without the rule sentence
     P8   the system's own summary (the symbolic analyser's findings) in place of a hand-written rule
+    P11  what the system's search found (data/experiments/system_hints_10.json), after the test input
+    P12  P8 and P11 together: the summary and the search hint, as the system builds a full prompt
     P10a P10b P10c   the baseline with the grid written another way
 
 P3 against P0 asks whether knowing the rule is enough. P4 against P3 asks how
@@ -64,7 +66,8 @@ BASE_BLOCKS = ["role_instruction", "grid_description", "general_instruction", "e
                "examples", "task_repr", "output_format"]
 COLOUR_NAMES = "0=black, 1=blue, 2=red, 3=green, 4=yellow, 5=gray, 6=magenta, 7=orange, 8=sky, 9=brown"
 FIRST_PASS = ("p0", "p1", "p3", "p4", "p5", "p6")
-ALL_VARIANTS = ("p0", "p1", "p3", "p3b", "p4", "p4a", "p4b", "p4c", "p5", "p6", "p7", "p8", "p10a", "p10b", "p10c")
+ALL_VARIANTS = ("p0", "p1", "p3", "p3b", "p4", "p4a", "p4b", "p4c", "p5", "p6", "p7", "p8", "p11", "p12", "p10a", "p10b", "p10c")
+SYSTEM_HINTS = REPO_ROOT / "data" / "experiments" / "system_hints_10.json"
 GRID_TYPES = {"p10a": "ascii", "p10b": "color_text", "p10c": "text_ascii"}
 
 
@@ -198,6 +201,15 @@ def diff_examples(task):
 # a prompt
 # ---------------------------------------------------------------------------
 
+def system_hint(task_id, permute):
+    """The search hint the system produced for this task (for the shuffled twin, the one produced for it)."""
+    hints = json.loads(SYSTEM_HINTS.read_text())
+    entry = hints.get(task_id + "_perm" if permute else task_id)
+    if not entry or not entry.get("search_hint"):
+        raise ValueError(f"no system search hint for {task_id}{' (shuffled)' if permute else ''}")
+    return entry["search_hint"]
+
+
 def builder(blocks, join_format="xml", resolvers=("examples",)):
     config = PromptingConfig(blocks=blocks, join_format=join_format, token_limit=10 ** 6,
                              min_examples=1, filters=["grid"], resolvers=list(resolvers))
@@ -229,6 +241,13 @@ def make_prompt(task_id, variant, permute=False, grid_type="concise", join_forma
     elif variant == "p8":
         blocks = _insert(blocks, "summary", "examples")
         resolvers = ("examples", "summary")
+    elif variant in ("p11", "p12"):
+        hint = system_hint(task_id, permute)
+        blocks = _insert(blocks, "search_hints", "task_repr")
+        resolvers = ("examples", "search_hints")
+        if variant == "p12":
+            blocks = _insert(blocks, "summary", "examples")
+            resolvers = ("examples", "summary", "search_hints")
     elif variant in ("p3", "p4", "p5"):
         text = oracle.wrong(shown) if variant == "p5" else oracle.rule(shown)
         if variant == "p4":
@@ -249,7 +268,7 @@ def make_prompt(task_id, variant, permute=False, grid_type="concise", join_forma
     elif variant == "p7":
         overrides["examples"] = diff_examples(task)
 
-    context = {"role_text": "You are participating in the ARC-AGI benchmark.",
+    context = {"search_hints": hint if variant in ("p11", "p12") else None, "role_text": "You are participating in the ARC-AGI benchmark.",
                "color_mapping_text": COLOUR_NAMES, "grid_repr_type": grid_type,
                "test_input_grid": test_input}
     prompt = builder(blocks, join_format, resolvers).build(task, context=context, overrides=overrides)

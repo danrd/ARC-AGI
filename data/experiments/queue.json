@@ -3254,12 +3254,18 @@
    "name": "rel_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "\u043e\u0442\u043d\u043e\u0448\u0435\u043d\u0438\u044f: e_endnorm, e_sum, e_rounds2, e_bias \u043f\u0440\u043e\u0442\u0438\u0432 o_spatial \u043d\u0430 23 \u0437\u0430\u0434\u0430\u0447\u0430\u0445, \u0441\u0438\u0434\u044b 3-4 (184 \u0437\u0430\u043f\u0443\u0441\u043a\u0430)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/rel_a_rel_a_0.jsonl",
+    "data/experiments/runs/kaggle/rel_a_rel_a_1.jsonl",
+    "data/experiments/runs/kaggle/rel_a_rel_a_2.jsonl",
+    "data/experiments/runs/kaggle/rel_a_rel_a_3.jsonl",
+    "data/experiments/runs/kaggle/rel_a_rel_a_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "rel_b",

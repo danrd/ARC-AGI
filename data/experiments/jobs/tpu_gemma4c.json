@@ -1,0 +1,15 @@
+{
+ "steps": [
+  {
+   "name": "gemma",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ],
+ "model_sources": [
+  "keras/gemma4/keras/gemma4_instruct_31b/2"
+ ]
+}

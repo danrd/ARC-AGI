@@ -52,6 +52,30 @@ def gemma_layout_map(mesh):
     return layout
 
 
+def attached_preset(preset, root="/kaggle/input"):
+    """The folder of `preset` among the models attached to the notebook, or None.
+
+    A model attached through the notebook's metadata is a folder under /kaggle/input, and keras-hub loads a preset
+    from a folder as it does from a name. The name goes to the hub, which answers a notebook started through the API
+    with 401 (it asks for a JWT only a session opened in the browser has)."""
+    root = Path(root)
+    if not root.is_dir():
+        return None
+    for config in sorted(root.rglob("config.json")):
+        folder = config.parent
+        if preset in str(folder).lower().replace("-", "_") and any(folder.glob("*.weights.*")):
+            return str(folder)
+    return None
+
+
+def tree(root="/kaggle/input", depth=4):
+    """The folders under `root` down to `depth`, for the report: where an attached model landed."""
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    return sorted(str(p) for p in root.rglob("*") if p.is_dir() and len(p.relative_to(root).parts) <= depth)[:80]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prompt", default="data/experiments/runs/kaggle/prompts_gemma_0/009d5c81/p0.txt")
@@ -64,6 +88,10 @@ def main():
     def devices():
         import jax
         return [{"kind": d.device_kind, "bytes_limit": (d.memory_stats() or {}).get("bytes_limit")} for d in jax.devices()]
+
+    @step("inputs")
+    def inputs():
+        return tree()
 
     @step("presets")
     def presets():
@@ -112,7 +140,9 @@ def main():
         backbone = getattr(keras_hub.models, cls_name.replace("CausalLM", "Backbone"))
         layout = backbone.get_layout_map(mesh) if hasattr(backbone, "get_layout_map") else gemma_layout_map(mesh)
         keras.distribution.set_distribution(keras.distribution.ModelParallel(layout_map=layout, batch_dim_name="batch"))
-        model = getattr(keras_hub.models, cls_name).from_preset(preset)
+        source = attached_preset(preset) or preset
+        print("loading from", source, flush=True)
+        model = getattr(keras_hub.models, cls_name).from_preset(source)
         report["_model"] = model
         used = [(d.memory_stats() or {}).get("bytes_in_use", 0) for d in jax.devices()]
         return {"preset": preset, "gb_in_use_per_chip": [round(u / 1e9, 2) for u in used]}

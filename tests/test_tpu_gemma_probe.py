@@ -98,3 +98,28 @@ def test_the_largest_instruct_preset_is_the_gemma_4_31b_and_the_default_budget_h
     written = json.loads(out.read_text())
     assert written["chosen"] == ["GemmaCausalLM", "gemma4_instruct_31b"]
     assert sorted(p for _, p in written["options"]) == ["gemma3_instruct_27b", "gemma4_instruct_31b"]
+
+
+def test_an_attached_model_is_found_by_its_folder_and_a_name_alone_finds_nothing(tmp_path):
+    folder = tmp_path / "gemma4" / "keras" / "gemma4_instruct_31b" / "2"
+    folder.mkdir(parents=True)
+    other = tmp_path / "gemma4" / "keras" / "gemma4_instruct_12b" / "1"
+    other.mkdir(parents=True)
+    for place in (folder, other):
+        (place / "config.json").write_text("{}")
+        (place / "model.weights.h5").write_text("")
+    assert probe.attached_preset("gemma4_instruct_31b", tmp_path) == str(folder)
+    assert probe.attached_preset("gemma4_instruct_27b", tmp_path) is None
+    assert probe.attached_preset("gemma4_instruct_31b", tmp_path / "nowhere") is None
+
+
+def test_a_folder_without_weights_is_not_a_model(tmp_path):
+    folder = tmp_path / "gemma4_instruct_31b"
+    folder.mkdir()
+    (folder / "config.json").write_text("{}")
+    assert probe.attached_preset("gemma4_instruct_31b", tmp_path) is None
+
+
+def test_the_tree_lists_folders_to_a_depth(tmp_path):
+    (tmp_path / "a" / "b" / "c").mkdir(parents=True)
+    assert probe.tree(tmp_path, depth=2) == [str(tmp_path / "a"), str(tmp_path / "a" / "b")]

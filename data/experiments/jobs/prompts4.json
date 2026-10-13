@@ -1,0 +1,42 @@
+{
+ "steps": [
+  {
+   "name": "gemma",
+   "command": [
+    "scripts/run_prompt_variants.py",
+    "--out",
+    "{out}",
+    "--variants",
+    "p0",
+    "q1",
+    "q2",
+    "q3",
+    "q4",
+    "q5",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it"
+   ]
+  },
+  {
+   "name": "qwen",
+   "command": [
+    "scripts/run_prompt_variants.py",
+    "--out",
+    "{out}",
+    "--variants",
+    "p0",
+    "q1",
+    "q2",
+    "q3",
+    "q4",
+    "q5",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B"
+   ]
+  }
+ ]
+}

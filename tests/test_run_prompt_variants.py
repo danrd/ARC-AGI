@@ -127,3 +127,42 @@ def test_a_model_is_loaded_the_way_the_gpu_notebooks_load_it():
     assert config.llm.n_gpu_layers == 999 and config.llm.flash_attn and config.base.device == "cpu"
     assert config.generation.max_tokens == 700 and config.generation.temperature == 0.0
     assert config.generation.chat_template_kwargs == {"enable_thinking": False} and config.generation.grammar
+
+
+class TestTwoStepVariants:
+    """q4 and q5 are asked in two steps: the model describes the examples, then solves with its own description."""
+
+    def two_step(self, tmp_path):
+        folder = write_task(tmp_path, names=("q4",))
+        (folder / "q4.txt").write_text("solve with: {{SUMMARY}} end")
+        (folder / "q4_describe.txt").write_text("describe please")
+        return folder
+
+    def test_the_first_step_is_not_a_prompt_to_grade_and_is_found_on_request(self, tmp_path):
+        self.two_step(tmp_path)
+        assert [v for _, v, _, _, _ in rpv.prompts(tmp_path)] == ["q4"]
+        assert [v for _, v, _, _, _ in rpv.prompts(tmp_path, describing=True)] == ["q4_describe"]
+        assert rpv.prompts(tmp_path, variants=["p0"], describing=True) == []
+
+    def test_without_a_description_the_solving_step_is_not_asked(self, tmp_path):
+        self.two_step(tmp_path)
+        fake = Fake(GOOD)
+        assert rpv.run(tmp_path, ["m"], lambda model: fake) == [] and fake.asked == []
+
+    def test_a_description_is_asked_once_kept_and_put_into_the_solving_prompt(self, tmp_path):
+        self.two_step(tmp_path)
+        describer = Fake("<think>x</think>It paints it.")
+        assert rpv.describe(tmp_path, ["m"], lambda model: describer) == 1
+        assert describer.asked == ["describe please"]
+        assert (tmp_path / "t" / "q4.m.summary.txt").read_text() == "It paints it."
+        assert rpv.describe(tmp_path, ["m"], lambda model: describer) == 0 and len(describer.asked) == 1
+        solver = Fake(GOOD)
+        records = rpv.run(tmp_path, ["m"], lambda model: solver)
+        assert solver.asked == ["solve with: It paints it. end"] and records[0]["solved"]
+
+    def test_each_model_describes_for_itself(self, tmp_path):
+        self.two_step(tmp_path)
+        rpv.describe(tmp_path, ["a"], lambda model: Fake("A says"))
+        rpv.describe(tmp_path, ["a", "b"], lambda model: Fake("B says"))
+        assert (tmp_path / "t" / "q4.a.summary.txt").read_text() == "A says"
+        assert (tmp_path / "t" / "q4.b.summary.txt").read_text() == "B says"

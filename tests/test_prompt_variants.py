@@ -191,3 +191,50 @@ class TestTheSystemsOwnHints:
     def test_a_task_without_a_hint_is_refused_not_asked_without_one(self):
         with pytest.raises(ValueError, match="no system search hint"):
             variants.system_hint("00000000", False)
+
+
+class TestFactsWorkedOutFromWhatTheSystemHas:
+    """Q1-Q5 hold nothing from the test answer: pair summaries come from the examples, the object table from the
+    test input, and the description from the model itself."""
+
+    def test_q1_summarises_each_example_pair_and_nothing_of_the_test(self):
+        prompt, answer = variants.make_prompt(TASK, "q1")
+        text = knowledge(prompt).strip()
+        assert text.startswith("What changes from input to output in each example")
+        assert text.count("Example ") >= 2 and "Rows " not in text
+        assert variants.walkthrough(np.zeros((3, 3), int), np.asarray([[1] * 3] * 3)) not in prompt
+
+    def test_the_facts_do_not_move_when_the_test_answer_does(self):
+        task, answer, _ = variants.build_task(TASK, False)
+        other = variants.ARCTask(label=task.label, subtasks=task.subtasks,
+                                 test_inp=task.test_subtask.train_inp, test_out=np.zeros_like(answer))
+        assert variants.pairs_summary(task) == variants.pairs_summary(other)
+        assert variants.test_objects(task) == variants.test_objects(other)
+
+    def test_q2_lists_the_objects_of_the_test_input(self):
+        prompt, _ = variants.make_prompt(TASK, "q2")
+        text = knowledge(prompt)
+        assert "Objects in the test input" in text and "colour " in text and "Example " not in text
+
+    def test_q3_has_both(self):
+        text = knowledge(variants.make_prompt(TASK, "q3")[0])
+        assert "Example 1" in text and "Objects in the test input" in text
+
+    def test_the_two_step_variants_leave_a_slot_for_the_models_own_description(self):
+        for variant in ("q4", "q5"):
+            prompt, _ = variants.make_prompt(TASK, variant)
+            assert prompt.count(variants.SUMMARY_SLOT) == 1 and "<TASK_REPR>" in prompt, variant
+        assert "Example 1" not in knowledge(variants.make_prompt(TASK, "q4")[0])
+        assert "Example 1" in knowledge(variants.make_prompt(TASK, "q5")[0])
+
+    def test_the_first_step_asks_for_a_description_and_has_no_test_input_or_grid_format(self):
+        for variant in ("q4_describe", "q5_describe"):
+            prompt, _ = variants.make_prompt(TASK, variant)
+            assert variants.DESCRIBE in prompt and "<TASK_REPR>" not in prompt and "<OUTPUT_FORMAT>" not in prompt
+            assert variants.SUMMARY_SLOT not in prompt
+        assert "Example 1" in variants.make_prompt(TASK, "q5_describe")[0]
+        assert "Example 1" not in knowledge(variants.make_prompt(TASK, "q4_describe")[0])
+
+    def test_every_new_variant_is_known(self):
+        assert {"q1", "q2", "q3", "q4", "q4_describe", "q5", "q5_describe"} <= set(variants.ALL_VARIANTS)
+        assert variants.TWO_STEP == {"q4": "q4_describe", "q5": "q5_describe"}

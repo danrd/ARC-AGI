@@ -1,0 +1,1 @@
+The transformation identifies connected objects of color 1 (blue) and changes the color of specific objects to 7 (orange). An object is changed if it consists of three or more cells. Objects consisting of only one or two cells remain blue. The background (color 0) and any other colors present in the grid are left unchanged.

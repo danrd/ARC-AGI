@@ -1,0 +1,9 @@
+The transformation identifies connected components of red cells (color 2) and changes them to magenta (color 6) based on their size relative to other objects in the grid. Specifically, any red object that is strictly smaller than at least one other distinct red object present in the input grid will be recolored to magenta. In Example 1, the two larger red shapes remain red while the three smaller ones become magenta; similarly, in Examples 2 and 3, only the smallest or non-maximal sized red clusters are changed. If all red objects in the grid have the same size, as seen in Example 4 where there is a mix of sizes but wait, let's re-examine Example 4: Input has a 2x1 vertical pair at (2,1)-(3,1)? No, row 2 is `022...`, row 3 is `002...`. Let's trace connectivity.
+Actually, looking closer at the examples:
+Ex 1: Red objects are sizes 4, 4, 2, 2, 2? No. Let's count pixels.
+Input Ex 1:
+Obj A (top left): (2,0),(2,1),(3,1) -> L-shape size 3? Wait, row 2 is `220...`, row 3 is `022...`. Cells: (2,0), (2,1), (3,1). Size 3.
+Obj B (top right): (2,4),(2,5),(3,4),(3,5). Size 4.
+Obj C (mid left): (6,1),(6,2),(6,3). Size 3.
+Obj D (mid right): (7,4), (8,2)? No, let's look at coordinates carefully.
+Let's just look at the "Knowledge" hint provided in the prompt structure which says "Look at the example pairs... say what the transformation does". The prompt asks me to *describe* the rule, not solve it yet? No, the final instruction is usually to provide the output for a test input, but here there

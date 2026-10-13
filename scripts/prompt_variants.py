@@ -20,6 +20,11 @@ model and read the answer of - the analysis is by hand.
     P8   the system's own summary (the symbolic analyser's findings) in place of a hand-written rule
     P11  what the system's search found (data/experiments/system_hints_10.json), after the test input
     P12  P8 and P11 together: the summary and the search hint, as the system builds a full prompt
+    Q1   what changes in each example pair, worked out from the examples alone (no answer, no oracle)
+    Q2   the objects of the test input, as a table (from the test input alone)
+    Q3   Q1 and Q2 together
+    Q4   two steps: the model first describes the examples in its own words, then solves with that description
+    Q5   Q3 and Q4 together: the facts, and the model's description made with the facts in front of it
     P10a P10b P10c   the baseline with the grid written another way
 
 P3 against P0 asks whether knowing the rule is enough. P4 against P3 asks how
@@ -66,7 +71,7 @@ BASE_BLOCKS = ["role_instruction", "grid_description", "general_instruction", "e
                "examples", "task_repr", "output_format"]
 COLOUR_NAMES = "0=black, 1=blue, 2=red, 3=green, 4=yellow, 5=gray, 6=magenta, 7=orange, 8=sky, 9=brown"
 FIRST_PASS = ("p0", "p1", "p3", "p4", "p5", "p6")
-ALL_VARIANTS = ("p0", "p1", "p3", "p3b", "p4", "p4a", "p4b", "p4c", "p5", "p6", "p7", "p8", "p11", "p12", "p10a", "p10b", "p10c")
+ALL_VARIANTS = ("p0", "p1", "p3", "p3b", "p4", "p4a", "p4b", "p4c", "p5", "p6", "p7", "p8", "p11", "p12", "q1", "q2", "q3", "q4", "q4_describe", "q5", "q5_describe", "p10a", "p10b", "p10c")
 SYSTEM_HINTS = REPO_ROOT / "data" / "experiments" / "system_hints_10.json"
 GRID_TYPES = {"p10a": "ascii", "p10b": "color_text", "p10c": "text_ascii"}
 
@@ -128,6 +133,53 @@ def neutral_facts(task):
     test = np.asarray(task.test_subtask.train_inp)
     lines.append(f"The test input is {test.shape[0]}x{test.shape[1]}.")
     return "Facts about this puzzle:\n" + "\n".join(lines)
+
+
+def pairs_summary(task):
+    """Q1: for each example pair, what changes - from the pair itself, so it holds nothing of the test answer."""
+    lines = []
+    for index, subtask in enumerate(task.subtasks, 1):
+        before, after = np.asarray(subtask.train_inp), np.asarray(subtask.train_out)
+        if before.shape != after.shape:
+            lines.append(f"Example {index}: the output is {after.shape[0]}x{after.shape[1]}, "
+                         f"the input {before.shape[0]}x{before.shape[1]}.")
+            continue
+        regions = change_regions(before, after)
+        moves = {}
+        for r, c in np.argwhere(before != after):
+            key = (int(before[r, c]), int(after[r, c]))
+            moves[key] = moves.get(key, 0) + 1
+        what = ", ".join(f"{n} cell{'s' if n > 1 else ''} {a} -> {b}" for (a, b), n in sorted(moves.items()))
+        lines.append(f"Example {index}: {len(regions)} changed region{'s' if len(regions) != 1 else ''}"
+                     + (f"; {what}." if what else "; nothing changes."))
+    return "What changes from input to output in each example:\n" + "\n".join(lines)
+
+
+def test_objects(task, limit=30):
+    """Q2: the connected same-colour objects of the test input, off the most common colour - from the input alone."""
+    grid = np.asarray(task.test_subtask.train_inp)
+    values, counts = np.unique(grid, return_counts=True)
+    background = int(values[counts.argmax()])
+    found = []
+    for colour in (int(v) for v in values if int(v) != background):
+        labels, count = ndimage.label(grid == colour)
+        for index in range(1, count + 1):
+            rows, cols = np.where(labels == index)
+            found.append((int(rows.min()), int(cols.min()), colour, len(rows), int(rows.max()), int(cols.max())))
+    found.sort()
+    lines = [f"colour {colour}, {size} cell{'s' if size > 1 else ''}, rows {r0 + 1}-{r1 + 1}, columns {c0 + 1}-{c1 + 1}"
+             for r0, c0, colour, size, r1, c1 in found[:limit]]
+    if len(found) > limit:
+        lines.append(f"... and {len(found) - limit} more")
+    return (f"Objects in the test input (background colour {background}; rows and columns counted from 1):\n"
+            + "\n".join(lines))
+
+
+DESCRIBE = ("Look at the example pairs above. In three to six sentences say what the transformation does: "
+            "which cells or objects change, what decides it, and what stays. Do not write the output grid "
+            "and do not solve the test input.")
+SUMMARY_SLOT = "{{SUMMARY}}"
+TWO_STEP = {"q4": "q4_describe", "q5": "q5_describe"}
 
 
 def change_regions(before, after):
@@ -226,7 +278,7 @@ def make_prompt(task_id, variant, permute=False, grid_type="concise", join_forma
     """(prompt, expected answer as text) for one task and variant."""
     if variant not in ALL_VARIANTS:
         raise ValueError(f"unknown variant {variant!r}; known: {', '.join(ALL_VARIANTS)}")
-    oracle = ORACLES[task_id]
+    oracle = ORACLES.get(task_id)
     task, answer, mapping = build_task(task_id, permute)
     shown = lambda colour: str(mapping[colour])  # noqa: E731
     test_input = np.asarray(task.test_subtask.train_inp)
@@ -241,6 +293,23 @@ def make_prompt(task_id, variant, permute=False, grid_type="concise", join_forma
     elif variant == "p8":
         blocks = _insert(blocks, "summary", "examples")
         resolvers = ("examples", "summary")
+    elif variant in ("q1", "q2", "q3", "q4", "q4_describe", "q5", "q5_describe"):
+        facts = []
+        if variant in ("q1", "q3", "q5", "q5_describe"):
+            facts.append(pairs_summary(task))
+        if variant in ("q2", "q3", "q5"):
+            facts.append(test_objects(task))
+        if variant in ("q4_describe", "q5_describe"):
+            blocks = [b for b in blocks if b not in ("task_repr", "output_format")]
+            overrides["knowledge"] = "\n".join(facts + [DESCRIBE])
+            blocks = _insert(blocks, "knowledge", "examples")
+        else:
+            if variant in ("q4", "q5"):
+                facts.append("An assistant looked at the examples and wrote this description (it may be wrong):\n"
+                             + SUMMARY_SLOT)
+            if facts:
+                overrides["knowledge"] = "\n".join(facts)
+                blocks = _insert(blocks, "knowledge", "examples")
     elif variant in ("p11", "p12"):
         hint = system_hint(task_id, permute)
         blocks = _insert(blocks, "search_hints", "task_repr")

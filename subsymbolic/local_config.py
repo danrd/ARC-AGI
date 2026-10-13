@@ -54,7 +54,11 @@ def gpu_notebook_params(model: str, tokenizer: Optional[str] = None, max_tokens:
     }
 
 
-def local_model_config(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200) -> LocalModelConfig:
+def local_model_config(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200,
+                       grammar: bool = True) -> LocalModelConfig:
+    """The config of a local runner; `grammar=False` leaves the reply free text (a description, not a grid)."""
     params = gpu_notebook_params(model, tokenizer, max_tokens)
+    if not grammar:
+        params["generation"] = {k: v for k, v in params["generation"].items() if k != "grammar"}
     return LocalModelConfig(base=BaseConfig(**params["base"]), llm=LlmConfig(**params["llm"]),
                             generation=GenerationConfig(**params["generation"]))

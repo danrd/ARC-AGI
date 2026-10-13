@@ -76,7 +76,7 @@ class TestTheArms:
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
         series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS,
-                  compare.READ_ARMS)
+                  compare.READ_ARMS, compare.RELATION_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -117,6 +117,31 @@ class TestTheArms:
             arch = settings["spatial_arch"]
             assert len(arch) == (2 if arm == "r_resnorm" else 1) and set(arch) <= set(SPATIAL_ARCH), arm   # r_resnorm is r_resid and r_norm together
             assert arch != {key: SPATIAL_ARCH[key] for key in arch}, arm
+
+    def test_every_relation_arm_is_o_spatial_with_one_change_to_how_relations_are_read(self):
+        from data.configs.rl_configs import load_PPO_config
+        ppo = load_PPO_config()
+        base_elements = compare.arm_settings("default")[0]
+        assert set(compare.RELATION_ARMS) == {"e_end", "e_endnorm", "e_sum", "e_max", "e_rounds2", "e_wide", "e_full",
+                                              "e_bias", "e_flat"}
+        for arm in compare.RELATION_ARMS:
+            elements, settings = compare.arm_settings(arm)
+            rest = {key: value for key, value in settings.items() if key not in ("relation_arch", "relation_mode")}
+            assert elements == base_elements and rest == {"spatial_channels": 32}, arm
+            assert ("relation_arch" in settings) != ("relation_mode" in settings), arm
+            assert settings.get("relation_arch") != ppo["relation_arch"] or settings.get("relation_mode") != ppo["relation_mode"]
+        assert compare.arm_settings("e_endnorm")[1]["relation_arch"] == {"endpoints": True, "endpoint_dim": 32}
+
+    def test_every_relation_arm_builds_the_module_it_names(self):
+        """The arguments of relation_arch are RelationMessages' own: an arm that named one it does not take
+        would fail an hour into a run."""
+        from rl.features import RelationMessages
+        for arm in compare.RELATION_ARMS:
+            arch = compare.arm_settings(arm)[1].get("relation_arch")
+            if arch:
+                built = RelationMessages(object_dim=16, **arch)
+                for key, value in arch.items():
+                    assert getattr(built, key, value) == value or key in ("hidden", "endpoint_dim"), (arm, key)
 
     def test_a_train_command_without_arms_runs_the_first_series(self, tmp_path, monkeypatch):
         configs = tmp_path / "c.json"

@@ -142,6 +142,20 @@ and five that change how the map itself is built (SpatialBackbone):
     r_norm      each cell's channels normalised, one cell at a time (padding stays out of it)
     r_resnorm   both
 
+The sixth series, how the relations between objects are read (RELATION_ARMS), each one change from o_spatial
+(`relation_arch` is RelationMessages' arguments, `relation_mode` how relations enter). `m_norel` is the series'
+other end, o_spatial without relations:
+
+    e_end       the message depends on both objects as well as the relation (endpoints), their rows raw
+    e_endnorm   the same, the rows projected to 32 and normalised first so that they do not drown the relation
+    e_sum       an object sums what its partners sent, so that it can tell two partners from five
+    e_max       it takes the max: "is any partner like this"
+    e_rounds2   two rounds of messages: partners' partners, what a rule spanning three objects needs
+    e_wide      the message 64 wide instead of 32
+    e_full      endpoints (normalised), max and two rounds together
+    e_bias      the relations as a bias on the objects' self-attention instead of messages
+    e_flat      the Flatten-and-two-Linears branch relations first shipped as
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -233,6 +247,20 @@ ARMS = {
     "r_resid": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"residual": True}}),
     "r_norm": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"norm": "cell"}}),
     "r_resnorm": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "spatial_arch": {"residual": True, "norm": "cell"}}),
+    # The sixth series, how the relations are read: each arm one change from
+    # o_spatial, in `relation_arch` (rl.features.RelationMessages) or `relation_mode`.
+    "e_end": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_arch": {"endpoints": True}}),
+    "e_endnorm": (DEFAULT_ELEMENTS, {"spatial_channels": 32,
+                                     "relation_arch": {"endpoints": True, "endpoint_dim": 32}}),
+    "e_sum": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_arch": {"aggregation": "sum"}}),
+    "e_max": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_arch": {"aggregation": "max"}}),
+    "e_rounds2": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_arch": {"rounds": 2}}),
+    "e_wide": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_arch": {"hidden": 64}}),
+    "e_full": (DEFAULT_ELEMENTS, {"spatial_channels": 32,
+                                  "relation_arch": {"endpoints": True, "endpoint_dim": 32, "aggregation": "max",
+                                                    "rounds": 2}}),
+    "e_bias": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_mode": "bias"}),
+    "e_flat": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_mode": "flat"}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
@@ -244,6 +272,8 @@ GRID_ARMS = tuple(arm for arm in ARMS if arm.startswith("s_"))
 MAP_ARMS = tuple(arm for arm in ARMS if arm.startswith("m_"))
 #: The fifth series, against `o_spatial`.
 READ_ARMS = tuple(arm for arm in ARMS if arm.startswith("r_"))
+#: The sixth series, against `o_spatial` (and `m_norel`, the same without relations).
+RELATION_ARMS = tuple(arm for arm in ARMS if arm.startswith("e_"))
 
 
 def arm_settings(arm):

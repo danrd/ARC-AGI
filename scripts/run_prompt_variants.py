@@ -72,8 +72,13 @@ def _without_thinking(reply):
     return re.sub(r"<think>.*?</think>", "", reply, flags=re.S)
 
 
-def prompts(directory, tasks=None, variants=None, perm="both"):
-    """(task, variant, perm, prompt path, answer path) for every prompt on disk."""
+TWO_STEP = {"q4": "q4_describe", "q5": "q5_describe"}
+SLOT = "{{SUMMARY}}"
+
+
+def prompts(directory, tasks=None, variants=None, perm="both", describing=False):
+    """(task, variant, perm, prompt path, answer path) for every prompt on disk. The first step of a two-step
+    variant (q4_describe) is not a prompt to be graded: it is returned only with `describing`, and then alone."""
     found = []
     for path in sorted(Path(directory).glob("*/*.txt")):
         name = path.stem
@@ -81,7 +86,10 @@ def prompts(directory, tasks=None, variants=None, perm="both"):
             continue
         is_perm = perm_name = name.endswith("_perm")
         variant = name[:-5] if perm_name else name
-        if (tasks and path.parent.name not in tasks) or (variants and variant not in variants):
+        if variant.endswith("_describe") != describing:
+            continue
+        asked = variant[:-len("_describe")] if describing else variant
+        if (variants and asked not in variants) or (tasks and path.parent.name not in tasks):
             continue
         if (perm == "no" and is_perm) or (perm == "only" and not is_perm):
             continue
@@ -94,18 +102,59 @@ def response_path(prompt_path, model):
     return prompt_path.with_name(f"{prompt_path.stem}.{slug(model)}.response.txt")
 
 
+def summary_path(prompt_path, model):
+    """Where the model's own description of a task is kept, for the two-step variant whose prompt this is."""
+    return prompt_path.with_name(f"{prompt_path.stem}.{slug(model)}.summary.txt")
+
+
+def describe(directory, models, make_runner, tasks=None, variants=None, perm="both", attempts=3, pause=30.0):
+    """The first step of the two-step variants: each model describes each task's examples. Returns how many."""
+    written = 0
+    for model in models:
+        work = []
+        for task, variant, is_perm, path, _ in prompts(directory, tasks, variants, perm, describing=True):
+            target = path.with_name(path.name.replace("_describe", ""))
+            if not summary_path(target, model).exists():
+                work.append((task, path, target))
+        if not work:
+            continue
+        runner = make_runner(model)
+        for task, path, target in work:
+            for attempt in range(attempts):
+                try:
+                    reply = _without_thinking(runner.generate(path.read_text())).strip()
+                    if not reply:
+                        raise ValueError("an empty description")
+                    summary_path(target, model).write_text(reply[:1500])
+                    written += 1
+                    break
+                except Exception as error:  # noqa: BLE001 - one failed request must not end the run
+                    print(f"{task} describe {model}, try {attempt + 1}: {error}", file=sys.stderr)
+                    time.sleep(pause * (attempt + 1))
+    return written
+
+
+def prompt_for(prompt_path, model):
+    """The prompt text to send, or None when a two-step prompt has no description from this model yet."""
+    text = prompt_path.read_text()
+    if SLOT not in text:
+        return text
+    summary = summary_path(prompt_path, model)
+    return text.replace(SLOT, summary.read_text()) if summary.exists() else None
+
+
 def run(directory, models, make_runner, tasks=None, variants=None, workers=2, attempts=3, pause=30.0, perm="both"):
     """Ask every model every prompt that has no reply yet; returns the records of the new replies."""
     runners = {model: make_runner(model) for model in models}
     work = [(model, *item) for model in models for item in prompts(directory, tasks, variants, perm)
-            if not response_path(item[3], model).exists()]
+            if not response_path(item[3], model).exists() and prompt_for(item[3], model) is not None]
     results = Path(directory) / "results.jsonl"
 
     def one(job):
         model, task, variant, perm, prompt_path, answer_path = job
         for attempt in range(attempts):
             try:
-                reply = runners[model].generate(prompt_path.read_text())
+                reply = runners[model].generate(prompt_for(prompt_path, model))
                 if not reply or not reply.strip():
                     raise ValueError("an empty reply (a reasoning model out of tokens, most often)")
                 break
@@ -152,11 +201,14 @@ def report(directory):
     return "\n".join(out)
 
 
-def write_prompts(directory, variants=None):
-    """The prompts of `variants` (the first pass when not given), as they are and shuffled."""
+def write_prompts(directory, variants=None, tasks=None):
+    """The prompts of `variants` (the first pass when not given), as they are and shuffled. A two-step variant
+    brings its first step with it."""
+    variants = [v for variant in variants or [] for v in (variant, TWO_STEP[variant] if variant in TWO_STEP else None) if v]
     for extra in ([], ["--permute"]):
         subprocess.run([sys.executable, str(ROOT / "scripts/prompt_variants.py"), "--out", str(directory),
-                        *(["--variants", *variants] if variants else []), *extra], check=True)
+                        *(["--variants", *variants] if variants else []),
+                        *(["--tasks", *tasks] if tasks else []), *extra], check=True)
 
 
 def main():
@@ -173,9 +225,16 @@ def main():
     from subsymbolic.llm_setup import build_runner
     from subsymbolic.local_config import local_model_config
 
-    runner = build_runner(local_model_config(args.model, args.tokenizer, args.max_tokens))
     if not prompts(args.out, variants=args.variants):
-        write_prompts(args.out, args.variants)
+        write_prompts(args.out, args.variants, args.tasks)
+    if prompts(args.out, args.tasks, args.variants, args.perm, describing=True):
+        # the first step answers in free text, so it is a runner of its own, closed before the grid-held one is opened
+        describer = build_runner(local_model_config(args.model, args.tokenizer, 600, grammar=False))
+        try:
+            describe(args.out, [args.model], lambda model: describer, args.tasks, args.variants, args.perm)
+        finally:
+            describer.close()
+    runner = build_runner(local_model_config(args.model, args.tokenizer, args.max_tokens))
     try:
         run(args.out, [args.model], lambda model: runner, args.tasks, args.variants, workers=1, perm=args.perm,
             attempts=1, pause=0.0)

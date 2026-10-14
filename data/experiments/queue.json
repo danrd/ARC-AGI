@@ -3271,12 +3271,18 @@
    "name": "rel_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "отношения: e_end, e_max, e_wide, e_full против o_spatial на 23 задачах, сиды 3-4 (184 запуска)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/rel_b_rel_b_0.jsonl",
+    "data/experiments/runs/kaggle/rel_b_rel_b_1.jsonl",
+    "data/experiments/runs/kaggle/rel_b_rel_b_2.jsonl",
+    "data/experiments/runs/kaggle/rel_b_rel_b_3.jsonl",
+    "data/experiments/runs/kaggle/rel_b_rel_b_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "rel_c",
@@ -3297,7 +3303,7 @@
    "name": "rel_rest",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "отношения на 80 остальных задачах из 103: e_endnorm и e_full, сиды 0-1 (320 запусков; продолжается тем же заданием)",
@@ -4008,14 +4014,16 @@
    "name": "tpu_gemma4c",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [
     "pip install -q -U 'keras-hub>=0.32'"
    ],
    "extras": "",
    "note": "TPU: проба Gemma 4 31B, веса берутся из папки подключённой модели в /kaggle/input (хаб из запущенного через API ноутбука отвечает 401); в отчёте список папок /kaggle/input",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/tpu_gemma4c_gemma_0.json"
+   ],
+   "cleaned": true
   },
   {
    "name": "think_cal",

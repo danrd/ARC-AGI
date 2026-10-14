@@ -12,8 +12,8 @@ fallback chain per config.base.device:
     GPU:  vLLM server -> vLLM in-process -> HF in-process (4-bit)
 Every tier's error is collected; if all tiers fail, RuntimeError chains them.
 
-Hosted/proprietary models (OpenRouter, and in principle OpenAI/Anthropic/
-Gemini) are NOT part of this factory - subsymbolic.llm_runtime.OpenRouterRunner
+Hosted/proprietary models (OpenRouter, CometAPI, and in principle OpenAI/Anthropic/
+Gemini) are NOT part of this factory - subsymbolic.llm_runtime.HostedRunner (build_hosted_runner)
 is a deliberately separate, explicit path the caller opts into directly.
 
 Heavy dependencies (torch, transformers, llama_cpp, vllm) are imported
@@ -67,17 +67,27 @@ class LlmConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid", frozen=False)
     framework: str = 'llama_cpp'  # llama_cpp | vllm | hf
     model: str = 'unsloth/Qwen3.6-27B-GGUF'
+    # A GGUF repo (the default above) embeds its own tokenizer for
+    # llama.cpp's use, but has none of the files transformers.AutoTokenizer
+    # needs - trying to load one from `model` directly fails with
+    # "Couldn't instantiate the backend tokenizer...". Set this to the
+    # equivalent plain HF repo when you need a real tokenizer (e.g. for
+    # PromptBuilder's token counting); callers should use
+    # `tokenizer_model or model`. None when `model` is already a plain HF
+    # repo and doubles fine as its own tokenizer source.
     tokenizer_model: Optional[str] = None
     quant_file: str = 'Qwen3.6-27B-Q4_K_M.gguf'
-    # Where quant_file GGUFs live once downloaded. Repo-relative, like every
-    # other data path here (prompt_builder's blocks_dir, ARCDataset's
-    # datasets) - a leading slash makes it /data at the filesystem root,
-    # which on an ordinary machine is not writable and takes down every CPU
-    # backend at once with a bare PermissionError.
+    # Where quant_file GGUFs live once downloaded - see resolve_local_model_path().
     pretrained_models_dir: str = 'data/pretrained_models'
     max_context: int = 9000  # llm token limit for computational resources to control
     openrouter_models: List[str] = ["google/gemma-4-26b-a4b-it",
                                     "nvidia/nemotron-3-ultra-550b-a55b"]
+    # The three openrouter_* fields below are the hosted runners' models,
+    # retries and timeout whichever service is used (the names are older than
+    # the second service). hosted_* choose the service; see build_hosted_runner.
+    hosted_provider: str = "openrouter"
+    hosted_base_url: Optional[str] = None
+    hosted_api_key_env: Optional[str] = None
     openrouter_max_retries: int = 2
     openrouter_request_timeout: float = 30.0
     n_ctx: Optional[int] = None  # falls back to max_context, then generation.max_tokens, when unset
@@ -173,7 +183,15 @@ def _warn_if_prompt_can_overflow(config, n_ctx) -> None:
 
 
 def _start_llama_cpp_server(config) -> subprocess.Popen:
+    # llama-cpp-python[server] is a declared dependency (pyproject.toml's
+    # `llama-cpp` extra) - unlike vllm below, its wheels aren't
+    # CUDA-version-sensitive, so there's no reason to keep installing it at
+    # runtime instead of just requiring it ahead of time.
     port = getattr(config.base, "port", 8001)
+    # max_context is the knob meant to size the context window; falling
+    # back straight to generation.max_tokens (how many tokens to generate,
+    # not how much context to hold) silently caps it far below what a real
+    # prompt needs unless n_ctx is set by hand.
     n_ctx = str(getattr(config.llm, "n_ctx", None)
                 or getattr(config.llm, "max_context", None)
                 or getattr(config.generation, "max_tokens", 2048))
@@ -209,6 +227,10 @@ def _start_llama_cpp_server(config) -> subprocess.Popen:
     for share in getattr(config.llm, "tensor_split", None) or []:
         args += ["--tensor_split", str(share)]
 
+    # llama-cpp-python's server applies chat_template_kwargs at model-load
+    # time, not per request - unlike a generic OpenAI-compatible server,
+    # so it has to travel as a CLI flag here rather than through
+    # generation_kwargs / to_chat_completions()'s extra_body.
     chat_template_kwargs = getattr(config.generation, "chat_template_kwargs", None)
     if chat_template_kwargs:
         args += ["--chat_template_kwargs", json.dumps(chat_template_kwargs)]
@@ -222,6 +244,13 @@ def _start_llama_cpp_server(config) -> subprocess.Popen:
 
 
 def _start_vllm_server(config) -> subprocess.Popen:
+    # vLLM's wheels are CUDA-version-sensitive, so there's no one version
+    # to declare as a dependency ahead of time - but forcing an upgrade on
+    # every call risks silently pulling a release whose CUDA build doesn't
+    # match the GPU/driver stack actually present. Only install when vllm
+    # isn't already importable, and capture the install's output so a
+    # routine run doesn't flood the notebook - surfaced in full only if
+    # the install fails.
     try:
         import vllm  # noqa: F401
     except ImportError:
@@ -244,12 +273,20 @@ def _start_vllm_server(config) -> subprocess.Popen:
     tensor_parallel_size = getattr(config.llm, "tensor_parallel_size", 1)
     if tensor_parallel_size and tensor_parallel_size != 1:
         args += ["--tensor-parallel-size", str(tensor_parallel_size)]
+    # Without this, vLLM sizes its memory-profiling pass (and the KV cache
+    # it then reserves) for the model's own native max context - 262144
+    # for some checkpoints - which is a CUDA OOM on anything but the
+    # largest cards regardless of how the weights themselves fit.
     max_context = getattr(config.llm, "max_context", None)
     if max_context:
         args += ["--max-model-len", str(max_context)]
     gpu_memory_utilization = getattr(config.llm, "gpu_memory_utilization", None)
     if gpu_memory_utilization:
         args += ["--gpu-memory-utilization", str(gpu_memory_utilization)]
+    # CUDA graph capture (vLLM's default) reserves its own scratch memory on
+    # top of weights + KV cache, sized independently of max-model-len - on a
+    # card with little headroom past the weights, that capture pass itself
+    # can be the thing that OOMs, not the KV cache it's meant to speed up.
     if getattr(config.llm, "enforce_eager", False):
         args += ["--enforce-eager"]
 
@@ -340,6 +377,9 @@ def setup_llama_cpp_model(model_path: str, config=None, tokenizer_id: Optional[s
 # Startup reporting
 # ---------------------------------------------------------------------------
 
+# The only tiers that actually apply generation.chat_template_kwargs - it's
+# a server-load-time setting (llama.cpp) or a per-request extra_body field
+# (vLLM's OpenAI-compatible server); every in-process tier just ignores it.
 _CHAT_TEMPLATE_KWARGS_TIERS = {"llama.cpp server", "vLLM server"}
 #: n_gpu_layers is llama.cpp's way of splitting a model between CPU and GPU.
 #: The vLLM and HF tiers place the model themselves and have no equivalent,
@@ -347,13 +387,22 @@ _CHAT_TEMPLATE_KWARGS_TIERS = {"llama.cpp server", "vLLM server"}
 #: saying, because the fallback chain can land on one of them without the
 #: caller choosing it.
 _N_GPU_LAYERS_TIERS = {"llama.cpp server", "llama.cpp in-process"}
-# parameters for parsing server erorrs excluding unrelevant warnings
 _LOG_ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|out of memory)\b", re.IGNORECASE)
+# A genuine error/traceback line is short. A model's chat template is
+# itself full of matching words - Qwen's, for instance, calls a Jinja
+# raise_exception() helper on malformed input - and gets dumped verbatim
+# into startup logs (metadata dumps, template debug output); capping line
+# length keeps that noise out without needing to special-case any one
+# framework's dump format.
 _LOG_ERROR_MAX_LINE_LENGTH = 300
 
 
 def _scan_log_for_errors(log_path: str, max_lines: int = 10) -> List[str]:
-    """Grep a tier's own log file for error-looking lines."""
+    """Grep a tier's own log file for error-looking lines. A tier can pass
+    its health check (or construct without raising) while its log already
+    has something worth reading - a worker that crashed and restarted, a
+    warning that presages a later failure - otherwise invisible unless
+    someone opens the log by hand."""
     try:
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()

@@ -1,7 +1,8 @@
 """Generic LLM-based task-processing loop: build a prompt for each task via
-SubsymbolicModule's PromptBuilder, generate a completion through its
-runner, score it with a pluggable evaluator, and log + checkpoint the run
-to wandb along the way.
+an `subsymbolic_module` (anything with `.builder.build(task, context)` and
+`.runner.generate(prompt)` - e.g. PromptBuilder + a llm_setup.build_runner()
+Runner glued together by the caller), score it with a pluggable evaluator,
+and log + checkpoint the run to wandb along the way.
 """
 from __future__ import annotations
 
@@ -111,8 +112,8 @@ def _print_debug_task_info(task, prompt: str, generation: str, eval_result: Eval
     score, since the point is to see exactly what came back while iterating
     on a prompt/parsing problem, without waiting on the wandb dashboard.
     The prompt itself is left out (only its length is shown) - with
-    few-shot grids baked in it's often huge, and it's rarely what's being
-    debugged once prompt-building itself is already trusted."""
+    few-shot examples baked in it's often huge, and it's rarely what's
+    being debugged once prompt-building itself is already trusted."""
     task_index = getattr(task, "index", None)
     task_label = f"task {task_index} ({task.id})" if task_index is not None else f"task {task.id}"
     separator = "=" * 80
@@ -146,24 +147,22 @@ def run_llm_over_tasks(
         tasks: task objects, each exposing a JSON-serializable `.id`
             (str/int) - it's the checkpoint's resume key.
         subsymbolic_module: anything with `.builder.build(task, context)`
-            and `.runner.generate(prompt)` - see
-            subsymbolic.subsymbolic_module.SubsymbolicModule.
+            and `.runner.generate(prompt)` - a subsymbolic.prompt_builder.PromptBuilder
+            and a subsymbolic.llm_setup.build_runner() Runner is the usual pairing.
         evaluator(task, generated_text) -> EvalResult: scores one
-            generation. The only place ARC-specific (or any
-            dataset-specific) scoring logic belongs.
+            generation. The only place project-specific (dataset-specific)
+            scoring logic belongs.
         context_builder(task) -> dict: builds the PromptBuilder context for
             one task (e.g. a per-task role instruction). Defaults to {}.
         assistant_prefix_builder(task) -> str | None: builds a per-task
             PromptBuilder.build(assistant_prefix=...) override - e.g. a
-            known target-shape header, so the model only has to continue
+            known partial-answer header, so the model only has to continue
             the answer instead of producing its own header from scratch.
-            Defaults to None (no override; PromptingConfig.assistant_prefix,
-            if any, is used as-is). Whatever prefix is used here has to be
-            threaded into `evaluator`/`result_plotter` separately (they
-            only ever see the model's own completion, not the prefix it
-            continues from) - wrap them in closures sharing the same
-            per-task prefix logic, e.g. via arc_evaluators' expected_prefix
-            param.
+            Defaults to None (no override). Whatever prefix is used here
+            has to be threaded into `evaluator`/`result_plotter` separately
+            (they only ever see the model's own completion, not the prefix
+            it continues from) - wrap them in closures sharing the same
+            per-task prefix logic.
         result_plotter(task, generated_text, eval_result) -> a
             wandb-loggable object (e.g. a matplotlib figure): built once
             per task whenever either log_config.log_result_plot or
@@ -177,8 +176,8 @@ def run_llm_over_tasks(
             of only being visible later on the wandb dashboard. The
             printed line leads with `task.index` instead of the bare id
             when a task happens to carry one - purely an optional,
-            generic attribute as far as this loop is concerned, not an
-            ARC-specific contract.
+            generic attribute as far as this loop is concerned, not tied
+            to any particular dataset's own numbering.
         debug: skip wandb entirely - no wandb.init/log/artifacts/
             checkpointing, and wandb doesn't even need to be installed -
             and print each task's full prompt and full raw generation

@@ -10,7 +10,7 @@ orchestration can treat both the same way.
 The runner (a live model/server connection) is expensive to build, so by
 default it's constructed once, lazily, on first use rather than per
 solve() call - or pass an already-built one via `runner=` (e.g.
-llm_runtime.build_openrouter_runner(experiment_config), or a fake for
+llm_runtime.build_hosted_runner(experiment_config), or a fake for
 testing) to skip build_runner entirely and use experiment_config only
 for prompting; useful for running a local and a hosted module side by
 side off the same config without mutating it.

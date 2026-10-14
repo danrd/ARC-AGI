@@ -71,6 +71,15 @@ class PromptingConfig(BaseModel):
     resolvers: Optional[List[str]] = Field(default_factory=list)  # project-specific complex prompting methods
     join_format: Literal["xml", "md", "plain"] = "xml"  # approach for blocks composing
     chat_template: Optional[str] = None  # optionaly use specific chat template
+    # Extra kwargs for tokenizer.apply_chat_template() when chat_template is
+    # set - e.g. {"enable_thinking": False} to turn off a Qwen3-style
+    # reasoning trace. Only takes effect for local in-process backends that
+    # consume this already-built string (LlamaCppRunner, HFRunner) -
+    # server-backed tiers (ServerRunner) apply their own template from raw
+    # messages and need the equivalent set on
+    # GenerationConfig.chat_template_kwargs instead. Unlike arc-challenge,
+    # there's no aggregating config here to auto-sync the two - set both by
+    # hand if you don't know ahead of time which tier will end up active.
     chat_template_kwargs: Dict[str, Any] = Field(default_factory=dict)
     assistant_prefix: Optional[str] = None  # string to add before assistant response
     project: Dict[str, Any] = {}  # other project specific prompting settings
@@ -82,8 +91,9 @@ class ApproxTokenizer:
     PromptBuilder only needs `.tokenize(text)` to return something with a
     `len()` (see count_tokens), so budgeting a prompt doesn't have to mean
     downloading a model's tokenizer to count approximately anyway. It
-    lives here rather than in each caller because that contract is defined
-    here.
+    lives here rather than in each project because that contract is
+    defined here, and every caller that only budgets - a CLI, a demo UI,
+    a test - was otherwise rewriting this same class.
 
     Undercounts against real subword tokenization (one whitespace-
     separated word is often several tokens), so a budget checked with this
@@ -199,15 +209,22 @@ class PromptBuilder:
               assistant_prefix: Optional[str] = None) -> Optional[str]:
         """Render and join all configured blocks.
 
-        Args:
-            context: feeds Jinja variables to every block template.
-            overrides: fully replaces a block's rendered text by name
-            assistant_prefix: per-call override for config.assistant_prefix
-                - e.g. a known target-shape header computed per task, so
-                  the model only has to continue the answer instead of
-                  producing its own header from scratch. None (the
-                  default) falls back to config.assistant_prefix; pass ""
-                  explicitly to suppress a configured prefix for one call.
+        `context` feeds Jinja variables to every block template.
+        `overrides` fully replaces a block's rendered text by name (keeps the
+        old prompts_modifications behaviour, without touching templates) -
+        merged on top of config.block_overrides, with per-call values
+        winning. Set block_overrides once on the config for a quick
+        notebook-style wording tweak that doesn't need a new template
+        version file; pass overrides= to override just this one call.
+        `assistant_prefix` is a per-call override for config.assistant_prefix
+        - e.g. a known partial-answer header so the model only has to
+        continue instead of producing its own header from scratch. None
+        (the default) falls back to config.assistant_prefix; pass "" to
+        suppress a configured prefix for one call. Works whether or not
+        config.chat_template is set - see _join.
+        Returns None if the prompt can't fit within token_limit (even after
+        trimming the examples block down to `min_examples`). A resolver that
+        returns OMIT leaves its block out instead (see OMIT).
         """
         context = context or {}
         overrides = {**self.config.block_overrides, **(overrides or {})}
@@ -256,12 +273,9 @@ class PromptBuilder:
                 for spec, content in parts.values()
             ]
             joined = "\n".join(sections)
-            # No chat structure to attach an assistant turn to here - the
-            # old pipeline this replaced primed the model the same way
-            # (str concatenation onto the plain prompt), so this isn't
-            # chat_template-exclusive: a plain completion model can be
-            # primed by literally ending the prompt with the desired
-            # continuation's start.
+            # No chat structure to attach an assistant turn to here - a
+            # plain completion model can still be primed by literally
+            # ending the prompt with the desired continuation's start.
             if assistant_prefix:
                 joined = f"{joined}\n{assistant_prefix}"
             return joined

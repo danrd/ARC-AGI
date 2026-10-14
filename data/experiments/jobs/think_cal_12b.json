@@ -11,13 +11,13 @@
     "google/gemma-4-12b-it",
     "--thinking",
     "--max-tokens",
-    "6000",
+    "12000",
     "--context",
-    "14000",
+    "20000",
     "--limit",
     "20",
     "--hours",
-    "3",
+    "4",
     "--out",
     "{out}.jsonl"
    ]

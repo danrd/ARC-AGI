@@ -137,3 +137,9 @@ def test_without_a_delete_function_nothing_is_deleted():
     jobs = [Job("a", "cpu", 1, "done", result=["f"])]
     fake.tick(jobs, delete=False)
     assert fake.deleted == [] and not jobs[0].cleaned
+
+
+def test_the_queue_file_keeps_the_notes_readable_not_escaped(tmp_path):
+    path = tmp_path / "queue.json"
+    queue.save([queue.Job(name="j", resource="cpu", shards=1, note="карта на 103 задачах")], path)
+    assert "карта на 103 задачах" in path.read_text()

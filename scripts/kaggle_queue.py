@@ -60,7 +60,7 @@ def load(path=QUEUE) -> List[Job]:
 
 def save(jobs: List[Job], path=QUEUE) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps({"capacity": CAPACITY, "jobs": [asdict(j) for j in jobs]}, indent=1) + "\n")
+    Path(path).write_text(json.dumps({"capacity": CAPACITY, "jobs": [asdict(j) for j in jobs]}, indent=1, ensure_ascii=False) + "\n")
 
 
 def slots_used(jobs: List[Job], statuses: Dict[str, List[str]]) -> Dict[str, int]:

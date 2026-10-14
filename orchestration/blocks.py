@@ -1,6 +1,6 @@
 """Putting prompt blocks into a module's prompt without the config having to name them.
 
-The orchestration pieces add to what the model is shown - the tools it may ask for, the
+Pieces built around a model add to what it is shown - the tools it may ask for, the
 memory of its earlier attempts - and each does it through a block that is empty unless
 there is something to say. A config that has never heard of them is left as it was; the
 piece that needs them installs them in the module's builder, before `output_format`.
@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import Sequence
 
 from subsymbolic.prompt_builder import BlockSpec, PromptBuilder
-from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
 
 
 def with_blocks(config, names: Sequence[str]):
@@ -25,9 +24,9 @@ def with_blocks(config, names: Sequence[str]):
 
 
 def install_blocks(module, names: Sequence[str]) -> None:
-    """Rebuild `module.builder` with `names` among its blocks."""
-    config = module.builder.config
-    wider = with_blocks(config, names)
-    if wider is not config:
-        module.builder = PromptBuilder(wider, module.builder.tokenizer,
-                                       resolver_registry=RESOLVER_REGISTRY, filter_registry=FILTER_REGISTRY)
+    """Rebuild `module.builder` with `names` among its blocks, keeping the resolvers and filters it was built with."""
+    old = module.builder
+    wider = with_blocks(old.config, names)
+    if wider is not old.config:
+        module.builder = PromptBuilder(wider, old.tokenizer, resolver_registry=old.resolver_registry,
+                                       filter_registry=old.filter_registry)

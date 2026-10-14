@@ -1,12 +1,12 @@
 """Where a run's time goes.
 
-A run through the graph is a handful of very different costs - symbolic
-solvers in milliseconds, a search for hints in minutes, the model's generation,
-the second model's verdict, a background RL job that is waited on once - and
-which of them dominates is not something to guess. The tracer is what the
-orchestration pieces report to: each wraps the work it does in a span, a span
-records how long it took and, for a call to a model, how many tokens went in
-and came out, and `summary` reads the spans back as a table by phase.
+A run through a pipeline is a handful of very different costs - cheap checks
+in milliseconds, a search in minutes, the model's generation, a second model's
+verdict, a background job waited on once - and which of them dominates is not
+something to guess. The tracer is what the pieces report to: each wraps the
+work it does in a span, a span records how long it took and, for a call to a
+model, how many tokens went in and came out, and `summary` reads the spans
+back as a table by phase.
 
     tracer = Tracer()
     with tracer.span("llm", "attempt 1", tokens_in=900) as span:
@@ -25,7 +25,8 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterator, List, Optional
 
-#: The phases the pieces use, in the order a table lists them.
+#: The phases a table lists, in order; a phase not named here comes after them, in the order it was first used.
+#: A project with more phases of its own replaces this line.
 PHASES = ("symbolic", "hints", "tools", "prompt", "llm", "verify", "decide", "rl_wait", "other")
 
 
@@ -65,7 +66,8 @@ class Tracer:
         self.spans.append(Span(phase=phase, name=name, seconds=seconds, tokens_in=tokens_in, tokens_out=tokens_out))
 
     def record_module(self, results, name: str = "") -> None:
-        """The spans a SubsymbolicModule's `module_results` report: building the prompt, then generating."""
+        """The spans a model module's `module_results` report: building the prompt, then generating (the keys
+        prompt_seconds, generate_seconds, prompt_tokens, reply_tokens that subsymbolic's modules write)."""
         if not results or "generate_seconds" not in results:
             return
         self.record("prompt", name, results.get("prompt_seconds", 0.0))

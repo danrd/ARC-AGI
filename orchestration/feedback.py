@@ -14,12 +14,15 @@ accepted, which is all it knows and all it is quoted as.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
 from orchestration.hierarchy import _read_grid
+from orchestration.refine_core import Attempt as CoreAttempt
+from orchestration.refine_core import best_attempt, render_history  # noqa: F401 - re-exported, the names the rest of arc-agi uses
+from orchestration.refine_core import memoize_verdicts as _memoize
 from subsymbolic.utils import parse_llm_output
 from symbolic.invariants import STRONG, Invariants, Violation, check, learn
 
@@ -29,17 +32,12 @@ NOT_ACCEPTED = ("A second model, shown the examples and this answer, did not acc
 
 
 @dataclass
-class Attempt:
-    number: int
-    text: str
-    grid: Optional[np.ndarray] = None
-    notes: List[str] = field(default_factory=list)
-    strong: int = 0
-    weak: int = 0
+class Attempt(CoreAttempt):
+    """An attempt whose value is the grid the reply was read as."""
 
     @property
-    def clean(self) -> bool:
-        return not self.notes and self.grid is not None
+    def grid(self) -> Optional[np.ndarray]:
+        return self.value
 
 
 def review(task, grid: Optional[np.ndarray], invariants: Optional[Invariants] = None,
@@ -62,41 +60,11 @@ def review(task, grid: Optional[np.ndarray], invariants: Optional[Invariants] = 
     return notes, strong, len(violations) - sum(v.severity == STRONG for v in violations)
 
 
-def render_history(attempts: Sequence[Attempt]) -> str:
-    """The attempts for the `memory` block: the answer as written, and why it was not accepted."""
-    parts = []
-    for attempt in attempts:
-        if attempt.clean:
-            continue
-        shown = attempt.text.strip() if isinstance(attempt.text, str) and attempt.text.strip() else "(no answer)"
-        reasons = "\n".join(f"- {note}" for note in attempt.notes) or "- (no reason recorded)"
-        parts.append(f"Attempt {attempt.number}. Your answer:\n{shown}\nIt was not accepted:\n{reasons}")
-    if not parts:
-        return ""
-    return "\n\n".join(parts) + "\n\nDo not repeat these answers; correct what they got wrong."
-
-
 def memoize_verdicts(verify: Callable[[Any, np.ndarray], bool]) -> Callable[[Any, np.ndarray], bool]:
     """`verify` that answers a (task, grid) it has been asked before from memory. The decision
     and the feedback both want the second model's word on the same answer; it is asked once."""
-    verdicts: Dict[Any, bool] = {}
-
-    def verdict(task, grid) -> bool:
-        grid = np.asarray(grid)
-        key = (getattr(task, "label", id(task)), grid.shape, grid.tobytes())
-        if key not in verdicts:
-            verdicts[key] = bool(verify(task, grid))
-        return verdicts[key]
-
-    return verdict
-
-
-def best_attempt(attempts: Sequence[Attempt]) -> Optional[Attempt]:
-    """The best attempt: one that reads as a grid over one that does not, then the fewest strong
-    complaints, then the fewest weak; the later of equals."""
-    if not attempts:
-        return None
-    return min(reversed(list(attempts)), key=lambda a: (a.grid is None, a.strong, a.weak))
+    return _memoize(verify, key=lambda task, grid: (getattr(task, "label", id(task)), np.asarray(grid).shape,
+                                                    np.asarray(grid).tobytes()))
 
 
 def with_feedback(dispatch_fn: Callable[[Dict[str, Any]], Dict[str, Any]],

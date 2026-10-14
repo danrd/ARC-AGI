@@ -211,7 +211,7 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (17)"]
+  orchestration["orchestration (18)"]
   rl["rl (20)"]
   scripts["scripts (18)"]
   subsymbolic["subsymbolic (15)"]
@@ -222,7 +222,7 @@ graph TD
   tests -->|45| subsymbolic
   tests -->|35| orchestration
   tests -->|33| symbolic
-  orchestration -->|28| subsymbolic
+  orchestration -->|27| subsymbolic
   tests -->|21| data
   scripts -->|13| rl
   rl -->|11| data
@@ -266,10 +266,11 @@ graph TD
 | `orchestration.llm_only` | 0 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
+| `orchestration.refine_core` | 2 |
 | `orchestration.roster` | 3 |
 | `orchestration.run` | 1 |
 | `orchestration.tools` | 5 |
-| `orchestration.trace` | 10 |
+| `orchestration.trace` | 11 |
 | `rl.action_structure` | 2 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
@@ -318,7 +319,7 @@ graph TD
 | `subsymbolic.local_config` | 5 |
 | `subsymbolic.logging` | 1 |
 | `subsymbolic.prompt_builder` | 26 |
-| `subsymbolic.registry` | 13 |
+| `subsymbolic.registry` | 12 |
 | `subsymbolic.subsymbolic_module` | 6 |
 | `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |

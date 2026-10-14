@@ -20,31 +20,24 @@ better than the first.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
-from orchestration.blocks import install_blocks
-from orchestration.feedback import Attempt, best_attempt, render_history, review
+from orchestration import refine_core
+from orchestration.feedback import Attempt, review
 from orchestration.hierarchy import _read_grid
+from orchestration.refine_core import RefineResult  # noqa: F401 - the result type, as this module has always offered it
 from orchestration.trace import Tracer
 from subsymbolic.utils import parse_llm_output
 from symbolic.invariants import Invariants, learn
 
 
-@dataclass
-class RefineResult:
-    attempts: List[Attempt] = field(default_factory=list)
-    best: Optional[Attempt] = None
-
-    @property
-    def accepted(self) -> bool:
-        return self.best is not None and self.best.clean
-
-    @property
-    def solution(self) -> str:
-        return self.best.text if self.best is not None else ""
+def _parts(task, verify, parse, invariants):
+    """The loop's two project-specific functions for an ARC task: read the reply as a grid, and review the grid
+    against what the examples agree on (and the second model's word, when `verify` is given)."""
+    learnt = invariants if invariants is not None else learn([(s.train_inp, s.train_out) for s in task.subtasks])
+    return (lambda text: _read_grid(parse, text)), (lambda _task, grid: review(task, grid, learnt, verify))
 
 
 def loop(task, ask: Callable[[Dict[str, Any]], str], rounds: int = 3,
@@ -53,60 +46,19 @@ def loop(task, ask: Callable[[Dict[str, Any]], str], rounds: int = 3,
          invariants: Optional[Invariants] = None) -> RefineResult:
     """`ask(context) -> text` up to `rounds` times; each call after the first has the attempts so far
     in `context["history_text"]`. Stops at the first attempt nothing is found wrong with."""
-    invariants = invariants if invariants is not None else learn([(s.train_inp, s.train_out) for s in task.subtasks])
-    attempts: List[Attempt] = []
-    for _ in range(max(1, rounds)):
-        call = dict(context or {})
-        history = render_history(attempts)
-        if history:
-            call["history_text"] = history
-        text = ask(call)
-        text = text if isinstance(text, str) else ""
-        grid = _read_grid(parse, text) if text.strip() else None
-        notes, strong, weak = review(task, grid, invariants, verify)
-        attempts.append(Attempt(len(attempts) + 1, text, grid, notes, strong, weak))
-        if attempts[-1].clean:
-            break
-    return RefineResult(attempts=attempts, best=best_attempt(attempts))
+    read, check = _parts(task, verify, parse, invariants)
+    return refine_core.loop(task, ask, check, read, rounds, context, attempt_class=Attempt)
 
 
-class RefiningModule:
-    """A SubsymbolicModule-shaped module whose `solve` is `loop` around the wrapped one."""
+class RefiningModule(refine_core.RefiningModule):
+    """A SubsymbolicModule-shaped module whose `solve` is `loop` around the wrapped one. The task is only known
+    at `solve`, so the review and the reading are made there."""
 
     def __init__(self, module, rounds: int = 3, verify: Optional[Callable[[Any, np.ndarray], bool]] = None,
                  parse: Callable[[str], Any] = parse_llm_output, tracer: Optional[Tracer] = None):
-        self.module = module
-        self.rounds, self.verify, self.parse, self.tracer = rounds, verify, parse, tracer
-        self.last: Optional[RefineResult] = None
-        self.runs: List[RefineResult] = []        # every call's loop, for reading a run afterwards
-        install_blocks(module, ["memory"])
-
-    @property
-    def builder(self):
-        return self.module.builder
-
-    @property
-    def runner(self):
-        return self.module.runner
-
-    def close(self) -> None:
-        self.module.close()
+        super().__init__(module, review=None, parse=None, rounds=rounds, tracer=tracer, attempt_class=Attempt)
+        self.verify, self.grid_parse = verify, parse
 
     def solve(self, task, context: Optional[dict] = None) -> Dict[str, Any]:
-        errors: List[str] = []
-
-        def ask(call: Dict[str, Any]) -> str:
-            result = self.module.solve(task, context=call)
-            if self.tracer is not None:
-                self.tracer.record_module(result.get("module_results"), "refine")
-            if "error" in (result.get("module_results") or {}):
-                errors.append(str(result["module_results"]["error"]))
-            return result.get("solution", "")
-
-        self.last = loop(task, ask, self.rounds, self.verify, self.parse, context)
-        self.runs.append(self.last)
-        if not self.last.attempts or (not self.last.solution and errors):
-            return {"solution": "", "module_results": {"error": errors[-1] if errors else "no answer"}}
-        return {"solution": self.last.solution,
-                "module_results": {"rounds": len(self.last.attempts), "accepted": self.last.accepted,
-                                   "notes": [a.notes for a in self.last.attempts]}}
+        self.parse, self.review = _parts(task, self.verify, self.grid_parse, None)
+        return super().solve(task, context)

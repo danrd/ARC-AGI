@@ -4082,6 +4082,19 @@
    "note": "TPU: проба Gemma 4 31B с бэкендом JAX (прошлая загрузилась за 23 мин, но генерация упала на TensorFlow-бэкенде)",
    "result": [],
    "cleaned": false
+  },
+  {
+   "name": "think_cal_moe",
+   "resource": "gpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
+   "extras": "rl",
+   "note": "калибровка thinking: Gemma 4 26B-A4B (MoE, около 4 млрд активных параметров, UD-Q4_K_M), те же 20 задач, лимит 12000 токенов, окно 20000, до 4 ч: быстрее ли рассуждает и успевает ли закончить",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

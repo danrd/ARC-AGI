@@ -4065,6 +4065,19 @@
    "note": "калибровка thinking: Gemma 4 12B (Q4_K_M), те же 20 задач, лимит 12000 токенов вместе с рассуждением (вдвое больше, чем у больших моделей), окно 20000, до 4 ч: даёт ли меньшая модель с рассуждением больше решённых",
    "result": [],
    "cleaned": false
+  },
+  {
+   "name": "tpu_gemma4d",
+   "resource": "tpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [
+    "pip install -q -U 'keras-hub>=0.32'"
+   ],
+   "extras": "",
+   "note": "TPU: проба Gemma 4 31B с бэкендом JAX (прошлая загрузилась за 23 мин, но генерация упала на TensorFlow-бэкенде)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

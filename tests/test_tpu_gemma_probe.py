@@ -123,3 +123,15 @@ def test_a_folder_without_weights_is_not_a_model(tmp_path):
 def test_the_tree_lists_folders_to_a_depth(tmp_path):
     (tmp_path / "a" / "b" / "c").mkdir(parents=True)
     assert probe.tree(tmp_path, depth=2) == [str(tmp_path / "a"), str(tmp_path / "a" / "b")]
+
+
+def test_keras_is_told_to_use_jax_before_anything_imports_it():
+    import subprocess
+    import sys
+    code = ("import os; os.environ.pop('KERAS_BACKEND', None); import sys; sys.path.insert(0, 'scripts'); "
+            "import tpu_gemma_probe; print(os.environ['KERAS_BACKEND'])")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(probe.__file__).rsplit("/scripts/", 1)[0])
+    assert out.stdout.strip() == "jax", out.stderr[-300:]
+    code = code.replace("os.environ.pop('KERAS_BACKEND', None)", "os.environ['KERAS_BACKEND'] = 'tensorflow'")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(probe.__file__).rsplit("/scripts/", 1)[0])
+    assert out.stdout.strip() == "tensorflow", "a backend chosen by the caller is left alone"

@@ -12,10 +12,16 @@ each idea gets.
 """
 import argparse
 import json
+import os
 import re
 import time
 import traceback
 from pathlib import Path
+
+# Keras picks its backend when it is first imported, and takes TensorFlow when nothing says otherwise: the TPU run that
+# loaded Gemma 4 31B then failed at the first generation on a TensorFlow-backend call. This must come before any
+# import of keras or keras_hub.
+os.environ.setdefault("KERAS_BACKEND", "jax")
 
 report = {"steps": []}
 

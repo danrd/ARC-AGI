@@ -34,11 +34,20 @@ TASKS_FILE = ROOT / "data" / "experiments" / "llm_tasks.json"
 ORDER = ("easy", "medium", "hard", "impossible", "very_hard")
 
 
-def llm_only_params(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200) -> Dict[str, Any]:
-    """The GPU notebooks' parameters for `model` with the grammar taken off and the prompt cut to BLOCKS."""
+def llm_only_params(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200,
+                    thinking: bool = False, context: int = 14000) -> Dict[str, Any]:
+    """The GPU notebooks' parameters for `model` with the grammar taken off and the prompt cut to BLOCKS.
+
+    `thinking` lets the model reason before it answers (the notebooks switch that off, because a model that reasons can
+    spend every token on it and never answer). The reasoning is part of the reply and counts against `max_tokens`, so
+    the window grows to `context` and a prompt that would leave less than `max_tokens` of it is not asked."""
     params = gpu_notebook_params(model, tokenizer, max_tokens)
     params["generation"] = {k: v for k, v in params["generation"].items() if k != "grammar"}
     params["prompt"] = {**params["prompt"], "blocks": list(BLOCKS), "resolvers": ["examples"]}
+    if thinking:
+        params["generation"]["chat_template_kwargs"] = {"enable_thinking": True}
+        params["llm"] = {**params["llm"], "max_context": context}
+        params["prompt"]["token_limit"] = context - max_tokens
     return params
 
 
@@ -63,7 +72,7 @@ def grade(task, reply: Any) -> Dict[str, Any]:
             "cells_right": round(float((grid == task.test_out).mean()), 4) if same else 0.0}
 
 
-def solve_one(task, module, difficulty: Optional[str] = None) -> Dict[str, Any]:
+def solve_one(task, module, difficulty: Optional[str] = None, reply_limit: int = 6000) -> Dict[str, Any]:
     context = {"grid_repr_type": "concise", "test_input_grid": task.test_subtask.train_inp}
     started = time.perf_counter()
     result = module.solve(task, context)
@@ -71,7 +80,7 @@ def solve_one(task, module, difficulty: Optional[str] = None) -> Dict[str, Any]:
     stats = result.get("module_results") or {}
     return {"task": task.label, "difficulty": difficulty, **grade(task, reply), "seconds": round(time.perf_counter() - started, 2),
             "prompt_tokens": stats.get("prompt_tokens"), "reply_tokens": stats.get("reply_tokens"),
-            "error": stats.get("error"), "reply": reply[:6000] if isinstance(reply, str) else ""}
+            "error": stats.get("error"), "reply": reply[:reply_limit] if isinstance(reply, str) else ""}
 
 
 def done_ids(paths: Iterable[str]) -> set:
@@ -84,7 +93,7 @@ def done_ids(paths: Iterable[str]) -> set:
 
 def run(task_ids: List[str], module, out: str, split: str = "evaluation", hours: Optional[float] = None,
         skip: Iterable[str] = (), clock=time.time, loader=load_task,
-        difficulties: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+        difficulties: Optional[Dict[str, str]] = None, reply_limit: int = 6000) -> List[Dict[str, Any]]:
     """Ask `module` about every task not in `out` or `skip`; stops starting new ones after `hours`."""
     finished = done_ids([out, *skip])
     todo = [t for t in task_ids if t not in finished]
@@ -93,7 +102,7 @@ def run(task_ids: List[str], module, out: str, split: str = "evaluation", hours:
     for task_id in todo:
         if hours is not None and clock() - started > hours * 3600:
             break
-        record = solve_one(loader(split, task_id), module, (difficulties or {}).get(task_id))
+        record = solve_one(loader(split, task_id), module, (difficulties or {}).get(task_id), reply_limit)
         records.append(record)
         with open(out, "a") as handle:
             handle.write(json.dumps({**record, "split": split}) + "\n")
@@ -126,6 +135,10 @@ def main():
     parser.add_argument("--tasks-file", default=str(TASKS_FILE), help="JSON of {task id: difficulty}")
     parser.add_argument("--limit", type=int, help="only the first N of the shuffled tasks")
     parser.add_argument("--max-tokens", type=int, default=1200)
+    parser.add_argument("--thinking", action="store_true",
+                        help="let the model reason first; --max-tokens then counts the reasoning too, and the whole "
+                             "reply is kept (it is what shows how long the reasoning runs)")
+    parser.add_argument("--context", type=int, default=14000, help="the window with --thinking")
     parser.add_argument("--hours", type=float)
     parser.add_argument("--skip", nargs="*", default=[], help="result files of other runs: their tasks are done")
     parser.add_argument("--out", default="llm_only.jsonl")
@@ -134,7 +147,8 @@ def main():
     from orchestration.configs import ExperimentConfig
     from subsymbolic.subsymbolic_module import SubsymbolicModule
 
-    config = ExperimentConfig.from_dict(llm_only_params(args.model, args.tokenizer, args.max_tokens))
+    config = ExperimentConfig.from_dict(llm_only_params(args.model, args.tokenizer, args.max_tokens,
+                                                                 args.thinking, args.context))
     try:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True)
@@ -146,7 +160,8 @@ def main():
     ids = shuffled_tasks(difficulties, args.seed)[:args.limit]
     module = SubsymbolicModule(config, tokenizer)
     try:
-        run(ids, module, args.out, args.split, args.hours, args.skip, difficulties=difficulties)
+        run(ids, module, args.out, args.split, args.hours, args.skip, difficulties=difficulties,
+            reply_limit=10 ** 6 if args.thinking else 6000)
     finally:
         module.close()
     print(summarise([r for r in read_lines(args.out) if "solved" in r]))

@@ -122,3 +122,34 @@ class TestARun:
         records = llm_only.run(["a"], module, str(tmp_path / "o.jsonl"), loader=self.loader,
                                difficulties={"a": "very_hard"})
         assert records[0]["difficulty"] == "very_hard"
+
+
+class TestThinking:
+    """With thinking on the reasoning shares the token limit, so the window is larger, the prompt must leave room for
+    the whole of it, and the reply is kept whole."""
+
+    def test_off_by_default_and_the_notebooks_own_setting_is_kept(self):
+        params = llm_only.llm_only_params(MODEL, "tok/model", 900)
+        assert params["generation"]["chat_template_kwargs"] == {"enable_thinking": False}
+        assert params["llm"]["max_context"] == 10000
+
+    def test_on_it_switches_the_template_on_and_leaves_room_for_the_reasoning(self):
+        params = llm_only.llm_only_params(MODEL, "tok/model", 6000, thinking=True, context=14000)
+        assert params["generation"]["chat_template_kwargs"] == {"enable_thinking": True}
+        assert params["llm"]["max_context"] == 14000 and params["prompt"]["token_limit"] == 8000
+        assert "grammar" not in params["generation"] and params["generation"]["max_tokens"] == 6000
+
+    def test_the_notebooks_own_parameters_are_not_changed_by_it(self):
+        from subsymbolic.local_config import gpu_notebook_params
+        before = gpu_notebook_params(MODEL)
+        llm_only.llm_only_params(MODEL, thinking=True)
+        assert gpu_notebook_params(MODEL) == before
+
+    def test_a_long_reply_is_cut_only_when_asked_to(self):
+        class Module:
+            def solve(self, task, context):
+                return {"solution": "x" * 20000, "module_results": {}}
+
+        task = make_task()
+        assert len(llm_only.solve_one(task, Module())["reply"]) == 6000
+        assert len(llm_only.solve_one(task, Module(), reply_limit=10 ** 6)["reply"]) == 20000

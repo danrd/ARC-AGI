@@ -1,0 +1,26 @@
+{
+ "steps": [
+  {
+   "name": "think_cal_qwen",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--thinking",
+    "--max-tokens",
+    "6000",
+    "--context",
+    "14000",
+    "--limit",
+    "20",
+    "--hours",
+    "4.5",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

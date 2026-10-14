@@ -1,0 +1,26 @@
+{
+ "steps": [
+  {
+   "name": "think_cal_12b",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-12b-it-GGUF:gemma-4-12b-it-Q4_K_M.gguf",
+    "--tokenizer",
+    "google/gemma-4-12b-it",
+    "--thinking",
+    "--max-tokens",
+    "6000",
+    "--context",
+    "14000",
+    "--limit",
+    "20",
+    "--hours",
+    "3",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

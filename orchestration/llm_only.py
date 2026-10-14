@@ -62,9 +62,24 @@ def shuffled_tasks(difficulties: Dict[str, str], seed: int = 0) -> List[str]:
     return ids
 
 
+#: (opening, closing) of the reasoning a model writes before its answer: Qwen's and Gemma 4's.
+THINKING_MARKS = (("<think>", "</think>"), ("<|channel>thought", "<channel|>"))
+
+
+def final_answer(reply: str) -> str:
+    """The reply without its reasoning. Reasoning that never closed (the token limit came first) leaves no answer:
+    a grid written in the middle of it is a draft, not the model's reply."""
+    for opening, closing in THINKING_MARKS:
+        if closing in reply:
+            return reply.rsplit(closing, 1)[1]
+        if opening in reply:
+            return ""
+    return reply
+
+
 def grade(task, reply: Any) -> Dict[str, Any]:
     """Whether the reply holds a grid, of the right shape, and the task's answer."""
-    grid = answer_of({"solution": reply}) if isinstance(reply, str) else None
+    grid = answer_of({"solution": final_answer(reply)}) if isinstance(reply, str) else None
     if grid is None:
         return {"parsed": False, "shape_ok": False, "solved": False, "cells_right": 0.0}
     same = grid.shape == task.test_out.shape

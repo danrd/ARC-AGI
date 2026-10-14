@@ -153,3 +153,24 @@ class TestThinking:
         task = make_task()
         assert len(llm_only.solve_one(task, Module())["reply"]) == 6000
         assert len(llm_only.solve_one(task, Module(), reply_limit=10 ** 6)["reply"]) == 20000
+
+
+class TestTheReasoningIsNotTheReply:
+    """A model that reasons writes its reasoning first; only what follows it is the reply."""
+
+    GRID = "2,2:\n1 02\n2 10"
+
+    def test_the_answer_is_what_follows_the_reasoning_of_either_model(self):
+        assert llm_only.final_answer("<think>a grid 1,1:\\n1 0</think>" + self.GRID) == self.GRID
+        assert llm_only.final_answer("<|channel>thought\nhmm<channel|>" + self.GRID) == self.GRID
+        assert llm_only.final_answer(self.GRID) == self.GRID
+
+    def test_reasoning_cut_by_the_token_limit_leaves_no_answer(self):
+        assert llm_only.final_answer("<|channel>thought\nso the grid would be\n" + self.GRID) == ""
+        assert llm_only.final_answer("<think>maybe " + self.GRID) == ""
+
+    def test_a_grid_drafted_inside_the_reasoning_is_not_graded(self):
+        task = make_task()
+        draft = "<|channel>thought\nTry 2,2:\n1 02\n2 10\n"
+        assert llm_only.grade(task, draft)["parsed"] is False
+        assert llm_only.grade(task, draft + "<channel|>" + self.GRID)["solved"] is True

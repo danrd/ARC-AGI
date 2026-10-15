@@ -143,3 +143,47 @@ def test_the_queue_file_keeps_the_notes_readable_not_escaped(tmp_path):
     path = tmp_path / "queue.json"
     queue.save([queue.Job(name="j", resource="cpu", shards=1, note="карта на 103 задачах")], path)
     assert "карта на 103 задачах" in path.read_text()
+
+
+def test_a_job_kaggle_refuses_stays_queued_and_is_asked_again_by_the_next_tick():
+    class Refusing(Fake):
+        quota = False
+
+        def start(self, job):
+            if not self.quota:
+                raise queue.StartRefused("Kernel push error: Maximum weekly GPU quota of 30.00 hours reached.")
+            super().start(job)
+
+    fake = Refusing()
+    jobs = [Job("a", "gpu", 1), Job("b", "cpu", 1)]
+    events = fake.tick(jobs)
+    assert [j.status for j in jobs] == ["queued", "queued"] and fake.started == []
+    assert "a: not started, Kaggle refused: Kernel push error: Maximum weekly GPU quota of 30.00 hours reached." in events
+    assert not any("idle" in e for e in events)                  # a job is waiting for the slot, it is not idle
+    fake.quota = True
+    events = fake.tick(jobs)
+    assert [j.status for j in jobs] == ["running", "running"] and "a: started on 1 gpu notebook(s)" in events
+
+
+def test_a_refusal_for_one_job_does_not_keep_a_job_behind_it_from_starting():
+    class OneRefused(Fake):
+        def start(self, job):
+            if job.name == "a":
+                raise queue.StartRefused("no quota")
+            super().start(job)
+
+    jobs = [Job("a", "gpu", 1), Job("b", "cpu", 2)]
+    OneRefused().tick(jobs)
+    assert [j.status for j in jobs] == ["queued", "running"]
+
+
+def test_the_real_start_turns_a_push_the_launcher_refused_into_the_queue_s_refusal(monkeypatch):
+    import pytest
+    import kaggle_launch
+
+    def refuse(*args, **kwargs):
+        raise kaggle_launch.PushRefused("Kernel push error: quota")
+
+    monkeypatch.setattr(kaggle_launch, "start", refuse)
+    with pytest.raises(queue.StartRefused, match="quota"):
+        queue.real_start(Job("a", "gpu", 1))

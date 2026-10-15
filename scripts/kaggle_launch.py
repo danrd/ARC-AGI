@@ -84,14 +84,30 @@ def username():
     return out[1].split(",")[0].split("/")[0] if len(out) > 1 else sys.exit("no Kaggle account: set KAGGLE_USERNAME")
 
 
+class PushRefused(Exception):
+    """Kaggle took the push and said it would not run the notebook."""
+
+
+def pushed(result) -> bool:
+    """Whether a `kernels push` made a notebook. The command exits 0 either way: a refusal - "Maximum weekly GPU quota
+    of 30.00 hours reached." - is only in its text, as "Kernel push error: ...", and a success says "successfully
+    pushed"."""
+    return "successfully pushed" in (result.stdout + result.stderr).lower()
+
+
 def start(job, shards, gpu=False, extras="rl", setup=(), tpu=False):
+    """Push a notebook per shard. Raises PushRefused when the first is refused, before anything has been started, so
+    that the caller can try again later; a refusal after the first is printed and the rest are still pushed."""
     user = username()
     for shard in range(shards):
         with tempfile.TemporaryDirectory() as folder:
             (Path(folder) / "worker.py").write_text(script(job, shard, shards, extras, setup))
             (Path(folder) / "kernel-metadata.json").write_text(json.dumps(metadata(user, job, shard, gpu, tpu, model_sources(job))))
             result = kaggle("kernels", "push", "-p", folder)
-        print(slug(job, shard), (result.stdout + result.stderr).strip().splitlines()[-1])
+        text = (result.stdout + result.stderr).strip()
+        print(slug(job, shard), text.splitlines()[-1] if text else "no answer")
+        if shard == 0 and not pushed(result):
+            raise PushRefused(text.splitlines()[-1] if text else "no answer from kaggle")
 
 
 def status(job, shards):

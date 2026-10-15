@@ -110,3 +110,25 @@ def test_a_job_that_names_models_has_them_attached_in_the_metadata(tmp_path, mon
     assert launch.metadata("me", "with", 0, tpu=True, models=launch.model_sources("with"))["model_sources"] == [
         "keras/gemma4/keras/gemma4_instruct_31b/2"]
     assert launch.metadata("me", "without", 0)["model_sources"] == []
+
+
+def test_a_push_that_exits_zero_with_an_error_is_a_refusal():
+    from types import SimpleNamespace
+    quota = SimpleNamespace(returncode=0, stdout="Kernel push error: Maximum weekly GPU quota of 30.00 hours reached.\n",
+                            stderr="")
+    done = SimpleNamespace(returncode=0, stdout="Kernel version 1 successfully pushed.  Please check progress at x\n",
+                           stderr="")
+    assert not launch.pushed(quota) and launch.pushed(done)
+
+
+def test_start_raises_when_the_first_push_is_refused_and_not_when_a_later_one_is(monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    answers = iter(["Kernel push error: no quota", "Kernel version 1 successfully pushed."])
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "script", lambda *a, **k: "")
+    monkeypatch.setattr(launch, "kaggle", lambda *a: SimpleNamespace(returncode=0, stdout=next(answers), stderr=""))
+    with pytest.raises(launch.PushRefused, match="no quota"):
+        launch.start("j", 2, gpu=True)
+    answers = iter(["Kernel version 1 successfully pushed.", "Kernel push error: no quota"])
+    launch.start("j", 2, gpu=True)                      # the first went; the second's refusal is printed, not raised

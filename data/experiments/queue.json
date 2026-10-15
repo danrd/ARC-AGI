@@ -4224,7 +4224,7 @@
    "name": "think_small",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "queued",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],

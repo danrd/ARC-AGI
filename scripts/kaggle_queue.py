@@ -38,6 +38,10 @@ BUSY = {"RUNNING", "QUEUED", "NEW", "STARTING"}
 ENDED = {"COMPLETE", "ERROR", "CANCEL_ACKNOWLEDGED", "CANCELLED"}
 
 
+class StartRefused(Exception):
+    """A start function's way of saying that Kaggle would not run the job now, and why."""
+
+
 @dataclass
 class Job:
     name: str
@@ -109,7 +113,13 @@ def tick(jobs: List[Job], status_fn: Callable[[Job], List[str]], start_fn: Calla
             events.append(f"{job.name}: waits, {capacity[job.resource] - used[job.resource]} free {job.resource} "
                           f"of the {job.shards} it takes")
             continue
-        start_fn(job)
+        try:
+            start_fn(job)
+        except StartRefused as refusal:
+            # Kaggle takes the push and answers that it will not run it (the week's quota is out). The job stays
+            # queued, so the next tick asks again and it starts when the quota is back.
+            events.append(f"{job.name}: not started, Kaggle refused: {refusal}")
+            continue
         job.status = "running"
         used[job.resource] += job.shards
         events.append(f"{job.name}: started on {job.shards} {job.resource} notebook(s)")
@@ -128,8 +138,11 @@ def real_status(job: Job) -> List[str]:
 
 def real_start(job: Job) -> None:
     import kaggle_launch as launch
-    launch.start(job.name, job.shards, gpu=job.resource == "gpu", extras=job.extras, setup=job.setup,
-                 tpu=job.resource == "tpu")
+    try:
+        launch.start(job.name, job.shards, gpu=job.resource == "gpu", extras=job.extras, setup=job.setup,
+                     tpu=job.resource == "tpu")
+    except launch.PushRefused as refusal:
+        raise StartRefused(str(refusal)) from refusal
 
 
 def real_delete(job: Job) -> bool:

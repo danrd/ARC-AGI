@@ -66,6 +66,25 @@ def shuffled_tasks(difficulties: Dict[str, str], seed: int = 0) -> List[str]:
     return ids
 
 
+def task_size(task) -> tuple:
+    """(examples, cells) of a task: how many training pairs it has and how many cells all the grids the model is shown
+    hold - the examples' inputs and outputs and the test input."""
+    cells = sum(s.train_inp.size + s.train_out.size for s in task.subtasks) + task.test_inp.size
+    return len(task.subtasks), int(cells)
+
+
+def small_tasks(ids: Iterable[str], count: int, max_examples: int = 3, split: str = "evaluation",
+                loader=load_task) -> List[str]:
+    """The `count` tasks of `ids` with the fewest cells among those that have at most `max_examples` examples: the
+    ones a prompt, its aids and the model's reasoning all fit in the window for. Ties are broken by id."""
+    sized = []
+    for task_id in ids:
+        examples, cells = task_size(loader(split, task_id))
+        if examples <= max_examples:
+            sized.append((cells, task_id))
+    return [task_id for _, task_id in sorted(sized)[:count]]
+
+
 #: (opening, closing) of the reasoning a model writes before its answer: Qwen's and Gemma 4's.
 THINKING_MARKS = (("<think>", "</think>"), ("<|channel>thought", "<channel|>"))
 
@@ -158,6 +177,13 @@ def summarise(lines: List[Dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+def ids_from_args(args, difficulties: Dict[str, str], loader=load_task) -> List[str]:
+    """The tasks the command line asks for: the smallest ones with --small, else the first of the shuffled order."""
+    if args.small:
+        return small_tasks(sorted(difficulties), args.small, args.max_examples, args.split, loader)
+    return shuffled_tasks(difficulties, args.seed)[:args.limit]
+
+
 def params_from_args(args) -> Dict[str, Any]:
     """The model parameters the command line asks for: the aids, if any, get their block."""
     return llm_only_params(args.model, args.tokenizer, args.max_tokens, args.thinking, args.context, bool(args.aids))
@@ -171,6 +197,9 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--tasks-file", default=str(TASKS_FILE), help="JSON of {task id: difficulty}")
     parser.add_argument("--limit", type=int, help="only the first N of the shuffled tasks")
+    parser.add_argument("--small", type=int, help="instead of the shuffled order, the N tasks with the fewest cells among "
+                        "those with at most --max-examples examples")
+    parser.add_argument("--max-examples", type=int, default=3)
     parser.add_argument("--max-tokens", type=int, default=1200)
     parser.add_argument("--thinking", action="store_true",
                         help="let the model reason first; --max-tokens then counts the reasoning too, and the whole "
@@ -196,7 +225,7 @@ def main():
         from subsymbolic.prompt_builder import ApproxTokenizer
         tokenizer = ApproxTokenizer()
     difficulties = task_difficulties(args.tasks_file)
-    ids = shuffled_tasks(difficulties, args.seed)[:args.limit]
+    ids = ids_from_args(args, difficulties)
     module = SubsymbolicModule(config, tokenizer)
     try:
         run(ids, module, args.out, args.split, args.hours, args.skip, difficulties=difficulties,

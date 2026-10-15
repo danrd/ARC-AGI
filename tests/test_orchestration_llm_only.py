@@ -262,3 +262,35 @@ class TestAids:
         with pytest.raises(ValueError, match="auxiliary_info"):
             llm_only.solve_one(make_task(), module, aids=["objects"])
         assert module.asked == []
+
+
+class TestSmallTasks:
+    def task(self, examples, side):
+        grid = np.zeros((side, side), int)
+        return ARCTask("t", [ARCSubtask(f"s{i}", grid, grid) for i in range(examples)], grid, grid)
+
+    def loader(self, split, task_id):
+        return {"big": self.task(2, 10), "tiny": self.task(2, 3), "many": self.task(5, 2), "mid": self.task(3, 5),
+                "tie": self.task(2, 3)}[task_id]
+
+    def test_the_size_counts_every_grid_the_model_is_shown(self):
+        assert llm_only.task_size(self.task(2, 3)) == (2, 2 * 2 * 9 + 9)
+
+    def test_the_fewest_cells_first_among_tasks_with_few_enough_examples(self):
+        ids = ["big", "tiny", "many", "mid", "tie"]
+        assert llm_only.small_tasks(ids, 3, loader=self.loader) == ["tie", "tiny", "mid"]
+        assert llm_only.small_tasks(ids, 10, loader=self.loader) == ["tie", "tiny", "mid", "big"]
+        assert "many" in llm_only.small_tasks(ids, 10, max_examples=5, loader=self.loader)
+
+    def test_a_task_with_too_many_examples_is_left_out_however_small(self):
+        assert llm_only.small_tasks(["many"], 5, max_examples=3, loader=self.loader) == []
+
+    def test_the_command_line_picks_the_small_ones_or_the_shuffled_first(self):
+        from types import SimpleNamespace
+        difficulties = {k: "easy" for k in ("big", "tiny", "many", "mid", "tie")}
+        small = SimpleNamespace(small=2, max_examples=3, split="evaluation", seed=0, limit=None)
+        assert llm_only.ids_from_args(small, difficulties, self.loader) == ["tie", "tiny"]
+        wide = SimpleNamespace(small=2, max_examples=5, split="evaluation", seed=0, limit=None)
+        assert llm_only.ids_from_args(wide, difficulties, self.loader) == ["many", "tie"]
+        shuffled = SimpleNamespace(small=None, max_examples=3, split="evaluation", seed=0, limit=3)
+        assert llm_only.ids_from_args(shuffled, difficulties, self.loader) == llm_only.shuffled_tasks(difficulties)[:3]

@@ -1,0 +1,56 @@
+{
+ "steps": [
+  {
+   "name": "base",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--thinking",
+    "--max-tokens",
+    "6000",
+    "--context",
+    "14000",
+    "--small",
+    "20",
+    "--max-examples",
+    "3",
+    "--hours",
+    "4.5",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "aids",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--thinking",
+    "--max-tokens",
+    "6000",
+    "--context",
+    "14000",
+    "--small",
+    "20",
+    "--max-examples",
+    "3",
+    "--aids",
+    "cell_changes",
+    "objects",
+    "colour_counts",
+    "--hours",
+    "4.5",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

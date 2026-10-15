@@ -4119,20 +4119,25 @@
    "name": "needs",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
    "note": "что модель считала вручную в своём рассуждении: каждая из четырёх моделей читает свои 17-20 рассуждений из калибровок thinking и называет, что программа могла бы подать заранее (без thinking, 77 коротких запросов)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/needs_gemma12_0.jsonl",
+    "data/experiments/runs/kaggle/needs_gemma31_0.jsonl",
+    "data/experiments/runs/kaggle/needs_moe_0.jsonl",
+    "data/experiments/runs/kaggle/needs_qwen27_0.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "ask_data",
    "resource": "gpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],

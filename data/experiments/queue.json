@@ -4114,6 +4114,19 @@
    "note": "пары: f_base, f_pair, f_pairattn (факторизованные головы: отношение первого объекта и кандидата в логите второго) и e_attn (GNN с вниманием) на 23 задачах, сиды 3-4 (184 запуска)",
    "result": [],
    "cleaned": false
+  },
+  {
+   "name": "needs",
+   "resource": "gpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
+   "extras": "rl",
+   "note": "что модель считала вручную в своём рассуждении: каждая из четырёх моделей читает свои 17-20 рассуждений из калибровок thinking и называет, что программа могла бы подать заранее (без thinking, 77 коротких запросов)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

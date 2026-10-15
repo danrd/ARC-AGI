@@ -4161,7 +4161,7 @@
    "name": "tpu_gemma4e",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "failed",
    "setup": [],
    "extras": "rl",
    "note": "TPU: проба Gemma 4 31B, сетка 2×4 (веса режутся на 4 чипа: у 31B четыре головы ключей/значений, на 8 не делятся — прошлая проба упала на IndivisibleError, но загрузка из /kaggle/input и JAX уже работали)",
@@ -4213,11 +4213,16 @@
    "name": "pair_b2",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "failed",
    "setup": [],
    "extras": "rl",
    "note": "подтверждение на свежих сидах (pair_b упал из-за моей ошибки в файле задания): f_base и f_pair на 23 задачах, сиды 5-6 (92 запуска); база o_spatial для этих сидов уже есть",
-   "result": [],
+   "result": [
+    "data/experiments/runs/kaggle/pair_b2_pair_b2_0.jsonl",
+    "data/experiments/runs/kaggle/pair_b2_pair_b2_2.jsonl",
+    "data/experiments/runs/kaggle/pair_b2_pair_b2_3.jsonl",
+    "data/experiments/runs/kaggle/pair_b2_pair_b2_4.jsonl"
+   ],
    "cleaned": false
   },
   {

@@ -4110,12 +4110,18 @@
    "name": "pair_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "пары: f_base, f_pair, f_pairattn (факторизованные головы: отношение первого объекта и кандидата в логите второго) и e_attn (GNN с вниманием) на 23 задачах, сиды 3-4 (184 запуска)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/pair_a_pair_a_0.jsonl",
+    "data/experiments/runs/kaggle/pair_a_pair_a_1.jsonl",
+    "data/experiments/runs/kaggle/pair_a_pair_a_2.jsonl",
+    "data/experiments/runs/kaggle/pair_a_pair_a_3.jsonl",
+    "data/experiments/runs/kaggle/pair_a_pair_a_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "needs",

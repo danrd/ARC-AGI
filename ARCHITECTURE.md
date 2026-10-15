@@ -220,7 +220,7 @@ graph TD
   utils["utils (3)"]
   tests -->|106| rl
   tests -->|47| subsymbolic
-  tests -->|37| orchestration
+  tests -->|38| orchestration
   tests -->|34| symbolic
   orchestration -->|30| subsymbolic
   tests -->|21| data
@@ -261,7 +261,7 @@ graph TD
 | `orchestration.blocks` | 3 |
 | `orchestration.configs` | 16 |
 | `orchestration.context` | 1 |
-| `orchestration.data_requests` | 1 |
+| `orchestration.data_requests` | 3 |
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 12 |
 | `orchestration.hierarchy` | 7 |

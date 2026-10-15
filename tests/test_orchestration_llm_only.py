@@ -174,3 +174,91 @@ class TestTheReasoningIsNotTheReply:
         draft = "<|channel>thought\nTry 2,2:\n1 02\n2 10\n"
         assert llm_only.grade(task, draft)["parsed"] is False
         assert llm_only.grade(task, draft + "<channel|>" + self.GRID)["solved"] is True
+
+
+class TestAids:
+    """What is computed from the task and put in the prompt, and the guard that keeps the examples whole."""
+
+    def builder(self, token_limit=None):
+        from orchestration.configs import ExperimentConfig
+        from subsymbolic.prompt_builder import ApproxTokenizer, PromptBuilder
+        from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
+        params = llm_only.llm_only_params(MODEL, aids=True)
+        if token_limit:
+            params["prompt"]["token_limit"] = token_limit
+        config = ExperimentConfig.from_dict(params)
+        return PromptBuilder(config.prompt, ApproxTokenizer(), resolver_registry=RESOLVER_REGISTRY,
+                             filter_registry=FILTER_REGISTRY)
+
+    def big_task(self):
+        rng = np.random.default_rng(0)
+        subtasks = [ARCSubtask(f"s{i}", rng.integers(0, 4, (8, 8)), rng.integers(0, 4, (8, 8))) for i in range(4)]
+        return ARCTask("big", subtasks, rng.integers(0, 4, (8, 8)), rng.integers(0, 4, (8, 8)))
+
+    def test_the_block_is_there_only_when_asked_and_before_the_output_format(self):
+        assert "auxiliary_info" not in llm_only.llm_only_params(MODEL)["prompt"]["blocks"]
+        blocks = llm_only.llm_only_params(MODEL, aids=True)["prompt"]["blocks"]
+        assert blocks.index("auxiliary_info") == blocks.index("output_format") - 1
+
+    def test_the_aids_come_after_the_task_and_before_the_demand_for_a_grid(self):
+        task = make_task()
+        from orchestration.data_requests import aids_for
+        prompt = self.builder().build(task, context={"grid_repr_type": "concise", "test_input_grid": task.test_inp,
+                                                     "auxiliary_info": aids_for(task, ["cell_changes", "colour_counts"])})
+        assert prompt.index("<TASK_REPR>") < prompt.index("### The cells that change") < prompt.index("<OUTPUT_FORMAT>")
+        assert "(r1,c1) 1->0" in prompt and "How many cells of each colour" in prompt
+
+    def test_the_context_a_run_hands_the_module_carries_them_in_the_order_named(self):
+        class Spy(Module):
+            def solve(self, task, context=None):
+                self.context = context
+                return super().solve(task, context)
+        spy = Spy({"t1": "x"})
+        spy.builder = self.builder()
+        llm_only.solve_one(make_task(), spy, aids=["objects", "numbered_grids"])
+        assert list(spy.context["auxiliary_info"]) == ["The pieces of one colour in each grid",
+                                                      "The grids again, with rows and columns numbered from 1"]
+        plain = Spy({"t1": "x"})
+        llm_only.solve_one(make_task(), plain)
+        assert "auxiliary_info" not in plain.context
+
+    def test_a_prompt_the_aids_make_too_long_is_not_made_and_the_examples_are_not_cut_to_fit_them(self):
+        from orchestration.data_requests import aids_for
+        task = self.big_task()
+        free = self.builder()
+        context = {"grid_repr_type": "concise", "test_input_grid": task.test_inp}
+        plain = free.build(task, context=context)
+        tight = self.builder(free.count_tokens(plain) + 30)
+        pack = {**context, "auxiliary_info": aids_for(task, ["numbered_grids", "objects"])}
+        assert tight.build(task, context=context).count("Training example") == 4
+        assert tight.build(task, context=pack) is None
+        assert free.build(task, context=pack).count("Training example") == 4
+
+    def test_a_run_with_aids_hands_them_to_every_task(self, tmp_path):
+        class Spy(Module):
+            def solve(self, task, context=None):
+                self.seen = getattr(self, "seen", []) + ["auxiliary_info" in context]
+                return super().solve(task, context)
+        spy = Spy({"a": "x", "b": "x"})
+        spy.builder = self.builder()
+        llm_only.run(["a", "b"], spy, str(tmp_path / "o.jsonl"), loader=lambda split, t: make_task(t), aids=["colour_counts"])
+        assert spy.seen == [True, True]
+
+    def test_a_command_line_with_aids_builds_the_block_they_go_in_and_one_without_does_not(self):
+        from types import SimpleNamespace
+        base = dict(model=MODEL, tokenizer=None, max_tokens=100, thinking=True, context=14000)
+        assert "auxiliary_info" in llm_only.params_from_args(SimpleNamespace(**base, aids=["objects"]))["prompt"]["blocks"]
+        assert "auxiliary_info" not in llm_only.params_from_args(SimpleNamespace(**base, aids=[]))["prompt"]["blocks"]
+
+    def test_aids_for_a_module_whose_prompt_has_no_place_for_them_are_refused_and_not_dropped(self):
+        import pytest
+        from orchestration.configs import ExperimentConfig
+        from subsymbolic.prompt_builder import ApproxTokenizer, PromptBuilder
+        from subsymbolic.registry import FILTER_REGISTRY, RESOLVER_REGISTRY
+        config = ExperimentConfig.from_dict(llm_only.llm_only_params(MODEL))
+        module = Module({"t1": "x"})
+        module.builder = PromptBuilder(config.prompt, ApproxTokenizer(), resolver_registry=RESOLVER_REGISTRY,
+                                       filter_registry=FILTER_REGISTRY)
+        with pytest.raises(ValueError, match="auxiliary_info"):
+            llm_only.solve_one(make_task(), module, aids=["objects"])
+        assert module.asked == []

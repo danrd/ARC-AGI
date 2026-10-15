@@ -21,7 +21,7 @@ import json
 import random
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 
 from orchestration.run import answer_of, load_task, read_lines
@@ -35,15 +35,19 @@ ORDER = ("easy", "medium", "hard", "impossible", "very_hard")
 
 
 def llm_only_params(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200,
-                    thinking: bool = False, context: int = 14000) -> Dict[str, Any]:
+                    thinking: bool = False, context: int = 14000, aids: bool = False) -> Dict[str, Any]:
     """The GPU notebooks' parameters for `model` with the grammar taken off and the prompt cut to BLOCKS.
 
     `thinking` lets the model reason before it answers (the notebooks switch that off, because a model that reasons can
     spend every token on it and never answer). The reasoning is part of the reply and counts against `max_tokens`, so
-    the window grows to `context` and a prompt that would leave less than `max_tokens` of it is not asked."""
+    the window grows to `context` and a prompt that would leave less than `max_tokens` of it is not asked.
+    `aids` puts the auxiliary_info block, where `solve_one(aids=...)` puts what it computes, before the output format."""
     params = gpu_notebook_params(model, tokenizer, max_tokens)
     params["generation"] = {k: v for k, v in params["generation"].items() if k != "grammar"}
-    params["prompt"] = {**params["prompt"], "blocks": list(BLOCKS), "resolvers": ["examples"]}
+    blocks = list(BLOCKS)
+    if aids:
+        blocks.insert(blocks.index("output_format"), "auxiliary_info")
+    params["prompt"] = {**params["prompt"], "blocks": blocks, "resolvers": ["examples"]}
     if thinking:
         params["generation"]["chat_template_kwargs"] = {"enable_thinking": True}
         params["llm"] = {**params["llm"], "max_context": context}
@@ -87,9 +91,21 @@ def grade(task, reply: Any) -> Dict[str, Any]:
             "cells_right": round(float((grid == task.test_out).mean()), 4) if same else 0.0}
 
 
-def solve_one(task, module, difficulty: Optional[str] = None, reply_limit: int = 6000) -> Dict[str, Any]:
+def solve_one(task, module, difficulty: Optional[str] = None, reply_limit: int = 6000,
+              aids: Sequence[str] = ()) -> Dict[str, Any]:
+    """`aids` are names from orchestration.data_requests.AIDS: computed from the task and put in the prompt. The blocks
+    after the examples get no share of the budget, so a prompt that the aids make too long is not made (the module
+    answers "prompt didn't fit token_limit" with no reply); the examples are never cut to make room for them."""
     context = {"grid_repr_type": "concise", "test_input_grid": task.test_subtask.train_inp}
     started = time.perf_counter()
+    if aids:
+        from orchestration.data_requests import aids_for
+        context["auxiliary_info"] = aids_for(task, aids)
+        from subsymbolic.prompt_builder import BlockSpec
+        builder = getattr(module, "builder", None)
+        if builder is not None and "auxiliary_info" not in [BlockSpec.parse(b).name for b in builder.config.blocks]:
+            raise ValueError("aids were asked for and the module's prompt has no auxiliary_info block to put them in: "
+                             "build its config with llm_only_params(aids=True)")
     result = module.solve(task, context)
     reply = result.get("solution", "")
     stats = result.get("module_results") or {}
@@ -108,7 +124,8 @@ def done_ids(paths: Iterable[str]) -> set:
 
 def run(task_ids: List[str], module, out: str, split: str = "evaluation", hours: Optional[float] = None,
         skip: Iterable[str] = (), clock=time.time, loader=load_task,
-        difficulties: Optional[Dict[str, str]] = None, reply_limit: int = 6000) -> List[Dict[str, Any]]:
+        difficulties: Optional[Dict[str, str]] = None, reply_limit: int = 6000,
+        aids: Sequence[str] = ()) -> List[Dict[str, Any]]:
     """Ask `module` about every task not in `out` or `skip`; stops starting new ones after `hours`."""
     finished = done_ids([out, *skip])
     todo = [t for t in task_ids if t not in finished]
@@ -117,7 +134,7 @@ def run(task_ids: List[str], module, out: str, split: str = "evaluation", hours:
     for task_id in todo:
         if hours is not None and clock() - started > hours * 3600:
             break
-        record = solve_one(loader(split, task_id), module, (difficulties or {}).get(task_id), reply_limit)
+        record = solve_one(loader(split, task_id), module, (difficulties or {}).get(task_id), reply_limit, aids)
         records.append(record)
         with open(out, "a") as handle:
             handle.write(json.dumps({**record, "split": split}) + "\n")
@@ -141,6 +158,11 @@ def summarise(lines: List[Dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+def params_from_args(args) -> Dict[str, Any]:
+    """The model parameters the command line asks for: the aids, if any, get their block."""
+    return llm_only_params(args.model, args.tokenizer, args.max_tokens, args.thinking, args.context, bool(args.aids))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", required=True, help="GGUF repository and file: REPO:FILE")
@@ -154,6 +176,9 @@ def main():
                         help="let the model reason first; --max-tokens then counts the reasoning too, and the whole "
                              "reply is kept (it is what shows how long the reasoning runs)")
     parser.add_argument("--context", type=int, default=14000, help="the window with --thinking")
+    from orchestration.data_requests import AIDS
+    parser.add_argument("--aids", nargs="*", default=[], choices=sorted(AIDS), help="what to compute from the task and put in the prompt: "
+                        "names from orchestration.data_requests.AIDS; a task whose prompt it makes too long is skipped")
     parser.add_argument("--hours", type=float)
     parser.add_argument("--skip", nargs="*", default=[], help="result files of other runs: their tasks are done")
     parser.add_argument("--out", default="llm_only.jsonl")
@@ -162,8 +187,7 @@ def main():
     from orchestration.configs import ExperimentConfig
     from subsymbolic.subsymbolic_module import SubsymbolicModule
 
-    config = ExperimentConfig.from_dict(llm_only_params(args.model, args.tokenizer, args.max_tokens,
-                                                                 args.thinking, args.context))
+    config = ExperimentConfig.from_dict(params_from_args(args))
     try:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True)
@@ -176,7 +200,7 @@ def main():
     module = SubsymbolicModule(config, tokenizer)
     try:
         run(ids, module, args.out, args.split, args.hours, args.skip, difficulties=difficulties,
-            reply_limit=10 ** 6 if args.thinking else 6000)
+            reply_limit=10 ** 6 if args.thinking else 6000, aids=args.aids)
     finally:
         module.close()
     print(summarise([r for r in read_lines(args.out) if "solved" in r]))

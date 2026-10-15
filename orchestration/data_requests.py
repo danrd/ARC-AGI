@@ -26,7 +26,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -153,6 +153,20 @@ def _findings_section(task, keep: str, builder) -> Optional[str]:
 
 def _section(keep: str):
     return lambda task, builder: _findings_section(task, keep, builder)
+
+
+#: What a run can put in the prompt without being asked for it: name -> (heading in the prompt, function of the task).
+AIDS = {
+    "numbered_grids": ("The grids again, with rows and columns numbered from 1", indexed_grids),
+    "cell_changes": ("The cells that change between each example's input and output", cell_changes),
+    "objects": ("The pieces of one colour in each grid", objects),
+    "colour_counts": ("How many cells of each colour each grid has", colour_counts),
+}
+
+
+def aids_for(task, names: Sequence[str]) -> Dict[str, str]:
+    """{heading: text} of the named aids for `task`, in the order named."""
+    return {AIDS[name][0]: AIDS[name][1](task) for name in names}
 
 
 def menu_tools() -> List[InfoTool]:

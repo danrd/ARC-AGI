@@ -213,10 +213,10 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (18)"]
   rl["rl (20)"]
-  scripts["scripts (18)"]
+  scripts["scripts (19)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (86)"]
+  tests["tests (87)"]
   utils["utils (3)"]
   tests -->|105| rl
   tests -->|45| subsymbolic
@@ -227,8 +227,8 @@ graph TD
   scripts -->|13| rl
   rl -->|11| data
   rl -->|11| symbolic
+  scripts -->|8| subsymbolic
   orchestration -->|7| rl
-  scripts -->|6| subsymbolic
   orchestration -->|4| symbolic
   tests -->|4| scripts
   data -->|3| rl
@@ -293,6 +293,7 @@ graph TD
 | `scripts.check_invariants` | 0 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
+| `scripts.elicit_trace_needs` | 0 |
 | `scripts.harvest_traces` | 0 |
 | `scripts.kaggle_launch` | 0 |
 | `scripts.kaggle_queue` | 0 |
@@ -315,8 +316,8 @@ graph TD
 | `subsymbolic.arc_resolvers` | 3 |
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 6 |
-| `subsymbolic.llm_setup` | 8 |
-| `subsymbolic.local_config` | 5 |
+| `subsymbolic.llm_setup` | 9 |
+| `subsymbolic.local_config` | 6 |
 | `subsymbolic.logging` | 1 |
 | `subsymbolic.prompt_builder` | 26 |
 | `subsymbolic.registry` | 12 |

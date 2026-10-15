@@ -1,0 +1,60 @@
+{
+ "steps": [
+  {
+   "name": "gemma31",
+   "command": [
+    "scripts/elicit_trace_needs.py",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--traces",
+    "data/experiments/runs/kaggle/think_cal_gemma_think_0.jsonl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "qwen27",
+   "command": [
+    "scripts/elicit_trace_needs.py",
+    "--model",
+    "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "Qwen/Qwen3.8-27B",
+    "--traces",
+    "data/experiments/runs/kaggle/think_cal_qwen_think_cal_qwen_0.jsonl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "gemma12",
+   "command": [
+    "scripts/elicit_trace_needs.py",
+    "--model",
+    "unsloth/gemma-4-12b-it-GGUF:gemma-4-12b-it-Q4_K_M.gguf",
+    "--tokenizer",
+    "google/gemma-4-12b-it",
+    "--traces",
+    "data/experiments/runs/kaggle/think_cal_12b_think_cal_12b_0.jsonl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "moe",
+   "command": [
+    "scripts/elicit_trace_needs.py",
+    "--model",
+    "unsloth/gemma-4-26B-A4B-it-GGUF:gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+    "--tokenizer",
+    "google/gemma-4-26B-A4B-it",
+    "--traces",
+    "data/experiments/runs/kaggle/think_cal_moe_think_cal_moe_0.jsonl",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

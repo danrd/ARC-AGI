@@ -44,6 +44,14 @@ def step(name):
     return wrap
 
 
+def mesh_shape(chips, model_axis):
+    """(batch, model) of the device mesh: the model axis as asked, or the largest divisor of `chips` below it
+    when it does not divide them, and the chips left over on the batch axis. An axis the attention's heads do
+    not divide fails the load (a 4-head key/value projection cut 8 ways: IndivisibleError)."""
+    model = max(m for m in range(1, min(model_axis, chips) + 1) if chips % m == 0)
+    return (chips // model, model)
+
+
 def gemma_layout_map(mesh):
     """How to split a Gemma decoder over the `model` axis when the backbone has no `get_layout_map` of its own (Gemma 3
     has none): the attention projections by head, the feed-forward by its hidden width, the embedding by its width -
@@ -88,6 +96,8 @@ def main():
     parser.add_argument("--out", default="tpu_probe.json")
     parser.add_argument("--max-gb", type=float, default=70.0, help="the largest model to load, in parameters x 2 bytes")
     parser.add_argument("--new-tokens", type=int, default=64)
+    parser.add_argument("--model-axis", type=int, default=4, help="chips the weights are cut over; the rest hold copies "
+                        "(Gemma 4 31B has 4 key/value heads, which 8 cannot divide)")
     args = parser.parse_args()
 
     @step("devices")
@@ -142,7 +152,7 @@ def main():
         import keras_hub
         keras.config.set_dtype_policy("bfloat16")
         devs = keras.distribution.list_devices()
-        mesh = keras.distribution.DeviceMesh((1, len(devs)), ["batch", "model"], devs)
+        mesh = keras.distribution.DeviceMesh(mesh_shape(len(devs), args.model_axis), ["batch", "model"], devs)
         backbone = getattr(keras_hub.models, cls_name.replace("CausalLM", "Backbone"))
         layout = backbone.get_layout_map(mesh) if hasattr(backbone, "get_layout_map") else gemma_layout_map(mesh)
         keras.distribution.set_distribution(keras.distribution.ModelParallel(layout_map=layout, batch_dim_name="batch"))

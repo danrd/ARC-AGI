@@ -135,3 +135,10 @@ def test_keras_is_told_to_use_jax_before_anything_imports_it():
     code = code.replace("os.environ.pop('KERAS_BACKEND', None)", "os.environ['KERAS_BACKEND'] = 'tensorflow'")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(probe.__file__).rsplit("/scripts/", 1)[0])
     assert out.stdout.strip() == "tensorflow", "a backend chosen by the caller is left alone"
+
+
+def test_the_mesh_cuts_the_weights_over_the_model_axis_and_leaves_the_rest_to_the_batch():
+    assert probe.mesh_shape(8, 4) == (2, 4)
+    assert probe.mesh_shape(8, 8) == (1, 8)
+    assert probe.mesh_shape(8, 3) == (4, 2)          # 3 does not divide 8: the largest divisor below it
+    assert probe.mesh_shape(1, 4) == (1, 1)

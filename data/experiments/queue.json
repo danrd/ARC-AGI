@@ -4176,6 +4176,19 @@
     "data/experiments/runs/kaggle/think_aids_gemma_think_aids_0.jsonl"
    ],
    "cleaned": true
+  },
+  {
+   "name": "think_aids2",
+   "resource": "gpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
+   "extras": "rl",
+   "note": "thinking с укороченным пакетом: Gemma 31B, те же 20 задач, лимит 6000 и окно 14000; в промпт добавлены изменённые клетки, объекты и счёт цветов (без нумерованных сеток); сравнить с think_cal и think_aids на общих задачах",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

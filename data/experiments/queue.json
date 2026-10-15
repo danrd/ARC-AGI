@@ -4103,6 +4103,17 @@
     "data/experiments/runs/kaggle/think_cal_moe_think_cal_moe_0.jsonl"
    ],
    "cleaned": true
+  },
+  {
+   "name": "pair_a",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "пары: f_base, f_pair, f_pairattn (факторизованные головы: отношение первого объекта и кандидата в логите второго) и e_attn (GNN с вниманием) на 23 задачах, сиды 3-4 (184 запуска)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

@@ -454,3 +454,31 @@ class TestWhatIsReadAsARun:
         monkeypatch.setattr(compare.multiprocessing, "get_context", lambda name: Context)
         with pytest.raises(RuntimeError, match="2 of 2 workers died"):
             compare.train({"a": {}}, ["g"], 10, 0, 1, tmp_path / "o.jsonl", workers=2)
+
+
+class TestTheJobFiles:
+    """A job file is arguments to `rl_compare.py train` written by hand or by a script, and a mistake in one costs the
+    hours of a notebook that dies at its first line: every one of them goes through the parser it will meet."""
+
+    def _jobs(self):
+        import glob
+        for path in sorted(glob.glob(str(compare.REPO_ROOT / "data/experiments/jobs/*.json"))):
+            for step in json.loads(open(path).read())["steps"]:
+                if "args" in step:
+                    yield path.rsplit("/", 1)[-1], step
+
+    def test_every_job_s_arguments_are_arguments_of_train(self):
+        parser = compare.build_parser()
+        checked = 0
+        for name, step in self._jobs():
+            args = parser.parse_args(["train", *step["args"], "--shard", "0", "--shards", "1", "--out", "x.jsonl"])
+            assert args.arms and args.seeds and set(args.arms) <= set(compare.ARMS), name
+            checked += 1
+        assert checked >= 5
+
+    def test_every_job_names_tasks_that_its_configs_hold(self):
+        for name, step in self._jobs():
+            args = compare.build_parser().parse_args(["train", *step["args"], "--out", "x"])
+            configs = json.loads(open(compare.REPO_ROOT / args.configs).read())
+            assert set(args.tasks or []) <= set(configs), name
+            assert all(part.endswith(".jsonl") for part in args.skip), name

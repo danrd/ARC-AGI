@@ -1,7 +1,7 @@
 {
  "steps": [
   {
-   "name": "pair_b",
+   "name": "pair_b2",
    "args": [
     "--configs",
     "data/experiments/rl_compare_configs_all.json",
@@ -33,10 +33,10 @@
     "f_base",
     "f_pair",
     "--seeds",
-    "3",
-    "4",
     "5",
     "6",
+    "--skip",
+    "data/experiments/runs/*.jsonl",
     "data/experiments/runs/kaggle/*.jsonl",
     "--workers",
     "4",

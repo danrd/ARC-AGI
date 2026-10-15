@@ -536,7 +536,7 @@ def render(summary):
     return "\n".join(lines)
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -561,7 +561,11 @@ def main():
     training.add_argument("--out", default="rl_compare_runs.jsonl")
     reading = sub.add_parser("summary", help="summarise runs files (one per notebook)")
     reading.add_argument("--out", nargs="+", default=["rl_compare_runs.jsonl"])
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     if args.command == "select":
         from scripts.symbolic_coverage import solved_ids

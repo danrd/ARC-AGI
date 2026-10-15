@@ -4080,14 +4080,16 @@
    "name": "tpu_gemma4d",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [
     "pip install -q -U 'keras-hub>=0.32'"
    ],
    "extras": "",
    "note": "TPU: проба Gemma 4 31B с бэкендом JAX (прошлая загрузилась за 23 мин, но генерация упала на TensorFlow-бэкенде)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/tpu_gemma4d_gemma_0.json"
+   ],
+   "cleaned": true
   },
   {
    "name": "think_cal_moe",
@@ -4137,14 +4139,17 @@
    "name": "ask_data",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
    "note": "что Gemma 31B просит дать ей о задаче, 12 задач: wishes — свободный вопрос «что вы хотели бы, чтобы программа посчитала»; menu — меню из 10 пунктов (3 раздела символьного саммари, изменённые клетки, счёт цветов, объекты, сетки с номерами, 3 пункта без реализации), до 3 запросов, ответы настоящие",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/ask_data_menu_0.jsonl",
+    "data/experiments/runs/kaggle/ask_data_wishes_0.jsonl"
+   ],
+   "cleaned": true
   }
  ]
 }

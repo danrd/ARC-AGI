@@ -4150,6 +4150,17 @@
     "data/experiments/runs/kaggle/ask_data_wishes_0.jsonl"
    ],
    "cleaned": true
+  },
+  {
+   "name": "tpu_gemma4e",
+   "resource": "tpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "TPU: проба Gemma 4 31B, сетка 2×4 (веса режутся на 4 чипа: у 31B четыре головы ключей/значений, на 8 не делятся — прошлая проба упала на IndivisibleError, но загрузка из /kaggle/input и JAX уже работали)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

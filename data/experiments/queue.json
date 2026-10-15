@@ -3303,12 +3303,18 @@
    "name": "rel_rest",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "отношения на 80 остальных задачах из 103: e_endnorm и e_full, сиды 0-1 (320 запусков; продолжается тем же заданием)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/rel_rest_rel_rest_0.jsonl",
+    "data/experiments/runs/kaggle/rel_rest_rel_rest_1.jsonl",
+    "data/experiments/runs/kaggle/rel_rest_rel_rest_2.jsonl",
+    "data/experiments/runs/kaggle/rel_rest_rel_rest_3.jsonl",
+    "data/experiments/runs/kaggle/rel_rest_rel_rest_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "prompts4",

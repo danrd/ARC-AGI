@@ -1,0 +1,31 @@
+{"task": "025d127b", "arm": "e_endnorm", "seed": 0, "held_out": 0.0, "train": [0.5, 0.0], "steps_to_solve": [2.0, 1.0], "steps": 250000, "seconds": 3610.6}
+{"task": "025d127b", "arm": "e_full", "seed": 0, "held_out": 0.0, "train": [0.5, 0.0], "steps_to_solve": [2.0, 1.0], "steps": 250000, "seconds": 3700.1}
+{"task": "00d62c1b", "arm": "e_full", "seed": 1, "held_out": 0.0, "train": [1.0, 1.0, 1.0, 1.0, 0.0], "steps_to_solve": [2.0, 3.0, 3.0, 3.0, 1.0], "steps": 250000, "seconds": 4603.3}
+{"task": "0d3d703e", "arm": "e_endnorm", "seed": 1, "held_out": 0.0, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [3.0, 3.0, 3.0, 3.0], "steps": 250000, "seconds": 1635.8}
+{"task": "1bfc4729", "arm": "e_full", "seed": 0, "held_out": -0.04, "train": [0.38, 0.76], "steps_to_solve": [3.0, 25.0], "steps": 250000, "seconds": 5588.6}
+{"task": "25ff71a9", "arm": "e_endnorm", "seed": 0, "held_out": 0.0, "train": [1.0, 0.5, 0.5, 0.5], "steps_to_solve": [2.0, 2.0, 4.0, 3.0], "steps": 250000, "seconds": 1576.4}
+{"task": "1caeab9d", "arm": "e_full", "seed": 0, "held_out": 0.2, "train": [0.5, 0.5, 0.5], "steps_to_solve": [2.0, 3.0, 2.0], "steps": 250000, "seconds": 3090.8}
+{"task": "0ca9ddb6", "arm": "e_full", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 4815.5}
+{"task": "1bfc4729", "arm": "e_endnorm", "seed": 1, "held_out": -0.04, "train": [0.44, 0.82], "steps_to_solve": [4.0, 6.0], "steps": 250000, "seconds": 4971.6}
+{"task": "228f6490", "arm": "e_endnorm", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.25], "steps_to_solve": [1.0, 1.0, 2.0], "steps": 250000, "seconds": 2824.2}
+{"task": "25d487eb", "arm": "e_endnorm", "seed": 0, "held_out": -0.0909, "train": [1.0, -0.6, 1.0], "steps_to_solve": [1.0, 25.0, 1.0], "steps": 250000, "seconds": 3724.6}
+{"task": "228f6490", "arm": "e_full", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 3006.0}
+{"task": "25d8a9c8", "arm": "e_endnorm", "seed": 1, "held_out": 0.6667, "train": [1.0, 1.0, 0.8889, 1.0], "steps_to_solve": [3.0, 3.0, 4.0, 3.0], "steps": 250000, "seconds": 1540.2}
+{"task": "29623171", "arm": "e_endnorm", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 4571.6}
+{"task": "29623171", "arm": "e_full", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 5244.3}
+{"task": "39e1d7f9", "arm": "e_full", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 11213.1}
+{"task": "29c11459", "arm": "e_full", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0], "steps_to_solve": [1.0, 1.0], "steps": 250000, "seconds": 5247.6}
+{"task": "5582e5ca", "arm": "e_full", "seed": 1, "held_out": -0.5, "train": [1.0, 1.0, 1.0], "steps_to_solve": [2.0, 1.0, 1.0], "steps": 250000, "seconds": 1851.1}
+{"task": "3aa6fb7a", "arm": "e_full", "seed": 0, "held_out": 0.5, "train": [1.0, 1.0], "steps_to_solve": [2.0, 3.0], "steps": 250000, "seconds": 2921.0}
+{"task": "3906de3d", "arm": "e_endnorm", "seed": 1, "held_out": 0.5, "train": [1.0, 1.0, 0.9091], "steps_to_solve": [1.0, 2.0, 4.0], "steps": 250000, "seconds": 2783.7}
+{"task": "6855a6e4", "arm": "e_endnorm", "seed": 0, "held_out": 0.5, "train": [0.5, 0.5, 0.5], "steps_to_solve": [3.0, 3.0, 3.0], "steps": 250000, "seconds": 3562.7}
+{"task": "6e82a1ae", "arm": "e_full", "seed": 0, "held_out": 0.2222, "train": [0.3889, 0.4375, 0.3636], "steps_to_solve": [3.0, 3.0, 2.0], "steps": 250000, "seconds": 3039.0}
+{"task": "496994bd", "arm": "e_full", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0], "steps_to_solve": [1.0, 1.0], "steps": 250000, "seconds": 5571.8}
+{"task": "39e1d7f9", "arm": "e_endnorm", "seed": 1, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 10914.1}
+{"task": "5168d44c", "arm": "e_full", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.9], "steps_to_solve": [1.0, 1.0, 2.0], "steps": 250000, "seconds": 3258.8}
+{"task": "72322fa7", "arm": "e_endnorm", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 5908.5}
+{"task": "776ffc46", "arm": "e_endnorm", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0, 1.0], "steps": 250000, "seconds": 3937.5}
+{"task": "5582e5ca", "arm": "e_endnorm", "seed": 0, "held_out": -0.5, "train": [1.0, 1.0, 1.0], "steps_to_solve": [2.0, 1.0, 1.0], "steps": 250000, "seconds": 1120.3}
+{"task": "9565186b", "arm": "e_full", "seed": 0, "held_out": 0.0, "train": [1.0, 1.0, 1.0, 1.0], "steps_to_solve": [2.0, 3.0, 1.0, 3.0], "steps": 250000, "seconds": 883.6}
+{"task": "a5f85a15", "arm": "e_full", "seed": 0, "held_out": 0.0, "train": [0.0, 0.0, 0.0], "steps_to_solve": [1.0, 1.0, 1.0], "steps": 250000, "seconds": 1666.0}
+{"task": "7b6016b9", "arm": "e_endnorm", "seed": 0, "held_out": 0.545, "train": [0.5891, 0.6964, 0.5394], "steps_to_solve": [25.0, 25.0, 25.0], "steps": 250000, "seconds": 4598.5}

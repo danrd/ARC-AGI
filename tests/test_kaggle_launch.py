@@ -132,3 +132,18 @@ def test_start_raises_when_the_first_push_is_refused_and_not_when_a_later_one_is
         launch.start("j", 2, gpu=True)
     answers = iter(["Kernel version 1 successfully pushed.", "Kernel push error: no quota"])
     launch.start("j", 2, gpu=True)                      # the first went; the second's refusal is printed, not raised
+
+
+def test_a_status_query_that_failed_for_the_service_s_reason_is_unknown_and_for_the_notebook_s_is_not():
+    from types import SimpleNamespace
+
+    def answer(stdout="", stderr=""):
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr=stderr)
+
+    assert launch.shard_status(answer('me/x has status "KernelWorkerStatus.RUNNING"')) == "RUNNING"
+    assert launch.shard_status(answer('me/x has status "KernelWorkerStatus.COMPLETE"')) == "COMPLETE"
+    assert launch.shard_status(answer("429 Client Error: Too Many Requests for url: https://x")) == "UNKNOWN"
+    assert launch.shard_status(answer("", "503 Server Error: Service Unavailable")) == "UNKNOWN"
+    assert launch.shard_status(answer("", "HTTPSConnectionPool: Read timed out.")) == "UNKNOWN"
+    assert launch.shard_status(answer("404 Client Error: Not Found for url: https://x")) == "?"
+    assert launch.shard_status(answer()) == "?"

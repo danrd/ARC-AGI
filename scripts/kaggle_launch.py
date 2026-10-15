@@ -16,6 +16,7 @@ from KAGGLE_API_TOKEN or KAGGLE_API_KEY.
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -110,10 +111,24 @@ def start(job, shards, gpu=False, extras="rl", setup=(), tpu=False):
             raise PushRefused(text.splitlines()[-1] if text else "no answer from kaggle")
 
 
+#: What a failed status query says when the fault is the service's and not the notebook's: too many requests, a server
+#: error, no connection.
+TRANSIENT = re.compile(r"\b(429|50[0-4])\b|too many requests|timed out|connection", re.IGNORECASE)
+
+
+def shard_status(result) -> str:
+    """The status a `kernels status` answered, without its prefix; "UNKNOWN" when the query itself failed for a reason
+    that says nothing about the notebook (so that it is asked again and not taken for the end of the job), and "?" when
+    it failed for any other (no such notebook)."""
+    named = result.stdout.strip().split('"')[-2:-1]
+    if named:
+        return named[0].replace("KernelWorkerStatus.", "")
+    return "UNKNOWN" if TRANSIENT.search(result.stdout + result.stderr) else "?"
+
+
 def status(job, shards):
     user = username()
-    return {shard: (kaggle("kernels", "status", f"{user}/{slug(job, shard)}").stdout.strip().split('"')[-2:-1] or ["?"])[0]
-            .replace("KernelWorkerStatus.", "") for shard in range(shards)}
+    return {shard: shard_status(kaggle("kernels", "status", f"{user}/{slug(job, shard)}")) for shard in range(shards)}
 
 
 def delete(job, shards):

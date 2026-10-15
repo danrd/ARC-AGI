@@ -187,3 +187,22 @@ def test_the_real_start_turns_a_push_the_launcher_refused_into_the_queue_s_refus
     monkeypatch.setattr(kaggle_launch, "start", refuse)
     with pytest.raises(queue.StartRefused, match="quota"):
         queue.real_start(Job("a", "gpu", 1))
+
+
+def test_a_notebook_whose_status_could_not_be_read_keeps_its_job_running_and_is_not_collected(monkeypatch):
+    import kaggle_launch
+    monkeypatch.setattr(kaggle_launch, "status", lambda name, shards: {0: "UNKNOWN", 1: "COMPLETE"})
+    assert queue.real_status(Job("a", "cpu", 2)) == ["UNKNOWN", "COMPLETE"]
+    fake = Fake(a=["UNKNOWN", "COMPLETE"])
+    jobs = [Job("a", "cpu", 2, status="running")]
+    fake.tick(jobs)
+    assert jobs[0].status == "running" and fake.collected == []
+    fake.states["a"] = ["COMPLETE", "COMPLETE"]
+    fake.tick(jobs)
+    assert jobs[0].status == "done" and fake.collected == ["a"]
+
+
+def test_a_notebook_that_is_not_there_is_still_the_end_of_its_job(monkeypatch):
+    import kaggle_launch
+    monkeypatch.setattr(kaggle_launch, "status", lambda name, shards: {0: "?"})
+    assert queue.real_status(Job("a", "cpu", 1)) == ["ERROR"]

@@ -155,6 +155,15 @@ other end, o_spatial without relations:
     e_full      endpoints (normalised), max and two rounds together
     e_bias      the relations as a bias on the objects' self-attention instead of messages
     e_flat      the Flatten-and-two-Linears branch relations first shipped as
+    e_attn      an object weighs what its partners sent by a learned attention (graph attention) instead of a mean
+
+The seventh series, the relation between the objects an action names (PAIR_ARMS), under factored heads, where the
+second object is chosen knowing the first. `f_base` is o_spatial with factored heads, the control; the others each
+one change from it:
+
+    f_pair      the relation between the first object and each candidate is a term in that candidate's logit
+                (rl.features.PairScores), starting at zero
+    f_pairattn  that, and the messages aggregated by attention
 
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
@@ -261,6 +270,13 @@ ARMS = {
                                                     "rounds": 2}}),
     "e_bias": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_mode": "bias"}),
     "e_flat": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_mode": "flat"}),
+    "e_attn": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "relation_arch": {"aggregation": "attn"}}),
+    # The seventh series, the relation between the objects an action names, under factored heads: `f_base` is
+    # o_spatial with them, and each other arm one change from it.
+    "f_base": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored"}),
+    "f_pair": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored", "relation_pointer": True}),
+    "f_pairattn": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored", "relation_pointer": True,
+                                      "relation_arch": {"aggregation": "attn"}}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
@@ -274,6 +290,8 @@ MAP_ARMS = tuple(arm for arm in ARMS if arm.startswith("m_"))
 READ_ARMS = tuple(arm for arm in ARMS if arm.startswith("r_"))
 #: The sixth series, against `o_spatial` (and `m_norel`, the same without relations).
 RELATION_ARMS = tuple(arm for arm in ARMS if arm.startswith("e_"))
+#: The seventh series, against `f_base`.
+PAIR_ARMS = tuple(arm for arm in ARMS if arm.startswith("f_"))
 
 
 def arm_settings(arm):

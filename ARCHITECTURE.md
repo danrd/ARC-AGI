@@ -216,12 +216,12 @@ graph TD
   scripts["scripts (18)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (85)"]
+  tests["tests (86)"]
   utils["utils (3)"]
-  tests -->|100| rl
+  tests -->|105| rl
   tests -->|45| subsymbolic
   tests -->|35| orchestration
-  tests -->|33| symbolic
+  tests -->|34| symbolic
   orchestration -->|27| subsymbolic
   tests -->|21| data
   scripts -->|13| rl
@@ -271,24 +271,24 @@ graph TD
 | `orchestration.run` | 1 |
 | `orchestration.tools` | 5 |
 | `orchestration.trace` | 11 |
-| `rl.action_structure` | 2 |
+| `rl.action_structure` | 3 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 39 |
+| `rl.arc_task` | 40 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
 | `rl.coordinate_search` | 3 |
 | `rl.evaluation` | 5 |
-| `rl.features` | 9 |
+| `rl.features` | 10 |
 | `rl.mcts` | 8 |
 | `rl.optimization` | 2 |
 | `rl.plotting` | 4 |
-| `rl.policy` | 4 |
+| `rl.policy` | 5 |
 | `rl.rl_job` | 6 |
 | `rl.rl_module` | 5 |
 | `rl.search_hints` | 15 |
-| `rl.training` | 13 |
+| `rl.training` | 14 |
 | `rl.utils` | 10 |
 | `scripts.check_invariants` | 0 |
 | `scripts.compare_llm_arms` | 0 |
@@ -328,7 +328,7 @@ graph TD
 | `symbolic.invariants` | 5 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
-| `symbolic.summaries` | 10 |
+| `symbolic.summaries` | 11 |
 | `symbolic.symbolic_module` | 8 |
 | `symbolic.utils` | 10 |
 | `utils.plotting` | 5 |

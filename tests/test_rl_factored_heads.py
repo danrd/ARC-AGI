@@ -103,7 +103,7 @@ def distribution(net, lat):
 
 
 def repeat(lat, n):
-    return type(lat)(*(t.expand(n, *t.shape[1:]) for t in lat))
+    return type(lat)(*(t if t is None else t.expand(n, *t.shape[1:]) for t in lat))
 
 
 class TestTheJoint:

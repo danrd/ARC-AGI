@@ -168,6 +168,9 @@ class ObjectLatent(NamedTuple):
     row_mask: torch.Tensor
     objects: torch.Tensor
     colour_shares: torch.Tensor
+    #: `(batch, slots, slots)`, what choosing j adds when i is first (see
+    #: rl.features.PairScores), or None.
+    pairs: Optional[torch.Tensor] = None
 
 
 def _field(name: str) -> int:
@@ -306,7 +309,12 @@ class FactoredObjectDistribution(Distribution):
         allowed = torch.where((takes == 0).unsqueeze(1), slot_zero,
                               torch.where((takes == 1).unsqueeze(1), same, visible & ~same))
         allowed = torch.where(allowed.any(dim=1, keepdim=True), allowed, same)
-        dist, second = pick(second_head(context, latent.rows, torch.ones_like(visible)), allowed, 2)
+        logits = second_head(context, latent.rows, torch.ones_like(visible))
+        if latent.pairs is not None:
+            # The relation between the first object and each candidate,
+            # as a term in that candidate's logit.
+            logits = logits + latent.pairs[batch, first]
+        dist, second = pick(logits, allowed, 2)
         dists.append(dist)
         context = context + heads["second_feedback"](latent.rows[batch, second])
 
@@ -407,6 +415,7 @@ class ARCCustomNetwork(nn.Module):
         action_structure: Optional[ActionStructure] = None,
         factored_width: int = 0,
         direction_keys: str = "both",
+        pair_width: int = 0,
     ):
         super().__init__()
         if direction_keys not in ("relative", "both"):
@@ -436,6 +445,9 @@ class ARCCustomNetwork(nn.Module):
         #: shares (ARCCombinedExtractor.factored_tail).
         self.action_structure = action_structure
         self.factored_width = factored_width if action_structure is not None else 0
+        #: The pair scores after the factored tail, slots * slots numbers,
+        #: or 0 (ARCCombinedExtractor's pair_scores).
+        self.pair_width = pair_width if action_structure is not None else 0
         if coordinate_heads not in ("autoregressive", "independent"):
             raise ValueError(f"coordinate_heads={coordinate_heads!r}: expected "
                              "'autoregressive' or 'independent'")
@@ -467,7 +479,8 @@ class ARCCustomNetwork(nn.Module):
         #: Everything past what the shared and value networks read: the
         #: object rows, the coordinate rows and columns, the factored heads'
         #: raw material - in that order, at the very end of the features.
-        self.tail_width = self.pointer_width + self.coordinate_width + self.factored_width
+        self.tail_width = (self.pointer_width + self.coordinate_width + self.factored_width
+                           + self.pair_width)
         # The critic can be fed a wider observation than the actor - see
         # ARCCustomActorCriticPolicy's critic_only_keys - and then the two
         # halves start from different widths.
@@ -677,9 +690,17 @@ class ARCCustomNetwork(nn.Module):
     def split_factored_tail(self, features: torch.Tensor):
         """(objects, colour_shares) off the very end of the features - the
         layout ARCCombinedExtractor.factored_tail writes."""
-        tail = features[:, features.shape[1] - self.factored_width:]
+        end = features.shape[1] - self.pair_width
+        tail = features[:, end - self.factored_width:end]
         objects = tail[:, :-10].view(features.shape[0], self.pointer_slots, -1)
         return objects, tail[:, -10:]
+
+    def split_pair_tail(self, features: torch.Tensor):
+        """`(batch, slots, slots)` pair scores off the very end, or None."""
+        if not self.pair_width:
+            return None
+        return features[:, features.shape[1] - self.pair_width:].view(
+            -1, self.pointer_slots, self.pointer_slots)
 
     def forward(self, features: torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
         """Returns:
@@ -698,7 +719,7 @@ class ARCCustomNetwork(nn.Module):
         if self.pointer_slots is None:
             return None, None
         width = self.pointer_dim + 1
-        end = features.shape[1] - self.coordinate_width - self.factored_width
+        end = features.shape[1] - self.coordinate_width - self.factored_width - self.pair_width
         tail = features[:, end - self.pointer_slots * width:end]
         tail = tail.view(-1, self.pointer_slots, width)
         return tail[..., :-1], tail[..., -1]
@@ -710,7 +731,7 @@ class ARCCustomNetwork(nn.Module):
             return None
         rows, cols = self.coordinate_shape
         width = self.coordinate_dim + 1
-        end = features.shape[1] - self.factored_width
+        end = features.shape[1] - self.factored_width - self.pair_width
         tail = features[:, end - self.coordinate_width:end]
         row_block = tail[:, :rows * width].view(-1, rows, width)
         col_block = tail[:, rows * width:].view(-1, cols, width)
@@ -742,7 +763,8 @@ class ARCCustomNetwork(nn.Module):
         rows, mask = self.split_pointer_tail(features)
         if self.action_structure is not None:
             objects, shares = self.split_factored_tail(features)
-            return ObjectLatent(shared_features, rows, mask, objects, shares)
+            return ObjectLatent(shared_features, rows, mask, objects, shares,
+                                self.split_pair_tail(features))
         return [net(shared_features, rows, mask)
                 if isinstance(net, PointerHead) else net(shared_features)
                 for net in self.policy_nets]
@@ -895,6 +917,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             action_structure=self.action_structure,
             factored_width=getattr(self._actor_extractor(), "factored_width", 0),
             direction_keys=self.direction_keys,
+            pair_width=getattr(self._actor_extractor(), "pair_width", 0),
         )
 
     def _critic_branch_keys(self) -> Tuple[str, ...]:

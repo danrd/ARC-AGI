@@ -282,8 +282,8 @@ class RelationMessages(nn.Module):
         measuring; None keeps the raw concatenation that was.
         """
         super().__init__()
-        if aggregation not in ("mean", "max", "sum"):
-            raise ValueError(f"aggregation must be mean, max or sum, "
+        if aggregation not in ("mean", "max", "sum", "attn"):
+            raise ValueError(f"aggregation must be mean, max, sum or attn, "
                              f"got {aggregation!r}")
         if rounds < 1:
             raise ValueError(f"rounds must be at least 1, got {rounds}")
@@ -319,6 +319,11 @@ class RelationMessages(nn.Module):
             nn.LayerNorm(object_dim),
         )
         self.hidden = hidden
+        # What attention aggregation scores a message by. One number per
+        # message, so the weights over an object's partners are the learned
+        # answer to "which of my partners matter" - a graph attention
+        # network's aggregation, where mean weighs them all alike.
+        self.attention = nn.Linear(hidden, 1) if aggregation == "attn" else None
 
     def forward(self, rows: torch.Tensor, relations: torch.Tensor,
                 mask: torch.Tensor) -> torch.Tensor:
@@ -353,12 +358,51 @@ class RelationMessages(nn.Module):
 
         if self.aggregation == "sum":
             return messages.sum(2)
+        if self.aggregation == "attn":
+            # Softmax over the partners that exist: a masked pair scores
+            # -1e9 rather than -inf, so an object with no partners gets
+            # uniform weights over zero messages - zeros - and not NaN.
+            scores = self.attention(messages).masked_fill(weights == 0, -1e9)
+            return (torch.softmax(scores, dim=2) * messages).sum(2)
         if self.aggregation == "max":
             # Masked-out messages are already zero, and a max over zeros is
             # zero - which is what an object with no partners should hear,
             # and is not the -inf a padded slot would otherwise contribute.
             return messages.max(2).values
         return messages.sum(2) / weights.sum(2).clamp(min=1.0)
+
+
+class PairScores(nn.Module):
+    """A number for every ordered pair of objects, read from the relation
+    between them: what the second object's choice adds once the first is
+    known.
+
+    The pointer heads score a slot from its own row, and under factored
+    heads the second is scored knowing the first's row - so the pair
+    (first, candidate) is reachable through a bilinear form of the two
+    rows, but never through the relation vector the env recorded for
+    exactly that pair ("candidate is left of first, same shape, touching").
+    RelationMessages puts relations into the rows, where they are blended
+    with everything else the row says; this puts one in the logit of the
+    choice it is about, which is "the object to the left of the one I just
+    took" as a single term.
+
+    The last layer starts at zero, so a fresh policy chooses the second
+    object as it would without this, and the term enters as far as
+    training finds it pays.
+    """
+
+    def __init__(self, relation_dim: int = RELATION_DIM, hidden: int = 32):
+        super().__init__()
+        self.score = nn.Sequential(nn.Linear(relation_dim, hidden), nn.ReLU(),
+                                   nn.Linear(hidden, 1))
+        nn.init.zeros_(self.score[-1].weight)
+        nn.init.zeros_(self.score[-1].bias)
+
+    def forward(self, relations: torch.Tensor) -> torch.Tensor:
+        """relations `(B, n, (n-1)*R)` -> `(B, n, n)`: entry [b, i, j] is
+        the score of choosing j when i is the first object."""
+        return self.score(pairwise_relations(relations)).squeeze(-1)
 
 
 class RelationBias(nn.Module):
@@ -1398,7 +1442,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                  pointer_dim: int = 32, object_arch=None,
                  relation_mode: str = "flat", relation_arch=None,
                  coordinate_dim: int = 0, factored_tail: bool = False,
-                 spatial_channels: int = 0, delta_in_grid: bool = False, spatial_arch=None):
+                 spatial_channels: int = 0, delta_in_grid: bool = False, spatial_arch=None,
+                 pair_scores: bool = False):
         """`delta_in_grid` hands the deltas to the grid encoder as planes
         beside the ten colours, instead of to a DeltaReadout each: one
         stack of convolutions reads a cell's colour and whether it differs
@@ -1603,6 +1648,19 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             slots, object_dim = observation_space.spaces["objects_emb"].shape
             self.factored_width = slots * object_dim + 10
             total_concat_size += self.factored_width
+        #: The ordered-pair scores the second object's choice adds (see
+        #: PairScores), slots * slots of them, after the factored tail.
+        self.pair_scores = None
+        self.pair_width = 0
+        if pair_scores:
+            if not factored_tail or "relations_emb" not in observation_space.spaces:
+                raise ValueError("pair scores add to the second object's choice, which "
+                                 "factored heads make, and read the relations: they need "
+                                 "factored_tail and a relations_emb observation")
+            slots = observation_space.spaces["objects_emb"].shape[0]
+            self.pair_scores = PairScores()
+            self.pair_width = slots * slots
+            total_concat_size += self.pair_width
         self._features_dim = total_concat_size
 
     def forward(self, observation) -> torch.Tensor:
@@ -1677,6 +1735,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
             encoded_tensor_list.append(self.coordinate_rows.tail(observation, lines))
         if self.factored_width:
             encoded_tensor_list.append(self.factored_tail(observation))
+        if self.pair_scores is not None:
+            encoded_tensor_list.append(self.pair_scores(observation["relations_emb"].float()).flatten(1))
         return torch.cat(encoded_tensor_list, dim=1)
 
     def read_map(self, spatial, observation) -> torch.Tensor:

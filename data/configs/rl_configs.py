@@ -269,6 +269,10 @@ def load_PPO_config():
     # branch's: keyword arguments for RelationMessages - endpoints,
     # aggregation, rounds, hidden. None is what was measured.
     'relation_arch': None,
+    # Under factored heads, the relation between the first object and each
+    # candidate as a term in the second object's logit (rl.features.
+    # PairScores), starting at zero. Unmeasured; ignored under flat heads.
+    'relation_pointer': False,
     }
 
 def lin(act_func=nn.ReLU(), in_channels=10, widths=(8, 16)):

@@ -76,7 +76,7 @@ class TestTheArms:
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
         series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS,
-                  compare.READ_ARMS, compare.RELATION_ARMS)
+                  compare.READ_ARMS, compare.RELATION_ARMS, compare.PAIR_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -123,7 +123,7 @@ class TestTheArms:
         ppo = load_PPO_config()
         base_elements = compare.arm_settings("default")[0]
         assert set(compare.RELATION_ARMS) == {"e_end", "e_endnorm", "e_sum", "e_max", "e_rounds2", "e_wide", "e_full",
-                                              "e_bias", "e_flat"}
+                                              "e_bias", "e_flat", "e_attn"}
         for arm in compare.RELATION_ARMS:
             elements, settings = compare.arm_settings(arm)
             rest = {key: value for key, value in settings.items() if key not in ("relation_arch", "relation_mode")}
@@ -131,6 +131,16 @@ class TestTheArms:
             assert ("relation_arch" in settings) != ("relation_mode" in settings), arm
             assert settings.get("relation_arch") != ppo["relation_arch"] or settings.get("relation_mode") != ppo["relation_mode"]
         assert compare.arm_settings("e_endnorm")[1]["relation_arch"] == {"endpoints": True, "endpoint_dim": 32}
+
+    def test_the_pair_arms_are_factored_o_spatial_with_one_change_to_the_pair(self):
+        from data.configs.rl_configs import load_PPO_config
+        ppo = load_PPO_config()
+        assert set(compare.PAIR_ARMS) == {"f_base", "f_pair", "f_pairattn"}
+        base = compare.arm_settings("f_base")[1]
+        assert base == {"spatial_channels": 32, "object_heads": "factored"} and ppo["relation_pointer"] is False
+        assert compare.arm_settings("f_pair")[1] == {**base, "relation_pointer": True}
+        assert compare.arm_settings("f_pairattn")[1] == {**base, "relation_pointer": True,
+                                                         "relation_arch": {"aggregation": "attn"}}
 
     def test_every_relation_arm_builds_the_module_it_names(self):
         """The arguments of relation_arch are RelationMessages' own: an arm that named one it does not take

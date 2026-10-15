@@ -100,6 +100,10 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                          # none, which is what object addressing wants.
                          'coordinate_dim': PPO_config['coordinate_dim'] if coordinates else 0,
                          'factored_tail': factored,
+                         # The relation between the first object and each
+                         # candidate in the second one's logit - see
+                         # PairScores. Needs the factored heads.
+                         'pair_scores': bool(PPO_config['relation_pointer']) and factored,
                          # The shared map over the grid, 0 for none - see
                          # SpatialBackbone.
                          'spatial_channels': PPO_config['spatial_channels'],

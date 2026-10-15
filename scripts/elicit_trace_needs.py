@@ -18,13 +18,14 @@ A trace already answered in `--out` is not asked again, so a run that stops is c
 """
 import argparse
 import json
-import re
 import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+from orchestration.data_requests import parse_wishes as parse  # noqa: E402
 
 #: (opening, closing) of the reasoning a model writes before its answer: Qwen's and Gemma 4's.
 THINKING_MARKS = (("<think>", "</think>"), ("<|channel>thought", "<channel|>"))
@@ -63,21 +64,6 @@ def shorten(text, head, tail):
     if len(text) <= head + tail:
         return text
     return text[:head].rstrip() + "\n[...]\n" + text[-tail:].lstrip()
-
-
-def parse(reply):
-    """({name: {'prints', 'by_hand'}}, name of MOST or None) of the model's reply."""
-    items, most = {}, None
-    for line in reply.splitlines():
-        line = line.strip().lstrip("-*0123456789. ").strip()
-        found = re.match(r"MOST\s*:\s*(.+)$", line, re.I)
-        if found:
-            most = found.group(1).strip(" *`.")
-            continue
-        parts = [part.strip(" *`") for part in line.split("|")]
-        if len(parts) >= 2 and parts[0] and not set(parts[0]) <= set("-: "):
-            items[parts[0]] = {"prints": parts[1], "by_hand": parts[2] if len(parts) > 2 else ""}
-    return items, most
 
 
 def read_traces(paths):

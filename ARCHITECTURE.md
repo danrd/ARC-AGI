@@ -211,25 +211,25 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (18)"]
+  orchestration["orchestration (19)"]
   rl["rl (20)"]
   scripts["scripts (19)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (87)"]
+  tests["tests (88)"]
   utils["utils (3)"]
-  tests -->|105| rl
-  tests -->|45| subsymbolic
-  tests -->|35| orchestration
+  tests -->|106| rl
+  tests -->|47| subsymbolic
+  tests -->|37| orchestration
   tests -->|34| symbolic
-  orchestration -->|27| subsymbolic
+  orchestration -->|30| subsymbolic
   tests -->|21| data
   scripts -->|13| rl
   rl -->|11| data
   rl -->|11| symbolic
   scripts -->|8| subsymbolic
   orchestration -->|7| rl
-  orchestration -->|4| symbolic
+  orchestration -->|6| symbolic
   tests -->|4| scripts
   data -->|3| rl
   orchestration -->|3| data
@@ -239,6 +239,7 @@ graph TD
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
+  scripts -->|1| orchestration
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -258,23 +259,24 @@ graph TD
 | `orchestration.assemble` | 3 |
 | `orchestration.bench` | 0 |
 | `orchestration.blocks` | 3 |
-| `orchestration.configs` | 15 |
+| `orchestration.configs` | 16 |
 | `orchestration.context` | 1 |
+| `orchestration.data_requests` | 1 |
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 12 |
 | `orchestration.hierarchy` | 7 |
-| `orchestration.llm_only` | 0 |
+| `orchestration.llm_only` | 1 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
 | `orchestration.refine_core` | 2 |
 | `orchestration.roster` | 3 |
-| `orchestration.run` | 1 |
-| `orchestration.tools` | 5 |
+| `orchestration.run` | 3 |
+| `orchestration.tools` | 6 |
 | `orchestration.trace` | 11 |
 | `rl.action_structure` | 3 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 40 |
+| `rl.arc_task` | 41 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
@@ -313,25 +315,25 @@ graph TD
 | `subsymbolic.answer_check` | 2 |
 | `subsymbolic.arc_evaluators` | 1 |
 | `subsymbolic.arc_grid_formatting` | 4 |
-| `subsymbolic.arc_resolvers` | 3 |
+| `subsymbolic.arc_resolvers` | 4 |
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 6 |
 | `subsymbolic.llm_setup` | 9 |
 | `subsymbolic.local_config` | 6 |
 | `subsymbolic.logging` | 1 |
-| `subsymbolic.prompt_builder` | 26 |
-| `subsymbolic.registry` | 12 |
-| `subsymbolic.subsymbolic_module` | 6 |
+| `subsymbolic.prompt_builder` | 28 |
+| `subsymbolic.registry` | 13 |
+| `subsymbolic.subsymbolic_module` | 7 |
 | `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |
 | `symbolic.color_names` | 1 |
-| `symbolic.findings` | 4 |
+| `symbolic.findings` | 5 |
 | `symbolic.invariants` | 5 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
 | `symbolic.summaries` | 11 |
 | `symbolic.symbolic_module` | 8 |
-| `symbolic.utils` | 10 |
+| `symbolic.utils` | 11 |
 | `utils.plotting` | 5 |
 | `utils.utils` | 2 |
 

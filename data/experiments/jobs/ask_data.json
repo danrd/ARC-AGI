@@ -1,0 +1,38 @@
+{
+ "steps": [
+  {
+   "name": "wishes",
+   "command": [
+    "-m",
+    "orchestration.data_requests",
+    "--mode",
+    "wishes",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--limit",
+    "12",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "menu",
+   "command": [
+    "-m",
+    "orchestration.data_requests",
+    "--mode",
+    "menu",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--limit",
+    "12",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

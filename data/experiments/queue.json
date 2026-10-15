@@ -4161,6 +4161,19 @@
    "note": "TPU: проба Gemma 4 31B, сетка 2×4 (веса режутся на 4 чипа: у 31B четыре головы ключей/значений, на 8 не делятся — прошлая проба упала на IndivisibleError, но загрузка из /kaggle/input и JAX уже работали)",
    "result": [],
    "cleaned": false
+  },
+  {
+   "name": "think_aids",
+   "resource": "gpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
+   "extras": "rl",
+   "note": "thinking с пакетом подсказок: Gemma 31B, те же 20 задач, лимит 6000 токенов и окно 14000, как в think_cal; в промпт добавлены нумерованные сетки, изменённые клетки, объекты и счёт цветов; задачи, где промпт с пакетом не влезает, пропускаются; сравнить с think_cal: доля завершённых ответов и токены до ответа",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

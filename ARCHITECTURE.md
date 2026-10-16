@@ -213,10 +213,10 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (19)"]
   rl["rl (20)"]
-  scripts["scripts (19)"]
+  scripts["scripts (20)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (88)"]
+  tests["tests (89)"]
   utils["utils (3)"]
   tests -->|106| rl
   tests -->|47| subsymbolic
@@ -224,7 +224,7 @@ graph TD
   tests -->|34| symbolic
   orchestration -->|30| subsymbolic
   tests -->|21| data
-  scripts -->|13| rl
+  scripts -->|16| rl
   rl -->|11| data
   rl -->|11| symbolic
   scripts -->|8| subsymbolic
@@ -276,11 +276,11 @@ graph TD
 | `rl.action_structure` | 3 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 41 |
+| `rl.arc_task` | 42 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 2 |
-| `rl.coordinate_search` | 3 |
+| `rl.coordinate_search` | 4 |
 | `rl.evaluation` | 5 |
 | `rl.features` | 10 |
 | `rl.mcts` | 8 |
@@ -289,7 +289,7 @@ graph TD
 | `rl.policy` | 5 |
 | `rl.rl_job` | 6 |
 | `rl.rl_module` | 5 |
-| `rl.search_hints` | 15 |
+| `rl.search_hints` | 16 |
 | `rl.training` | 14 |
 | `rl.utils` | 10 |
 | `scripts.check_invariants` | 0 |
@@ -308,6 +308,7 @@ graph TD
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |
 | `scripts.solved_by_source` | 0 |
+| `scripts.stroke_census` | 0 |
 | `scripts.symbolic_coverage` | 1 |
 | `scripts.sync_llm_kit` | 0 |
 | `scripts.tpu_gemma_probe` | 0 |

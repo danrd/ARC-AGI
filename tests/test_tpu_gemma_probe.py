@@ -142,3 +142,18 @@ def test_the_mesh_cuts_the_weights_over_the_model_axis_and_leaves_the_rest_to_th
     assert probe.mesh_shape(8, 8) == (1, 8)
     assert probe.mesh_shape(8, 3) == (4, 2)          # 3 does not divide 8: the largest divisor below it
     assert probe.mesh_shape(1, 4) == (1, 1)
+
+
+def test_replicating_the_embedding_takes_out_every_rule_that_names_one_and_nothing_else():
+    layout = {"token_embedding/embeddings": (None, "model"), "decoder_block.*ffw_linear/kernel": ("model", "batch"),
+              "vision.*patch_embedding/kernel": ("model",)}
+    removed = probe.without_embedding_split(layout)
+    assert sorted(removed) == ["token_embedding/embeddings", "vision.*patch_embedding/kernel"]
+    assert list(layout) == ["decoder_block.*ffw_linear/kernel"]
+
+
+def test_a_preset_named_on_the_command_line_finds_its_class_or_falls_back_to_gemma_4():
+    found = {"Gemma3CausalLM": ["gemma3_instruct_12b"], "Gemma4CausalLM": ["gemma4_instruct_2b", "gemma4_instruct_31b"]}
+    assert probe.preset_class(found, "gemma3_instruct_12b") == "Gemma3CausalLM"
+    assert probe.preset_class(found, "gemma4_instruct_2b") == "Gemma4CausalLM"
+    assert probe.preset_class({}, "gemma4_instruct_2b") == "Gemma4CausalLM"

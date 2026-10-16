@@ -66,6 +66,25 @@ def gemma_layout_map(mesh):
     return layout
 
 
+LAYOUTS = ("auto", "none", "replicate_embedding")
+
+
+def without_embedding_split(layout):
+    """`layout` with every rule that names an embedding taken out, so the embedding table is replicated on every chip
+    rather than cut over the model axis; returns the keys it removed. Loaded split, Gemma 4 31B's table came back
+    empty ("Layer 'token_embedding' expected 1 variables, but received 0") where every other layer loaded."""
+    removed = [key for key in list(layout.keys()) if "embedding" in key]
+    for key in removed:
+        del layout[key]
+    return removed
+
+
+def preset_class(found, preset):
+    """The CausalLM class whose presets list `preset`, or the Gemma 4 one when none does (a preset attached as a folder
+    need not be in the installed keras-hub's list)."""
+    return next((cls for cls, names in found.items() if preset in names), "Gemma4CausalLM")
+
+
 def attached_preset(preset, root="/kaggle/input"):
     """The folder of `preset` among the models attached to the notebook, or None.
 
@@ -98,6 +117,10 @@ def main():
     parser.add_argument("--new-tokens", type=int, default=64)
     parser.add_argument("--model-axis", type=int, default=4, help="chips the weights are cut over; the rest hold copies "
                         "(Gemma 4 31B has 4 key/value heads, which 8 cannot divide)")
+    parser.add_argument("--preset", help="this preset instead of the largest that fits --max-gb")
+    parser.add_argument("--layout", choices=LAYOUTS, default="auto",
+                        help="auto: the backbone's own layout map, or ours when it has none; none: no distribution "
+                             "(everything on one chip); replicate_embedding: auto with the embedding left whole")
     args = parser.parse_args()
 
     @step("devices")
@@ -136,6 +159,8 @@ def main():
     sized = sorted(((size_of(p), p, c) for c, p in options if size_of(p)), reverse=True)
     sized = [(s, c, p) for s, p, c in sized]
     chosen = next(((c, p) for s, c, p in sized if s * 2 <= args.max_gb), None)
+    if args.preset:
+        chosen = (preset_class(found, args.preset), args.preset)
     report["chosen"] = chosen
     print("chosen:", chosen, flush=True)
     if chosen is None:
@@ -152,10 +177,19 @@ def main():
         import keras_hub
         keras.config.set_dtype_policy("bfloat16")
         devs = keras.distribution.list_devices()
-        mesh = keras.distribution.DeviceMesh(mesh_shape(len(devs), args.model_axis), ["batch", "model"], devs)
-        backbone = getattr(keras_hub.models, cls_name.replace("CausalLM", "Backbone"))
-        layout = backbone.get_layout_map(mesh) if hasattr(backbone, "get_layout_map") else gemma_layout_map(mesh)
-        keras.distribution.set_distribution(keras.distribution.ModelParallel(layout_map=layout, batch_dim_name="batch"))
+        report["layout"] = {"mode": args.layout}
+        if args.layout != "none":
+            shape = mesh_shape(len(devs), args.model_axis)
+            mesh = keras.distribution.DeviceMesh(shape, ["batch", "model"], devs)
+            backbone = getattr(keras_hub.models, cls_name.replace("CausalLM", "Backbone"))
+            own = hasattr(backbone, "get_layout_map")
+            layout = backbone.get_layout_map(mesh) if own else gemma_layout_map(mesh)
+            removed = without_embedding_split(layout) if args.layout == "replicate_embedding" else []
+            report["layout"].update({"mesh": shape, "source": "backbone" if own else "ours", "removed": removed,
+                                     "rules": {key: str(value) for key, value in layout.items()}})
+            print("layout:", report["layout"], flush=True)
+            keras.distribution.set_distribution(keras.distribution.ModelParallel(layout_map=layout,
+                                                                                 batch_dim_name="batch"))
         source = attached_preset(preset) or preset
         print("loading from", source, flush=True)
         model = getattr(keras_hub.models, cls_name).from_preset(source)

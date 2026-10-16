@@ -8,3 +8,45 @@
 {"split": "training", "task": "23581191", "pairs": [{"strokes": 10, "wrong": 30}, {"strokes": 10, "wrong": 30}], "hybrid": {"object_steps": 2, "strokes": 10, "wrong_after_objects": 24}}
 {"split": "training", "task": "29c11459", "pairs": [{"strokes": 3, "wrong": 9}, {"strokes": 3, "wrong": 9}], "hybrid": {"object_steps": 2, "strokes": 2, "wrong_after_objects": 5}}
 {"split": "training", "task": "29623171", "pairs": [{"strokes": 7, "wrong": 13}, {"strokes": 9, "wrong": 21}, {"strokes": 7, "wrong": 14}], "hybrid": {"object_steps": 11, "strokes": 1, "wrong_after_objects": 7}}
+{"split": "training", "task": "2bcee788", "pairs": [{"strokes": 9, "wrong": 95}, {"strokes": 9, "wrong": 95}, {"strokes": 4, "wrong": 97}, {"strokes": 7, "wrong": 96}], "hybrid": {"object_steps": 14, "strokes": 4, "wrong_after_objects": 20}}
+{"split": "training", "task": "3618c87e", "pairs": [{"strokes": 2, "wrong": 2}, {"strokes": 3, "wrong": 4}, {"strokes": 3, "wrong": 4}]}
+{"split": "training", "task": "2dd70a9a", "pairs": [{"strokes": 3, "wrong": 24}, {"strokes": 2, "wrong": 7}, {"strokes": 3, "wrong": 13}]}
+{"split": "training", "task": "3906de3d", "pairs": [{"strokes": 2, "wrong": 6}, {"strokes": 3, "wrong": 10}, {"strokes": 5, "wrong": 22}], "hybrid": {"object_steps": 1, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "363442ee", "pairs": [{"strokes": 15, "wrong": 27}, {"strokes": 22, "wrong": 45}, {"strokes": null, "wrong": 45}], "hybrid": {"object_steps": 8, "strokes": 12, "wrong_after_objects": 21}}
+{"split": "training", "task": "4093f84a", "pairs": [{"strokes": 9, "wrong": 13}, {"strokes": 10, "wrong": 19}, {"strokes": 9, "wrong": 17}], "hybrid": {"object_steps": 8, "strokes": 7, "wrong_after_objects": 8}}
+{"split": "training", "task": "3eda0437", "pairs": [{"strokes": 1, "wrong": 8}, {"strokes": 1, "wrong": 6}, {"strokes": 1, "wrong": 10}, {"strokes": 1, "wrong": 9}]}
+{"split": "training", "task": "496994bd", "pairs": [{"strokes": 2, "wrong": 9}, {"strokes": 2, "wrong": 10}]}
+{"split": "training", "task": "4612dd53", "pairs": [{"strokes": 7, "wrong": 12}, {"strokes": 8, "wrong": 9}, {"strokes": 10, "wrong": 12}]}
+{"split": "training", "task": "39e1d7f9", "pairs": [{"strokes": 3, "wrong": 48}, {"strokes": 6, "wrong": 54}, {"strokes": 11, "wrong": 99}]}
+{"split": "training", "task": "54d9e175", "pairs": [{"strokes": 3, "wrong": 27}, {"strokes": 3, "wrong": 27}, {"strokes": 3, "wrong": 27}, {"strokes": 6, "wrong": 54}], "hybrid": {"object_steps": 9, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "67385a82", "pairs": [{"strokes": 1, "wrong": 3}, {"strokes": 2, "wrong": 4}, {"strokes": 3, "wrong": 8}, {"strokes": 2, "wrong": 7}], "hybrid": {"object_steps": 2, "strokes": 2, "wrong_after_objects": 2}}
+{"split": "training", "task": "5168d44c", "pairs": [{"strokes": 4, "wrong": 10}, {"strokes": 4, "wrong": 10}, {"strokes": 4, "wrong": 10}], "hybrid": {"object_steps": 13, "strokes": 3, "wrong_after_objects": 8}}
+{"split": "training", "task": "6d75e8bb", "pairs": [{"strokes": 6, "wrong": 14}, {"strokes": 4, "wrong": 8}, {"strokes": 4, "wrong": 11}], "hybrid": {"object_steps": 3, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "6855a6e4", "pairs": [{"strokes": 4, "wrong": 10}, {"strokes": 5, "wrong": 20}, {"strokes": 5, "wrong": 16}], "hybrid": {"object_steps": 14, "strokes": 2, "wrong_after_objects": 5}}
+{"split": "training", "task": "794b24be", "pairs": [{"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 3}, {"strokes": 2, "wrong": 4}, {"strokes": 2, "wrong": 3}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 4}, {"strokes": 2, "wrong": 5}, {"strokes": 3, "wrong": 6}, {"strokes": 3, "wrong": 6}, {"strokes": 3, "wrong": 7}], "hybrid": {"object_steps": 2, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "7b6016b9", "pairs": [{"strokes": null, "wrong": 421}, {"strokes": 23, "wrong": 448}, {"strokes": null, "wrong": 393}], "hybrid": {"object_steps": 12, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "72322fa7", "pairs": [{"strokes": 9, "wrong": 13}, {"strokes": 5, "wrong": 5}, {"strokes": 5, "wrong": 5}]}
+{"split": "training", "task": "73251a56", "pairs": [{"strokes": 7, "wrong": 47}, {"strokes": 10, "wrong": 50}, {"strokes": 6, "wrong": 42}], "hybrid": {"object_steps": 2, "strokes": 3, "wrong_after_objects": 11}}
+{"split": "training", "task": "7e0986d6", "pairs": [{"strokes": 10, "wrong": 16}, {"strokes": 6, "wrong": 12}], "hybrid": {"object_steps": 5, "strokes": 8, "wrong_after_objects": 12}}
+{"split": "training", "task": "868de0fa", "pairs": [{"strokes": 3, "wrong": 14}, {"strokes": 2, "wrong": 17}, {"strokes": 5, "wrong": 90}, {"strokes": 3, "wrong": 14}, {"strokes": 2, "wrong": 41}], "hybrid": {"object_steps": 5, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "7df24a62", "pairs": [{"strokes": 6, "wrong": 22}, {"strokes": 4, "wrong": 14}, {"strokes": 15, "wrong": 50}, {"strokes": 9, "wrong": 29}]}
+{"split": "training", "task": "82819916", "pairs": [{"strokes": 6, "wrong": 10}, {"strokes": 8, "wrong": 10}, {"strokes": 15, "wrong": 18}, {"strokes": 4, "wrong": 5}]}
+{"split": "training", "task": "97999447", "pairs": [{"strokes": 9, "wrong": 9}, {"strokes": 21, "wrong": 24}, {"strokes": 4, "wrong": 4}]}
+{"split": "training", "task": "a5f85a15", "pairs": [{"strokes": 1, "wrong": 1}, {"strokes": 5, "wrong": 5}, {"strokes": 3, "wrong": 3}], "hybrid": {"object_steps": 1, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "9dfd6313", "pairs": [{"strokes": 2, "wrong": 2}, {"strokes": 3, "wrong": 6}, {"strokes": 4, "wrong": 10}]}
+{"split": "training", "task": "91714a58", "pairs": [{"strokes": 4, "wrong": 90}, {"strokes": 4, "wrong": 84}, {"strokes": 3, "wrong": 63}], "hybrid": {"object_steps": 25, "strokes": 5, "wrong_after_objects": 63}}
+{"split": "training", "task": "a65b410d", "pairs": [{"strokes": 3, "wrong": 13}, {"strokes": 3, "wrong": 18}, {"strokes": 3, "wrong": 17}]}
+{"split": "training", "task": "a699fb00", "pairs": [{"strokes": 2, "wrong": 2}, {"strokes": 6, "wrong": 6}, {"strokes": 6, "wrong": 6}], "hybrid": {"object_steps": 2, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "af902bf9", "pairs": [{"strokes": 1, "wrong": 1}, {"strokes": 1, "wrong": 16}, {"strokes": 2, "wrong": 9}], "hybrid": {"object_steps": 3, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "b8cdaf2b", "pairs": [{"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 4}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 4}]}
+{"split": "training", "task": "ba26e723", "pairs": [{"strokes": 4, "wrong": 8}, {"strokes": 4, "wrong": 8}, {"strokes": 4, "wrong": 8}, {"strokes": 5, "wrong": 10}, {"strokes": 5, "wrong": 10}]}
+{"split": "training", "task": "bda2d7a6", "pairs": [{"strokes": 9, "wrong": 36}, {"strokes": 9, "wrong": 36}, {"strokes": 13, "wrong": 64}], "hybrid": {"object_steps": 5, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "d23f8c26", "pairs": [{"strokes": 2, "wrong": 3}, {"strokes": 2, "wrong": 9}, {"strokes": 2, "wrong": 8}], "hybrid": {"object_steps": 4, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "d43fd935", "pairs": [{"strokes": 2, "wrong": 7}, {"strokes": 4, "wrong": 9}, {"strokes": 1, "wrong": 4}]}
+{"split": "training", "task": "d511f180", "pairs": [{"strokes": 5, "wrong": 13}, {"strokes": 2, "wrong": 3}, {"strokes": 3, "wrong": 5}], "hybrid": {"object_steps": 12, "strokes": 7, "wrong_after_objects": 11}}
+{"split": "training", "task": "dc433765", "pairs": [{"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 2}, {"strokes": 2, "wrong": 2}], "hybrid": {"object_steps": 8, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "ddf7fa4f", "pairs": [{"strokes": 3, "wrong": 35}, {"strokes": 3, "wrong": 36}, {"strokes": 3, "wrong": 21}], "hybrid": {"object_steps": 7, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "d6ad076f", "pairs": [{"strokes": 1, "wrong": 6}, {"strokes": 1, "wrong": 9}, {"strokes": 1, "wrong": 20}]}
+{"split": "training", "task": "ea786f4a", "pairs": [{"strokes": 2, "wrong": 4}, {"strokes": 2, "wrong": 8}, {"strokes": 2, "wrong": 12}], "hybrid": {"object_steps": 9, "strokes": 0, "wrong_after_objects": 0}}
+{"split": "training", "task": "f15e1fac", "pairs": [{"strokes": 12, "wrong": 64}, {"strokes": 7, "wrong": 23}, {"strokes": 9, "wrong": 33}]}
+{"split": "training", "task": "e8593010", "pairs": [{"strokes": 15, "wrong": 25}, {"strokes": 15, "wrong": 26}, {"strokes": 15, "wrong": 27}], "hybrid": {"object_steps": 4, "strokes": 9, "wrong_after_objects": 13}}

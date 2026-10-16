@@ -4262,12 +4262,17 @@
    "name": "tpu_gemma4f",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "TPU: лесенка на Gemma 4 — 2B без разметки, 2B с разметкой бэкбона, 2B с целым эмбеддингом, затем 31B с целым эмбеддингом (прошлая 31B загрузила всё, кроме token_embedding); какая разметка взята — в отчёте",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/tpu_gemma4f_b31_repl_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4f_e2b_auto_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4f_e2b_none_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4f_e2b_repl_0.json"
+   ],
+   "cleaned": true
   },
   {
    "name": "coord_a",
@@ -4288,6 +4293,17 @@
    "setup": [],
    "extras": "rl",
    "note": "честная оценка: o_spatial на 23 задачах, сиды 3-6 (92 запуска), как ctrl_ospatial, но с held_out_honest — тест заканчивается только своим submit или лимитом, без остановки на ответе; насколько завышена прежняя цифра",
+   "result": [],
+   "cleaned": false
+  },
+  {
+   "name": "tpu_gemma4g",
+   "resource": "tpu",
+   "shards": 1,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "TPU: та же лесенка, что tpu_gemma4f (2B без разметки, с разметкой бэкбона, с целым эмбеддингом, затем 31B с целым эмбеддингом), но с классом Gemma4CausalLM: в 4f все ступени взяли Gemma4AssistantCausalLM (драфтер спекулятивного декодирования) — моя ошибка выбора класса",
    "result": [],
    "cleaned": false
   }

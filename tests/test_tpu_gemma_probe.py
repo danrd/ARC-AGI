@@ -157,3 +157,11 @@ def test_a_preset_named_on_the_command_line_finds_its_class_or_falls_back_to_gem
     assert probe.preset_class(found, "gemma3_instruct_12b") == "Gemma3CausalLM"
     assert probe.preset_class(found, "gemma4_instruct_2b") == "Gemma4CausalLM"
     assert probe.preset_class({}, "gemma4_instruct_2b") == "Gemma4CausalLM"
+
+
+def test_the_assistant_drafter_class_is_never_taken_for_the_model():
+    found = {"Gemma4AssistantCausalLM": ["gemma4_instruct_2b", "gemma4_instruct_31b"],
+             "Gemma4CausalLM": ["gemma4_instruct_2b", "gemma4_instruct_31b"]}
+    assert probe.preset_class(found, "gemma4_instruct_31b") == "Gemma4CausalLM"
+    assert probe.preset_class({"Gemma4AssistantCausalLM": ["gemma4_instruct_2b"]}, "gemma4_instruct_2b") == "Gemma4CausalLM"
+    assert probe.drafter("Gemma4AssistantCausalLM") and not probe.drafter("Gemma4CausalLM")

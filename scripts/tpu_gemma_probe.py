@@ -79,10 +79,17 @@ def without_embedding_split(layout):
     return removed
 
 
+def drafter(cls_name):
+    """Whether `cls_name` is an assistant class: the small drafter of speculative decoding, its own architecture
+    with no Backbone in keras_hub.models. Its presets list the main models' names too, and it sorts first, so taking
+    it loads Gemma 4 into the wrong network (tpu_gemma4f: every rung failed on it)."""
+    return "Assistant" in cls_name
+
+
 def preset_class(found, preset):
     """The CausalLM class whose presets list `preset`, or the Gemma 4 one when none does (a preset attached as a folder
     need not be in the installed keras-hub's list)."""
-    return next((cls for cls, names in found.items() if preset in names), "Gemma4CausalLM")
+    return next((cls for cls, names in found.items() if preset in names and not drafter(cls)), "Gemma4CausalLM")
 
 
 def attached_preset(preset, root="/kaggle/input"):
@@ -138,7 +145,7 @@ def main():
         found = {}
         for name in sorted(dir(keras_hub.models)):
             cls = getattr(keras_hub.models, name)
-            if "emma" in name and hasattr(cls, "presets") and name.endswith("CausalLM"):
+            if "emma" in name and hasattr(cls, "presets") and name.endswith("CausalLM") and not drafter(name):
                 found[name] = sorted(cls.presets)
         return found
 

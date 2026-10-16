@@ -225,18 +225,18 @@ def render(summary):
     return "\n".join(lines)
 
 
-def tasks_to_run(split, done, limit=0, shard=0, shards=1):
+def tasks_to_run(split, done, limit=0, shard=0, shards=1, only=None):
     """The tasks of one share of the split not yet in `done`: every `shards`-th
     task of the file from `shard` on, so the notebooks of one census each take
     a mixed lot - the tasks that change size cost nothing and the others up to
-    the timeout."""
-    return [(split, task_id) for task_id in list(load_tasks(split))[:limit or None][shard::shards]
-            if (split, task_id) not in done]
+    the timeout. `only` keeps the tasks it names and no others."""
+    ids = [task_id for task_id in load_tasks(split) if only is None or task_id in set(only)]
+    return [(split, task_id) for task_id in ids[:limit or None][shard::shards] if (split, task_id) not in done]
 
 
-def run(split, out, workers, timeout, limit=0, shard=0, shards=1):
+def run(split, out, workers, timeout, limit=0, shard=0, shards=1, only=None):
     done = read_records(out)
-    todo = tasks_to_run(split, done, limit, shard, shards)
+    todo = tasks_to_run(split, done, limit, shard, shards, only)
     print(f"{len(done)} tasks already in {out}; {len(todo)} to go", flush=True)
     breaks = 0
     with open(out, "a", buffering=1) as handle:
@@ -269,9 +269,10 @@ def main():
     parser.add_argument("--shard", type=int, default=0, help="this notebook's number, of --shards")
     parser.add_argument("--shards", type=int, default=1, help="how many notebooks share the split")
     parser.add_argument("--summary-only", action="store_true")
+    parser.add_argument("--tasks", nargs="*", help="only these tasks of the split")
     args = parser.parse_args()
     records = read_records(args.out) if args.summary_only else run(
-        args.split, args.out, args.workers, args.timeout, args.limit, args.shard, args.shards)
+        args.split, args.out, args.workers, args.timeout, args.limit, args.shard, args.shards, args.tasks)
     print(render(summarise([r for r in records.values() if r["split"] == args.split])))
 
 

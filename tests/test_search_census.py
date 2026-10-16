@@ -193,3 +193,8 @@ class TestSharing:
     def test_one_shard_of_one_is_the_whole_split(self, monkeypatch):
         monkeypatch.setattr(census, "load_tasks", lambda split: {"a": [], "b": []})
         assert census.tasks_to_run("training", {}) == [("training", "a"), ("training", "b")]
+
+    def test_only_the_named_tasks_in_the_split_s_order(self, monkeypatch):
+        monkeypatch.setattr(census, "load_tasks", lambda split: {"a": [], "b": [], "c": []})
+        assert census.tasks_to_run("training", {}, only=["c", "a", "zz"]) == [("training", "a"), ("training", "c")]
+        assert census.tasks_to_run("training", {("training", "a"): {}}, only=["a"]) == []

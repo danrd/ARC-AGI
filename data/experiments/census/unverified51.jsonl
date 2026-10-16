@@ -26,3 +26,26 @@
 {"split": "training", "task": "54d9e175", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
 {"split": "training", "task": "73251a56", "verified": false, "first": false, "peak": 0.766, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
 {"split": "training", "task": "794b24be", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "82819916", "verified": false, "first": false, "peak": 0.8, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "7e0986d6", "verified": false, "first": false, "peak": 0.875, "branches": ["connector", "full", "highlighter", "modifier", "shifter"], "left": {"wrong": 13, "to_change": 16, "closed": 0.188, "kinds": {"erase": 4, "recolour": 9}, "regions": 13, "shapes": {"cell": 13}, "transitions": 2, "path_len": 6}}
+{"split": "training", "task": "7df24a62", "verified": false, "first": false, "peak": 0.455, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "97999447", "verified": false, "first": false, "peak": 0.556, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "91714a58", "verified": false, "first": false, "peak": 0.878, "branches": ["connector", "full", "highlighter", "modifier", "shifter"], "left": {"wrong": 63, "to_change": 90, "closed": 0.3, "kinds": {"erase": 60, "paint": 2, "recolour": 1}, "regions": 3, "shapes": {"other": 2, "cell": 1}, "transitions": 11, "path_len": 17}}
+{"split": "training", "task": "868de0fa", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "9dfd6313", "verified": false, "first": false, "peak": 0.5, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "a5f85a15", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "a65b410d", "verified": false, "first": false, "peak": 0.615, "branches": ["connector", "full", "highlighter", "modifier", "shifter"], "left": {"wrong": 11, "to_change": 13, "closed": 0.154, "kinds": {"paint": 11}, "regions": 2, "shapes": {"other": 1, "cell": 1}, "transitions": 2, "path_len": 2}}
+{"split": "training", "task": "a699fb00", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "af902bf9", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "b8cdaf2b", "verified": false, "first": false, "peak": 0.5, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "ba26e723", "verified": false, "first": false, "peak": 0.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "bda2d7a6", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "d23f8c26", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "d43fd935", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "d511f180", "verified": false, "first": false, "peak": 0.923, "branches": ["connector", "full", "highlighter", "modifier", "shifter"], "left": {"wrong": 8, "to_change": 13, "closed": 0.385, "kinds": {"recolour": 8}, "regions": 2, "shapes": {"other": 1, "cell": 1}, "transitions": 2, "path_len": 3}}
+{"split": "training", "task": "dc433765", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "d6ad076f", "verified": false, "first": false, "peak": 0.5, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "ddf7fa4f", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "f15e1fac", "verified": false, "first": false, "peak": 0.125, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "ea786f4a", "verified": false, "first": true, "peak": 1.0, "branches": ["connector", "full", "highlighter", "modifier", "shifter"]}
+{"split": "training", "task": "e8593010", "verified": false, "first": false, "peak": 0.56, "branches": ["connector", "full", "highlighter", "modifier", "shifter"], "left": {"wrong": 13, "to_change": 25, "closed": 0.48, "kinds": {"recolour": 13}, "regions": 9, "shapes": {"cell": 7, "other": 2}, "transitions": 2, "path_len": 9}}

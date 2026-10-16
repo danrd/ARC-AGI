@@ -118,7 +118,7 @@ class AutoregressiveCoordinateDistribution(Distribution):
             return distribution.sample()
 
         context = latent.context
-        distribution = Categorical(logits=action_head(context))
+        distribution = Categorical(logits=network.type_logits(action_head(context)))
         chosen = [pick(distribution, 0)]
         dists = [distribution]
         context = context + network.action_embedding(chosen[0])
@@ -416,8 +416,12 @@ class ARCCustomNetwork(nn.Module):
         factored_width: int = 0,
         direction_keys: str = "both",
         pair_width: int = 0,
+        masked_action: Optional[int] = None,
     ):
         super().__init__()
+        #: An action type the coordinate heads never choose (submit, when
+        #: coordinate_submit is off), or None.
+        self.masked_action = masked_action
         if direction_keys not in ("relative", "both"):
             raise ValueError(f"direction_keys={direction_keys!r}: expected 'relative' or 'both'")
         #: What the factored heads score a direction from. The keys are
@@ -687,6 +691,14 @@ class ARCCustomNetwork(nn.Module):
                 for pointer in self.policy_nets[1:]:
                     small(pointer.query)
 
+    def type_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """The action-type logits with masked_action taken out of the choice."""
+        if self.masked_action is None:
+            return logits
+        masked = torch.zeros_like(logits, dtype=torch.bool)
+        masked[:, self.masked_action] = True
+        return logits.masked_fill(masked, -1e9)
+
     def split_factored_tail(self, features: torch.Tensor):
         """(objects, colour_shares) off the very end of the features - the
         layout ARCCombinedExtractor.factored_tail writes."""
@@ -757,7 +769,7 @@ class ARCCustomNetwork(nn.Module):
             action_head, *cell_heads = self.policy_nets
             # i1 and i2 score rows, j1 and j2 columns.
             grids = [(rows, row_mask), (cols, col_mask)] * 2
-            return [action_head(shared_features)] + [
+            return [self.type_logits(action_head(shared_features))] + [
                 head(shared_features, embeddings, mask)
                 for head, (embeddings, mask) in zip(cell_heads, grids)]
         rows, mask = self.split_pointer_tail(features)
@@ -833,6 +845,8 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         object_heads: str = "flat",
         action_names: Optional[Dict[int, str]] = None,
         direction_keys: str = "both",
+        coordinate_submit: bool = True,
+        submit_action: Optional[int] = None,
         *args,
         **kwargs,
     ):
@@ -849,6 +863,9 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         self.action_structure = (ActionStructure(action_names) if object_heads == "factored"
                                  else None)
         self.direction_keys = direction_keys
+        #: The action type the coordinate heads may not choose: submit when
+        #: coordinate_submit is off and the env said where submit is.
+        self.masked_action = None if coordinate_submit or submit_action is None else int(submit_action)
         self.critic_only_keys = tuple(critic_only_keys)
         if self.critic_only_keys:
             # Two extractors, or there is nothing to route between.
@@ -918,6 +935,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             factored_width=getattr(self._actor_extractor(), "factored_width", 0),
             direction_keys=self.direction_keys,
             pair_width=getattr(self._actor_extractor(), "pair_width", 0),
+            masked_action=self.masked_action,
         )
 
     def _critic_branch_keys(self) -> Tuple[str, ...]:

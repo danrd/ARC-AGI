@@ -76,7 +76,7 @@ class TestTheArms:
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
         series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS,
-                  compare.READ_ARMS, compare.RELATION_ARMS, compare.PAIR_ARMS)
+                  compare.READ_ARMS, compare.RELATION_ARMS, compare.PAIR_ARMS, compare.COORD_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -141,6 +141,12 @@ class TestTheArms:
         assert compare.arm_settings("f_pair")[1] == {**base, "relation_pointer": True}
         assert compare.arm_settings("f_pairattn")[1] == {**base, "relation_pointer": True,
                                                          "relation_arch": {"aggregation": "attn"}}
+
+    def test_the_coordinate_arm_is_o_spatial_unable_to_submit(self):
+        from data.configs.rl_configs import load_PPO_config
+        assert compare.COORD_ARMS == ("c_nosub",)
+        assert compare.arm_settings("c_nosub")[1] == {"spatial_channels": 32, "coordinate_submit": False}
+        assert load_PPO_config()["coordinate_submit"] is True
 
     def test_every_relation_arm_builds_the_module_it_names(self):
         """The arguments of relation_arch are RelationMessages' own: an arm that named one it does not take

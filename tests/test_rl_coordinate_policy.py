@@ -380,3 +380,76 @@ def coordinate_agent_with(extra):
                          {"n_steps": 16, "batch_size": 8, "verbose": 0,
                           "coordinate_dim": 8, **extra})
     return agent, vec_env
+
+
+class TestNoSubmit:
+    """coordinate_submit off: the heads never choose submit, and the episode ends when the grid is solved or at
+    max_episode_len - see coordinate_submit in rl_configs for the measurement."""
+
+    def _distribution(self, network, latent):
+        from rl.policy import AutoregressiveCoordinateDistribution
+        return AutoregressiveCoordinateDistribution(network).proba_distribution(latent)
+
+    def test_a_masked_type_is_never_drawn_and_the_rest_is_still_a_distribution(self):
+        network = small_network(actions=3)
+        network.masked_action = 0
+        everything = every_action(actions=3)
+        latent = latent_for(network)
+        repeated = type(latent)(*(t.expand(len(everything), *t.shape[1:]) for t in latent))
+        probs = self._distribution(network, repeated).log_prob(everything).exp()
+        assert probs.sum().item() == pytest.approx(1.0, abs=1e-5)
+        assert probs[everything[:, 0] == 0].sum().item() < 1e-6
+        big = type(latent)(*(t.expand(500, *t.shape[1:]) for t in latent))
+        assert (self._distribution(network, big).sample()[:, 0] != 0).all()
+
+    def test_the_independent_heads_mask_it_too(self):
+        network = small_network(heads="independent", actions=3)
+        network.masked_action = 0
+        logits = network.type_logits(torch.zeros(4, 3))
+        assert (logits[:, 0] < -1e8).all() and (logits[:, 1:] == 0).all()
+
+    def test_the_independent_heads_hand_out_masked_type_logits(self):
+        network = small_network(heads="independent", actions=3)
+        network.masked_action = 0
+        features = torch.randn(2, 8 + 6 * 5)
+        type_logits = network.forward_actor(features)[0]
+        assert (type_logits[:, 0] < -1e8).all() and (type_logits[:, 1:] > -1e8).all()
+
+    def test_nothing_is_masked_unless_asked(self):
+        assert small_network().masked_action is None
+        assert torch.equal(small_network().type_logits(torch.ones(2, 2)), torch.ones(2, 2))
+
+    def test_the_setting_reaches_the_heads_with_the_env_s_own_index_of_submit(self):
+        vocabulary = {0: "red_fill", 1: "red_line", 2: "submit"}
+        for setting, wanted in ((False, 2), (True, None)):
+            vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=vocabulary,
+                                     observation_space_elements=["delta_input", "delta_target"],
+                                     observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
+                                     addressing="coordinates", coordinate_shape=(7, 7))
+            try:
+                agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                                     {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
+                                      "coordinate_submit": setting})
+                assert agent.policy.mlp_extractor.masked_action == wanted
+                if wanted is not None:
+                    obs, _ = agent.policy.obs_to_tensor(vec_env.reset())
+                    actions = [agent.policy.get_distribution(obs).sample()[0, 0].item() for _ in range(100)]
+                    assert wanted not in actions
+                    agent.learn(32)
+            finally:
+                vec_env.close()
+
+    def test_object_heads_are_not_touched(self):
+        from rl.training import create_agent as make
+        grid = np.zeros((3, 3), dtype=int)
+        grid[1, 1] = 2
+        vec_env = create_vec_env([ARCSubtask("s", grid, grid * 0)], n_envs=1, max_episode_len=4,
+                                 feasible_actions={0: "submit", 1: "black_recolor"},
+                                 observation_space_elements=["objects_emb"], repr_level=1,
+                                 input_pattern="start", max_objects=2)
+        try:
+            agent = make({"model_type": "PPO", "addressing": "objects"}, vec_env,
+                         {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_submit": False})
+            assert agent.policy.mlp_extractor.masked_action is None
+        finally:
+            vec_env.close()

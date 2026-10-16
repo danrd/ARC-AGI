@@ -165,6 +165,10 @@ one change from it:
                 (rl.features.PairScores), starting at zero
     f_pairattn  that, and the messages aggregated by attention
 
+The eighth series, the coordinate-addressed tasks (COORD_ARMS), against o_spatial run beside it:
+
+    c_nosub     the coordinate heads cannot submit; an episode ends solved or at max_episode_len
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -277,6 +281,9 @@ ARMS = {
     "f_pair": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored", "relation_pointer": True}),
     "f_pairattn": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored", "relation_pointer": True,
                                       "relation_arch": {"aggregation": "attn"}}),
+    # The eighth series, the coordinate tasks: o_spatial with the coordinate heads unable to submit, so an episode
+    # ends solved or at max_episode_len (coordinate_submit in rl_configs).
+    "c_nosub": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit": False}),
 }
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
@@ -292,6 +299,8 @@ READ_ARMS = tuple(arm for arm in ARMS if arm.startswith("r_"))
 RELATION_ARMS = tuple(arm for arm in ARMS if arm.startswith("e_"))
 #: The seventh series, against `f_base`.
 PAIR_ARMS = tuple(arm for arm in ARMS if arm.startswith("f_"))
+#: The eighth series, on the coordinate tasks, against `o_spatial` run beside it.
+COORD_ARMS = tuple(arm for arm in ARMS if arm.startswith("c_"))
 
 
 def arm_settings(arm):

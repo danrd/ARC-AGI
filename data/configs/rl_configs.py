@@ -204,6 +204,18 @@ def load_PPO_config():
     # without also wanting the box spanning both. Unmeasured - kept
     # switchable so the two can be compared.
     'coordinate_heads': 'autoregressive',
+    # Whether a coordinate policy may submit before the episode's last step.
+    # With one colour - common under coordinates - submit is one of two
+    # action types, and submitting pays 0 where a stroke pays -1 on average
+    # (most of a random stroke's cells are ones the answer leaves alone), so
+    # PPO learns to give up on the first step: measured on 3eda0437's first
+    # pair, episodes of 1.2 steps from the first rollout and nothing learnt
+    # in 20k steps, whatever the reward approach (2, 3, 4) or a pull of the
+    # second corner towards the first. Without submit (False) the episode
+    # ends when the grid is solved or at max_episode_len, and the same pair
+    # is solved in one stroke by 51k steps. The answer is the grid the
+    # episode ends with either way. True is what was measured before.
+    'coordinate_submit': True,
     # How an object action is chosen: 'flat', one logit per name of the
     # vocabulary, or 'factored', the name's parts one after another - type,
     # objects, colour, second colour, direction - each from a head shared

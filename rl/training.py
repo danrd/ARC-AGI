@@ -31,6 +31,11 @@ def critic_only(observation_space, configured) -> tuple:
     return tuple(dict.fromkeys(keys))
 
 
+def submit_index(actions_dict):
+    """The index of 'submit' in an env's {index: name} vocabulary."""
+    return next(index for index, name in actions_dict.items() if name == "submit")
+
+
 def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretrained:str=None, agent_init=None):
     """Build the agent to train with: a caller-supplied one, one restored
     from a checkpoint, or a fresh one configured from rl_config.
@@ -87,6 +92,13 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                      # AutoregressiveCoordinateDistribution. Read only under
                      # coordinate addressing.
                      'coordinate_heads': PPO_config['coordinate_heads'],
+                     # Whether the coordinate heads may choose submit - see
+                     # coordinate_submit in rl_configs. The index is the
+                     # env's own, so a vocabulary that puts submit last is
+                     # masked where it is.
+                     'coordinate_submit': PPO_config['coordinate_submit'],
+                     'submit_action': (submit_index(vec_env.envs[0].unwrapped.actions_dict)
+                                       if coordinates else None),
                      # One logit per name, or the name's parts chosen one
                      # after another - see FactoredObjectDistribution.
                      'object_heads': 'factored' if factored else 'flat',

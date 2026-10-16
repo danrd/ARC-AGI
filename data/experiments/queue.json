@@ -4245,12 +4245,18 @@
    "name": "ctrl_ospatial",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "контроль: o_spatial заново на 23 задачах, сиды 3-6 (92 запуска), текущим кодом и образом; без --skip, старые прогоны этих сидов — то, с чем сравниваем (и проверка воспроизводимости: тот же сид — тот же результат?)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_0.jsonl",
+    "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_1.jsonl",
+    "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_2.jsonl",
+    "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_3.jsonl",
+    "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "tpu_gemma4f",

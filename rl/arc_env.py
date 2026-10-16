@@ -148,6 +148,15 @@ class ARCGridWorld(gymnasium.Env):
         self.input_pattern = input_pattern
         self.milestones_rewards = milestones_rewards
         self.reward_approach = reward_approach
+        #: Whether reaching the answer ends the episode. The env holds the
+        #: answer - for a training pair, and for the held-out pair it is
+        #: scored on - so a solved grid has always stopped the episode by
+        #: itself: the policy never decides to stop, and on a grid whose
+        #: answer nobody has it would carry on and could paint over it.
+        #: False ends the episode only by submit or at max_episode_len, and
+        #: the grid it ends with is the answer - what the honest held-out
+        #: score (train_on_task's test_acc_honest) is measured with.
+        self.stop_on_solve = True
         self.repr_level = repr_level
         self.observation_space_elements = observation_space_elements
         self.grid_dtype = np.int64
@@ -805,6 +814,7 @@ class ARCGridWorld(gymnasium.Env):
             obs['relations_emb'] = self.relations_emb.copy()
 
         right_placement, done = self.step_intersection(self.grid)
+        done = done and self.stop_on_solve
         reward += right_placement * self.right_placement_reward  # Bonus for effective transformations
 
         # Discourage action repetition

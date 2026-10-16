@@ -428,6 +428,21 @@ class TestExamplesOfDifferentSizes:
 
         assert "test_acc" in metrics
 
+    def test_the_held_out_pair_is_scored_twice_once_without_the_answer_stopping_it(self, task, config, ppo,
+                                                                                   monkeypatch):
+        import rl.training as training
+        real, calls = training.evaluate_on_subtask, []
+
+        def spy(agent, subtask, rl_config, trace=None, stop_on_solve=True):
+            calls.append((subtask.label, stop_on_solve))
+            score = real(agent, subtask, rl_config, trace=trace, stop_on_solve=stop_on_solve)
+            return (0.25,) + tuple(score[1:]) if not stop_on_solve else score
+
+        monkeypatch.setattr(training, "evaluate_on_subtask", spy)
+        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
+        held_out = [stop for label, stop in calls if label == task.test_subtask.label]
+        assert held_out == [True, False] and metrics["test_acc_honest"] == 0.25
+
 
 class TestTheConfigReachesTheAgent:
     """A hyperparameter the config names and create_agent forgets to pass is

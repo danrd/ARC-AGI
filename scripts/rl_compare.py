@@ -448,6 +448,7 @@ def one_run(config, arm, seed, steps, task_id):
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         accuracies, lengths, _agent, metrics = train_on_task(load_task(task_id), config, ppo, show_plots=False)
     return {"task": task_id, "arm": arm, "seed": seed, "held_out": round(float(metrics["test_acc"]), 4),
+            "held_out_honest": round(float(metrics["test_acc_honest"]), 4),
             "train": [round(float(a), 4) for a in accuracies.values()],
             "steps_to_solve": [round(float(v), 2) for v in lengths.values()],
             "steps": steps, "seconds": round(time.time() - started, 1)}

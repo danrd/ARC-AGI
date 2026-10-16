@@ -265,14 +265,16 @@ def train_on_subtask(subtask, rl_config:dict, PPO_config:dict=None, agent_init=N
                              extra_callback=extra_callback, show_plots=show_plots)
 
 
-def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None):
+def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None, stop_on_solve:bool=True):
     """Score a trained agent on a subtask it was not trained on.
 
     An env of its own, built the same way as the training ones and thrown
     away afterwards: evaluate_ARC_policy takes the vec env to step in as an
     argument, so nothing about the agent's own env changes. `trace`, a
     dict, is filled with the episode step by step (evaluate_ARC_policy's
-    traces, of which there is one here).
+    traces, of which there is one here). `stop_on_solve` False scores the
+    grid the policy ends with by its own submit or the step limit, not the
+    first one that matched the answer (ARCGridWorld.stop_on_solve).
     """
     vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=rl_config['max_episode_len'],
                              repr_level=rl_config['repr_level'],
@@ -293,6 +295,8 @@ def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None):
                              action_whitelist=rl_config.get('action_whitelist'),
                              addressing=rl_config.get('addressing') or 'objects',
                              coordinate_shape=rl_config.get('coordinate_shape'))
+    for env in vec_env.envs:
+        getattr(env, "unwrapped", env).stop_on_solve = stop_on_solve
     try:
         traces = [] if trace is not None else None
         result = evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'],
@@ -457,6 +461,11 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
         print(f'Subtasks with nothing to close, scored 1.0 by definition: '
               f'{degenerate}')
     train_metrics['test_acc'] = test_acc
+    # The same pair with the episode ended only by the policy's own submit or
+    # the step limit: test_acc stops at the first grid that matches the
+    # answer, which only an env holding the answer can do.
+    train_metrics['test_acc_honest'] = evaluate_on_subtask(agent, task.test_subtask, rl_config,
+                                                           stop_on_solve=False)[0]
     train_metrics['test_len'] = test_len
     train_metrics['test_grid'] = test_grid
     # The episodes themselves, per training example and held out -

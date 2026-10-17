@@ -4232,7 +4232,7 @@
    "name": "think_small",
    "resource": "gpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
@@ -4278,18 +4278,24 @@
    "name": "coord_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "координатный режим: 23 задачи constructor, сиды 0-2, o_spatial (свежий, рядом) и c_nosub (без досрочной сдачи) — 138 запусков; подгоняет ли RL координатные пары, если не может сдаться на первом шаге",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_a_coord_a_0.jsonl",
+    "data/experiments/runs/kaggle/coord_a_coord_a_1.jsonl",
+    "data/experiments/runs/kaggle/coord_a_coord_a_2.jsonl",
+    "data/experiments/runs/kaggle/coord_a_coord_a_3.jsonl",
+    "data/experiments/runs/kaggle/coord_a_coord_a_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "honest_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "честная оценка: o_spatial на 23 задачах, сиды 3-6 (92 запуска), как ctrl_ospatial, но с held_out_honest — тест заканчивается только своим submit или лимитом, без остановки на ответе; насколько завышена прежняя цифра",

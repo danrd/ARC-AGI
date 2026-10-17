@@ -76,7 +76,8 @@ class TestTheArms:
         """The object arms are run only on request: a command without --arms must not
         start the second series on every task."""
         series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS,
-                  compare.READ_ARMS, compare.RELATION_ARMS, compare.PAIR_ARMS, compare.COORD_ARMS)
+                  compare.READ_ARMS, compare.RELATION_ARMS, compare.PAIR_ARMS, compare.COORD_ARMS,
+                  compare.HONEST_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -431,6 +432,23 @@ class TestSelectingTasks:
         assert seen["steps"] == 500_000 and record["steps"] == 500_000
         assert record["held_out"] == 0.5 and record["held_out_honest"] == 0.25
 
+
+    def test_an_environment_setting_of_an_arm_goes_to_the_env_config_and_not_to_ppo(self, monkeypatch):
+        import rl.training
+        seen = {}
+
+        def fake(task, config, ppo, show_plots):
+            seen["config"], seen["ppo"] = config, ppo
+            return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.25}
+
+        monkeypatch.setattr(rl.training, "train_on_task", fake)
+        monkeypatch.setattr(compare, "load_task", lambda task_id: None)
+        compare.one_run({"feasible_actions": {"0": [0]}}, "h_nostop", 0, 1000, "a")
+        assert seen["config"]["stop_on_solve"] is False and "stop_on_solve" not in seen["ppo"]
+        assert seen["ppo"]["spatial_channels"] == 32
+        compare.one_run({"feasible_actions": {"0": [0]}}, "o_spatial", 0, 1000, "a")
+        assert "stop_on_solve" not in seen["config"]
+        assert compare.HONEST_ARMS == ("h_nostop",)
 
 class TestWhatIsReadAsARun:
     def test_a_line_that_is_not_a_run_is_ignored_like_a_torn_one(self, tmp_path):

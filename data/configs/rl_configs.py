@@ -58,6 +58,14 @@ rl_config = {
     'evaluations': 20,
     'log_path': ".data/logs/rl/",
     'max_episode_len': 25,
+    # Whether a training episode ends by itself when the grid matches the
+    # answer, its submit reward paid on that step (ARCGridWorld.stop_on_solve).
+    # The held-out test cannot do that - it has no answer to compare with -
+    # so a policy trained with True never learns when to submit: honest_a,
+    # o_spatial on 23 tasks, 69 held-out solves with the test stopped on the
+    # answer and 55 with it ended by the policy's own submit. False ends a
+    # training episode only by submit or at max_episode_len.
+    'stop_on_solve': True,
     'right_placement_reward': 5.0,
     'action_penalty': 1.0,
     'repetitive_actions_penalty': 1.0,

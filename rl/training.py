@@ -144,7 +144,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
-                   action_whitelist=None, addressing="objects", coordinate_shape=None,
+                   action_whitelist=None, addressing="objects", coordinate_shape=None, stop_on_solve=True,
                   ):
     """Auxiliary function for creating environments to create vectorized environment."""
     gym.envs.register(
@@ -165,6 +165,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
     # and current gymnasium no longer forwards custom methods through
     # wrappers' __getattr__ - set_subtask only exists on the raw ARCGridWorld.
     env.unwrapped.set_subtask(subtask)
+    env.unwrapped.stop_on_solve = stop_on_solve
     env.action_space.seed(seed)
     return env
 
@@ -173,7 +174,7 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
-                   action_whitelist=None, addressing="objects", coordinate_shape=None):
+                   action_whitelist=None, addressing="objects", coordinate_shape=None, stop_on_solve=True):
     """Auxiliary function for creating vectorized environment."""
     envs = [functools.partial(create_ARC_env, subtask=subtask, max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                               action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
@@ -183,7 +184,7 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                               observation_grid_shape=observation_grid_shape,
                               max_objects=max_objects,
                               action_whitelist=action_whitelist, addressing=addressing,
-                              coordinate_shape=coordinate_shape,
+                              coordinate_shape=coordinate_shape, stop_on_solve=stop_on_solve,
                               feasible_actions=feasible_actions) for subtask in subtasks for i in range(n_envs)]
     vec_env = VecMonitor(DummyVecEnv(envs))
     return vec_env
@@ -220,7 +221,8 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
                              max_objects=rl_config.get('max_objects') or MAX_OBJECTS,
                              action_whitelist=rl_config.get('action_whitelist'),
                              addressing=rl_config.get('addressing') or 'objects',
-                             coordinate_shape=rl_config.get('coordinate_shape'))
+                             coordinate_shape=rl_config.get('coordinate_shape'),
+                             stop_on_solve=rl_config.get('stop_on_solve', True))
     # verbose passed through: the callback's own default is True, and a
     # verbose evaluation prints every example's actions.
     #

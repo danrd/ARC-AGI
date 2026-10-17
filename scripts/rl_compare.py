@@ -169,6 +169,10 @@ The eighth series, the coordinate-addressed tasks (COORD_ARMS), against o_spatia
 
     c_nosub     the coordinate heads cannot submit; an episode ends solved or at max_episode_len
 
+The ninth series, when to submit (HONEST_ARMS), judged by held_out_honest against o_spatial's:
+
+    h_nostop    a training episode does not end on the answer; only the policy's submit or max_episode_len ends it
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -284,7 +288,12 @@ ARMS = {
     # The eighth series, the coordinate tasks: o_spatial with the coordinate heads unable to submit, so an episode
     # ends solved or at max_episode_len (coordinate_submit in rl_configs).
     "c_nosub": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit": False}),
+    # The ninth series, when to submit: o_spatial trained with episodes that do not end by themselves on the
+    # answer (stop_on_solve in rl_configs, an environment setting and not a PPO one - see ENV_SETTINGS).
+    "h_nostop": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "stop_on_solve": False}),
 }
+#: Arm settings that belong to the environment's config and not to PPO's.
+ENV_SETTINGS = ("stop_on_solve",)
 #: The arms of the first series, what `train` runs unless told which.
 OBSERVATION_ARMS = ("objonly", "objrel", "default", "g", "gd", "gd_ch", "gd_wide")
 #: The second series, run against `default`'s runs already made.
@@ -301,6 +310,8 @@ RELATION_ARMS = tuple(arm for arm in ARMS if arm.startswith("e_"))
 PAIR_ARMS = tuple(arm for arm in ARMS if arm.startswith("f_"))
 #: The eighth series, on the coordinate tasks, against `o_spatial` run beside it.
 COORD_ARMS = tuple(arm for arm in ARMS if arm.startswith("c_"))
+#: The ninth series, against `o_spatial`'s held_out_honest (honest_a, the same seeds).
+HONEST_ARMS = tuple(arm for arm in ARMS if arm.startswith("h_"))
 
 
 def arm_settings(arm):
@@ -438,6 +449,7 @@ def one_run(config, arm, seed, steps, task_id):
         if config.get(key) is not None:
             config[key] = tuple(config[key])
     config["observation_space_elements"] = elements
+    config.update({key: settings.pop(key) for key in ENV_SETTINGS if key in settings})
     ppo = load_PPO_config()
     ppo["verbose"] = 0
     ppo["object_heads"] = "flat"

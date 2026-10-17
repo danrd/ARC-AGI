@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Ask a model what it worked out by hand in its own reasoning, and could have been handed.
 
 A reasoning model solving a puzzle copies the grid out row by row, numbers the columns, counts cells,
@@ -12,20 +11,16 @@ the whole reasoning). Each is cut to its head and tail, put to the model with th
 read for lines of the form `NAME | what the program prints | where you did it by hand`, and for `MOST: NAME`.
 The model is loaded the way the GPU notebooks load it, thinking off, no grammar.
 
-    python scripts/elicit_trace_needs.py --model REPO:FILE --tokenizer REPO --traces runs/*.jsonl --out needs.jsonl
+    python -m orchestration.elicit_trace_needs --model REPO:FILE --tokenizer REPO --traces runs/*.jsonl --out needs.jsonl
 
 A trace already answered in `--out` is not asked again, so a run that stops is continued by running it again.
 """
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from orchestration.data_requests import parse_wishes as parse  # noqa: E402
+from orchestration.data_requests import parse_wishes as parse
 
 #: (opening, closing) of the reasoning a model writes before its answer: Qwen's and Gemma 4's.
 THINKING_MARKS = (("<think>", "</think>"), ("<|channel>thought", "<channel|>"))

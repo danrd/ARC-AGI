@@ -3,7 +3,8 @@
   {
    "name": "gemma31",
    "command": [
-    "scripts/elicit_trace_needs.py",
+    "-m",
+    "orchestration.elicit_trace_needs",
     "--model",
     "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
     "--tokenizer",
@@ -17,7 +18,8 @@
   {
    "name": "qwen27",
    "command": [
-    "scripts/elicit_trace_needs.py",
+    "-m",
+    "orchestration.elicit_trace_needs",
     "--model",
     "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_M.gguf",
     "--tokenizer",
@@ -31,7 +33,8 @@
   {
    "name": "gemma12",
    "command": [
-    "scripts/elicit_trace_needs.py",
+    "-m",
+    "orchestration.elicit_trace_needs",
     "--model",
     "unsloth/gemma-4-12b-it-GGUF:gemma-4-12b-it-Q4_K_M.gguf",
     "--tokenizer",
@@ -45,7 +48,8 @@
   {
    "name": "moe",
    "command": [
-    "scripts/elicit_trace_needs.py",
+    "-m",
+    "orchestration.elicit_trace_needs",
     "--model",
     "unsloth/gemma-4-26B-A4B-it-GGUF:gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
     "--tokenizer",

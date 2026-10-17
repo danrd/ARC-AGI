@@ -1,0 +1,121 @@
+{
+ "llm_only_gemma31b_0.jsonl": {
+  "runs": 370,
+  "solved_before": 38,
+  "solved_now": 39,
+  "read_now": 336,
+  "read_by_old_parser": 324,
+  "gained": [
+   "3194b014"
+  ]
+ },
+ "llm_only_qwen_qwen27b_0.jsonl": {
+  "runs": 216,
+  "solved_before": 19,
+  "solved_now": 19,
+  "read_now": 109,
+  "read_by_old_parser": 109,
+  "gained": []
+ },
+ "think_aids2_gemma_think_aids2_0.jsonl": {
+  "runs": 20,
+  "solved_before": 2,
+  "solved_now": 5,
+  "read_now": 5,
+  "read_by_old_parser": 2,
+  "gained": [
+   "cd3c21df",
+   "72207abc",
+   "c074846d"
+  ]
+ },
+ "think_aids_gemma_think_aids_0.jsonl": {
+  "runs": 20,
+  "solved_before": 2,
+  "solved_now": 6,
+  "read_now": 6,
+  "read_by_old_parser": 2,
+  "gained": [
+   "c48954c1",
+   "cd3c21df",
+   "c074846d",
+   "ef26cbf6"
+  ]
+ },
+ "think_cal_12b_think_cal_12b_0.jsonl": {
+  "runs": 17,
+  "solved_before": 0,
+  "solved_now": 0,
+  "read_now": 0,
+  "read_by_old_parser": 0,
+  "gained": []
+ },
+ "think_cal_gemma_think_0.jsonl": {
+  "runs": 20,
+  "solved_before": 0,
+  "solved_now": 6,
+  "read_now": 6,
+  "read_by_old_parser": 4,
+  "gained": [
+   "c48954c1",
+   "cd3c21df",
+   "770cc55f",
+   "a680ac02",
+   "c074846d",
+   "ef26cbf6"
+  ]
+ },
+ "think_cal_moe_think_cal_moe_0.jsonl": {
+  "runs": 20,
+  "solved_before": 2,
+  "solved_now": 2,
+  "read_now": 2,
+  "read_by_old_parser": 2,
+  "gained": []
+ },
+ "think_cal_qwen_think_cal_qwen_0.jsonl": {
+  "runs": 20,
+  "solved_before": 2,
+  "solved_now": 4,
+  "read_now": 4,
+  "read_by_old_parser": 2,
+  "gained": [
+   "cd3c21df",
+   "ef26cbf6"
+  ]
+ },
+ "think_small_aids_0.jsonl": {
+  "runs": 20,
+  "solved_before": 1,
+  "solved_now": 10,
+  "read_now": 10,
+  "read_by_old_parser": 1,
+  "gained": [
+   "66e6c45b",
+   "4cd1b7b2",
+   "ca8de6ea",
+   "2072aba6",
+   "60c09cac",
+   "68b67ca3",
+   "0c786b71",
+   "5783df64",
+   "c48954c1"
+  ]
+ },
+ "think_small_base_0.jsonl": {
+  "runs": 20,
+  "solved_before": 1,
+  "solved_now": 8,
+  "read_now": 8,
+  "read_by_old_parser": 1,
+  "gained": [
+   "66e6c45b",
+   "4cd1b7b2",
+   "ca8de6ea",
+   "2072aba6",
+   "68b67ca3",
+   "0c786b71",
+   "5783df64"
+  ]
+ }
+}

@@ -1,13 +1,7 @@
-"""scripts/elicit_trace_needs.py: asking a model what it worked out by hand in its own reasoning."""
-import importlib.util
+"""orchestration.elicit_trace_needs: asking a model what it worked out by hand in its own reasoning."""
 import json
-from pathlib import Path
 
-
-SPEC = importlib.util.spec_from_file_location(
-    "elicit", Path(__file__).resolve().parents[1] / "scripts" / "elicit_trace_needs.py")
-elicit = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(elicit)
+import orchestration.elicit_trace_needs as elicit
 
 
 class TestReasoning:

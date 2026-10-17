@@ -19,10 +19,12 @@ import argparse
 import glob
 import json
 import random
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+import numpy as np
 
 from orchestration.run import answer_of, load_task, read_lines
 from subsymbolic.local_config import gpu_notebook_params
@@ -100,13 +102,54 @@ def final_answer(reply: str) -> str:
     return reply
 
 
+HEADER = re.compile(r"^\s*(\d+)\s*,\s*(\d+)\s*:?\s*$")
+
+
+def grid_row(line: str, number: int, width: int) -> Optional[List[int]]:
+    """One row of `width` cells from `line`, the `number`-th: as the prompt asks ("1 0 3 1", row number and spaced
+    cells), without the number ("0 3 1"), or concatenated with or without it ("1 031", "031")."""
+    parts = line.split()
+    numbered = parts[:1] == [str(number)]
+    if numbered and (len(parts) == width + 1 or (len(parts) == 2 and len(parts[1]) == width)):
+        parts = parts[1:]
+    if len(parts) == 1 and len(parts[0]) == width:
+        parts = list(parts[0])
+    if len(parts) != width or not all(len(c) == 1 and c.isdigit() for c in parts):
+        return None
+    return [int(c) for c in parts]
+
+
+def read_grid(text: str) -> Optional[np.ndarray]:
+    """The first grid in `text` led by its "n,m:" header, its rows in any of grid_row's forms, or None.
+
+    The prompt's format is "1 x_1 ... x_m" - row numbers and spaced cells - and parse_llm_output, which the grammar
+    runs are written for, reads only "1 x_1x_2...": a reply written exactly as asked was graded unreadable (think_small:
+    8 of 20 Gemma replies held the right grid after their reasoning, and 1 was read)."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    for at, line in enumerate(lines):
+        header = HEADER.match(line)
+        if not header:
+            continue
+        rows, cols = int(header.group(1)), int(header.group(2))
+        if not (1 <= rows <= 30 and 1 <= cols <= 30):
+            continue
+        grid = [grid_row(row, i + 1, cols) for i, row in enumerate(lines[at + 1:at + 1 + rows])]
+        if len(grid) == rows and all(row is not None for row in grid):
+            return np.array(grid, dtype=int)
+    return None
+
+
 def grade(task, reply: Any) -> Dict[str, Any]:
-    """Whether the reply holds a grid, of the right shape, and the task's answer."""
-    grid = answer_of({"solution": final_answer(reply)}) if isinstance(reply, str) else None
+    """Whether the reply holds a grid, of the right shape, and the task's answer; `format_ok` is whether it is also in
+    the one form parse_llm_output reads (what a run under the grammar would have written)."""
+    answer = final_answer(reply) if isinstance(reply, str) else ""
+    grid = read_grid(answer)
+    format_ok = answer_of({"solution": answer}) is not None if answer else False
     if grid is None:
-        return {"parsed": False, "shape_ok": False, "solved": False, "cells_right": 0.0}
+        return {"parsed": False, "format_ok": False, "shape_ok": False, "solved": False, "cells_right": 0.0}
     same = grid.shape == task.test_out.shape
-    return {"parsed": True, "shape_ok": bool(same), "solved": bool(same and (grid == task.test_out).all()),
+    return {"parsed": True, "format_ok": format_ok, "shape_ok": bool(same),
+            "solved": bool(same and (grid == task.test_out).all()),
             "cells_right": round(float((grid == task.test_out).mean()), 4) if same else 0.0}
 
 

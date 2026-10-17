@@ -176,6 +176,34 @@ class TestTheReasoningIsNotTheReply:
         assert llm_only.grade(task, draft + "<channel|>" + self.GRID)["solved"] is True
 
 
+class TestAGridInEveryFormTheReplyUses:
+    """The prompt asks for "1 x_1 ... x_m"; the grammar's parser reads only "1 x_1x_2...". A reply is graded on its
+    cells, and `format_ok` keeps whether the grammar's parser would have read it."""
+
+    def test_the_form_the_prompt_asks_for_is_read(self):
+        task = make_task()      # the answer is [[0, 2], [1, 0]]
+        graded = llm_only.grade(task, "2,2:\n1 0 2\n2 1 0")
+        assert graded["solved"] and not graded["format_ok"]
+
+    def test_rows_without_numbers_or_concatenated_are_read(self):
+        task = make_task()
+        for reply in ("2,2:\n0 2\n1 0", "2,2:\n02\n10", "```\n2,2:\n1 02\n2 10\n```"):
+            assert llm_only.grade(task, reply)["solved"], reply
+        assert llm_only.grade(task, "2,2:\n1 02\n2 10")["format_ok"]
+
+    def test_a_row_that_does_not_fit_the_header_is_not_a_grid(self):
+        assert llm_only.read_grid("2,3:\n1 0 2\n2 1") is None
+        assert llm_only.read_grid("2,2:\n0 2") is None
+        assert llm_only.read_grid("2,2:\n0 12\n1 0") is None
+
+    def test_a_one_column_grid_keeps_its_cells_and_drops_its_row_numbers(self):
+        assert llm_only.read_grid("2,1:\n1 5\n2 7").tolist() == [[5], [7]]
+        assert llm_only.read_grid("2,1:\n5\n7").tolist() == [[5], [7]]
+
+    def test_prose_around_the_grid_is_skipped(self):
+        assert llm_only.read_grid("So the answer:\n2,2:\n1 0 2\n2 1 0\nDone.").tolist() == [[0, 2], [1, 0]]
+
+
 class TestAids:
     """What is computed from the task and put in the prompt, and the guard that keeps the examples whole."""
 

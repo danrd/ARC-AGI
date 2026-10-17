@@ -4326,12 +4326,18 @@
    "name": "nostop_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "когда сдаваться: h_nostop (o_spatial, обучение без остановки на ответе — эпизод кончается только своим submit или лимитом) на 23 задачах, сиды 3-6 (92 запуска); сравнение по held_out_honest с honest_a (те же сиды, прогоны детерминированы)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/nostop_a_nostop_a_0.jsonl",
+    "data/experiments/runs/kaggle/nostop_a_nostop_a_1.jsonl",
+    "data/experiments/runs/kaggle/nostop_a_nostop_a_2.jsonl",
+    "data/experiments/runs/kaggle/nostop_a_nostop_a_3.jsonl",
+    "data/experiments/runs/kaggle/nostop_a_nostop_a_4.jsonl"
+   ],
+   "cleaned": true
   }
  ]
 }

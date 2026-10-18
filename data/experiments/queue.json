@@ -4414,7 +4414,7 @@
    "name": "coord_c",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "двухфазное обучение: c_half (submit закрыт первую половину шагов) на 23 координатных задачах, сиды 0-2 (69 запусков); база — coord_b (o_spatial, сдаётся на первом шаге в 163 из 216 эпизодов)",

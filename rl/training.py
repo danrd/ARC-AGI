@@ -144,7 +144,7 @@ def create_ARC_env(subtask, max_episode_len=50, right_placement_reward=5.0, acti
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
-                   action_whitelist=None, addressing="objects", coordinate_shape=None, stop_on_solve=True,
+                   action_whitelist=None, addressing="objects", coordinate_shape=None, stop_on_solve=False,
                   ):
     """Auxiliary function for creating environments to create vectorized environment."""
     gym.envs.register(
@@ -174,7 +174,7 @@ def create_vec_env(subtasks, n_envs:int, max_episode_len=50, right_placement_rew
                    milestones_rewards=(1, 2, 3, 4), pad_val=10, reward_approach=1, repr_level=1,
                    feasible_actions={0:"submit"}, observation_space_elements = ["objects_emb", "relations_emb"],
                    observation_grid_shape=None, max_objects=MAX_OBJECTS,
-                   action_whitelist=None, addressing="objects", coordinate_shape=None, stop_on_solve=True):
+                   action_whitelist=None, addressing="objects", coordinate_shape=None, stop_on_solve=False):
     """Auxiliary function for creating vectorized environment."""
     envs = [functools.partial(create_ARC_env, subtask=subtask, max_episode_len=max_episode_len, right_placement_reward=right_placement_reward,
                               action_penalty=action_penalty, repetitive_actions_penalty=repetitive_actions_penalty,
@@ -222,7 +222,7 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
                              action_whitelist=rl_config.get('action_whitelist'),
                              addressing=rl_config.get('addressing') or 'objects',
                              coordinate_shape=rl_config.get('coordinate_shape'),
-                             stop_on_solve=rl_config.get('stop_on_solve', True))
+                             stop_on_solve=rl_config.get('stop_on_solve', False))
     # verbose passed through: the callback's own default is True, and a
     # verbose evaluation prints every example's actions.
     #
@@ -267,16 +267,18 @@ def train_on_subtask(subtask, rl_config:dict, PPO_config:dict=None, agent_init=N
                              extra_callback=extra_callback, show_plots=show_plots)
 
 
-def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None, stop_on_solve:bool=True):
+def evaluate_on_subtask(agent, subtask, rl_config:dict, trace:dict=None, stop_on_solve:bool=False):
     """Score a trained agent on a subtask it was not trained on.
 
     An env of its own, built the same way as the training ones and thrown
     away afterwards: evaluate_ARC_policy takes the vec env to step in as an
     argument, so nothing about the agent's own env changes. `trace`, a
     dict, is filled with the episode step by step (evaluate_ARC_policy's
-    traces, of which there is one here). `stop_on_solve` False scores the
-    grid the policy ends with by its own submit or the step limit, not the
-    first one that matched the answer (ARCGridWorld.stop_on_solve).
+    traces, of which there is one here). The grid scored is the one the
+    policy ends with by its own submit or the step limit; `stop_on_solve`
+    True ends the episode at the first grid that matches the answer
+    instead (ARCGridWorld.stop_on_solve) - only an env holding the answer
+    can, so it is a diagnostic and never the policy's answer.
     """
     vec_env = create_vec_env([subtask], n_envs=1, max_episode_len=rl_config['max_episode_len'],
                              repr_level=rl_config['repr_level'],
@@ -463,11 +465,16 @@ def train_on_task(task, rl_config:dict, PPO_config:dict=None, agent_init=None, v
         print(f'Subtasks with nothing to close, scored 1.0 by definition: '
               f'{degenerate}')
     train_metrics['test_acc'] = test_acc
-    # The same pair with the episode ended only by the policy's own submit or
-    # the step limit: test_acc stops at the first grid that matches the
-    # answer, which only an env holding the answer can do.
-    train_metrics['test_acc_honest'] = evaluate_on_subtask(agent, task.test_subtask, rl_config,
-                                                           stop_on_solve=False)[0]
+    # test_acc and test_grid are the policy's own: the episode ends by its
+    # submit or the step limit. test_acc_honest is the same number under the
+    # name the comparison runs of honest_a and nostop_a read it by. The
+    # diagnostic stops the episode at the first grid that matches the answer,
+    # which only an env holding the answer can - what test_acc was until
+    # 2026-10-18, and what the system's RL answer was taken from, so a policy
+    # that passed the answer on its way handed it over.
+    train_metrics['test_acc_honest'] = test_acc
+    train_metrics['test_acc_oracle'] = evaluate_on_subtask(agent, task.test_subtask, rl_config,
+                                                           stop_on_solve=True)[0]
     train_metrics['test_len'] = test_len
     train_metrics['test_grid'] = test_grid
     # The episodes themselves, per training example and held out -

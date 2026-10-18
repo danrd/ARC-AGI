@@ -173,6 +173,11 @@ The ninth series, when to submit (HONEST_ARMS), judged by held_out_honest agains
 
     h_nostop    a training episode does not end on the answer; only the policy's submit or max_episode_len ends it
 
+It won (nostop_a, nostop_b) and is the default since 2026-10-18 (stop_on_solve in rl_configs), so o_spatial now trains
+the same way; h_nostop stays the name of the runs that measured it. `held_out` is the policy's own grid since then, as
+held_out_honest was; `held_out_oracle` is the episode stopped on the answer, what held_out was before, and
+`stop_on_solve` says how the run trained.
+
 `gd_wide` used to run as gd_ch: its widths were a PPO setting nothing read,
 so its runs were a second sample of gd_ch. The width is now the encoder
 factory it has to be, and a test holds it to that.
@@ -461,6 +466,8 @@ def one_run(config, arm, seed, steps, task_id):
         accuracies, lengths, _agent, metrics = train_on_task(load_task(task_id), config, ppo, show_plots=False)
     return {"task": task_id, "arm": arm, "seed": seed, "held_out": round(float(metrics["test_acc"]), 4),
             "held_out_honest": round(float(metrics["test_acc_honest"]), 4),
+            "held_out_oracle": round(float(metrics.get("test_acc_oracle", metrics["test_acc"])), 4),
+            "stop_on_solve": bool(config.get("stop_on_solve", False)),
             "train": [round(float(a), 4) for a in accuracies.values()],
             "steps_to_solve": [round(float(v), 2) for v in lengths.values()],
             "steps": steps, "seconds": round(time.time() - started, 1)}

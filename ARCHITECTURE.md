@@ -218,12 +218,12 @@ graph TD
   symbolic["symbolic (10)"]
   tests["tests (91)"]
   utils["utils (3)"]
-  tests -->|109| rl
+  tests -->|110| rl
   tests -->|47| subsymbolic
   tests -->|40| orchestration
   tests -->|34| symbolic
   orchestration -->|32| subsymbolic
-  tests -->|21| data
+  tests -->|22| data
   scripts -->|16| rl
   rl -->|11| data
   rl -->|11| symbolic
@@ -252,7 +252,7 @@ graph TD
 | --- | ---: |
 | `data.configs.agents_config` | 6 |
 | `data.configs.env_configs` | 15 |
-| `data.configs.rl_configs` | 14 |
+| `data.configs.rl_configs` | 15 |
 | `data.datasets.ARC.arc_dataset` | 4 |
 | `orchestration.__main__` | 0 |
 | `orchestration.assemble` | 3 |
@@ -289,7 +289,7 @@ graph TD
 | `rl.plotting` | 4 |
 | `rl.policy` | 5 |
 | `rl.rl_job` | 6 |
-| `rl.rl_module` | 5 |
+| `rl.rl_module` | 6 |
 | `rl.search_hints` | 16 |
 | `rl.training` | 15 |
 | `rl.utils` | 10 |

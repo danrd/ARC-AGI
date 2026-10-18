@@ -72,18 +72,18 @@ class TestTheScore:
 
     def test_a_policy_that_reaches_the_answer_and_paints_over_it_is_solved_only_by_the_env_that_knows_it(self):
         paint_over = [SOLVE, BREAK, BREAK, BREAK]
-        stopped, _, _ = evaluate_on_subtask(Scripted(paint_over), pair(), self.CONFIG)
-        honest, _, _ = evaluate_on_subtask(Scripted(paint_over), pair(), self.CONFIG, stop_on_solve=False)
+        stopped, _, _ = evaluate_on_subtask(Scripted(paint_over), pair(), self.CONFIG, stop_on_solve=True)
+        honest, _, _ = evaluate_on_subtask(Scripted(paint_over), pair(), self.CONFIG)
         assert stopped == pytest.approx(1.0) and honest < 1.0
 
     def test_a_policy_that_solves_and_submits_is_solved_both_ways(self):
         submits = [SOLVE, [0, 0, 0, 0, 0]]
-        assert evaluate_on_subtask(Scripted(submits), pair(), self.CONFIG, stop_on_solve=False)[0] == pytest.approx(1.0)
         assert evaluate_on_subtask(Scripted(submits), pair(), self.CONFIG)[0] == pytest.approx(1.0)
+        assert evaluate_on_subtask(Scripted(submits), pair(), self.CONFIG, stop_on_solve=True)[0] == pytest.approx(1.0)
 
 
 class TestTrainingWithoutTheStop:
-    """rl_config's stop_on_solve reaches the environments a policy is trained in."""
+    """rl_config's stop_on_solve reaches the environments a policy is trained in; without it they do not stop."""
 
     def make(self, **flag):
         return create_vec_env([pair()], n_envs=2, max_episode_len=4, feasible_actions=ACTIONS,
@@ -92,8 +92,8 @@ class TestTrainingWithoutTheStop:
                               reward_approach=3, **flag)
 
     def test_every_env_of_the_vector_takes_it(self):
-        assert [e.unwrapped.stop_on_solve for e in self.make(stop_on_solve=False).envs] == [False, False]
-        assert [e.unwrapped.stop_on_solve for e in self.make().envs] == [True, True]
+        assert [e.unwrapped.stop_on_solve for e in self.make(stop_on_solve=True).envs] == [True, True]
+        assert [e.unwrapped.stop_on_solve for e in self.make().envs] == [False, False]
 
     def test_training_builds_its_envs_with_the_configs_flag(self, monkeypatch):
         import rl.training
@@ -108,7 +108,14 @@ class TestTrainingWithoutTheStop:
 
         monkeypatch.setattr(rl.training, "create_vec_env", fake)
         config = dict(TestTheScore.CONFIG, n_envs=1, total_steps=10, evaluations=1, log_path="/tmp/x/")
-        for flag, expected in (({"stop_on_solve": False}, False), ({}, True)):
+        for flag, expected in (({"stop_on_solve": True}, True), ({}, False)):
             with pytest.raises(Stop):
                 rl.training.train_on_subtasks([pair()], dict(config, **flag), {})
             assert seen["stop_on_solve"] is expected
+
+
+def test_no_config_stops_a_training_episode_on_the_answer():
+    """The default the system trains with, in the config and in its pydantic twin."""
+    from data.configs.rl_configs import rl_config
+    from rl.rl_module import RlConfig
+    assert rl_config["stop_on_solve"] is False and RlConfig().stop_on_solve is False

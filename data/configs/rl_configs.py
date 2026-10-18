@@ -64,8 +64,11 @@ rl_config = {
     # so a policy trained with True never learns when to submit: honest_a,
     # o_spatial on 23 tasks, 69 held-out solves with the test stopped on the
     # answer and 55 with it ended by the policy's own submit. False ends a
-    # training episode only by submit or at max_episode_len.
-    'stop_on_solve': True,
+    # training episode only by submit or at max_episode_len, and the policy
+    # learns to stop: 61 and 61 held-out solves on seeds 3-6 and 7-10 against
+    # True's 55 and 39 (nostop_a, nostop_b; 39 runs won, 11 lost). True is
+    # what every run before 2026-10-18 trained with.
+    'stop_on_solve': False,
     'right_placement_reward': 5.0,
     'action_penalty': 1.0,
     'repetitive_actions_penalty': 1.0,

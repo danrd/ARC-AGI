@@ -428,20 +428,26 @@ class TestExamplesOfDifferentSizes:
 
         assert "test_acc" in metrics
 
-    def test_the_held_out_pair_is_scored_twice_once_without_the_answer_stopping_it(self, task, config, ppo,
-                                                                                   monkeypatch):
+    def test_the_answer_is_the_policys_own_and_the_stopped_episode_only_a_diagnostic(self, task, config, ppo,
+                                                                                     monkeypatch):
+        """Every pair - the training ones and the held-out one - is scored
+        with the episode ended by the policy; the held-out pair once more
+        stopped on the answer, kept apart as test_acc_oracle."""
         import rl.training as training
         real, calls = training.evaluate_on_subtask, []
 
-        def spy(agent, subtask, rl_config, trace=None, stop_on_solve=True):
+        def spy(agent, subtask, rl_config, trace=None, stop_on_solve=False):
             calls.append((subtask.label, stop_on_solve))
             score = real(agent, subtask, rl_config, trace=trace, stop_on_solve=stop_on_solve)
-            return (0.25,) + tuple(score[1:]) if not stop_on_solve else score
+            return (0.75,) + tuple(score[1:]) if stop_on_solve else (0.25,) + tuple(score[1:])
 
         monkeypatch.setattr(training, "evaluate_on_subtask", spy)
-        _, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
-        held_out = [stop for label, stop in calls if label == task.test_subtask.label]
-        assert held_out == [True, False] and metrics["test_acc_honest"] == 0.25
+        accuracies, _, _, metrics = train_on_task(task, rl_config=config, PPO_config=ppo)
+        test_label = task.test_subtask.label
+        assert [stop for label, stop in calls if label != test_label] == [False] * len(task.subtasks)
+        assert [stop for label, stop in calls if label == test_label] == [False, True]
+        assert set(accuracies.values()) == {0.25}
+        assert metrics["test_acc"] == metrics["test_acc_honest"] == 0.25 and metrics["test_acc_oracle"] == 0.75
 
 
 class TestTheConfigReachesTheAgent:

@@ -423,14 +423,15 @@ class TestSelectingTasks:
 
         def fake(task, config, ppo, show_plots):
             seen["steps"] = config["total_steps"]
-            return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.25}
+            return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.5, "test_acc_oracle": 0.75}
 
         monkeypatch.setattr(rl.training, "train_on_task", fake)
         monkeypatch.setattr(compare, "load_task", lambda task_id: None)
         config = {"feasible_actions": {"0": [0]}}
         record = compare.one_run(config, "default", 0, 500_000, "a")
         assert seen["steps"] == 500_000 and record["steps"] == 500_000
-        assert record["held_out"] == 0.5 and record["held_out_honest"] == 0.25
+        assert record["held_out"] == record["held_out_honest"] == 0.5 and record["held_out_oracle"] == 0.75
+        assert record["stop_on_solve"] is False
 
 
     def test_an_environment_setting_of_an_arm_goes_to_the_env_config_and_not_to_ppo(self, monkeypatch):

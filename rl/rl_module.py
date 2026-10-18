@@ -34,7 +34,7 @@ class RlConfig(BaseModel):
     evaluations: int = 20
     log_path: str = ".data/logs/rl/"
     max_episode_len: int = 25
-    stop_on_solve: bool = True  # see data.configs.rl_configs.rl_config
+    stop_on_solve: bool = False  # see data.configs.rl_configs.rl_config
     right_placement_reward: float = 5.0
     action_penalty: float = 1.0
     repetitive_actions_penalty: float = 1.0

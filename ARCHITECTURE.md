@@ -218,7 +218,7 @@ graph TD
   symbolic["symbolic (10)"]
   tests["tests (91)"]
   utils["utils (3)"]
-  tests -->|110| rl
+  tests -->|111| rl
   tests -->|47| subsymbolic
   tests -->|40| orchestration
   tests -->|34| symbolic
@@ -280,7 +280,7 @@ graph TD
 | `rl.arc_task` | 44 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
-| `rl.callbacks` | 2 |
+| `rl.callbacks` | 3 |
 | `rl.coordinate_search` | 4 |
 | `rl.evaluation` | 5 |
 | `rl.features` | 10 |

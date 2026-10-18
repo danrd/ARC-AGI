@@ -419,8 +419,8 @@ class ARCCustomNetwork(nn.Module):
         masked_action: Optional[int] = None,
     ):
         super().__init__()
-        #: An action type the coordinate heads never choose (submit, when
-        #: coordinate_submit is off), or None.
+        #: An action type the coordinate heads do not choose (submit, while
+        #: coordinate_submit_from holds it back), or None.
         self.masked_action = masked_action
         if direction_keys not in ("relative", "both"):
             raise ValueError(f"direction_keys={direction_keys!r}: expected 'relative' or 'both'")
@@ -845,7 +845,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         object_heads: str = "flat",
         action_names: Optional[Dict[int, str]] = None,
         direction_keys: str = "both",
-        coordinate_submit: bool = True,
+        coordinate_submit_from: float = 0.0,
         submit_action: Optional[int] = None,
         *args,
         **kwargs,
@@ -863,9 +863,16 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         self.action_structure = (ActionStructure(action_names) if object_heads == "factored"
                                  else None)
         self.direction_keys = direction_keys
-        #: The action type the coordinate heads may not choose: submit when
-        #: coordinate_submit is off and the env said where submit is.
-        self.masked_action = None if coordinate_submit or submit_action is None else int(submit_action)
+        if not 0.0 <= coordinate_submit_from <= 1.0:
+            raise ValueError(f"coordinate_submit_from={coordinate_submit_from!r}: a share of the steps, 0 to 1")
+        #: The share of the training steps before which the coordinate heads
+        #: may not choose submit (rl.callbacks.SubmitUnlock reads it).
+        self.coordinate_submit_from = float(coordinate_submit_from)
+        #: The action type the coordinate heads may not choose now: submit,
+        #: until unmask_submit, when it is held back and the env said where
+        #: submit is; None otherwise.
+        self.masked_action = (int(submit_action) if coordinate_submit_from > 0 and submit_action is not None
+                              else None)
         self.critic_only_keys = tuple(critic_only_keys)
         if self.critic_only_keys:
             # Two extractors, or there is nothing to route between.
@@ -937,6 +944,11 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             pair_width=getattr(self._actor_extractor(), "pair_width", 0),
             masked_action=self.masked_action,
         )
+
+    def unmask_submit(self) -> None:
+        """Let the coordinate heads choose submit from now on."""
+        self.masked_action = None
+        self.mlp_extractor.masked_action = None
 
     def _critic_branch_keys(self) -> Tuple[str, ...]:
         """The critic-only keys, and the true grid shape they are cropped

@@ -225,8 +225,16 @@ def load_PPO_config():
     # second corner towards the first. Without submit (False) the episode
     # ends when the grid is solved or at max_episode_len, and the same pair
     # is solved in one stroke by 51k steps. The answer is the grid the
-    # episode ends with either way. True is what was measured before.
-    'coordinate_submit': True,
+    # episode ends with either way.
+    #
+    # So the choice is when submit becomes available: the share of
+    # total_steps before which the coordinate heads cannot choose it (an
+    # rl.callbacks.SubmitUnlock lifts the mask). 0 is from the first step,
+    # what was measured above as True; 1 is never, measured as False - which,
+    # now that no episode ends by itself on the answer (stop_on_solve), can
+    # earn no solve at all. Between them a policy learns to paint first and
+    # to stop after.
+    'coordinate_submit_from': 0.0,
     # How an object action is chosen: 'flat', one logit per name of the
     # vocabulary, or 'factored', the name's parts one after another - type,
     # objects, colour, second colour, direction - each from a head shared

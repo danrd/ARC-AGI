@@ -5,7 +5,7 @@ from stable_baselines3 import PPO
 from rl.arc_env import ARCGridWorld, MAX_OBJECTS
 from rl.evaluation import evaluate_ARC_policy
 from stable_baselines3.common.callbacks import CallbackList
-from rl.callbacks import MonitorCallback, ARCLogger
+from rl.callbacks import MonitorCallback, ARCLogger, SubmitUnlock
 from rl.mcts import rollout_preparation, extract_promising_actions
 from rl.utils import calculate_eval_freq
 from utils.utils import seed_everything
@@ -92,11 +92,11 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                      # AutoregressiveCoordinateDistribution. Read only under
                      # coordinate addressing.
                      'coordinate_heads': PPO_config['coordinate_heads'],
-                     # Whether the coordinate heads may choose submit - see
-                     # coordinate_submit in rl_configs. The index is the
-                     # env's own, so a vocabulary that puts submit last is
-                     # masked where it is.
-                     'coordinate_submit': PPO_config['coordinate_submit'],
+                     # From when the coordinate heads may choose submit -
+                     # see coordinate_submit_from in rl_configs. The index
+                     # is the env's own, so a vocabulary that puts submit
+                     # last is masked where it is.
+                     'coordinate_submit_from': PPO_config['coordinate_submit_from'],
                      'submit_action': (submit_index(vec_env.envs[0].unwrapped.actions_dict)
                                        if coordinates else None),
                      # One logit per name, or the name's parts chosen one
@@ -247,7 +247,13 @@ def train_on_subtasks(subtasks, rl_config:dict, PPO_config:dict=None, agent_init
     # training run before the first step.
     logger = ARCLogger(rl_config['log_path'], ["stdout", "csv"], metrics_list)
     agent.set_logger(logger)
-    callbacks = callback if extra_callback is None else CallbackList([callback, extra_callback])
+    extra = [extra_callback] if extra_callback is not None else []
+    # Submit held back for the first share of the steps (coordinate_submit_from):
+    # the mask is lifted by a callback rather than set per phase, so one
+    # learn() call and one rollout buffer span both phases.
+    if getattr(agent.policy, "masked_action", None) is not None and agent.policy.coordinate_submit_from < 1:
+        extra.append(SubmitUnlock(agent.policy.coordinate_submit_from * rl_config['total_steps']))
+    callbacks = callback if not extra else CallbackList([callback, *extra])
     agent.learn(rl_config['total_steps'], callback=callbacks)
     acc, mean_len, grid_pred = evaluate_ARC_policy(agent, vec_env, n_eval_episodes=rl_config['n_eval_episodes'])
     if verbose:

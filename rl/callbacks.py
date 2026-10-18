@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from typing import List,Tuple, Union
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.vec_env import sync_envs_normalization
 from stable_baselines3.common.logger import Logger, KVWriter, make_output_format
 from rl.evaluation import evaluate_ARC_policy
@@ -187,6 +187,28 @@ class MonitorCallback(EvalCallback):
         self.ep_rew_mean = metrics['rollout/ep_rew_mean']
         self._reset()
         pass
+class SubmitUnlock(BaseCallback):
+    """Lets the coordinate heads choose submit once `at` steps of this
+    learn() call have passed - the second phase of coordinate_submit_from
+    (rl_configs): paint first, learn when to stop after."""
+
+    def __init__(self, at: int):
+        super().__init__()
+        self.at = int(at)
+        self.start = 0
+        #: The num_timesteps the mask was lifted at, or None.
+        self.unlocked_at = None
+
+    def _on_training_start(self) -> None:
+        self.start = self.num_timesteps
+
+    def _on_step(self) -> bool:
+        if self.unlocked_at is None and self.num_timesteps - self.start >= self.at:
+            self.model.policy.unmask_submit()
+            self.unlocked_at = self.num_timesteps
+        return True
+
+
 class ARCLogger(Logger):
     def __init__(self, folder:str, output_formats, metrics_list:List[str]):
         super().__init__(folder, output_formats)

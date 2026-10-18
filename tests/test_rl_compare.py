@@ -143,11 +143,12 @@ class TestTheArms:
         assert compare.arm_settings("f_pairattn")[1] == {**base, "relation_pointer": True,
                                                          "relation_arch": {"aggregation": "attn"}}
 
-    def test_the_coordinate_arm_is_o_spatial_unable_to_submit(self):
+    def test_the_coordinate_arms_are_o_spatial_with_submit_held_back(self):
         from data.configs.rl_configs import load_PPO_config
-        assert compare.COORD_ARMS == ("c_nosub",)
-        assert compare.arm_settings("c_nosub")[1] == {"spatial_channels": 32, "coordinate_submit": False}
-        assert load_PPO_config()["coordinate_submit"] is True
+        assert compare.COORD_ARMS == ("c_nosub", "c_half")
+        assert compare.arm_settings("c_nosub")[1] == {"spatial_channels": 32, "coordinate_submit_from": 1.0}
+        assert compare.arm_settings("c_half")[1] == {"spatial_channels": 32, "coordinate_submit_from": 0.5}
+        assert load_PPO_config()["coordinate_submit_from"] == 0.0
 
     def test_every_relation_arm_builds_the_module_it_names(self):
         """The arguments of relation_arch are RelationMessages' own: an arm that named one it does not take

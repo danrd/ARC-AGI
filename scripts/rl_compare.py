@@ -168,6 +168,7 @@ one change from it:
 The eighth series, the coordinate-addressed tasks (COORD_ARMS), against o_spatial run beside it:
 
     c_nosub     the coordinate heads cannot submit; an episode ends solved or at max_episode_len
+    c_half      submit is held back for the first half of the steps and offered after (two phases)
 
 The ninth series, when to submit (HONEST_ARMS), judged by held_out_honest against o_spatial's:
 
@@ -291,8 +292,11 @@ ARMS = {
     "f_pairattn": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored", "relation_pointer": True,
                                       "relation_arch": {"aggregation": "attn"}}),
     # The eighth series, the coordinate tasks: o_spatial with the coordinate heads unable to submit, so an episode
-    # ends solved or at max_episode_len (coordinate_submit in rl_configs).
-    "c_nosub": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit": False}),
+    # ends solved or at max_episode_len (coordinate_submit_from in rl_configs, 1 = never).
+    "c_nosub": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 1.0}),
+    # Two phases: no submit for the first half of the steps, so the policy learns to paint before giving up is on
+    # offer; submit after, paid only on a solved grid since no episode ends on the answer by itself.
+    "c_half": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 0.5}),
     # The ninth series, when to submit: o_spatial trained with episodes that do not end by themselves on the
     # answer (stop_on_solve in rl_configs, an environment setting and not a PPO one - see ENV_SETTINGS).
     "h_nostop": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "stop_on_solve": False}),

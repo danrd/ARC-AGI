@@ -383,8 +383,8 @@ def coordinate_agent_with(extra):
 
 
 class TestNoSubmit:
-    """coordinate_submit off: the heads never choose submit, and the episode ends when the grid is solved or at
-    max_episode_len - see coordinate_submit in rl_configs for the measurement."""
+    """Submit held back (coordinate_submit_from above 0): the heads do not choose it until SubmitUnlock lifts the
+    mask - see coordinate_submit_from in rl_configs for the measurement."""
 
     def _distribution(self, network, latent):
         from rl.policy import AutoregressiveCoordinateDistribution
@@ -421,7 +421,7 @@ class TestNoSubmit:
 
     def test_the_setting_reaches_the_heads_with_the_env_s_own_index_of_submit(self):
         vocabulary = {0: "red_fill", 1: "red_line", 2: "submit"}
-        for setting, wanted in ((False, 2), (True, None)):
+        for setting, wanted in ((1.0, 2), (0.5, 2), (0.0, None)):
             vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=vocabulary,
                                      observation_space_elements=["delta_input", "delta_target"],
                                      observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
@@ -429,7 +429,7 @@ class TestNoSubmit:
             try:
                 agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
                                      {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
-                                      "coordinate_submit": setting})
+                                      "coordinate_submit_from": setting})
                 assert agent.policy.mlp_extractor.masked_action == wanted
                 if wanted is not None:
                     obs, _ = agent.policy.obs_to_tensor(vec_env.reset())
@@ -449,7 +449,70 @@ class TestNoSubmit:
                                  input_pattern="start", max_objects=2)
         try:
             agent = make({"model_type": "PPO", "addressing": "objects"}, vec_env,
-                         {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_submit": False})
+                         {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_submit_from": 1.0})
             assert agent.policy.mlp_extractor.masked_action is None
         finally:
             vec_env.close()
+
+
+class TestSubmitInTheSecondPhase:
+    """coordinate_submit_from between 0 and 1: submit is masked for that share of the steps, then offered."""
+
+    VOCABULARY = {0: "red_fill", 1: "red_line", 2: "submit"}
+
+    def make(self, share):
+        vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=self.VOCABULARY,
+                                 observation_space_elements=["delta_input", "delta_target"],
+                                 observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
+                                 addressing="coordinates", coordinate_shape=(7, 7))
+        agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                             {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
+                              "coordinate_submit_from": share})
+        return agent, vec_env
+
+    def test_the_mask_is_lifted_once_its_share_of_the_steps_has_passed(self):
+        from rl.callbacks import SubmitUnlock
+        agent, vec_env = self.make(0.5)
+        try:
+            # Two pairs, two envs: a rollout of 16 steps is 32 timesteps, the unit `at` counts in.
+            unlock = SubmitUnlock(at=40)
+            agent.learn(16, callback=SubmitUnlock(at=40))
+            assert agent.policy.masked_action == 2 and agent.policy.mlp_extractor.masked_action == 2
+            agent.learn(64, callback=unlock)
+            assert agent.policy.masked_action is None and agent.policy.mlp_extractor.masked_action is None
+            assert unlock.unlocked_at is not None and 40 <= unlock.unlocked_at - unlock.start <= 41
+            obs, _ = agent.policy.obs_to_tensor(vec_env.reset())
+            draws = [agent.policy.get_distribution(obs).sample()[0, 0].item() for _ in range(300)]
+            assert 2 in draws
+        finally:
+            vec_env.close()
+
+    def test_training_adds_the_unlock_at_the_share_of_its_steps(self, monkeypatch):
+        import rl.training as training
+        from rl.callbacks import SubmitUnlock
+        built = {}
+
+        def fake_create_agent(rl_config, vec_env, model_config=None, path_to_pretrained=None, agent_init=None):
+            agent, _ = self.make(model_config["coordinate_submit_from"])
+            built["agent"] = agent
+            agent.learn = lambda total, callback=None: built.update(total=total, callback=callback)
+            return agent
+
+        monkeypatch.setattr(training, "create_agent", fake_create_agent)
+        monkeypatch.setattr(training, "evaluate_ARC_policy", lambda *a, **k: (0.0, 0.0, None))
+        config = {"n_envs": 1, "max_episode_len": 4, "repr_level": 1, "right_placement_reward": 5.0,
+                  "action_penalty": 1.0, "repetitive_actions_penalty": 1.0, "seed": 0, "font_color": 0,
+                  "padding": False, "input_pattern": "start", "milestones_rewards": (1, 2, 3, 4), "pad_val": 10,
+                  "reward_approach": 3, "feasible_actions": self.VOCABULARY,
+                  "observation_space_elements": ["delta_input", "delta_target"], "observation_grid_shape": (7, 7),
+                  "addressing": "coordinates", "coordinate_shape": (7, 7), "n_eval_episodes": 1,
+                  "total_steps": 1000, "evaluations": 1, "log_path": "/tmp/submit_unlock_test/"}
+        for share, wanted in ((0.25, 250), (0.0, None), (1.0, None)):
+            training.train_on_subtasks(two_sizes(), config, {"coordinate_submit_from": share})
+            unlocks = [c for c in getattr(built["callback"], "callbacks", [built["callback"]])
+                       if isinstance(c, SubmitUnlock)]
+            assert [u.at for u in unlocks] == ([wanted] if wanted is not None else [])
+
+    def test_a_share_outside_zero_to_one_is_refused(self):
+        with pytest.raises(ValueError, match="coordinate_submit_from"):
+            self.make(1.5)

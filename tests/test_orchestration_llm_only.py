@@ -274,9 +274,18 @@ class TestAids:
 
     def test_a_command_line_with_aids_builds_the_block_they_go_in_and_one_without_does_not(self):
         from types import SimpleNamespace
-        base = dict(model=MODEL, tokenizer=None, max_tokens=100, thinking=True, context=14000)
+        base = dict(model=MODEL, tokenizer=None, max_tokens=100, thinking=True, context=14000, prompt_lookup=None)
         assert "auxiliary_info" in llm_only.params_from_args(SimpleNamespace(**base, aids=["objects"]))["prompt"]["blocks"]
         assert "auxiliary_info" not in llm_only.params_from_args(SimpleNamespace(**base, aids=[]))["prompt"]["blocks"]
+
+    def test_prompt_lookup_reaches_the_model_settings_from_the_command_line(self):
+        from types import SimpleNamespace
+        from subsymbolic.llm_setup import LlmConfig
+        base = dict(model=MODEL, tokenizer=None, max_tokens=100, thinking=True, context=14000, aids=[])
+        on = llm_only.params_from_args(SimpleNamespace(**base, prompt_lookup=10))["llm"]
+        off = llm_only.params_from_args(SimpleNamespace(**base, prompt_lookup=None))["llm"]
+        assert on["prompt_lookup_tokens"] == 10 and "prompt_lookup_tokens" not in off
+        assert LlmConfig(**on).prompt_lookup_tokens == 10
 
     def test_aids_for_a_module_whose_prompt_has_no_place_for_them_are_refused_and_not_dropped(self):
         import pytest

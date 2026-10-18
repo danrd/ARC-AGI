@@ -219,7 +219,7 @@ graph TD
   tests["tests (91)"]
   utils["utils (3)"]
   tests -->|111| rl
-  tests -->|47| subsymbolic
+  tests -->|48| subsymbolic
   tests -->|40| orchestration
   tests -->|34| symbolic
   orchestration -->|32| subsymbolic
@@ -319,7 +319,7 @@ graph TD
 | `subsymbolic.arc_resolvers` | 4 |
 | `subsymbolic.llm_run` | 4 |
 | `subsymbolic.llm_runtime` | 6 |
-| `subsymbolic.llm_setup` | 9 |
+| `subsymbolic.llm_setup` | 10 |
 | `subsymbolic.local_config` | 6 |
 | `subsymbolic.logging` | 1 |
 | `subsymbolic.prompt_builder` | 28 |

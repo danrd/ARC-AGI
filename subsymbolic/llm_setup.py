@@ -108,6 +108,14 @@ class LlmConfig(BaseModel):
     main_gpu: Optional[int] = None
     tensor_split: Optional[List[float]] = None  # per-GPU share; defaults to an even split
     n_threads: Optional[int] = None
+    # Speculative decoding by prompt lookup (llama-cpp-python's
+    # LlamaPromptLookupDecoding): this many tokens are proposed from an
+    # earlier occurrence of the latest n-gram in the prompt or the reply and
+    # checked in one forward pass. Greedy output is unchanged; what changes is
+    # how many passes it takes, which pays when a reply copies what it has
+    # seen - a model reasoning over grids rewrites their rows. None is off.
+    # llama-cpp-python has no draft-model speculation, only this.
+    prompt_lookup_tokens: Optional[int] = None
     tensor_parallel_size: int = 1  # vLLM: shard the model across this many GPUs
     gpu_memory_utilization: Optional[float] = None  # vLLM: fraction of VRAM to reserve (default 0.9)
     enforce_eager: bool = False  # vLLM: skip CUDA graph capture - trades latency for headroom on tight-VRAM cards
@@ -226,6 +234,10 @@ def _start_llama_cpp_server(config) -> subprocess.Popen:
     # One flag per element, which is how the server's CLI takes a list.
     for share in getattr(config.llm, "tensor_split", None) or []:
         args += ["--tensor_split", str(share)]
+
+    lookup = getattr(config.llm, "prompt_lookup_tokens", None)
+    if lookup is not None:
+        args += ["--draft_model", "prompt-lookup-decoding", "--draft_model_num_pred_tokens", str(lookup)]
 
     # llama-cpp-python's server applies chat_template_kwargs at model-load
     # time, not per request - unlike a generic OpenAI-compatible server,
@@ -361,6 +373,10 @@ def setup_llama_cpp_model(model_path: str, config=None, tokenizer_id: Optional[s
              or getattr(llm_cfg, "max_context", None)
              or getattr(gen_cfg, "max_tokens", 2048))
     _warn_if_prompt_can_overflow(config, n_ctx)
+    lookup = getattr(llm_cfg, "prompt_lookup_tokens", None)
+    if lookup is not None:
+        from llama_cpp.llama_speculative import LlamaPromptLookupDecoding
+        optional["draft_model"] = LlamaPromptLookupDecoding(num_pred_tokens=lookup)
     model = Llama(
         model_path=model_path,
         n_ctx=n_ctx,

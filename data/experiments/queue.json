@@ -4431,6 +4431,19 @@
    "note": "указатель по клеткам: c_cell (c_half + угол мазка выбирается как клетка) на тех же 23 задачах, сиды 0-2 (69 запусков); сравнение с coord_c",
    "result": [],
    "cleaned": false
+  },
+  {
+   "name": "think_spec",
+   "resource": "gpu",
+   "shards": 1,
+   "status": "queued",
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
+   "extras": "rl",
+   "note": "спекулятивное декодирование по совпадениям с промптом (llama-cpp-python prompt-lookup, 10 токенов): Gemma 31B с рассуждением, лимит 12000, на 4 маленьких задачах из think_long — без него и с ним; скорость (токенов/с) и совпадают ли ответы (жадное декодирование)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

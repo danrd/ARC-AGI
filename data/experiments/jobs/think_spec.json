@@ -1,0 +1,50 @@
+{
+ "steps": [
+  {
+   "name": "base",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--thinking",
+    "--max-tokens",
+    "12000",
+    "--context",
+    "14000",
+    "--hours",
+    "4",
+    "--tasks-file",
+    "data/experiments/think_spec_tasks.json",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "lookup",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--thinking",
+    "--max-tokens",
+    "12000",
+    "--context",
+    "14000",
+    "--hours",
+    "4",
+    "--tasks-file",
+    "data/experiments/think_spec_tasks.json",
+    "--prompt-lookup",
+    "10",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

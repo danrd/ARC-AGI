@@ -759,3 +759,38 @@ def test_the_context_check_falls_back_to_max_context_when_n_ctx_is_unset(tmp_pat
 
     with patch("subprocess.Popen"), pytest.warns(UserWarning, match="10000 tokens"):
         _start_llama_cpp_server(config)
+
+
+def test_start_llama_cpp_server_asks_for_prompt_lookup_decoding_when_set(tmp_path, monkeypatch):
+    """Speculative decoding by prompt lookup is the server's --draft_model with that method's name."""
+    monkeypatch.chdir(tmp_path)
+    config = _fake_server_config(tmp_path)
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+    assert "--draft_model" not in mock_popen.call_args[0][0]
+    config.llm.prompt_lookup_tokens = 10
+    with patch("subprocess.Popen") as mock_popen:
+        _start_llama_cpp_server(config)
+    args = mock_popen.call_args[0][0]
+    assert args[args.index("--draft_model") + 1] == "prompt-lookup-decoding"
+    assert args[args.index("--draft_model_num_pred_tokens") + 1] == "10"
+
+
+def test_setup_llama_cpp_model_builds_the_prompt_lookup_draft(monkeypatch):
+    captured = {}
+
+    class FakeLlama:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    class FakeLookup:
+        def __init__(self, num_pred_tokens):
+            self.num_pred_tokens = num_pred_tokens
+
+    monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=FakeLlama))
+    monkeypatch.setitem(sys.modules, "llama_cpp.llama_speculative",
+                        SimpleNamespace(LlamaPromptLookupDecoding=FakeLookup))
+    config = SimpleNamespace(llm=LlmConfig(max_context=9000, prompt_lookup_tokens=7),
+                             base=SimpleNamespace(verbose=False), generation=SimpleNamespace(max_tokens=100))
+    setup_llama_cpp_model("model.gguf", config)
+    assert captured["draft_model"].num_pred_tokens == 7

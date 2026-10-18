@@ -37,19 +37,24 @@ ORDER = ("easy", "medium", "hard", "impossible", "very_hard")
 
 
 def llm_only_params(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200,
-                    thinking: bool = False, context: int = 14000, aids: bool = False) -> Dict[str, Any]:
+                    thinking: bool = False, context: int = 14000, aids: bool = False,
+                    prompt_lookup: Optional[int] = None) -> Dict[str, Any]:
     """The GPU notebooks' parameters for `model` with the grammar taken off and the prompt cut to BLOCKS.
 
     `thinking` lets the model reason before it answers (the notebooks switch that off, because a model that reasons can
     spend every token on it and never answer). The reasoning is part of the reply and counts against `max_tokens`, so
     the window grows to `context` and a prompt that would leave less than `max_tokens` of it is not asked.
-    `aids` puts the auxiliary_info block, where `solve_one(aids=...)` puts what it computes, before the output format."""
+    `aids` puts the auxiliary_info block, where `solve_one(aids=...)` puts what it computes, before the output format.
+    `prompt_lookup` turns on speculative decoding by prompt lookup with that many proposed tokens (LlmConfig's
+    prompt_lookup_tokens)."""
     params = gpu_notebook_params(model, tokenizer, max_tokens)
     params["generation"] = {k: v for k, v in params["generation"].items() if k != "grammar"}
     blocks = list(BLOCKS)
     if aids:
         blocks.insert(blocks.index("output_format"), "auxiliary_info")
     params["prompt"] = {**params["prompt"], "blocks": blocks, "resolvers": ["examples"]}
+    if prompt_lookup is not None:
+        params["llm"] = {**params["llm"], "prompt_lookup_tokens": prompt_lookup}
     if thinking:
         params["generation"]["chat_template_kwargs"] = {"enable_thinking": True}
         params["llm"] = {**params["llm"], "max_context": context}
@@ -229,7 +234,8 @@ def ids_from_args(args, difficulties: Dict[str, str], loader=load_task) -> List[
 
 def params_from_args(args) -> Dict[str, Any]:
     """The model parameters the command line asks for: the aids, if any, get their block."""
-    return llm_only_params(args.model, args.tokenizer, args.max_tokens, args.thinking, args.context, bool(args.aids))
+    return llm_only_params(args.model, args.tokenizer, args.max_tokens, args.thinking, args.context, bool(args.aids),
+                           args.prompt_lookup)
 
 
 def main():
@@ -248,6 +254,8 @@ def main():
                         help="let the model reason first; --max-tokens then counts the reasoning too, and the whole "
                              "reply is kept (it is what shows how long the reasoning runs)")
     parser.add_argument("--context", type=int, default=14000, help="the window with --thinking")
+    parser.add_argument("--prompt-lookup", type=int, help="speculative decoding by prompt lookup, this many tokens "
+                        "proposed at a time (greedy output unchanged)")
     from orchestration.data_requests import AIDS
     parser.add_argument("--aids", nargs="*", default=[], choices=sorted(AIDS), help="what to compute from the task and put in the prompt: "
                         "names from orchestration.data_requests.AIDS; a task whose prompt it makes too long is skipped")

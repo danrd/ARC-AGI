@@ -4315,12 +4315,17 @@
    "name": "tpu_gemma4g",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "TPU: та же лесенка, что tpu_gemma4f (2B без разметки, с разметкой бэкбона, с целым эмбеддингом, затем 31B с целым эмбеддингом), но с классом Gemma4CausalLM: в 4f все ступени взяли Gemma4AssistantCausalLM (драфтер спекулятивного декодирования) — моя ошибка выбора класса",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/tpu_gemma4g_b31_repl_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4g_e2b_auto_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4g_e2b_none_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4g_e2b_repl_0.json"
+   ],
+   "cleaned": true
   },
   {
    "name": "nostop_a",

@@ -169,7 +169,8 @@ The eighth series, the coordinate-addressed tasks (COORD_ARMS), against o_spatia
 
     c_nosub     the coordinate heads cannot submit; an episode ends solved or at max_episode_len
     c_half      submit is held back for the first half of the steps and offered after (two phases)
-    c_cell      each corner of a stroke is chosen as one cell, from the map at that cell, the second knowing the first
+    c_cell      c_half, with each corner of a stroke chosen as one cell from the map at that cell, the second knowing
+                the first
 
 The ninth series, when to submit (HONEST_ARMS), judged by held_out_honest against o_spatial's:
 
@@ -298,8 +299,10 @@ ARMS = {
     # Two phases: no submit for the first half of the steps, so the policy learns to paint before giving up is on
     # offer; submit after, paid only on a solved grid since no episode ends on the answer by itself.
     "c_half": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 0.5}),
-    # Each corner chosen as a cell from the map at that cell, instead of a row and then a column.
-    "c_cell": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_heads": "cells"}),
+    # c_half with each corner chosen as a cell from the map at that cell, instead of a row and then a column:
+    # one change from c_half, because without the two phases a coordinate policy gives up on the first step
+    # (coord_b: 163 of 216 training episodes one step long).
+    "c_cell": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 0.5, "coordinate_heads": "cells"}),
     # The ninth series, when to submit: o_spatial trained with episodes that do not end by themselves on the
     # answer (stop_on_solve in rl_configs, an environment setting and not a PPO one - see ENV_SETTINGS).
     "h_nostop": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "stop_on_solve": False}),

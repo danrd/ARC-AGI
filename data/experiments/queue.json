@@ -4348,18 +4348,24 @@
    "name": "nostop_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "подтверждение h_nostop на свежих сидах 7-10 (23 задачи, 92 запуска); контроль — nostop_b_ctrl на тех же сидах; сравнение по held_out_honest",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/nostop_b_nostop_b_0.jsonl",
+    "data/experiments/runs/kaggle/nostop_b_nostop_b_1.jsonl",
+    "data/experiments/runs/kaggle/nostop_b_nostop_b_2.jsonl",
+    "data/experiments/runs/kaggle/nostop_b_nostop_b_3.jsonl",
+    "data/experiments/runs/kaggle/nostop_b_nostop_b_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "nostop_b_ctrl",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "контроль к nostop_b: o_spatial на тех же 23 задачах, сиды 7-10 (92 запуска), с held_out_honest",

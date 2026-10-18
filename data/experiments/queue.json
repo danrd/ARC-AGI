@@ -4382,25 +4382,33 @@
    "name": "think_long",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "done",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
    "note": "thinking с лимитом 12000 токенов (вдвое больше): Gemma 31B на 12 из 20 маленьких задач think_small, где ответ без пакета упёрся в 6000 и не дошёл до сетки; окно 14000; доходят ли до ответа и решаются ли",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/think_long_base_0.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "coord_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "координатный режим без автоматической остановки (теперь по умолчанию): o_spatial на 23 задачах constructor, сиды 0-2 (69 запусков); submit есть, решение платит только своя сдача; исчезает ли сдача на первом шаге (длина эпизода) и решается ли что-то по честной оценке",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_b_coord_b_0.jsonl",
+    "data/experiments/runs/kaggle/coord_b_coord_b_1.jsonl",
+    "data/experiments/runs/kaggle/coord_b_coord_b_2.jsonl",
+    "data/experiments/runs/kaggle/coord_b_coord_b_3.jsonl",
+    "data/experiments/runs/kaggle/coord_b_coord_b_4.jsonl"
+   ],
+   "cleaned": true
   }
  ]
 }

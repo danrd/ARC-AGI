@@ -4436,7 +4436,7 @@
    "name": "think_spec",
    "resource": "gpu",
    "shards": 1,
-   "status": "queued",
+   "status": "running",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],

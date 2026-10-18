@@ -64,6 +64,10 @@ class CoordinateLatent(NamedTuple):
     row_mask: torch.Tensor
     cols: torch.Tensor
     col_mask: torch.Tensor
+    #: `(batch, rows * cols, dim)` and its mask, row-major, under 'cells'
+    #: coordinate heads; None otherwise.
+    cells: Optional[torch.Tensor] = None
+    cell_mask: Optional[torch.Tensor] = None
 
 
 class AutoregressiveCoordinateDistribution(Distribution):
@@ -105,6 +109,8 @@ class AutoregressiveCoordinateDistribution(Distribution):
         return self
 
     def _walk(self, given: Optional[torch.Tensor] = None, deterministic: bool = False):
+        if self.network.coordinate_heads == "cells":
+            return self._walk_cells(given, deterministic)
         network, latent = self.network, self.latent
         action_head, *cell_heads = network.policy_nets
         batch = torch.arange(latent.context.shape[0], device=latent.context.device)
@@ -131,6 +137,48 @@ class AutoregressiveCoordinateDistribution(Distribution):
                 context = context + network.cell_feedback[index](embeddings[batch, choice])
         return torch.stack(chosen, dim=1), dists
 
+    def _walk_cells(self, given: Optional[torch.Tensor] = None, deterministic: bool = False):
+        """The action, then the first corner as one of the grid's cells, then
+        the second knowing the first: (action, i1, j1, i2, j2) with each
+        corner's two numbers drawn together from its cell's embedding rather
+        than a row and a column apart. The distributions are over the
+        action and the two cells; `_indices` reads a five-number action as
+        those three choices."""
+        network, latent = self.network, self.latent
+        action_head, first, second = network.policy_nets
+        cols = network.coordinate_shape[1]
+        batch = torch.arange(latent.context.shape[0], device=latent.context.device)
+        wanted = None if given is None else self._indices(given)
+
+        def pick(distribution, index):
+            if wanted is not None:
+                return wanted[index]
+            if deterministic:
+                return distribution.probs.argmax(dim=-1)
+            return distribution.sample()
+
+        context = latent.context
+        dists = [Categorical(logits=network.type_logits(action_head(context)))]
+        chosen = [pick(dists[0], 0)]
+        context = context + network.action_embedding(chosen[0])
+        dists.append(Categorical(logits=first(context, latent.cells, latent.cell_mask)))
+        chosen.append(pick(dists[1], 1))
+        context = context + network.cell_feedback[0](latent.cells[batch, chosen[1]])
+        dists.append(Categorical(logits=second(context, latent.cells, latent.cell_mask)))
+        chosen.append(pick(dists[2], 2))
+        action, one, two = chosen
+        return torch.stack([action, one // cols, one % cols, two // cols, two % cols], dim=1), dists
+
+    def _indices(self, actions: torch.Tensor) -> List[torch.Tensor]:
+        """The choice each distribution of the last walk made in `actions`:
+        the five numbers as they are, or under 'cells' the action and the
+        two corners as cell indices."""
+        actions = actions.long()
+        if self.network.coordinate_heads != "cells":
+            return [actions[:, i] for i in range(actions.shape[1])]
+        cols = self.network.coordinate_shape[1]
+        return [actions[:, 0], actions[:, 1] * cols + actions[:, 2], actions[:, 3] * cols + actions[:, 4]]
+
     def sample(self) -> torch.Tensor:
         self._last = self._walk()
         return self._last[0]
@@ -143,7 +191,7 @@ class AutoregressiveCoordinateDistribution(Distribution):
         if self._last is None or self._last[0] is not actions:
             self._last = (actions, self._walk(given=actions)[1])
         _actions, dists = self._last
-        return sum(d.log_prob(actions[:, i].long()) for i, d in enumerate(dists))
+        return sum(d.log_prob(index) for d, index in zip(dists, self._indices(actions)))
 
     def entropy(self) -> torch.Tensor:
         if self._last is None:
@@ -452,12 +500,14 @@ class ARCCustomNetwork(nn.Module):
         #: The pair scores after the factored tail, slots * slots numbers,
         #: or 0 (ARCCombinedExtractor's pair_scores).
         self.pair_width = pair_width if action_structure is not None else 0
-        if coordinate_heads not in ("autoregressive", "independent"):
+        if coordinate_heads not in ("autoregressive", "independent", "cells"):
             raise ValueError(f"coordinate_heads={coordinate_heads!r}: expected "
-                             "'autoregressive' or 'independent'")
+                             "'autoregressive', 'independent' or 'cells'")
         #: Whether each coordinate is chosen knowing the action and the
         #: cells chosen before it (AutoregressiveCoordinateDistribution) or
-        #: all five independently given the state, as the object heads are.
+        #: all five independently given the state, as the object heads are;
+        #: 'cells' chooses each corner as one cell, scored from that cell's
+        #: own embedding, the second knowing the first.
         self.coordinate_heads = coordinate_heads
         #: Under coordinate addressing the features end in one embedding per
         #: row and one per column of the grid (see ARCCombinedExtractor's
@@ -466,8 +516,10 @@ class ARCCustomNetwork(nn.Module):
         self.coordinate_shape = (tuple(coordinate_shape)
                                  if coordinate_shape is not None else None)
         self.coordinate_dim = coordinate_dim
-        self.coordinate_width = (0 if coordinate_shape is None
-                                 else sum(coordinate_shape) * (coordinate_dim + 1))
+        self.coordinate_width = (0 if coordinate_shape is None else
+                                 (sum(coordinate_shape) + (coordinate_shape[0] * coordinate_shape[1]
+                                                           if coordinate_heads == "cells" else 0))
+                                 * (coordinate_dim + 1))
         #: When the features carry per-object rows (see
         #: ARCCombinedExtractor.pointer_tail), the object heads score each
         #: slot from its own row. Without them they stay as they were.
@@ -581,8 +633,14 @@ class ARCCustomNetwork(nn.Module):
                     f"observed grid is {rows}x{cols}: the coordinate heads "
                     "score the grid's rows and columns, so the two must agree")
             self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
-            for _ in range(4):
+            for _ in range(2 if coordinate_heads == "cells" else 4):
                 self.policy_nets.append(PointerHead(self.latent_dim_pi, coordinate_dim))
+            if coordinate_heads == "cells":
+                # The action as a learned vector, then the first corner's
+                # cell embedding, each added to the context the next head
+                # reads; the second corner is last and feeds nothing.
+                self.action_embedding = nn.Embedding(action_dims[0], self.latent_dim_pi)
+                self.cell_feedback = nn.ModuleList([nn.Linear(coordinate_dim, self.latent_dim_pi)])
             if coordinate_heads == "autoregressive":
                 # What each choice adds to the context the next head reads:
                 # the action as a learned vector, then the embedding of the
@@ -746,9 +804,12 @@ class ARCCustomNetwork(nn.Module):
         end = features.shape[1] - self.factored_width - self.pair_width
         tail = features[:, end - self.coordinate_width:end]
         row_block = tail[:, :rows * width].view(-1, rows, width)
-        col_block = tail[:, rows * width:].view(-1, cols, width)
-        return (row_block[..., :-1], row_block[..., -1],
-                col_block[..., :-1], col_block[..., -1])
+        col_block = tail[:, rows * width:(rows + cols) * width].view(-1, cols, width)
+        lines = (row_block[..., :-1], row_block[..., -1], col_block[..., :-1], col_block[..., -1])
+        if self.coordinate_heads != "cells":
+            return lines
+        cell_block = tail[:, (rows + cols) * width:].view(-1, rows * cols, width)
+        return lines + (cell_block[..., :-1], cell_block[..., -1])
 
     def without_pointer_tail(self, features: torch.Tensor) -> torch.Tensor:
         """The features the shared and value networks read - everything the
@@ -761,11 +822,11 @@ class ARCCustomNetwork(nn.Module):
         shared_features = self.shared_net(self.without_pointer_tail(features))
         coordinates = self.split_coordinate_tail(features)
         if coordinates is not None:
-            rows, row_mask, cols, col_mask = coordinates
-            if self.coordinate_heads == "autoregressive":
+            if self.coordinate_heads in ("autoregressive", "cells"):
                 # No logits yet: each head's context depends on what the
                 # heads before it chose. The distribution walks them.
-                return CoordinateLatent(shared_features, rows, row_mask, cols, col_mask)
+                return CoordinateLatent(shared_features, *coordinates)
+            rows, row_mask, cols, col_mask = coordinates
             action_head, *cell_heads = self.policy_nets
             # i1 and i2 score rows, j1 and j2 columns.
             grids = [(rows, row_mask), (cols, col_mask)] * 2

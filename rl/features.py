@@ -1333,18 +1333,28 @@ class CoordinateRows(nn.Module):
     """
 
     def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64,
-                 spatial_channels: int = 0):
+                 spatial_channels: int = 0, cells: bool = False):
         """`spatial_channels` reads each row and column from the backbone's
         map (SpatialBackbone.over_lines) rather than from its raw cells:
         the same weights for every row, where the raw reading gives each
         column position a weight of its own - "red in column 3" and "red
         in column 7" learnt apart, and nothing carried to a grid of another
-        width."""
+        width.
+
+        `cells` adds one embedding per cell after the rows and columns, for
+        the coordinate heads that choose a corner as a cell ('cells' in
+        rl_configs' coordinate_heads): a row's embedding is a mean and a max
+        over thirty cells, and "this red cell" is in neither. A cell is read
+        from the map at that cell (or its raw colour and deltas without a
+        map) and its position, one encoder for every cell."""
         super().__init__()
         self.rows, self.cols = rows, cols
         self.delta_keys = tuple(delta_keys)
         self.spatial_channels = spatial_channels
+        self.cells = cells
         channels = 10 + len(self.delta_keys)
+        self.cell_encoder = (nn.Sequential(nn.Linear((spatial_channels or channels) + 2, hidden), nn.ReLU(),
+                                           nn.Linear(hidden, dim)) if cells else None)
         row_in = 2 * spatial_channels + 1 if spatial_channels else cols * channels + 1
         col_in = 2 * spatial_channels + 1 if spatial_channels else rows * channels + 1
         self.row_encoder = nn.Sequential(
@@ -1402,18 +1412,38 @@ class CoordinateRows(nn.Module):
         return (self.row_encoder(rows), row_mask,
                 self.col_encoder(cols), col_mask)
 
+    def cell_embeddings(self, observation, cell_map=None):
+        """(batch, rows * cols, dim), (batch, rows * cols): one embedding
+        per cell, row-major, and which cells are grid. `cell_map` is the
+        backbone's (batch, channels, rows, cols), required with a map."""
+        row_mask, col_mask = self.masks(observation)
+        source = cell_map if self.spatial_channels else self.planes(observation)
+        batch = source.shape[0]
+        where_row = torch.linspace(0, 1, self.rows, device=source.device).view(1, 1, -1, 1)
+        where_col = torch.linspace(0, 1, self.cols, device=source.device).view(1, 1, 1, -1)
+        position = torch.cat([where_row.expand(batch, 1, self.rows, self.cols),
+                              where_col.expand(batch, 1, self.rows, self.cols)], dim=1)
+        cells = torch.cat([source, position], dim=1).flatten(2).transpose(1, 2)
+        mask = (row_mask.unsqueeze(2) * col_mask.unsqueeze(1)).flatten(1)
+        return self.cell_encoder(cells), mask
+
     @property
     def width(self) -> int:
-        """How much of the feature vector the rows and columns take."""
-        return (self.rows + self.cols) * (self.dim + 1)
+        """How much of the feature vector the rows and columns take, and
+        the cells with `cells`."""
+        return (self.rows + self.cols + (self.rows * self.cols if self.cells else 0)) * (self.dim + 1)
 
-    def tail(self, observation, lines=None):
+    def tail(self, observation, lines=None, cell_map=None):
         """The rows and columns as one flat block, each followed by its
-        mask bit - the layout ARCCustomNetwork.split_coordinate_tail reads."""
+        mask bit, then the cells the same way with `cells` - the layout
+        ARCCustomNetwork.split_coordinate_tail reads."""
         rows, row_mask, cols, col_mask = self(observation, lines)
-        return torch.cat([
-            torch.cat([rows, row_mask.unsqueeze(-1)], dim=2).flatten(1),
-            torch.cat([cols, col_mask.unsqueeze(-1)], dim=2).flatten(1)], dim=1)
+        blocks = [torch.cat([rows, row_mask.unsqueeze(-1)], dim=2).flatten(1),
+                  torch.cat([cols, col_mask.unsqueeze(-1)], dim=2).flatten(1)]
+        if self.cells:
+            cells, cell_mask = self.cell_embeddings(observation, cell_map)
+            blocks.append(torch.cat([cells, cell_mask.unsqueeze(-1)], dim=2).flatten(1))
+        return torch.cat(blocks, dim=1)
 
 
 #: How the map is built and read when `spatial_arch` says nothing.
@@ -1443,7 +1473,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                  relation_mode: str = "flat", relation_arch=None,
                  coordinate_dim: int = 0, factored_tail: bool = False,
                  spatial_channels: int = 0, delta_in_grid: bool = False, spatial_arch=None,
-                 pair_scores: bool = False):
+                 pair_scores: bool = False, coordinate_cells: bool = False):
         """`delta_in_grid` hands the deltas to the grid encoder as planes
         beside the ten colours, instead of to a DeltaReadout each: one
         stack of convolutions reads a cell's colour and whether it differs
@@ -1632,7 +1662,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 rows, cols,
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
                 dim=coordinate_dim,
-                spatial_channels=spatial_channels if "grid" in observation_space.spaces else 0)
+                spatial_channels=spatial_channels if "grid" in observation_space.spaces else 0,
+                cells=coordinate_cells)
             total_concat_size += self.coordinate_rows.width
         #: What the factored object heads read besides the rows: each
         #: slot's raw embedding - its colour shares and where its mass sits
@@ -1732,7 +1763,9 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
         if self.coordinate_rows is not None:
             lines = (SpatialBackbone.over_lines(*spatial)
                      if self.coordinate_rows.spatial_channels else None)
-            encoded_tensor_list.append(self.coordinate_rows.tail(observation, lines))
+            cell_map = (spatial[0] if self.coordinate_rows.cells and self.coordinate_rows.spatial_channels
+                        else None)
+            encoded_tensor_list.append(self.coordinate_rows.tail(observation, lines, cell_map))
         if self.factored_width:
             encoded_tensor_list.append(self.factored_tail(observation))
         if self.pair_scores is not None:

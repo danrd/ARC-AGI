@@ -111,6 +111,9 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                          # coordinate heads - see CoordinateRows. 0 builds
                          # none, which is what object addressing wants.
                          'coordinate_dim': PPO_config['coordinate_dim'] if coordinates else 0,
+                         # A corner chosen as a cell needs one embedding per
+                         # cell besides the rows and columns.
+                         'coordinate_cells': coordinates and PPO_config['coordinate_heads'] == 'cells',
                          'factored_tail': factored,
                          # The relation between the first object and each
                          # candidate in the second one's logit - see

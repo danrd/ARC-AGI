@@ -213,7 +213,11 @@ def load_PPO_config():
     # rl.policy.AutoregressiveCoordinateDistribution); 'independent' draws
     # all five from the state alone, which cannot want one box or another
     # without also wanting the box spanning both. Unmeasured - kept
-    # switchable so the two can be compared.
+    # switchable so the two can be compared. 'cells' chooses each corner as
+    # one cell, scored from that cell's own embedding (rl.features.
+    # CoordinateRows with cells), the second corner knowing the first: a
+    # row's or a column's embedding is a mean and a max over the line, and
+    # "this red cell" is in neither. Measured as rl_compare's c_cell.
     'coordinate_heads': 'autoregressive',
     # Whether a coordinate policy may submit before the episode's last step.
     # With one colour - common under coordinates - submit is one of two

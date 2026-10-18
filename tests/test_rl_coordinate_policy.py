@@ -270,7 +270,7 @@ class TestAutoregressiveCoordinateHeads:
         network = small_network()
         everything = every_action()
         latent = latent_for(network)
-        repeated = type(latent)(*(t.expand(len(everything), *t.shape[1:]) for t in latent))
+        repeated = type(latent)(*(None if t is None else t.expand(len(everything), *t.shape[1:]) for t in latent))
         total = self._distribution(network, repeated).log_prob(everything).exp().sum()
         assert total.item() == pytest.approx(1.0, abs=1e-5)
 
@@ -321,7 +321,7 @@ class TestAutoregressiveCoordinateHeads:
         network = small_network(heads)
         latent = latent_for(network, batch=1)
         wanted = torch.tensor([[1, 0, 0, 1, 1], [1, 1, 1, 2, 2]])
-        batch = type(latent)(*(t.expand(2, *t.shape[1:]) for t in latent))
+        batch = type(latent)(*(None if t is None else t.expand(2, *t.shape[1:]) for t in latent))
         optimiser = torch.optim.Adam(network.parameters(), lr=0.05)
         for _ in range(300):
             optimiser.zero_grad()
@@ -329,7 +329,7 @@ class TestAutoregressiveCoordinateHeads:
             loss.backward()
             optimiser.step()
         everything = every_action()
-        spread = type(latent)(*(t.expand(len(everything), *t.shape[1:]) for t in latent))
+        spread = type(latent)(*(None if t is None else t.expand(len(everything), *t.shape[1:]) for t in latent))
         probs = self._log_prob(network, spread, everything, heads).exp()
         is_wanted = (everything[:, None, :] == wanted[None]).all(-1).any(-1)
         crossed = probs[~is_wanted].sum().item()
@@ -395,11 +395,11 @@ class TestNoSubmit:
         network.masked_action = 0
         everything = every_action(actions=3)
         latent = latent_for(network)
-        repeated = type(latent)(*(t.expand(len(everything), *t.shape[1:]) for t in latent))
+        repeated = type(latent)(*(None if t is None else t.expand(len(everything), *t.shape[1:]) for t in latent))
         probs = self._distribution(network, repeated).log_prob(everything).exp()
         assert probs.sum().item() == pytest.approx(1.0, abs=1e-5)
         assert probs[everything[:, 0] == 0].sum().item() < 1e-6
-        big = type(latent)(*(t.expand(500, *t.shape[1:]) for t in latent))
+        big = type(latent)(*(None if t is None else t.expand(500, *t.shape[1:]) for t in latent))
         assert (self._distribution(network, big).sample()[:, 0] != 0).all()
 
     def test_the_independent_heads_mask_it_too(self):
@@ -516,3 +516,91 @@ class TestSubmitInTheSecondPhase:
     def test_a_share_outside_zero_to_one_is_refused(self):
         with pytest.raises(ValueError, match="coordinate_submit_from"):
             self.make(1.5)
+
+
+class TestCornersAsCells:
+    """coordinate_heads 'cells': each corner one cell of the grid, scored from that cell's embedding."""
+
+    def network(self, actions=2, rows=3, cols=3, dim=4, latent=16):
+        from rl.policy import ARCCustomNetwork
+        return ARCCustomNetwork(feature_dim=8 + (rows + cols + rows * cols) * (dim + 1),
+                                action_dims=[actions, rows, cols, rows, cols],
+                                net_arch={"pi": [latent], "vf": [latent]}, action_heads=5,
+                                coordinate_shape=(rows, cols), coordinate_dim=dim, coordinate_heads="cells")
+
+    def latent(self, batch=1, seed=0, rows=3, cols=3, dim=4, latent=16, cell_mask=None):
+        from rl.policy import CoordinateLatent
+        g = torch.Generator().manual_seed(seed)
+        return CoordinateLatent(torch.randn(batch, latent, generator=g), torch.randn(batch, rows, dim, generator=g),
+                                torch.ones(batch, rows), torch.randn(batch, cols, dim, generator=g),
+                                torch.ones(batch, cols), torch.randn(batch, rows * cols, dim, generator=g),
+                                torch.ones(batch, rows * cols) if cell_mask is None else cell_mask)
+
+    def distribution(self, network, latent):
+        from rl.policy import AutoregressiveCoordinateDistribution
+        return AutoregressiveCoordinateDistribution(network).proba_distribution(latent)
+
+    def test_the_joint_over_every_action_is_a_distribution(self):
+        network, everything = self.network(), every_action()
+        latent = self.latent()
+        repeated = type(latent)(*(None if t is None else t.expand(len(everything), *t.shape[1:]) for t in latent))
+        probs = self.distribution(network, repeated).log_prob(everything).exp()
+        assert probs.sum().item() == pytest.approx(1.0, abs=1e-5)
+
+    def test_a_drawn_action_is_scored_as_drawn(self):
+        network = self.network()
+        latent = self.latent(batch=64)
+        dist = self.distribution(network, latent)
+        actions = dist.sample()
+        drawn = dist.log_prob(actions)
+        again = self.distribution(network, latent).log_prob(actions.clone())
+        assert torch.allclose(drawn, again, atol=1e-6)
+
+    def test_the_second_corner_knows_the_first(self):
+        network = self.network()
+        with torch.no_grad():
+            network.cell_feedback[0].weight.normal_()
+        latent = self.latent()
+        # The same second corner, cell 8, after two different first corners: its conditional differs.
+        after_a = self.distribution(network, latent)._walk(given=torch.tensor([[0, 0, 0, 2, 2]]))[1][2]
+        after_b = self.distribution(network, latent)._walk(given=torch.tensor([[0, 1, 1, 2, 2]]))[1][2]
+        assert not torch.allclose(after_a.log_prob(torch.tensor([8])), after_b.log_prob(torch.tensor([8])))
+
+    def test_a_padded_cell_is_never_a_corner(self):
+        network = self.network()
+        mask = torch.ones(200, 9)
+        mask[:, [2, 5, 6, 7, 8]] = 0          # only the top-left 2x2 is grid
+        actions = self.distribution(network, self.latent(batch=200, cell_mask=mask)).sample()
+        assert (actions[:, 1:] <= 1).all()
+
+    def test_an_agent_with_cell_corners_trains_and_stays_on_the_grid(self):
+        vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=ACTIONS,
+                                 observation_space_elements=["delta_input", "delta_target"],
+                                 observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
+                                 addressing="coordinates", coordinate_shape=(7, 7))
+        try:
+            agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                                 {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
+                                  "coordinate_heads": "cells", "spatial_channels": 8})
+            assert agent.policy.features_extractor.coordinate_rows.cells
+            agent.learn(32)
+            obs, _ = agent.policy.obs_to_tensor(vec_env.reset())
+            actions = torch.stack([agent.policy.get_distribution(obs).sample()[0] for _ in range(100)])
+            assert (actions[:, 1:] <= 4).all()   # the first env's pair is 5x5 in a 7x7 space
+        finally:
+            vec_env.close()
+
+    def test_a_cell_is_read_from_the_map_at_that_cell(self):
+        from rl.features import CoordinateRows
+        reader = CoordinateRows(3, 3, (), dim=4, spatial_channels=2, cells=True)
+        cell_map = torch.zeros(1, 2, 3, 3)
+        cell_map[0, :, 1, 2] = 5.0
+        observation = {"grid": torch.zeros(1, 3, 3)}
+        cells, mask = reader.cell_embeddings(observation, cell_map)
+        moved = torch.zeros(1, 2, 3, 3)
+        moved[0, :, 2, 0] = 5.0
+        cells_moved, _ = reader.cell_embeddings(observation, moved)
+        assert cells.shape == (1, 9, 4) and mask.shape == (1, 9)
+        assert not torch.allclose(cells[0, 5], cells_moved[0, 5])      # (1, 2) changed with the map there
+        assert torch.allclose(cells[0, 0], cells_moved[0, 0])          # (0, 0) did not
+        assert reader.width == (3 + 3 + 9) * 5

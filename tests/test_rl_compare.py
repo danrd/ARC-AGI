@@ -145,7 +145,8 @@ class TestTheArms:
 
     def test_the_coordinate_arms_are_o_spatial_with_submit_held_back(self):
         from data.configs.rl_configs import load_PPO_config
-        assert compare.COORD_ARMS == ("c_nosub", "c_half")
+        assert compare.COORD_ARMS == ("c_nosub", "c_half", "c_cell")
+        assert compare.arm_settings("c_cell")[1] == {"spatial_channels": 32, "coordinate_heads": "cells"}
         assert compare.arm_settings("c_nosub")[1] == {"spatial_channels": 32, "coordinate_submit_from": 1.0}
         assert compare.arm_settings("c_half")[1] == {"spatial_channels": 32, "coordinate_submit_from": 0.5}
         assert load_PPO_config()["coordinate_submit_from"] == 0.0

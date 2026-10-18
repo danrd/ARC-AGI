@@ -4377,6 +4377,19 @@
     "data/experiments/runs/kaggle/nostop_b_ctrl_nostop_b_ctrl_4.jsonl"
    ],
    "cleaned": true
+  },
+  {
+   "name": "think_long",
+   "resource": "gpu",
+   "shards": 1,
+   "status": "queued",
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
+   "extras": "rl",
+   "note": "thinking с лимитом 12000 токенов (вдвое больше): Gemma 31B на 12 из 20 маленьких задач think_small, где ответ без пакета упёрся в 6000 и не дошёл до сетки; окно 14000; доходят ли до ответа и решаются ли",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

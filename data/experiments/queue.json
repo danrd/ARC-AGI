@@ -4475,18 +4475,24 @@
    "name": "coord_e",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "полный словарь цветов, координаты: c_cell заново на 23 координатных задачах, сиды 0-2 (69 запусков) — база для c_colour и сравнение с coord_d (тот же c_cell с узким словарём)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_e_coord_e_0.jsonl",
+    "data/experiments/runs/kaggle/coord_e_coord_e_1.jsonl",
+    "data/experiments/runs/kaggle/coord_e_coord_e_2.jsonl",
+    "data/experiments/runs/kaggle/coord_e_coord_e_3.jsonl",
+    "data/experiments/runs/kaggle/coord_e_coord_e_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "coord_f",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "выбор цвета по роли: c_colour (форма → углы → цвет по признакам: цвет углов, доля в рамке мазка, доля на сетке) на тех же 23 задачах, сиды 0-2 (69 запусков); против coord_e",

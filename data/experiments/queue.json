@@ -4414,18 +4414,24 @@
    "name": "coord_c",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "двухфазное обучение: c_half (submit закрыт первую половину шагов) на 23 координатных задачах, сиды 0-2 (69 запусков); база — coord_b (o_spatial, сдаётся на первом шаге в 163 из 216 эпизодов)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_c_coord_c_0.jsonl",
+    "data/experiments/runs/kaggle/coord_c_coord_c_1.jsonl",
+    "data/experiments/runs/kaggle/coord_c_coord_c_2.jsonl",
+    "data/experiments/runs/kaggle/coord_c_coord_c_3.jsonl",
+    "data/experiments/runs/kaggle/coord_c_coord_c_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "coord_d",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "указатель по клеткам: c_cell (c_half + угол мазка выбирается как клетка) на тех же 23 задачах, сиды 0-2 (69 запусков); сравнение с coord_c",

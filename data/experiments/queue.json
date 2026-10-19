@@ -4475,7 +4475,7 @@
    "name": "coord_e",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "полный словарь цветов, координаты: c_cell заново на 23 координатных задачах, сиды 0-2 (69 запусков) — база для c_colour и сравнение с coord_d (тот же c_cell с узким словарём)",

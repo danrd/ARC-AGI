@@ -429,8 +429,8 @@ class TestSelectingTasks:
             return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.5, "test_acc_oracle": 0.75}
 
         monkeypatch.setattr(rl.training, "train_on_task", fake)
-        monkeypatch.setattr(compare, "load_task", lambda task_id: None)
-        config = {"feasible_actions": {"0": [0]}}
+        monkeypatch.setattr(compare, "load_task", lambda task_id: tiny_task())
+        config = {"feasible_actions": {"0": "submit"}}
         record = compare.one_run(config, "default", 0, 500_000, "a")
         assert seen["steps"] == 500_000 and record["steps"] == 500_000
         assert record["held_out"] == record["held_out_honest"] == 0.5 and record["held_out_oracle"] == 0.75
@@ -446,13 +446,37 @@ class TestSelectingTasks:
             return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.25}
 
         monkeypatch.setattr(rl.training, "train_on_task", fake)
-        monkeypatch.setattr(compare, "load_task", lambda task_id: None)
-        compare.one_run({"feasible_actions": {"0": [0]}}, "h_nostop", 0, 1000, "a")
+        monkeypatch.setattr(compare, "load_task", lambda task_id: tiny_task())
+        compare.one_run({"feasible_actions": {"0": "submit"}}, "h_nostop", 0, 1000, "a")
         assert seen["config"]["stop_on_solve"] is False and "stop_on_solve" not in seen["ppo"]
         assert seen["ppo"]["spatial_channels"] == 32
-        compare.one_run({"feasible_actions": {"0": [0]}}, "o_spatial", 0, 1000, "a")
+        compare.one_run({"feasible_actions": {"0": "submit"}}, "o_spatial", 0, 1000, "a")
         assert "stop_on_solve" not in seen["config"]
         assert compare.HONEST_ARMS == ("h_nostop",)
+
+def tiny_task():
+    import numpy as np
+    from rl.arc_task import ARCTask, ARCSubtask
+    grid = np.array([[0, 2], [2, 0]])
+    return ARCTask(label="a", subtasks=[ARCSubtask("a_0", grid, grid * 0)], test_inp=np.array([[0, 7]]),
+                   test_out=np.array([[0, 7]]))
+
+
+def test_a_run_trains_with_every_colour_the_task_shows(monkeypatch):
+    """The stored configs hold what the search kept; the run's vocabulary has the colour only the test input has."""
+    import rl.training
+    seen = {}
+
+    def fake(task, config, ppo, show_plots):
+        seen["actions"] = config["feasible_actions"]
+        return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.5, "test_acc_oracle": 0.5}
+
+    monkeypatch.setattr(rl.training, "train_on_task", fake)
+    monkeypatch.setattr(compare, "load_task", lambda task_id: tiny_task())
+    record = compare.one_run({"feasible_actions": {"0": "submit", "1": "red_fill"}}, "default", 0, 100, "a")
+    assert list(seen["actions"].values()) == ["submit", "black_fill", "red_fill", "orange_fill"]
+    assert record["actions"] == 4
+
 
 class TestWhatIsReadAsARun:
     def test_a_line_that_is_not_a_run_is_ignored_like_a_torn_one(self, tmp_path):

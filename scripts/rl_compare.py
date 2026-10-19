@@ -455,11 +455,16 @@ def read_runs(path):
 def one_run(config, arm, seed, steps, task_id):
     """Train one agent and return the record of the run."""
     from data.configs.rl_configs import load_PPO_config
+    from rl.search_hints import task_colours, with_task_colours
     from rl.training import train_on_task
 
     elements, settings = arm_settings(arm)
+    task = load_task(task_id)
     config = dict(config, seed=seed, total_steps=steps, log_path=f"/tmp/rl_compare/{task_id}_{arm}_{seed}/")
-    config["feasible_actions"] = {int(k): v for k, v in config["feasible_actions"].items()}
+    # The stored configs hold what the search kept, in the colours the examples' answers were reached in; the
+    # vocabulary trained with has every colour the task shows (narrowed_for_task does the same).
+    config["feasible_actions"] = with_task_colours({int(k): v for k, v in config["feasible_actions"].items()},
+                                                   task_colours(task))
     for key in ("observation_grid_shape", "coordinate_shape"):
         if config.get(key) is not None:
             config[key] = tuple(config[key])
@@ -473,11 +478,12 @@ def one_run(config, arm, seed, steps, task_id):
     ppo.update(settings)
     started = time.time()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        accuracies, lengths, _agent, metrics = train_on_task(load_task(task_id), config, ppo, show_plots=False)
+        accuracies, lengths, _agent, metrics = train_on_task(task, config, ppo, show_plots=False)
     return {"task": task_id, "arm": arm, "seed": seed, "held_out": round(float(metrics["test_acc"]), 4),
             "held_out_honest": round(float(metrics["test_acc_honest"]), 4),
             "held_out_oracle": round(float(metrics.get("test_acc_oracle", metrics["test_acc"])), 4),
             "stop_on_solve": bool(config.get("stop_on_solve", False)),
+            "actions": len(config["feasible_actions"]),
             "train": [round(float(a), 4) for a in accuracies.values()],
             "steps_to_solve": [round(float(v), 2) for v in lengths.values()],
             "steps": steps, "seconds": round(time.time() - started, 1)}

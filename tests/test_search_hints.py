@@ -1224,3 +1224,25 @@ class TestNamingAPartToRecolour:
         hints.search_task(("t", np.array([[5, 2]]), np.array([[8, 2]])),
                           hints.SearchSettings(bases=("part_recolor",)))
         assert "sky_part_recolor_gray" in seen.values()
+
+
+class TestTheTaskColours:
+    """A vocabulary has every colour the task shows - its examples' inputs and outputs and its test input."""
+
+    def task(self):
+        from rl.arc_task import ARCSubtask, ARCTask
+        return ARCTask(label="t", subtasks=[ARCSubtask("t_0", np.array([[0, 1]]), np.array([[0, 2]]))],
+                       test_inp=np.array([[0, 8]]), test_out=np.array([[0, 8]]))
+
+    def test_inputs_outputs_and_the_test_input_in_digit_order(self):
+        assert hints.task_colours(self.task()) == ("black", "blue", "red", "sky")
+
+    def test_every_colour_word_of_a_kept_name_ranges_over_them(self):
+        kept = {0: "submit", 1: "red_recolor", 2: "move_N", 3: "blue_contour_connection_red"}
+        out = hints.with_task_colours(kept, ("black", "sky"))
+        assert out[0] == "submit" and list(out) == list(range(len(out)))
+        names = list(out.values())
+        assert names[1:3] == ["black_recolor", "sky_recolor"] and "move_N" in names
+        assert {"black_contour_connection_black", "black_contour_connection_sky",
+                "sky_contour_connection_black", "sky_contour_connection_sky"} <= set(names)
+        assert len(names) == len(set(names)) == 1 + 2 + 1 + 4

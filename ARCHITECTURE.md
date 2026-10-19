@@ -218,13 +218,13 @@ graph TD
   symbolic["symbolic (10)"]
   tests["tests (91)"]
   utils["utils (3)"]
-  tests -->|111| rl
+  tests -->|112| rl
   tests -->|48| subsymbolic
   tests -->|40| orchestration
   tests -->|34| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
-  scripts -->|16| rl
+  scripts -->|17| rl
   rl -->|11| data
   rl -->|11| symbolic
   orchestration -->|7| rl
@@ -277,7 +277,7 @@ graph TD
 | `rl.action_structure` | 3 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 44 |
+| `rl.arc_task` | 45 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 3 |
@@ -290,7 +290,7 @@ graph TD
 | `rl.policy` | 5 |
 | `rl.rl_job` | 6 |
 | `rl.rl_module` | 6 |
-| `rl.search_hints` | 16 |
+| `rl.search_hints` | 17 |
 | `rl.training` | 15 |
 | `rl.utils` | 10 |
 | `scripts.check_invariants` | 0 |

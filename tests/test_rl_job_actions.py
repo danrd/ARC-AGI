@@ -60,7 +60,8 @@ class TestWhatThePipelineTrainsOn:
     def test_the_placeholder_vocabulary_is_replaced(self, monkeypatch):
         self._searched(monkeypatch)
         config = narrowed_for_task(_Task(), CONFIG)
-        assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
+        # The search's red_recolor, in the colours this all-black task shows (search_hints.with_task_colours).
+        assert config["feasible_actions"] == {0: "submit", 1: "black_recolor"}
 
     def test_the_rest_of_the_config_is_carried_through(self, monkeypatch):
         self._searched(monkeypatch)
@@ -83,7 +84,7 @@ class TestWhatThePipelineTrainsOn:
             self._searched(monkeypatch, seen)
             config = narrowed_for_task(task, CONFIG)
             assert seen["calls"] == 1
-            assert config["feasible_actions"] == {0: "submit", 1: "red_recolor"}
+            assert config["feasible_actions"] == {0: "submit", 1: "black_recolor"}
 
     def test_a_failed_search_leaves_the_config_alone(self, monkeypatch):
         """Training over a wider space is a worse run; taking the pipeline
@@ -428,8 +429,9 @@ class TestWhatACoordinateTaskIsNarrowedTo:
 
     def test_the_search_narrows_it_to_what_the_pairs_are_painted_with(self):
         """Two real pairs: a red block and a red diagonal on black. The
-        search paints them with one fill and one line, so those two are
-        kept and black - in the outputs, but never painted - is not."""
+        search paints them with one fill and one line, so those two stroke
+        types are kept and the triangle is not - each in every colour the
+        task shows, black as well as red."""
         from rl.arc_task import ARCSubtask
 
         block_in, diagonal_in = np.zeros((5, 5), dtype=int), np.zeros((5, 5), dtype=int)
@@ -442,7 +444,23 @@ class TestWhatACoordinateTaskIsNarrowedTo:
         task.subtasks = [ARCSubtask("block", block_in, block_out),
                          ARCSubtask("diagonal", diagonal_in, diagonal_out)]
         config = narrowed_for_task(task, dict(CONFIG))
-        assert set(config["feasible_actions"].values()) == {"submit", "red_fill", "red_line"}
+        assert set(config["feasible_actions"].values()) == {"submit", "black_fill", "red_fill", "black_line", "red_line"}
+
+    def test_a_colour_only_the_test_input_has_is_in_the_vocabulary(self):
+        """29c11459 and 32 more of the 103: the test's answer is painted in a
+        colour no example's output has, always one of the test input's."""
+        from rl.arc_task import ARCSubtask
+
+        block_in = np.zeros((5, 5), dtype=int)
+        block_out = block_in.copy()
+        block_out[1:3, 1:4] = 2
+        task = self._task("constructor")
+        task.subtasks = [ARCSubtask("block", block_in, block_out)]
+        test_in = np.zeros((5, 5), dtype=int)
+        test_in[0, 0] = 7
+        task.test_subtask = ARCSubtask("test", test_in, test_in)
+        names = set(narrowed_for_task(task, dict(CONFIG))["feasible_actions"].values())
+        assert {"red_fill", "orange_fill", "black_fill"} <= names
 
     def test_the_observation_is_padded_to_the_action_space(self, monkeypatch):
         """Even with every grid one size: the heads score the observed

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import itertools
 import multiprocessing
 import signal
 import threading
@@ -131,20 +132,47 @@ class SearchSettings:
 def output_colours(*grids):
     """The colour words these grids contain, in digit order.
 
-    The outputs' palette, not the inputs': painting is only ever useful in a
-    colour the answer contains, so this is the exact set worth generating
-    colour-dependent actions for - not a heuristic.
-
-    Several grids because the unit that needs a vocabulary is sometimes the
-    task rather than one pair. A colour absent from every example's output
-    will not be in the test's either, but one that appears in only the
-    second example is still the task's - and passing one grid drops it.
-    A search over a single pair passes that pair; training over a task
-    passes all of its outputs.
+    A search over one pair passes that pair's output: painting there is only
+    useful in a colour its answer contains. Not a task's vocabulary - a
+    colour absent from every example's output can be the test's (33 of the
+    103 comparison tasks, always one of the test input's) - which is
+    task_colours, and with_task_colours over a narrowed vocabulary.
     """
     digits = sorted({int(value) for grid in grids
                      for value in np.asarray(grid).ravel()})
     return tuple(COLORS_MAPPING[d] for d in digits if d in COLORS_MAPPING)
+
+
+def task_colours(task):
+    """The colour words of every grid a task shows: its examples' inputs and
+    outputs and its test input, in digit order. The vocabulary a policy
+    trains with is over these - a colour only the test input has is one the
+    answer may be painted in, and an action it was never offered is one it
+    cannot learn to choose."""
+    grids = [grid for subtask in task.subtasks
+             for grid in (subtask.train_inp, getattr(subtask, "train_out", None)) if grid is not None]
+    return output_colours(*grids, task.test_subtask.train_inp)
+
+
+def with_task_colours(feasible_actions, colours):
+    """`feasible_actions` with every colour word of every name ranging over
+    `colours`: "red_recolor" kept by a search becomes the same action in each
+    of the task's colours, and a two-colour name every pair of them. Index 0
+    (submit) and the order of the first occurrences are kept."""
+    words = set(COLORS_MAPPING.values())
+    names = []
+    for name in feasible_actions.values():
+        tokens = name.split("_")
+        where = [i for i, token in enumerate(tokens) if token in words]
+        if not where:
+            names.append(name)
+            continue
+        for combination in itertools.product(colours, repeat=len(where)):
+            filled = list(tokens)
+            for i, colour in zip(where, combination):
+                filled[i] = colour
+            names.append("_".join(filled))
+    return dict(enumerate(dict.fromkeys(names)))
 
 
 def coordinate_vocabulary(colours):

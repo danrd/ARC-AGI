@@ -248,7 +248,9 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     and said nothing. Left open means:
 
     - addressing None: read off the agent's label (addressing_for).
-    - feasible_actions {0: 'submit'}: the search's. The shipped placeholder,
+    - feasible_actions {0: 'submit'}: the search's, each colour word then
+      ranging over every colour the task shows (search_hints.
+      with_task_colours). The shipped placeholder,
       which trains an agent whose only move is to give up. The object
       search tries the base types first, and only if they fall short once
       per agent roster and once over everything
@@ -279,7 +281,8 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
     """
     from data.configs.env_configs import MAIN_DIRECTIONS
     from rl.search_hints import (SearchSettings, coordinate_vocabulary,
-                                 feasible_from_branches, output_colours)
+                                 feasible_from_branches, output_colours, task_colours,
+                                 with_task_colours)
 
     agent = getattr(task, "agent", None)
     narrowed = dict(rl_config)
@@ -308,6 +311,7 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
                     task, vocabulary, coordinate_settings)
             except Exception:  # noqa: BLE001 - a failed search must not fail the run
                 pass
+            narrowed["feasible_actions"] = with_task_colours(narrowed["feasible_actions"], task_colours(task))
         if not _chosen(rl_config, "coordinate_shape"):
             narrowed["coordinate_shape"] = coordinate_shape(task)
         narrowed["observation_grid_shape"] = tuple(narrowed["coordinate_shape"])
@@ -331,6 +335,9 @@ def narrowed_for_task(task: Any, rl_config: Dict[str, Any],
             narrowed["feasible_actions"], _results = feasible_from_branches(task, settings)
         except Exception:  # noqa: BLE001 - a failed search must not fail the run
             pass
+        # The search keeps the colours the examples' answers were reached in;
+        # the test may want one only its input has.
+        narrowed["feasible_actions"] = with_task_colours(narrowed["feasible_actions"], task_colours(task))
     return narrowed
 
 

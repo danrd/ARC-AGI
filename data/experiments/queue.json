@@ -4431,12 +4431,18 @@
    "name": "coord_d",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "указатель по клеткам: c_cell (c_half + угол мазка выбирается как клетка) на тех же 23 задачах, сиды 0-2 (69 запусков); сравнение с coord_c",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_d_coord_d_0.jsonl",
+    "data/experiments/runs/kaggle/coord_d_coord_d_1.jsonl",
+    "data/experiments/runs/kaggle/coord_d_coord_d_2.jsonl",
+    "data/experiments/runs/kaggle/coord_d_coord_d_3.jsonl",
+    "data/experiments/runs/kaggle/coord_d_coord_d_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "think_spec",

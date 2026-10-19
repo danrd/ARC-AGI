@@ -108,6 +108,33 @@ def attached_preset(preset, root="/kaggle/input"):
     return None
 
 
+def weight_entries(folder, needle="embed", limit=60):
+    """What a preset folder holds about its weights, without loading a model: its metadata and config, every
+    file with its size, and the datasets of its .h5 weight files whose path contains `needle`, with their shapes and
+    dtypes - where to look when a layer "expected 1 variables, but received 0" (tpu_gemma4f/g: token_embedding of
+    31B, per_layer_token_embedding of 2B, with and without a layout)."""
+    import h5py
+
+    folder = Path(folder)
+    found = {"files": {p.name: p.stat().st_size for p in sorted(folder.iterdir()) if p.is_file()}}
+    for name in ("metadata.json", "config.json"):
+        if (folder / name).exists():
+            found[name] = json.loads((folder / name).read_text())
+    datasets, total = [], 0
+    for path in sorted(folder.glob("*.h5")):
+        with h5py.File(path, "r") as handle:
+            def visit(key, item, file=path.name):
+                nonlocal total
+                if isinstance(item, h5py.Dataset):
+                    total += 1
+                    if needle in key.lower() and len(datasets) < limit:
+                        datasets.append({"file": file, "path": key, "shape": list(item.shape), "dtype": str(item.dtype)})
+            handle.visititems(visit)
+    found["datasets"] = total
+    found["matching"] = datasets
+    return found
+
+
 def tree(root="/kaggle/input", depth=4):
     """The folders under `root` down to `depth`, for the report: where an attached model landed."""
     root = Path(root)
@@ -125,6 +152,9 @@ def main():
     parser.add_argument("--model-axis", type=int, default=4, help="chips the weights are cut over; the rest hold copies "
                         "(Gemma 4 31B has 4 key/value heads, which 8 cannot divide)")
     parser.add_argument("--preset", help="this preset instead of the largest that fits --max-gb")
+    parser.add_argument("--inspect", action="store_true",
+                        help="read the attached preset's metadata, config and embedding weights and stop: no model is "
+                             "loaded")
     parser.add_argument("--layout", choices=LAYOUTS, default="auto",
                         help="auto: the backbone's own layout map, or ours when it has none; none: no distribution "
                              "(everything on one chip); replicate_embedding: auto with the embedding left whole")
@@ -175,6 +205,21 @@ def main():
         return
 
     cls_name, preset = chosen
+    if args.inspect:
+        @step("versions")
+        def versions():
+            import importlib.metadata as meta
+            return {name: meta.version(name) for name in ("keras", "keras-hub", "jax", "h5py")}
+
+        @step("inspect weights")
+        def inspected():
+            folder = attached_preset(preset)
+            if folder is None:
+                raise FileNotFoundError(f"{preset} is not among the models under /kaggle/input")
+            return {"folder": folder, **weight_entries(folder)}
+
+        Path(args.out).write_text(json.dumps(report, indent=1, default=str))
+        return
     prompt = Path(args.prompt).read_text() if Path(args.prompt).exists() else "Say hello."
 
     @step("shard and load")

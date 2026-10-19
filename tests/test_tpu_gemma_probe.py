@@ -165,3 +165,21 @@ def test_the_assistant_drafter_class_is_never_taken_for_the_model():
     assert probe.preset_class(found, "gemma4_instruct_31b") == "Gemma4CausalLM"
     assert probe.preset_class({"Gemma4AssistantCausalLM": ["gemma4_instruct_2b"]}, "gemma4_instruct_2b") == "Gemma4CausalLM"
     assert probe.drafter("Gemma4AssistantCausalLM") and not probe.drafter("Gemma4CausalLM")
+
+
+def test_a_preset_folder_is_read_without_a_model(tmp_path):
+    import json
+
+    import numpy as np
+    import pytest
+    h5py = pytest.importorskip("h5py")
+    (tmp_path / "metadata.json").write_text(json.dumps({"keras_hub_version": "0.40.0"}))
+    (tmp_path / "config.json").write_text(json.dumps({"class_name": "Gemma4Backbone"}))
+    with h5py.File(tmp_path / "model.weights.h5", "w") as handle:
+        handle.create_dataset("layers/token_embedding/vars/0", data=np.zeros((8, 4), dtype="float16"))
+        handle.create_dataset("layers/decoder_block_0/attention/vars/0", data=np.zeros((4, 4)))
+    found = probe.weight_entries(tmp_path)
+    assert found["metadata.json"] == {"keras_hub_version": "0.40.0"} and found["config.json"]["class_name"] == "Gemma4Backbone"
+    assert found["datasets"] == 2 and "model.weights.h5" in found["files"]
+    assert found["matching"] == [{"file": "model.weights.h5", "path": "layers/token_embedding/vars/0",
+                                  "shape": [8, 4], "dtype": "float16"}]

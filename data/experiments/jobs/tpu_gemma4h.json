@@ -1,0 +1,30 @@
+{
+ "steps": [
+  {
+   "name": "inspect_e2b",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--inspect",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "inspect_31b",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--inspect",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ],
+ "model_sources": [
+  "keras/gemma4/keras/gemma4_instruct_2b/2",
+  "keras/gemma4/keras/gemma4_instruct_31b/2"
+ ]
+}

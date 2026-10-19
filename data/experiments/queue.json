@@ -4453,6 +4453,17 @@
     "data/experiments/runs/kaggle/think_spec_lookup_0.jsonl"
    ],
    "cleaned": true
+  },
+  {
+   "name": "tpu_gemma4h",
+   "resource": "tpu",
+   "shards": 1,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "TPU: проба весов Gemma 4 без загрузки модели — metadata.json и config.json пресета, версии keras/keras-hub/jax, переменные весов с embed в имени (форма, тип) для 2B и 31B: почему token_embedding и per_layer_token_embedding «не найдены» даже без разметки (tpu_gemma4f/g)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

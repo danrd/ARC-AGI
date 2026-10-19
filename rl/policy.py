@@ -5,7 +5,7 @@ from stable_baselines3.common.distributions import Distribution, MultiCategorica
 from torch.distributions import Categorical
 from stable_baselines3.common.policies import ActorCriticPolicy
 from gymnasium import spaces
-from rl.action_structure import (DIRECTION_STEPS, N_COLOURS, N_DIRECTIONS, ActionStructure)
+from rl.action_structure import (DIRECTION_STEPS, N_COLOURS, N_DIRECTIONS, ActionStructure, StrokeStructure)
 from data.configs.env_configs import ALL_DIRECTIONS
 from rl.features import ARCCombinedExtractor, ARCGNNExtractor, ARCSeparateExtractor
 from symbolic.objects_analysis import OBJECT_SCHEMA
@@ -68,6 +68,9 @@ class CoordinateLatent(NamedTuple):
     #: coordinate heads; None otherwise.
     cells: Optional[torch.Tensor] = None
     cell_mask: Optional[torch.Tensor] = None
+    #: `(batch, rows * cols, 10)`, each cell's colour in the observed grid,
+    #: under 'cell_colours' heads; None otherwise.
+    cell_colours: Optional[torch.Tensor] = None
 
 
 class AutoregressiveCoordinateDistribution(Distribution):
@@ -111,6 +114,8 @@ class AutoregressiveCoordinateDistribution(Distribution):
     def _walk(self, given: Optional[torch.Tensor] = None, deterministic: bool = False):
         if self.network.coordinate_heads == "cells":
             return self._walk_cells(given, deterministic)
+        if self.network.coordinate_heads == "cell_colours":
+            return self._walk_cell_colours(given, deterministic)
         network, latent = self.network, self.latent
         action_head, *cell_heads = network.policy_nets
         batch = torch.arange(latent.context.shape[0], device=latent.context.device)
@@ -169,15 +174,54 @@ class AutoregressiveCoordinateDistribution(Distribution):
         action, one, two = chosen
         return torch.stack([action, one // cols, one % cols, two // cols, two % cols], dim=1), dists
 
+    def _walk_cell_colours(self, given: Optional[torch.Tensor] = None, deterministic: bool = False):
+        """The stroke's shape, its two corners as cells, then its colour:
+        (action, i1, j1, i2, j2) with the action looked up from the shape
+        and the colour (StrokeStructure). Each of the task's colours is
+        scored from four numbers - is it the first corner's colour, the
+        second's, its share of the box the corners span, its share of the
+        grid - and the context, never from a weight of its own; submit has
+        no colour, and its one option costs nothing."""
+        network, latent = self.network, self.latent
+        shape_head, first, second = network.policy_nets
+        cols = network.coordinate_shape[1]
+        batch = torch.arange(latent.context.shape[0], device=latent.context.device)
+        wanted = None if given is None else self._indices(given)
+
+        def pick(distribution, index):
+            if wanted is not None:
+                return wanted[index]
+            if deterministic:
+                return distribution.probs.argmax(dim=-1)
+            return distribution.sample()
+
+        context = latent.context
+        dists = [Categorical(logits=network.shape_logits(shape_head(context)))]
+        shape = pick(dists[0], 0)
+        context = context + network.action_embedding(shape)
+        dists.append(Categorical(logits=first(context, latent.cells, latent.cell_mask)))
+        one = pick(dists[1], 1)
+        context = context + network.cell_feedback[0](latent.cells[batch, one])
+        dists.append(Categorical(logits=second(context, latent.cells, latent.cell_mask)))
+        two = pick(dists[2], 2)
+        logits = network.colour_logits(context, latent, one, two, shape)
+        dists.append(Categorical(logits=logits))
+        colour = pick(dists[3], 3)
+        action = network.stroke_table[shape, colour]
+        return torch.stack([action, one // cols, one % cols, two // cols, two % cols], dim=1), dists
+
     def _indices(self, actions: torch.Tensor) -> List[torch.Tensor]:
         """The choice each distribution of the last walk made in `actions`:
         the five numbers as they are, or under 'cells' the action and the
         two corners as cell indices."""
         actions = actions.long()
-        if self.network.coordinate_heads != "cells":
+        if self.network.coordinate_heads not in ("cells", "cell_colours"):
             return [actions[:, i] for i in range(actions.shape[1])]
         cols = self.network.coordinate_shape[1]
-        return [actions[:, 0], actions[:, 1] * cols + actions[:, 2], actions[:, 3] * cols + actions[:, 4]]
+        cells = [actions[:, 1] * cols + actions[:, 2], actions[:, 3] * cols + actions[:, 4]]
+        if self.network.coordinate_heads == "cells":
+            return [actions[:, 0], *cells]
+        return [self.network.stroke_shape_of[actions[:, 0]], *cells, self.network.stroke_colour_of[actions[:, 0]]]
 
     def sample(self) -> torch.Tensor:
         self._last = self._walk()
@@ -465,6 +509,7 @@ class ARCCustomNetwork(nn.Module):
         direction_keys: str = "both",
         pair_width: int = 0,
         masked_action: Optional[int] = None,
+        stroke_structure: Optional[StrokeStructure] = None,
     ):
         super().__init__()
         #: An action type the coordinate heads do not choose (submit, while
@@ -500,15 +545,20 @@ class ARCCustomNetwork(nn.Module):
         #: The pair scores after the factored tail, slots * slots numbers,
         #: or 0 (ARCCombinedExtractor's pair_scores).
         self.pair_width = pair_width if action_structure is not None else 0
-        if coordinate_heads not in ("autoregressive", "independent", "cells"):
+        if coordinate_heads not in ("autoregressive", "independent", "cells", "cell_colours"):
             raise ValueError(f"coordinate_heads={coordinate_heads!r}: expected "
-                             "'autoregressive', 'independent' or 'cells'")
+                             "'autoregressive', 'independent', 'cells' or 'cell_colours'")
+        if coordinate_heads == "cell_colours" and coordinate_shape is not None and stroke_structure is None:
+            raise ValueError("'cell_colours' heads choose a stroke's shape and colour apart: pass stroke_structure")
         #: Whether each coordinate is chosen knowing the action and the
         #: cells chosen before it (AutoregressiveCoordinateDistribution) or
         #: all five independently given the state, as the object heads are;
         #: 'cells' chooses each corner as one cell, scored from that cell's
-        #: own embedding, the second knowing the first.
+        #: own embedding, the second knowing the first; 'cell_colours' does
+        #: that after choosing the stroke's shape, and then its colour, from
+        #: what the grid shows of each colour (StrokeStructure).
         self.coordinate_heads = coordinate_heads
+        self.stroke_structure = stroke_structure if coordinate_heads == "cell_colours" else None
         #: Under coordinate addressing the features end in one embedding per
         #: row and one per column of the grid (see ARCCombinedExtractor's
         #: coordinate_rows), and the four coordinate heads score those
@@ -516,10 +566,11 @@ class ARCCustomNetwork(nn.Module):
         self.coordinate_shape = (tuple(coordinate_shape)
                                  if coordinate_shape is not None else None)
         self.coordinate_dim = coordinate_dim
+        cells = (coordinate_shape[0] * coordinate_shape[1] if coordinate_shape is not None
+                 and coordinate_heads in ("cells", "cell_colours") else 0)
         self.coordinate_width = (0 if coordinate_shape is None else
-                                 (sum(coordinate_shape) + (coordinate_shape[0] * coordinate_shape[1]
-                                                           if coordinate_heads == "cells" else 0))
-                                 * (coordinate_dim + 1))
+                                 (sum(coordinate_shape) + cells) * (coordinate_dim + 1)
+                                 + (cells * 10 if coordinate_heads == "cell_colours" else 0))
         #: When the features carry per-object rows (see
         #: ARCCombinedExtractor.pointer_tail), the object heads score each
         #: slot from its own row. Without them they stay as they were.
@@ -632,14 +683,29 @@ class ARCCustomNetwork(nn.Module):
                     f"the action space spans {list(action_dims[1:])} and the "
                     f"observed grid is {rows}x{cols}: the coordinate heads "
                     "score the grid's rows and columns, so the two must agree")
-            self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
-            for _ in range(2 if coordinate_heads == "cells" else 4):
+            if coordinate_heads == "cell_colours":
+                structure = self.stroke_structure
+                if structure.table.max() >= action_dims[0]:
+                    raise ValueError("the stroke structure names an action past the action space")
+                # The stroke's shape, two corner cells, then the colour from
+                # four numbers per colour and a projection of the context.
+                self.policy_nets.append(nn.Linear(self.latent_dim_pi, len(structure.shapes)))
+                self.register_buffer("stroke_table", torch.as_tensor(structure.table))
+                self.register_buffer("stroke_shape_of", torch.as_tensor(structure.shape_of))
+                self.register_buffer("stroke_colour_of", torch.as_tensor(structure.colour_of))
+                self.register_buffer("stroke_colours", torch.as_tensor(structure.colours or [0]))
+                self.colour_context = nn.Linear(self.latent_dim_pi, 8)
+                self.colour_head = nn.Sequential(nn.Linear(4 + 8, 32), nn.ReLU(), nn.Linear(32, 1))
+            else:
+                self.policy_nets.append(nn.Linear(self.latent_dim_pi, action_dims[0]))
+            for _ in range(2 if coordinate_heads in ("cells", "cell_colours") else 4):
                 self.policy_nets.append(PointerHead(self.latent_dim_pi, coordinate_dim))
-            if coordinate_heads == "cells":
+            if coordinate_heads in ("cells", "cell_colours"):
                 # The action as a learned vector, then the first corner's
                 # cell embedding, each added to the context the next head
                 # reads; the second corner is last and feeds nothing.
-                self.action_embedding = nn.Embedding(action_dims[0], self.latent_dim_pi)
+                self.action_embedding = nn.Embedding(
+                    len(self.stroke_structure.shapes) if self.stroke_structure else action_dims[0], self.latent_dim_pi)
                 self.cell_feedback = nn.ModuleList([nn.Linear(coordinate_dim, self.latent_dim_pi)])
             if coordinate_heads == "autoregressive":
                 # What each choice adds to the context the next head reads:
@@ -749,6 +815,38 @@ class ARCCustomNetwork(nn.Module):
                 for pointer in self.policy_nets[1:]:
                     small(pointer.query)
 
+    def shape_logits(self, logits: torch.Tensor) -> torch.Tensor:
+        """The stroke-shape logits with masked_action's shape (submit, held
+        back) taken out of the choice."""
+        if self.masked_action is None:
+            return logits
+        masked = torch.zeros_like(logits, dtype=torch.bool)
+        masked[:, int(self.stroke_shape_of[self.masked_action])] = True
+        return logits.masked_fill(masked, -1e9)
+
+    def colour_logits(self, context, latent, one, two, shape) -> torch.Tensor:
+        """(batch, colours): each of the task's colours scored from whether
+        it is the first corner's colour and the second's, its share of the
+        box the corners span and of the grid, with the context - the same
+        function for every colour. Colours the chosen shape does not come
+        in are masked; submit's one option is free."""
+        colours = latent.cell_colours                                  # (batch, cells, 10)
+        batch = torch.arange(colours.shape[0], device=colours.device)
+        rows, cols = self.coordinate_shape
+        r = torch.arange(rows, device=colours.device).view(1, rows, 1)
+        c = torch.arange(cols, device=colours.device).view(1, 1, cols)
+        i1, j1, i2, j2 = (one // cols).view(-1, 1, 1), (one % cols).view(-1, 1, 1), (two // cols).view(-1, 1, 1), (two % cols).view(-1, 1, 1)
+        box = ((r >= torch.minimum(i1, i2)) & (r <= torch.maximum(i1, i2))
+               & (c >= torch.minimum(j1, j2)) & (c <= torch.maximum(j1, j2))).flatten(1).float()
+        box = box * latent.cell_mask
+        share = lambda weight: (colours * weight.unsqueeze(-1)).sum(1) / weight.sum(1, keepdim=True).clamp(min=1)  # noqa: E731
+        per_colour = torch.stack([colours[batch, one], colours[batch, two], share(box), share(latent.cell_mask)], dim=-1)
+        features = per_colour[:, self.stroke_colours]                  # (batch, colours, 4)
+        context = self.colour_context(context).unsqueeze(1).expand(-1, features.shape[1], -1)
+        logits = self.colour_head(torch.cat([features, context], dim=-1)).squeeze(-1)
+        available = self.stroke_table[shape] >= 0
+        return logits.masked_fill(~available, -1e9)
+
     def type_logits(self, logits: torch.Tensor) -> torch.Tensor:
         """The action-type logits with masked_action taken out of the choice."""
         if self.masked_action is None:
@@ -806,10 +904,14 @@ class ARCCustomNetwork(nn.Module):
         row_block = tail[:, :rows * width].view(-1, rows, width)
         col_block = tail[:, rows * width:(rows + cols) * width].view(-1, cols, width)
         lines = (row_block[..., :-1], row_block[..., -1], col_block[..., :-1], col_block[..., -1])
-        if self.coordinate_heads != "cells":
+        if self.coordinate_heads not in ("cells", "cell_colours"):
             return lines
-        cell_block = tail[:, (rows + cols) * width:].view(-1, rows * cols, width)
-        return lines + (cell_block[..., :-1], cell_block[..., -1])
+        cell_end = (rows + cols + rows * cols) * width
+        cell_block = tail[:, (rows + cols) * width:cell_end].view(-1, rows * cols, width)
+        cells = lines + (cell_block[..., :-1], cell_block[..., -1])
+        if self.coordinate_heads == "cells":
+            return cells
+        return cells + (tail[:, cell_end:].view(-1, rows * cols, 10),)
 
     def without_pointer_tail(self, features: torch.Tensor) -> torch.Tensor:
         """The features the shared and value networks read - everything the
@@ -822,7 +924,7 @@ class ARCCustomNetwork(nn.Module):
         shared_features = self.shared_net(self.without_pointer_tail(features))
         coordinates = self.split_coordinate_tail(features)
         if coordinates is not None:
-            if self.coordinate_heads in ("autoregressive", "cells"):
+            if self.coordinate_heads in ("autoregressive", "cells", "cell_colours"):
                 # No logits yet: each head's context depends on what the
                 # heads before it chose. The distribution walks them.
                 return CoordinateLatent(shared_features, *coordinates)
@@ -923,6 +1025,10 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
         #: (FactoredObjectDistribution), None for one logit per name.
         self.action_structure = (ActionStructure(action_names) if object_heads == "factored"
                                  else None)
+        #: The coordinate vocabulary as stroke shape and colour, for the
+        #: 'cell_colours' heads; None otherwise.
+        self.stroke_structure = (StrokeStructure(action_names)
+                                 if coordinate_heads == "cell_colours" and action_names is not None else None)
         self.direction_keys = direction_keys
         if not 0.0 <= coordinate_submit_from <= 1.0:
             raise ValueError(f"coordinate_submit_from={coordinate_submit_from!r}: a share of the steps, 0 to 1")
@@ -1004,6 +1110,7 @@ class ARCCustomActorCriticPolicy(ActorCriticPolicy):
             direction_keys=self.direction_keys,
             pair_width=getattr(self._actor_extractor(), "pair_width", 0),
             masked_action=self.masked_action,
+            stroke_structure=self.stroke_structure,
         )
 
     def unmask_submit(self) -> None:

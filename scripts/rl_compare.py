@@ -171,10 +171,17 @@ The eighth series, the coordinate-addressed tasks (COORD_ARMS), against o_spatia
     c_half      submit is held back for the first half of the steps and offered after (two phases)
     c_cell      c_half, with each corner of a stroke chosen as one cell from the map at that cell, the second knowing
                 the first
+    c_colour    c_cell choosing the stroke's shape, its corners, then its colour - scored from whether it is a corner's
+                colour and its share of the stroke's box and of the grid, never from a weight of its own
 
 The ninth series, when to submit (HONEST_ARMS), judged by held_out_honest against o_spatial's:
 
     h_nostop    a training episode does not end on the answer; only the policy's submit or max_episode_len ends it
+
+The tenth series, the vocabulary's colours (VOCAB_ARMS): every arm trains over every colour the task shows (its
+examples' inputs and outputs and its test input, search_hints.with_task_colours); against f_base:
+
+    v_narrow    f_base over the colours the search kept only - every run before 2026-10-19
 
 It won (nostop_a, nostop_b) and is the default since 2026-10-18 (stop_on_solve in rl_configs), so o_spatial now trains
 the same way; h_nostop stays the name of the runs that measured it. `held_out` is the policy's own grid since then, as
@@ -303,9 +310,15 @@ ARMS = {
     # one change from c_half, because without the two phases a coordinate policy gives up on the first step
     # (coord_b: 163 of 216 training episodes one step long).
     "c_cell": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 0.5, "coordinate_heads": "cells"}),
+    # c_cell choosing the stroke's shape, then its corners, then its colour from what the grid shows of each colour.
+    "c_colour": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 0.5,
+                                    "coordinate_heads": "cell_colours"}),
     # The ninth series, when to submit: o_spatial trained with episodes that do not end by themselves on the
     # answer (stop_on_solve in rl_configs, an environment setting and not a PPO one - see ENV_SETTINGS).
     "h_nostop": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "stop_on_solve": False}),
+    # The tenth series, the vocabulary's colours: f_base trained over only the colours the search kept, which is
+    # what every run before 2026-10-19 had - the control for the full vocabulary every other arm now gets.
+    "v_narrow": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "object_heads": "factored", "task_colours": False}),
 }
 #: Arm settings that belong to the environment's config and not to PPO's.
 ENV_SETTINGS = ("stop_on_solve",)
@@ -327,6 +340,8 @@ PAIR_ARMS = tuple(arm for arm in ARMS if arm.startswith("f_"))
 COORD_ARMS = tuple(arm for arm in ARMS if arm.startswith("c_"))
 #: The ninth series, against `o_spatial`'s held_out_honest (honest_a, the same seeds).
 HONEST_ARMS = tuple(arm for arm in ARMS if arm.startswith("h_"))
+#: The tenth series, against `f_base`.
+VOCAB_ARMS = tuple(arm for arm in ARMS if arm.startswith("v_"))
 
 
 def arm_settings(arm):
@@ -463,8 +478,9 @@ def one_run(config, arm, seed, steps, task_id):
     config = dict(config, seed=seed, total_steps=steps, log_path=f"/tmp/rl_compare/{task_id}_{arm}_{seed}/")
     # The stored configs hold what the search kept, in the colours the examples' answers were reached in; the
     # vocabulary trained with has every colour the task shows (narrowed_for_task does the same).
-    config["feasible_actions"] = with_task_colours({int(k): v for k, v in config["feasible_actions"].items()},
-                                                   task_colours(task))
+    config["feasible_actions"] = {int(k): v for k, v in config["feasible_actions"].items()}
+    if settings.pop("task_colours", True):
+        config["feasible_actions"] = with_task_colours(config["feasible_actions"], task_colours(task))
     for key in ("observation_grid_shape", "coordinate_shape"):
         if config.get(key) is not None:
             config[key] = tuple(config[key])

@@ -4470,6 +4470,50 @@
    "note": "TPU, лестница на одну сессию (очередь сутки): пробы весов 2B и 31B без загрузки; обновить keras-hub и keras → проба, 2B без разметки с генерацией, 31B с целым эмбеддингом и замером скорости; то же с keras-hub-nightly. Шаги независимы, падение одного не останавливает остальные",
    "result": [],
    "cleaned": false
+  },
+  {
+   "name": "coord_e",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "полный словарь цветов, координаты: c_cell заново на 23 координатных задачах, сиды 0-2 (69 запусков) — база для c_colour и сравнение с coord_d (тот же c_cell с узким словарём)",
+   "result": [],
+   "cleaned": false
+  },
+  {
+   "name": "coord_f",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "выбор цвета по роли: c_colour (форма → углы → цвет по признакам: цвет углов, доля в рамке мазка, доля на сетке) на тех же 23 задачах, сиды 0-2 (69 запусков); против coord_e",
+   "result": [],
+   "cleaned": false
+  },
+  {
+   "name": "vocab_a",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "полный словарь цветов, объекты: f_base (факторизованные головы, цвет по роли) на 24 объектных задачах, где тесту нужен цвет не из обучающих выходов, сиды 0-2 (72 запуска)",
+   "result": [],
+   "cleaned": false
+  },
+  {
+   "name": "vocab_b",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "контроль к vocab_a: v_narrow (f_base с прежним узким словарём) на тех же 24 задачах и сидах (72 запуска)",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

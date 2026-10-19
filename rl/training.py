@@ -80,7 +80,10 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
     # the space into an index into a list of triples, which has no parts.
     factored = (PPO_config['object_heads'] == 'factored' and not coordinates
                 and not rl_config.get('action_whitelist'))
-    action_names = vec_env.envs[0].unwrapped.actions_dict if factored else None
+    # The names are what both factored object heads and colour-by-role
+    # coordinate heads take apart.
+    action_names = (vec_env.envs[0].unwrapped.actions_dict
+                    if factored or (coordinates and PPO_config['coordinate_heads'] == 'cell_colours') else None)
     policy_kwargs = {'net_arch':dict(pi=PPO_config['actor_arch'], vf=PPO_config['critic_arch']), 'activation_fn':PPO_config['activation_fn'],
                      'action_heads': 5 if coordinates else PPO_config['action_heads'],
                      # Observations the critic may read and the actor may
@@ -113,7 +116,8 @@ def create_agent(rl_config:dict, vec_env, model_config:dict=None, path_to_pretra
                          'coordinate_dim': PPO_config['coordinate_dim'] if coordinates else 0,
                          # A corner chosen as a cell needs one embedding per
                          # cell besides the rows and columns.
-                         'coordinate_cells': coordinates and PPO_config['coordinate_heads'] == 'cells',
+                         'coordinate_cells': coordinates and PPO_config['coordinate_heads'] in ('cells', 'cell_colours'),
+                         'coordinate_cell_colours': coordinates and PPO_config['coordinate_heads'] == 'cell_colours',
                          'factored_tail': factored,
                          # The relation between the first object and each
                          # candidate in the second one's logit - see

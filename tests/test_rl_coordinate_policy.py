@@ -604,3 +604,101 @@ class TestCornersAsCells:
         assert not torch.allclose(cells[0, 5], cells_moved[0, 5])      # (1, 2) changed with the map there
         assert torch.allclose(cells[0, 0], cells_moved[0, 0])          # (0, 0) did not
         assert reader.width == (3 + 3 + 9) * 5
+
+
+class TestStrokeColoursByRole:
+    """coordinate_heads 'cell_colours': shape, corners as cells, then the colour scored from what the grid shows of it."""
+
+    VOCABULARY = {0: "submit", 1: "black_fill", 2: "red_fill", 3: "blue_fill", 4: "red_line"}
+
+    def network(self, rows=3, cols=3, dim=4, latent=16):
+        from rl.action_structure import StrokeStructure
+        from rl.policy import ARCCustomNetwork
+        return ARCCustomNetwork(feature_dim=8 + (rows + cols + rows * cols) * (dim + 1) + rows * cols * 10,
+                                action_dims=[5, rows, cols, rows, cols],
+                                net_arch={"pi": [latent], "vf": [latent]}, action_heads=5,
+                                coordinate_shape=(rows, cols), coordinate_dim=dim, coordinate_heads="cell_colours",
+                                stroke_structure=StrokeStructure(self.VOCABULARY))
+
+    def latent(self, grid, batch=1, seed=0, rows=3, cols=3, dim=4, latent=16):
+        from rl.policy import CoordinateLatent
+        g = torch.Generator().manual_seed(seed)
+        colours = torch.nn.functional.one_hot(torch.as_tensor(grid).flatten(), 10).float()
+        return CoordinateLatent(torch.randn(batch, latent, generator=g), torch.randn(batch, rows, dim, generator=g),
+                                torch.ones(batch, rows), torch.randn(batch, cols, dim, generator=g),
+                                torch.ones(batch, cols), torch.randn(batch, rows * cols, dim, generator=g),
+                                torch.ones(batch, rows * cols), colours.expand(batch, -1, -1))
+
+    def distribution(self, network, latent):
+        from rl.policy import AutoregressiveCoordinateDistribution
+        return AutoregressiveCoordinateDistribution(network).proba_distribution(latent)
+
+    GRID = [[2, 0, 0], [0, 1, 0], [0, 0, 2]]
+
+    def test_the_structure_takes_the_names_apart(self):
+        from rl.action_structure import StrokeStructure
+        structure = StrokeStructure(self.VOCABULARY)
+        assert structure.shapes == ["submit", "fill", "line"] and structure.colours == [0, 1, 2]
+        assert structure.table.tolist() == [[0, -1, -1], [1, 3, 2], [-1, -1, 4]]
+        with pytest.raises(ValueError, match="not a stroke"):
+            StrokeStructure({0: "submit", 1: "red_contour_connection_blue"})
+
+    def test_the_joint_over_every_action_is_a_distribution(self):
+        import itertools
+        network = self.network()
+        everything = torch.tensor(list(itertools.product(range(5), range(3), range(3), range(3), range(3))))
+        latent = self.latent(self.GRID)
+        repeated = type(latent)(*(None if t is None else t.expand(len(everything), *t.shape[1:]) for t in latent))
+        probs = self.distribution(network, repeated).log_prob(everything).exp()
+        assert probs.sum().item() == pytest.approx(1.0, abs=1e-4)
+
+    def test_swapping_two_colours_on_the_grid_swaps_their_scores(self):
+        """Nothing in a colour's score is the colour itself: red and blue traded on the grid trade their logits."""
+        network = self.network()
+        swapped = [[{1: 2, 2: 1}.get(v, v) for v in row] for row in self.GRID]
+        one, two = torch.tensor([0]), torch.tensor([4])          # corners (0, 0) and (1, 1)
+        fill = torch.tensor([1])
+        a = network.colour_logits(torch.zeros(1, 16), self.latent(self.GRID), one, two, fill)
+        b = network.colour_logits(torch.zeros(1, 16), self.latent(swapped), one, two, fill)
+        assert torch.allclose(a[:, [0, 1, 2]], b[:, [0, 2, 1]], atol=1e-6)
+
+    def test_a_colour_the_shape_does_not_come_in_is_never_drawn_and_submit_costs_nothing(self):
+        network = self.network()
+        latent = self.latent(self.GRID, batch=400)
+        actions = self.distribution(network, latent).sample()
+        assert set(actions[:, 0].tolist()) <= set(self.VOCABULARY)
+        submits = torch.tensor([[0, 0, 0, 0, 0]])
+        dists = self.distribution(network, self.latent(self.GRID))._walk(given=submits)[1]
+        assert dists[3].log_prob(torch.tensor([0])).item() == pytest.approx(0.0, abs=1e-6)
+
+    def test_submit_held_back_is_never_drawn(self):
+        network = self.network()
+        network.masked_action = 0
+        actions = self.distribution(network, self.latent(self.GRID, batch=300)).sample()
+        assert (actions[:, 0] != 0).all()
+
+    def test_an_agent_with_them_trains_and_draws_actions_of_its_vocabulary(self):
+        vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=self.VOCABULARY,
+                                 observation_space_elements=["delta_input", "delta_target"],
+                                 observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
+                                 addressing="coordinates", coordinate_shape=(7, 7))
+        try:
+            agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                                 {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
+                                  "coordinate_heads": "cell_colours", "spatial_channels": 8})
+            assert agent.policy.features_extractor.coordinate_rows.cell_colours
+            agent.learn(32)
+            obs, _ = agent.policy.obs_to_tensor(vec_env.reset())
+            actions = torch.stack([agent.policy.get_distribution(obs).sample()[0] for _ in range(50)])
+            assert set(actions[:, 0].tolist()) <= set(self.VOCABULARY) and (actions[:, 1:] <= 4).all()
+        finally:
+            vec_env.close()
+
+    def test_the_cells_carry_their_colours(self):
+        reader = CoordinateRows(2, 2, (), dim=4, cells=True, cell_colours=True)
+        tail = reader.tail({"grid": torch.tensor([[[3, 0], [0, 7]]])})
+        colours = tail[:, -40:].view(1, 4, 10)
+        assert colours[0, 0, 3] == 1 and colours[0, 3, 7] == 1 and colours[0, 1, 0] == 1
+        assert reader.width == (2 + 2 + 4) * 5 + 40
+        with pytest.raises(ValueError, match="need cells"):
+            CoordinateRows(2, 2, (), dim=4, cell_colours=True)

@@ -112,3 +112,34 @@ class ActionStructure:
 
     def __len__(self):
         return len(self.components)
+
+
+class StrokeStructure:
+    """A coordinate vocabulary as stroke shape and colour: `red_fill` is the
+    shape fill in red, and submit a shape with no colour.
+
+    The flat type index is what the env receives; the 'cell_colours'
+    coordinate heads choose the shape, then the corners, then the colour,
+    scoring each colour from what the grid shows of it rather than from a
+    weight of its own - so a colour no training pair was painted in is
+    chosen the way the others are.
+    """
+
+    def __init__(self, names: Dict[int, str]):
+        parsed = {index: parse_name(name) for index, name in names.items()}
+        for index, (_shape, colours, direction) in parsed.items():
+            if len(colours) > 1 or direction is not None:
+                raise ValueError(f"{names[index]!r} is not a stroke: one colour at most, no direction")
+        #: Shape names, submit first when the vocabulary has it.
+        self.shapes = sorted({shape for shape, _c, _d in parsed.values()}, key=lambda s: (s != "submit", s))
+        #: Colour digits, in digit order.
+        self.colours = sorted({c for _s, colours, _d in parsed.values() for c in colours})
+        self.table = np.full((len(self.shapes), max(1, len(self.colours))), -1, dtype=np.int64)
+        size = max(names) + 1
+        self.shape_of = np.zeros(size, dtype=np.int64)
+        self.colour_of = np.zeros(size, dtype=np.int64)
+        for index, (shape, colours, _d) in parsed.items():
+            s = self.shapes.index(shape)
+            k = self.colours.index(colours[0]) if colours else 0
+            self.table[s, k] = index
+            self.shape_of[index], self.colour_of[index] = s, k

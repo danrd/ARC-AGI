@@ -77,7 +77,7 @@ class TestTheArms:
         start the second series on every task."""
         series = (compare.OBSERVATION_ARMS, compare.OBJECT_ARMS, compare.GRID_ARMS, compare.MAP_ARMS,
                   compare.READ_ARMS, compare.RELATION_ARMS, compare.PAIR_ARMS, compare.COORD_ARMS,
-                  compare.HONEST_ARMS)
+                  compare.HONEST_ARMS, compare.VOCAB_ARMS)
         assert set().union(*map(set, series)) == set(compare.ARMS)
         assert sum(map(len, series)) == len(compare.ARMS)
 
@@ -145,7 +145,7 @@ class TestTheArms:
 
     def test_the_coordinate_arms_are_o_spatial_with_submit_held_back(self):
         from data.configs.rl_configs import load_PPO_config
-        assert compare.COORD_ARMS == ("c_nosub", "c_half", "c_cell")
+        assert compare.COORD_ARMS == ("c_nosub", "c_half", "c_cell", "c_colour")
         assert compare.arm_settings("c_cell")[1] == {"spatial_channels": 32, "coordinate_submit_from": 0.5,
                                                      "coordinate_heads": "cells"}
         assert compare.arm_settings("c_nosub")[1] == {"spatial_channels": 32, "coordinate_submit_from": 1.0}
@@ -476,6 +476,8 @@ def test_a_run_trains_with_every_colour_the_task_shows(monkeypatch):
     record = compare.one_run({"feasible_actions": {"0": "submit", "1": "red_fill"}}, "default", 0, 100, "a")
     assert list(seen["actions"].values()) == ["submit", "black_fill", "red_fill", "orange_fill"]
     assert record["actions"] == 4
+    compare.one_run({"feasible_actions": {"0": "submit", "1": "red_fill"}}, "v_narrow", 0, 100, "a")
+    assert list(seen["actions"].values()) == ["submit", "red_fill"]
 
 
 class TestWhatIsReadAsARun:

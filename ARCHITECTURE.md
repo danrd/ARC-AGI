@@ -218,7 +218,7 @@ graph TD
   symbolic["symbolic (10)"]
   tests["tests (91)"]
   utils["utils (3)"]
-  tests -->|112| rl
+  tests -->|113| rl
   tests -->|48| subsymbolic
   tests -->|40| orchestration
   tests -->|34| symbolic
@@ -274,7 +274,7 @@ graph TD
 | `orchestration.run` | 4 |
 | `orchestration.tools` | 6 |
 | `orchestration.trace` | 11 |
-| `rl.action_structure` | 3 |
+| `rl.action_structure` | 4 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
 | `rl.arc_task` | 45 |

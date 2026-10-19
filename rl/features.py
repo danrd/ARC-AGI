@@ -1333,7 +1333,7 @@ class CoordinateRows(nn.Module):
     """
 
     def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64,
-                 spatial_channels: int = 0, cells: bool = False):
+                 spatial_channels: int = 0, cells: bool = False, cell_colours: bool = False):
         """`spatial_channels` reads each row and column from the backbone's
         map (SpatialBackbone.over_lines) rather than from its raw cells:
         the same weights for every row, where the raw reading gives each
@@ -1346,8 +1346,16 @@ class CoordinateRows(nn.Module):
         rl_configs' coordinate_heads): a row's embedding is a mean and a max
         over thirty cells, and "this red cell" is in neither. A cell is read
         from the map at that cell (or its raw colour and deltas without a
-        map) and its position, one encoder for every cell."""
+        map) and its position, one encoder for every cell.
+
+        `cell_colours` adds each cell's colour in the observed grid after the
+        cells, ten numbers a cell: what the 'cell_colours' coordinate heads
+        score a stroke's colour against ("the colour of the first corner")
+        instead of a weight learnt per colour."""
+        if cell_colours and not cells:
+            raise ValueError("cell_colours are read beside the cells: they need cells=True")
         super().__init__()
+        self.cell_colours = cell_colours
         self.rows, self.cols = rows, cols
         self.delta_keys = tuple(delta_keys)
         self.spatial_channels = spatial_channels
@@ -1431,7 +1439,8 @@ class CoordinateRows(nn.Module):
     def width(self) -> int:
         """How much of the feature vector the rows and columns take, and
         the cells with `cells`."""
-        return (self.rows + self.cols + (self.rows * self.cols if self.cells else 0)) * (self.dim + 1)
+        return ((self.rows + self.cols + (self.rows * self.cols if self.cells else 0)) * (self.dim + 1)
+                + (self.rows * self.cols * 10 if self.cell_colours else 0))
 
     def tail(self, observation, lines=None, cell_map=None):
         """The rows and columns as one flat block, each followed by its
@@ -1443,6 +1452,9 @@ class CoordinateRows(nn.Module):
         if self.cells:
             cells, cell_mask = self.cell_embeddings(observation, cell_map)
             blocks.append(torch.cat([cells, cell_mask.unsqueeze(-1)], dim=2).flatten(1))
+        if self.cell_colours:
+            # (batch, rows * cols * 10), row-major, padding all zeros.
+            blocks.append(self.planes(observation)[:, :10].flatten(2).transpose(1, 2).flatten(1))
         return torch.cat(blocks, dim=1)
 
 
@@ -1473,7 +1485,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                  relation_mode: str = "flat", relation_arch=None,
                  coordinate_dim: int = 0, factored_tail: bool = False,
                  spatial_channels: int = 0, delta_in_grid: bool = False, spatial_arch=None,
-                 pair_scores: bool = False, coordinate_cells: bool = False):
+                 pair_scores: bool = False, coordinate_cells: bool = False, coordinate_cell_colours: bool = False):
         """`delta_in_grid` hands the deltas to the grid encoder as planes
         beside the ten colours, instead of to a DeltaReadout each: one
         stack of convolutions reads a cell's colour and whether it differs
@@ -1663,7 +1675,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
                 dim=coordinate_dim,
                 spatial_channels=spatial_channels if "grid" in observation_space.spaces else 0,
-                cells=coordinate_cells)
+                cells=coordinate_cells, cell_colours=coordinate_cell_colours)
             total_concat_size += self.coordinate_rows.width
         #: What the factored object heads read besides the rows: each
         #: slot's raw embedding - its colour shares and where its mass sits

@@ -1,0 +1,46 @@
+{
+ "steps": [
+  {
+   "name": "vocab_a",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_all.json",
+    "--tasks",
+    "3c9b0459",
+    "42a50994",
+    "4347f46a",
+    "74dd1130",
+    "dc1df850",
+    "f76d97a5",
+    "025d127b",
+    "0e206a2e",
+    "2204b7a8",
+    "25d487eb",
+    "5582e5ca",
+    "56ff96f3",
+    "63613498",
+    "7e0986d6",
+    "91714a58",
+    "9565186b",
+    "a5f85a15",
+    "aabf363d",
+    "bda2d7a6",
+    "d23f8c26",
+    "d43fd935",
+    "d6ad076f",
+    "ddf7fa4f",
+    "ea786f4a",
+    "--arms",
+    "f_base",
+    "--seeds",
+    "0",
+    "1",
+    "2",
+    "--workers",
+    "4",
+    "--hours",
+    "10"
+   ]
+  }
+ ]
+}

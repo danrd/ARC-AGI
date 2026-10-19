@@ -38,7 +38,10 @@ def step(name):
             return value
         except Exception as error:  # noqa: BLE001 - the point is to see how far each step gets
             report["steps"].append({"step": name, "ok": False, "seconds": round(time.time() - started, 1),
-                                    "error": f"{type(error).__name__}: {error}"[:600]})
+                                    "error": f"{type(error).__name__}: {error}"[:600],
+                                    # A TPU session comes after a day in the queue: the report carries where
+                                    # the error came from, not only what it said.
+                                    "traceback": traceback.format_exc()[-2000:]})
             print(f"[{name}] FAILED: {type(error).__name__}: {str(error)[:600]}\n{traceback.format_exc()[-1500:]}", flush=True)
             return None
     return wrap
@@ -256,10 +259,15 @@ def main():
         def generate():
             model.preprocessor.sequence_length = 4096
             model.generate(prompt, max_length=64)                 # compile
+            tokenizer = model.preprocessor.tokenizer
+            prompt_tokens = len(tokenizer.tokenize(prompt))
             started = time.time()
-            text = model.generate(prompt, max_length=4096 if False else len(prompt) // 3 + args.new_tokens)
+            text = model.generate(prompt, max_length=prompt_tokens + args.new_tokens)
             seconds = time.time() - started
-            return {"seconds": round(seconds, 2), "new_tokens_asked": args.new_tokens, "reply_tail": str(text)[-200:]}
+            new_tokens = max(0, len(tokenizer.tokenize(str(text))) - prompt_tokens)
+            return {"seconds": round(seconds, 2), "prompt_tokens": prompt_tokens, "new_tokens_asked": args.new_tokens,
+                    "new_tokens": new_tokens, "tokens_per_second": round(new_tokens / seconds, 2) if seconds else None,
+                    "reply_tail": str(text)[-400:]}
 
     report.pop("_model", None)
     Path(args.out).write_text(json.dumps(report, indent=1, default=str))

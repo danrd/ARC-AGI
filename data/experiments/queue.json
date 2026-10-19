@@ -4461,7 +4461,7 @@
    "status": "running",
    "setup": [],
    "extras": "rl",
-   "note": "TPU: проба весов Gemma 4 без загрузки модели — metadata.json и config.json пресета, версии keras/keras-hub/jax, переменные весов с embed в имени (форма, тип) для 2B и 31B: почему token_embedding и per_layer_token_embedding «не найдены» даже без разметки (tpu_gemma4f/g)",
+   "note": "TPU, лестница на одну сессию (очередь сутки): пробы весов 2B и 31B без загрузки; обновить keras-hub и keras → проба, 2B без разметки с генерацией, 31B с целым эмбеддингом и замером скорости; то же с keras-hub-nightly. Шаги независимы, падение одного не останавливает остальные",
    "result": [],
    "cleaned": false
   }

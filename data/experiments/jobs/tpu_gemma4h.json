@@ -21,6 +21,107 @@
     "--out",
     "{out}.json"
    ]
+  },
+  {
+   "name": "upgrade",
+   "command": [
+    "-m",
+    "pip",
+    "install",
+    "-q",
+    "-U",
+    "keras-hub",
+    "keras"
+   ]
+  },
+  {
+   "name": "inspect_e2b_up",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--inspect",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "e2b_up",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--layout",
+    "none",
+    "--new-tokens",
+    "256",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "b31_repl_up",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--layout",
+    "replicate_embedding",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "nightly",
+   "command": [
+    "-m",
+    "pip",
+    "install",
+    "-q",
+    "-U",
+    "keras-hub-nightly"
+   ]
+  },
+  {
+   "name": "inspect_e2b_nightly",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--inspect",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "e2b_nightly",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--layout",
+    "none",
+    "--new-tokens",
+    "256",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "b31_repl_nightly",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--layout",
+    "replicate_embedding",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
   }
  ],
  "model_sources": [

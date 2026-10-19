@@ -183,3 +183,16 @@ def test_a_preset_folder_is_read_without_a_model(tmp_path):
     assert found["datasets"] == 2 and "model.weights.h5" in found["files"]
     assert found["matching"] == [{"file": "model.weights.h5", "path": "layers/token_embedding/vars/0",
                                   "shape": [8, 4], "dtype": "float16"}]
+
+
+def test_a_failed_step_keeps_where_the_error_came_from():
+    probe.report["steps"].clear()
+
+    @probe.step("boom")
+    def boom():
+        raise ValueError("no embeddings")
+
+    entry = probe.report["steps"][-1]
+    assert boom is None and entry["ok"] is False and entry["error"] == "ValueError: no embeddings"
+    assert "raise ValueError" in entry["traceback"]
+    probe.report["steps"].clear()

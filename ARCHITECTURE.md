@@ -213,10 +213,10 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (21)"]
   rl["rl (20)"]
-  scripts["scripts (19)"]
+  scripts["scripts (20)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (10)"]
-  tests["tests (91)"]
+  tests["tests (92)"]
   utils["utils (3)"]
   tests -->|113| rl
   tests -->|48| subsymbolic
@@ -230,7 +230,7 @@ graph TD
   orchestration -->|7| rl
   orchestration -->|6| symbolic
   scripts -->|6| subsymbolic
-  tests -->|4| scripts
+  tests -->|5| scripts
   data -->|3| rl
   orchestration -->|3| data
   rl -->|3| utils
@@ -296,6 +296,7 @@ graph TD
 | `scripts.check_invariants` | 0 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
+| `scripts.feature_probe` | 0 |
 | `scripts.harvest_traces` | 0 |
 | `scripts.kaggle_launch` | 0 |
 | `scripts.kaggle_queue` | 0 |

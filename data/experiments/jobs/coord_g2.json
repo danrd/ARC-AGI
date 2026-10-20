@@ -1,0 +1,45 @@
+{
+ "steps": [
+  {
+   "name": "coord_g2",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_all.json",
+    "--tasks",
+    "0ca9ddb6",
+    "11852cab",
+    "1bfc4729",
+    "29623171",
+    "29c11459",
+    "2bcee788",
+    "363442ee",
+    "39e1d7f9",
+    "3eda0437",
+    "4612dd53",
+    "496994bd",
+    "72322fa7",
+    "73251a56",
+    "7b6016b9",
+    "7df24a62",
+    "82819916",
+    "97999447",
+    "a65b410d",
+    "a699fb00",
+    "af902bf9",
+    "ba26e723",
+    "e8593010",
+    "f15e1fac",
+    "--arms",
+    "c_feat",
+    "--seeds",
+    "0",
+    "1",
+    "2",
+    "--workers",
+    "4",
+    "--hours",
+    "11"
+   ]
+  }
+ ]
+}

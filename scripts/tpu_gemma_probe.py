@@ -55,10 +55,19 @@ def mesh_shape(chips, model_axis):
     return (chips // model, model)
 
 
+def generation_batch(layout):
+    """How many copies of the prompt to generate at once: the batch axis of the mesh, which shards the inputs and
+    must divide them (one prompt on a (2, 4) mesh: IndivisibleError, "dimension size is 1"), or one without a mesh.
+    The copies are the same prompt, so the speed per sequence is the one a single prompt would get, and the batch's
+    total says what the spare chips add."""
+    return (layout.get("mesh") or [1])[0]
+
+
 def gemma_layout_map(mesh):
     """How to split a Gemma decoder over the `model` axis when the backbone has no `get_layout_map` of its own (Gemma 3
-    has none): the attention projections by head, the feed-forward by its hidden width, the embedding by its width -
-    the recipe keras-hub gives for Gemma 2, by the names of the weights."""
+    and 4 have none): the attention projections by head, the feed-forward by its hidden width, the embedding by its
+    width - the recipe keras-hub gives for Gemma 2, by the names of the weights - and a mixture-of-experts bank by
+    expert."""
     import keras
     layout = keras.distribution.LayoutMap(mesh)
     layout["token_embedding/embeddings"] = (None, "model")
@@ -66,6 +75,9 @@ def gemma_layout_map(mesh):
     layout["decoder_block.*attention_output/kernel"] = ("model", None, None)
     layout["decoder_block.*ffw_gating.*/kernel"] = ("batch", "model")
     layout["decoder_block.*ffw_linear/kernel"] = ("model", "batch")
+    # Gemma 4 26B-A4B's 128 experts per layer are most of its weights: the experts over the model axis and their
+    # width over the batch one, so the bank is cut over all eight chips.
+    layout["decoder_block.*moe_expert_bank/(gate_proj|up_proj|down_proj)"] = ("model", "batch", None)
     return layout
 
 
@@ -138,6 +150,113 @@ def weight_entries(folder, needle="embed", limit=60):
     return found
 
 
+def to_snake_case(name):
+    """Keras's own snake case (keras.src.utils.naming), which names a layer's group in a weights file."""
+    name = re.sub(r"\W+", "", name)
+    name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub("([a-z])([A-Z])", r"\1_\2", name).lower()
+
+
+def weight_groups(layers):
+    """layer name -> its group in the weights file, for the layers of a functional model in order. Keras saves the
+    list by class, not by name - the first ReversibleEmbedding is layers/reversible_embedding, a second one
+    layers/reversible_embedding_1 - so token_embedding is found where the file has it whatever it is called."""
+    used, groups = {}, {}
+    for layer in layers:
+        name = to_snake_case(type(layer).__name__)
+        if name in used:
+            used[name] += 1
+            name = f"{name}_{used[name]}"
+        else:
+            used[name] = 0
+        groups[layer.name] = f"layers/{name}"
+    return groups
+
+
+def failed_layers(message):
+    """The names of the layers a Keras loading error lists as not loaded ("List of objects that could not be
+    loaded: [<ReversibleEmbedding name=token_embedding, built=True>]")."""
+    listed = message.rsplit("could not be loaded:", 1)[-1]
+    return re.findall(r"name=([\w.\-/]+)", listed)
+
+
+def weight_file(folder, group):
+    """The .h5 file of a preset folder that holds `group`'s variables: the one model.weights.json names for it when
+    the weights are sharded, else model.weights.h5."""
+    folder = Path(folder)
+    index = folder / "model.weights.json"
+    if not index.exists():
+        return folder / "model.weights.h5"
+    shard = json.loads(index.read_text())["weight_map"].get(f"/{group}/vars")
+    if shard is None:
+        raise KeyError(f"{group} is not in {index}")
+    return folder / (shard[0] if isinstance(shard, list) else shard)
+
+
+def bfloat16_from_raw(raw):
+    """float32 values of an array the file holds as bfloat16. h5py has no bfloat16 and hands such a dataset back as
+    opaque 2-byte records (|V2, what tpu_gemma4h saw for both embeddings); a bfloat16 is the upper half of a float32,
+    so shifting its bits up by sixteen gives the same number. Anything else comes back as it is."""
+    import numpy as np
+
+    raw = np.asarray(raw)
+    if raw.dtype.kind != "V" or raw.dtype.itemsize != 2:
+        return raw
+    return (np.ascontiguousarray(raw).view(np.uint16).astype(np.uint32) << 16).view(np.float32)
+
+
+def assign_from_file(layer, folder, group):
+    """Reads `layer`'s variables from `group` of the preset's weights and assigns them, the way Keras would have;
+    returns what it read and how far the layer's first rows are from the file's afterwards (0 when it took)."""
+    import h5py
+    import numpy as np
+
+    path = weight_file(folder, group)
+    read = {"file": path.name, "group": group, "variables": []}
+    with h5py.File(path, "r") as handle:
+        stored = handle[group]["vars"]
+        if len(stored) != len(layer.weights):
+            raise ValueError(f"{layer.name} has {len(layer.weights)} variables, {group} holds {len(stored)}")
+        for index, variable in enumerate(layer.weights):
+            dataset = stored[str(index)]
+            value = bfloat16_from_raw(dataset[()])
+            variable.assign(value)
+            rows = min(4, value.shape[0]) if value.ndim else 0
+            back = np.asarray(variable[:rows] if rows else variable, dtype=np.float32)
+            want = np.asarray(value[:rows] if rows else value, dtype=np.float32)
+            read["variables"].append({"shape": list(dataset.shape), "stored_dtype": str(dataset.dtype),
+                                      "max_difference": float(np.max(np.abs(back - want))) if back.size else 0.0})
+    return read
+
+
+def trace_loads(classes, log):
+    """Wraps load_own_variables of each class that defines one so every call is logged: the layer, the group Keras
+    looked in, the shard it had open, how many variables it found there and what went wrong. Keras keeps only the
+    last error per layer, so a layer visited twice can hide the first failure behind "received 0 variables"."""
+    for cls in classes:
+        if cls is None or "load_own_variables" not in vars(cls):
+            continue
+
+        def traced(self, store, _original=vars(cls)["load_own_variables"]):
+            entry = {"layer": self.name, "group": getattr(store, "_h5_entry_path", None),
+                     "shard": getattr(getattr(store, "current_shard_path", None), "name", None)}
+            try:
+                entry["variables_found"] = len(store)
+            except Exception as error:  # noqa: BLE001 - the log is for seeing what the store does
+                entry["variables_found"] = f"{type(error).__name__}: {error}"
+            try:
+                _original(self, store)
+                entry["ok"] = True
+            except Exception as error:
+                entry.update(ok=False, error=f"{type(error).__name__}: {error}"[:600],
+                             traceback=traceback.format_exc()[-1200:])
+                raise
+            finally:
+                log.append(entry)
+
+        cls.load_own_variables = traced
+
+
 def tree(root="/kaggle/input", depth=4):
     """The folders under `root` down to `depth`, for the report: where an attached model landed."""
     root = Path(root)
@@ -161,6 +280,9 @@ def main():
     parser.add_argument("--layout", choices=LAYOUTS, default="auto",
                         help="auto: the backbone's own layout map, or ours when it has none; none: no distribution "
                              "(everything on one chip); replicate_embedding: auto with the embedding left whole")
+    parser.add_argument("--repair", action="store_true",
+                        help="load the weights without keras-hub's loader, and assign the layers Keras could not load "
+                             "straight from the file (the embedding every Gemma 4 load so far has lost)")
     args = parser.parse_args()
 
     @step("devices")
@@ -247,7 +369,29 @@ def main():
                                                                                  batch_dim_name="batch"))
         source = attached_preset(preset) or preset
         print("loading from", source, flush=True)
-        model = getattr(keras_hub.models, cls_name).from_preset(source)
+        report["embedding_loads"] = []
+        trace_loads({keras.layers.Embedding, getattr(keras.layers, "ReversibleEmbedding", None),
+                     getattr(keras_hub.layers, "ReversibleEmbedding", None)}, report["embedding_loads"])
+        if not args.repair:
+            model = getattr(keras_hub.models, cls_name).from_preset(source)
+        else:
+            model = getattr(keras_hub.models, cls_name).from_preset(source, load_weights=False)
+            weights = Path(source) / "model.weights.json"
+            if not weights.exists():
+                weights = Path(source) / "model.weights.h5"
+            try:
+                model.backbone.load_weights(str(weights))
+                report["load_error"] = None
+            except ValueError as error:
+                # Keras raises only after every other layer is loaded; what it lists is all that is missing.
+                report["load_error"] = str(error)[:1500]
+                missing = failed_layers(str(error))
+                if not missing:
+                    raise
+                groups = weight_groups(model.backbone.layers)
+                report["repaired"] = {name: assign_from_file(model.backbone.get_layer(name), source, groups[name])
+                                      for name in missing}
+                print("repaired:", report["repaired"], flush=True)
         report["_model"] = model
         used = [(d.memory_stats() or {}).get("bytes_in_use", 0) for d in jax.devices()]
         return {"preset": preset, "gb_in_use_per_chip": [round(u / 1e9, 2) for u in used]}
@@ -258,16 +402,26 @@ def main():
         @step("generate")
         def generate():
             model.preprocessor.sequence_length = 4096
-            model.generate(prompt, max_length=64)                 # compile
+            batch = generation_batch(report["layout"])
+            prompts = [prompt] * batch
+            model.generate(prompts, max_length=64)                 # compile
             tokenizer = model.preprocessor.tokenizer
             prompt_tokens = len(tokenizer.tokenize(prompt))
+            # generate compiles again for a new max_length, so the first call at this length is timed apart from the
+            # second, which is the speed.
             started = time.time()
-            text = model.generate(prompt, max_length=prompt_tokens + args.new_tokens)
+            model.generate(prompts, max_length=prompt_tokens + args.new_tokens)
+            first = time.time() - started
+            started = time.time()
+            texts = model.generate(prompts, max_length=prompt_tokens + args.new_tokens)
             seconds = time.time() - started
-            new_tokens = max(0, len(tokenizer.tokenize(str(text))) - prompt_tokens)
-            return {"seconds": round(seconds, 2), "prompt_tokens": prompt_tokens, "new_tokens_asked": args.new_tokens,
-                    "new_tokens": new_tokens, "tokens_per_second": round(new_tokens / seconds, 2) if seconds else None,
-                    "reply_tail": str(text)[-400:]}
+            text = str(texts[0]) if isinstance(texts, (list, tuple)) else str(texts)
+            new_tokens = max(0, len(tokenizer.tokenize(text)) - prompt_tokens)
+            speed = round(new_tokens / seconds, 2) if seconds else None
+            return {"seconds": round(seconds, 2), "first_call_seconds": round(first, 2), "batch": batch,
+                    "prompt_tokens": prompt_tokens, "new_tokens_asked": args.new_tokens, "new_tokens": new_tokens,
+                    "tokens_per_second": speed, "batch_tokens_per_second": speed and round(speed * batch, 2),
+                    "reply_tail": text[-400:]}
 
     report.pop("_model", None)
     Path(args.out).write_text(json.dumps(report, indent=1, default=str))

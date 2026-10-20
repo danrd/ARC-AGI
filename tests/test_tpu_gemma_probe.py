@@ -87,6 +87,10 @@ def test_the_layout_map_shards_the_attention_and_the_feed_forward_over_the_model
     layout = probe.gemma_layout_map("mesh")
     assert layout["decoder_block.*attention.*(query|key|value)/kernel"][0] == "model"
     assert set(layout) >= {"token_embedding/embeddings", "decoder_block.*ffw_gating.*/kernel"}
+    import re
+    experts = [key for key in layout if re.search(key, "decoder_block_3/moe_expert_bank/down_proj")]
+    assert [layout[key] for key in experts] == [("model", "batch", None)]
+    assert not any(re.search(key, "decoder_block_3/moe_expert_bank/per_expert_scale") for key in layout)
 
 
 def test_the_largest_instruct_preset_is_the_gemma_4_31b_and_the_default_budget_holds_it(monkeypatch, tmp_path):
@@ -196,3 +200,133 @@ def test_a_failed_step_keeps_where_the_error_came_from():
     assert boom is None and entry["ok"] is False and entry["error"] == "ValueError: no embeddings"
     assert "raise ValueError" in entry["traceback"]
     probe.report["steps"].clear()
+
+
+# Repairing a load that lost its embedding: tpu_gemma4h failed on every rung with token_embedding (31B) or
+# per_layer_token_embedding (2B) "expected 1 variables, but received 0", though the file holds both.
+
+ERROR_31B = ("A total of 1 objects could not be loaded. Example error message for object <ReversibleEmbedding "
+             "name=token_embedding, built=True>:\n\nLayer 'token_embedding' expected 1 variables, but received 0 "
+             "variables during loading. Expected: ['embeddings']\n\nList of objects that could not be loaded:\n"
+             "[<ReversibleEmbedding name=token_embedding, built=True>]")
+
+
+def test_the_layers_that_did_not_load_are_read_from_the_list_and_not_from_the_example():
+    two = ERROR_31B.replace("[<ReversibleEmbedding name=token_embedding, built=True>]",
+                            "[<ReversibleEmbedding name=token_embedding, built=True>, "
+                            "<Embedding name=per_layer_token_embedding, built=True>]")
+    assert probe.failed_layers(ERROR_31B) == ["token_embedding"]
+    assert probe.failed_layers(two) == ["token_embedding", "per_layer_token_embedding"]
+    assert probe.failed_layers("RESOURCE_EXHAUSTED: out of memory") == []
+
+
+def test_a_layer_is_found_in_the_file_by_its_class_and_its_place_among_the_layers_of_that_class():
+    def layer(cls_name, name):
+        return type(cls_name, (), {"name": name})()
+
+    layers = [layer("InputLayer", "token_ids"), layer("ReversibleEmbedding", "token_embedding"),
+              layer("Dense", "per_layer_model_projection"), layer("Embedding", "per_layer_token_embedding"),
+              layer("RMSNormalization", "per_layer_projection_norm"), layer("InputLayer", "padding_mask"),
+              layer("Gemma4TextDecoderBlock", "decoder_block_0"), layer("Gemma4TextDecoderBlock", "decoder_block_1"),
+              layer("RMSNormalization", "final_normalization")]
+    assert probe.weight_groups(layers) == {
+        "token_ids": "layers/input_layer", "token_embedding": "layers/reversible_embedding",
+        "per_layer_model_projection": "layers/dense", "per_layer_token_embedding": "layers/embedding",
+        "per_layer_projection_norm": "layers/rms_normalization", "padding_mask": "layers/input_layer_1",
+        "decoder_block_0": "layers/gemma4_text_decoder_block", "decoder_block_1": "layers/gemma4_text_decoder_block_1",
+        "final_normalization": "layers/rms_normalization_1"}
+
+
+def test_bfloat16_records_come_back_as_the_numbers_they_hold():
+    import numpy as np
+    numbers = np.array([[1.0, -2.5], [0.15625, 3.0e38]], dtype=np.float32)
+    upper = (numbers.view(np.uint32) >> 16).astype(np.uint16)     # what bfloat16 keeps of each
+    records = upper.view("V2")
+    back = probe.bfloat16_from_raw(records)
+    assert back.dtype == np.float32 and back.shape == (2, 2)
+    assert np.array_equal(back.view(np.uint32), upper.astype(np.uint32) << 16)
+    assert back[0, 0] == 1.0 and back[0, 1] == -2.5 and back[1, 0] == 0.15625
+    plain = np.ones((2, 3), dtype=np.float16)
+    assert probe.bfloat16_from_raw(plain) is not None and probe.bfloat16_from_raw(plain).dtype == np.float16
+
+
+def test_the_shard_of_a_group_comes_from_the_weight_map(tmp_path):
+    (tmp_path / "model.weights.json").write_text(json.dumps({"weight_map": {
+        "/layers/reversible_embedding/vars": "model_00000.weights.h5",
+        "/layers/embedding/vars": ["model_00001.weights.h5"]}}))
+    assert probe.weight_file(tmp_path, "layers/reversible_embedding") == tmp_path / "model_00000.weights.h5"
+    assert probe.weight_file(tmp_path, "layers/embedding") == tmp_path / "model_00001.weights.h5"
+    with pytest.raises(KeyError):
+        probe.weight_file(tmp_path, "layers/dense")
+    single = tmp_path / "one"
+    single.mkdir()
+    assert probe.weight_file(single, "layers/embedding") == single / "model.weights.h5"
+
+
+class FakeVariable:
+    def __init__(self, shape):
+        import numpy as np
+        self.value = np.zeros(shape, dtype=np.float32)
+
+    def assign(self, value):
+        import numpy as np
+        assert np.shape(value) == self.value.shape
+        self.value = np.asarray(value, dtype=np.float32)
+
+    def __getitem__(self, index):
+        return self.value[index]
+
+    def __array__(self, dtype=None, copy=None):
+        return self.value if dtype is None else self.value.astype(dtype)
+
+
+def test_a_lost_embedding_is_assigned_from_its_shard(tmp_path):
+    import numpy as np
+    h5py = pytest.importorskip("h5py")
+    table = np.arange(24, dtype=np.float32).reshape(6, 4) - 3.5         # exact in bfloat16
+    with h5py.File(tmp_path / "model_00001.weights.h5", "w") as handle:
+        handle.create_dataset("layers/reversible_embedding/vars/0",
+                              data=(table.view(np.uint32) >> 16).astype(np.uint16).view("V2"))
+    (tmp_path / "model.weights.json").write_text(json.dumps({"weight_map": {
+        "/layers/reversible_embedding/vars": "model_00001.weights.h5"}}))
+    layer = types.SimpleNamespace(name="token_embedding", weights=[FakeVariable((6, 4))])
+    read = probe.assign_from_file(layer, tmp_path, "layers/reversible_embedding")
+    assert np.array_equal(layer.weights[0].value, table)
+    assert read == {"file": "model_00001.weights.h5", "group": "layers/reversible_embedding",
+                    "variables": [{"shape": [6, 4], "stored_dtype": "|V2", "max_difference": 0.0}]}
+    two = types.SimpleNamespace(name="token_embedding", weights=[FakeVariable((6, 4)), FakeVariable((6, 4))])
+    with pytest.raises(ValueError, match="has 2 variables"):
+        probe.assign_from_file(two, tmp_path, "layers/reversible_embedding")
+
+
+def test_every_embedding_load_is_logged_with_what_the_store_held_and_what_went_wrong():
+    class Store(dict):
+        _h5_entry_path = "layers/reversible_embedding"
+        current_shard_path = types.SimpleNamespace(name="model_00000.weights.h5")
+
+    class Embedding:
+        def __init__(self, name):
+            self.name = name
+
+        def load_own_variables(self, store):
+            if len(store) != 1:
+                raise ValueError(f"Layer '{self.name}' expected 1 variables, but received {len(store)}")
+
+    class ReversibleEmbedding(Embedding):
+        pass
+
+    log = []
+    probe.trace_loads({Embedding, ReversibleEmbedding, None}, log)
+    ReversibleEmbedding("token_embedding").load_own_variables(Store({"0": 1}))
+    with pytest.raises(ValueError):
+        Embedding("per_layer_token_embedding").load_own_variables(Store())
+    assert [(e["layer"], e["group"], e["shard"], e["variables_found"], e["ok"]) for e in log] == [
+        ("token_embedding", "layers/reversible_embedding", "model_00000.weights.h5", 1, True),
+        ("per_layer_token_embedding", "layers/reversible_embedding", "model_00000.weights.h5", 0, False)]
+    assert "received 0" in log[1]["error"] and "raise ValueError" in log[1]["traceback"]
+
+
+def test_a_prompt_is_generated_once_per_row_of_the_mesh_and_once_without_one():
+    assert probe.generation_batch({"mode": "auto", "mesh": (2, 4)}) == 2
+    assert probe.generation_batch({"mode": "auto", "mesh": [4, 2]}) == 4
+    assert probe.generation_batch({"mode": "none"}) == 1

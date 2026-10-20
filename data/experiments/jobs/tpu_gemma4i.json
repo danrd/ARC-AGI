@@ -1,0 +1,71 @@
+{
+ "steps": [
+  {
+   "name": "e2b_repair",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--repair",
+    "--layout",
+    "none",
+    "--new-tokens",
+    "256",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "b31_repair",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--repair",
+    "--layout",
+    "auto",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "moe_repair",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_26b_a4b",
+    "--repair",
+    "--layout",
+    "auto",
+    "--model-axis",
+    "2",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "b31_repair_repl",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--repair",
+    "--layout",
+    "replicate_embedding",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ],
+ "model_sources": [
+  "keras/gemma4/keras/gemma4_instruct_2b/2",
+  "keras/gemma4/keras/gemma4_instruct_31b/2",
+  "keras/gemma4/keras/gemma4_instruct_26b_a4b/2"
+ ]
+}

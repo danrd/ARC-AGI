@@ -4509,18 +4509,24 @@
    "name": "vocab_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "полный словарь цветов, объекты: f_base (факторизованные головы, цвет по роли) на 24 объектных задачах, где тесту нужен цвет не из обучающих выходов, сиды 0-2 (72 запуска)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/vocab_a_vocab_a_0.jsonl",
+    "data/experiments/runs/kaggle/vocab_a_vocab_a_1.jsonl",
+    "data/experiments/runs/kaggle/vocab_a_vocab_a_2.jsonl",
+    "data/experiments/runs/kaggle/vocab_a_vocab_a_3.jsonl",
+    "data/experiments/runs/kaggle/vocab_a_vocab_a_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "vocab_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "контроль к vocab_a: v_narrow (f_base с прежним узким словарём) на тех же 24 задачах и сидах (72 запуска)",

@@ -1,0 +1,409 @@
+{
+ "steps": [
+  {
+   "step": "devices",
+   "ok": true,
+   "seconds": 11.2,
+   "value": [
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    }
+   ]
+  },
+  {
+   "step": "inputs",
+   "ok": true,
+   "seconds": 0.1,
+   "value": [
+    "/kaggle/input/models",
+    "/kaggle/input/models/keras",
+    "/kaggle/input/models/keras/gemma4",
+    "/kaggle/input/models/keras/gemma4/keras"
+   ]
+  },
+  {
+   "step": "presets",
+   "ok": true,
+   "seconds": 4.1,
+   "value": {
+    "Gemma3CausalLM": [
+     "embedding_gemma3_300m",
+     "function_gemma_instruct_270m",
+     "gemma3_12b",
+     "gemma3_12b_text",
+     "gemma3_1b",
+     "gemma3_270m",
+     "gemma3_27b",
+     "gemma3_27b_text",
+     "gemma3_4b",
+     "gemma3_4b_text",
+     "gemma3_instruct_12b",
+     "gemma3_instruct_12b_text",
+     "gemma3_instruct_1b",
+     "gemma3_instruct_270m",
+     "gemma3_instruct_27b",
+     "gemma3_instruct_27b_text",
+     "gemma3_instruct_4b",
+     "gemma3_instruct_4b_text",
+     "harrier_embedding_oss_270m",
+     "medgemma_1.5_instruct_4b",
+     "medgemma_4b",
+     "medgemma_instruct_27b",
+     "medgemma_instruct_27b_text",
+     "medgemma_instruct_4b",
+     "translategemma_12b_it",
+     "translategemma_27b_it",
+     "translategemma_4b_it"
+    ],
+    "Gemma3nCausalLM": [
+     "gemma3n_e2b",
+     "gemma3n_e2b_it",
+     "gemma3n_e4b",
+     "gemma3n_e4b_it"
+    ],
+    "Gemma4CausalLM": [
+     "gemma4_26b_a4b",
+     "gemma4_2b",
+     "gemma4_31b",
+     "gemma4_4b",
+     "gemma4_instruct_26b_a4b",
+     "gemma4_instruct_26b_a4b_assistant",
+     "gemma4_instruct_2b",
+     "gemma4_instruct_2b_assistant",
+     "gemma4_instruct_31b",
+     "gemma4_instruct_31b_assistant",
+     "gemma4_instruct_4b",
+     "gemma4_instruct_4b_assistant"
+    ],
+    "GemmaCausalLM": [
+     "c2s_scale_gemma_2_27b_en",
+     "c2s_scale_gemma_2_2b_en",
+     "code_gemma_1.1_2b_en",
+     "code_gemma_1.1_instruct_7b_en",
+     "code_gemma_2b_en",
+     "code_gemma_7b_en",
+     "code_gemma_instruct_7b_en",
+     "gemma2_27b_en",
+     "gemma2_2b_en",
+     "gemma2_9b_en",
+     "gemma2_instruct_27b_en",
+     "gemma2_instruct_2b_en",
+     "gemma2_instruct_9b_en",
+     "gemma_1.1_instruct_2b_en",
+     "gemma_1.1_instruct_7b_en",
+     "gemma_2b_en",
+     "gemma_7b_en",
+     "gemma_instruct_2b_en",
+     "gemma_instruct_7b_en",
+     "shieldgemma_27b_en",
+     "shieldgemma_2b_en",
+     "shieldgemma_9b_en",
+     "vault_gemma_1b_en"
+    ],
+    "PaliGemmaCausalLM": [
+     "pali_gemma2_ft_docci_10b_448",
+     "pali_gemma2_mix_10b_224",
+     "pali_gemma2_mix_10b_448",
+     "pali_gemma2_mix_28b_224",
+     "pali_gemma2_mix_28b_448",
+     "pali_gemma2_mix_3b_224",
+     "pali_gemma2_mix_3b_448",
+     "pali_gemma2_pt_10b_224",
+     "pali_gemma2_pt_10b_448",
+     "pali_gemma2_pt_10b_896",
+     "pali_gemma2_pt_28b_224",
+     "pali_gemma2_pt_28b_448",
+     "pali_gemma2_pt_28b_896",
+     "pali_gemma2_pt_3b_224",
+     "pali_gemma2_pt_3b_448",
+     "pali_gemma2_pt_3b_896",
+     "pali_gemma_2_ft_docci_3b_448",
+     "pali_gemma_3b_224",
+     "pali_gemma_3b_448",
+     "pali_gemma_3b_896",
+     "pali_gemma_3b_mix_224",
+     "pali_gemma_3b_mix_448"
+    ]
+   }
+  },
+  {
+   "step": "versions",
+   "ok": true,
+   "seconds": 0.0,
+   "value": {
+    "keras": "3.15.1",
+    "keras-hub": "0.32.0",
+    "jax": "0.11.0",
+    "h5py": "3.16.0"
+   }
+  },
+  {
+   "step": "inspect weights",
+   "ok": true,
+   "seconds": 3.7,
+   "value": {
+    "folder": "/kaggle/input/models/keras/gemma4/keras/gemma4_instruct_2b/2",
+    "files": {
+     "audio_converter.json": 794,
+     "config.json": 4609,
+     "image_converter.json": 872,
+     "metadata.json": 190,
+     "model.weights.json": 166569,
+     "model_00000.weights.h5": 10729750864,
+     "model_00001.weights.h5": 434334800,
+     "preprocessor.json": 5275,
+     "task.json": 12448,
+     "tokenizer.json": 701,
+     "video_converter.json": 828
+    },
+    "metadata.json": {
+     "keras_version": "3.14.0",
+     "keras_hub_version": "0.28.0.dev0",
+     "parameter_count": 5104298467,
+     "date_saved": "2026-04-15@21:50:56",
+     "tasks": [
+      "CausalLM"
+     ]
+    },
+    "config.json": {
+     "module": "keras_hub.src.models.gemma4.gemma4_backbone",
+     "class_name": "Gemma4Backbone",
+     "config": {
+      "name": "gemma4_backbone_1",
+      "trainable": true,
+      "dtype": {
+       "module": "keras",
+       "class_name": "DTypePolicy",
+       "config": {
+        "name": "bfloat16"
+       },
+       "registered_name": null
+      },
+      "vocabulary_size": 262144,
+      "image_size": 896,
+      "num_layers": 35,
+      "num_query_heads": 8,
+      "num_key_value_heads": 1,
+      "hidden_dim": 1536,
+      "intermediate_dim": 6144,
+      "head_dim": 256,
+      "query_head_dim_normalize": true,
+      "attention_logit_soft_cap": null,
+      "final_logit_soft_cap": 30.0,
+      "use_sliding_window_attention": true,
+      "sliding_window_size": 512,
+      "sliding_window_pattern": 5,
+      "global_head_dim": 512,
+      "local_rope_scaling_factor": 1.0,
+      "global_rope_scaling_factor": 1.0,
+      "vision_encoder": {
+       "module": "keras_hub.src.models.gemma4.gemma4_vision_encoder",
+       "class_name": "Gemma4VisionEncoder",
+       "config": {
+        "image_size": 896,
+        "patch_size": 16,
+        "num_heads": 12,
+        "hidden_dim": 768,
+        "num_layers": 16,
+        "intermediate_dim": 3072,
+        "head_dim": 64,
+        "output_dim": 1536,
+        "num_key_value_heads": 12,
+        "pool_size": 3,
+        "position_embedding_size": 10240,
+        "rope_max_wavelength": 100.0,
+        "layer_norm_epsilon": 1e-06,
+        "dropout": 0,
+        "use_clipped_linears": true,
+        "standardize": false
+       },
+       "registered_name": "keras_hub>Gemma4VisionEncoder"
+      },
+      "audio_encoder": {
+       "module": "keras_hub.src.models.gemma4.gemma4_audio_encoder",
+       "class_name": "Gemma4AudioEncoder",
+       "config": {
+        "name": "gemma4_audio_encoder_1",
+        "trainable": true,
+        "dtype": {
+         "module": "keras",
+         "class_name": "DTypePolicy",
+         "config": {
+          "name": "float32"
+         },
+         "registered_name": null
+        },
+        "input_feat_size": 128,
+        "hidden_size": 1024,
+        "num_heads": 8,
+        "num_layers": 12,
+        "chunk_size": 12,
+        "context_left": 13,
+        "context_right": 0,
+        "logit_cap": 50.0,
+        "invalid_logit_value": -1000000000.0,
+        "conv_kernel_size": 5,
+        "reduction_factor": 1,
+        "residual_weight": 0.5,
+        "gradient_clipping": 10000000000.0,
+        "sscp_conv_channels": [
+         128,
+         32
+        ],
+        "sscp_kernel_sizes": [
+         [
+          3,
+          3
+         ],
+         [
+          3,
+          3
+         ]
+        ],
+        "sscp_stride_sizes": [
+         [
+          2,
+          2
+         ],
+         [
+          2,
+          2
+         ]
+        ],
+        "output_proj_dims": 1536,
+        "output_dim": 1536,
+        "norm_eps": 1e-06,
+        "sscp_norm_eps": 1e-06
+       },
+       "registered_name": "keras_hub>Gemma4AudioEncoder"
+      },
+      "num_audio_tokens_per_clip": 750,
+      "use_bidirectional_attention": false,
+      "use_vision_bidirectional_attention": false,
+      "layer_norm_epsilon": 1e-06,
+      "dropout": 0,
+      "is_embedding_model": false,
+      "pooling_intermediate_dim": null,
+      "embedding_dim": null,
+      "num_kv_shared_layers": 20,
+      "num_global_key_value_heads": null,
+      "hidden_size_per_layer_input": 256,
+      "vocab_size_per_layer_input": 262144,
+      "global_rope_wavelength": 1000000.0,
+      "local_rope_wavelength": 10000.0,
+      "global_rope_partial_rotary_factor": 0.25,
+      "use_double_wide_mlp": true,
+      "enable_moe_block": false,
+      "num_experts": null,
+      "expert_intermediate_dim": null,
+      "num_experts_per_token": 8
+     },
+     "registered_name": "keras_hub>Gemma4Backbone"
+    },
+    "datasets": 1951,
+    "matching": [
+     {
+      "file": "model_00000.weights.h5",
+      "path": "layers/embedding/vars/0",
+      "shape": [
+       262144,
+       8960
+      ],
+      "dtype": "|V2"
+     },
+     {
+      "file": "model_00000.weights.h5",
+      "path": "layers/gemma4_vision_encoder/layers/gemma4_vision_encoder_block/patch_embedder/input_proj/vars/0",
+      "shape": [
+       768,
+       768
+      ],
+      "dtype": "float32"
+     },
+     {
+      "file": "model_00000.weights.h5",
+      "path": "layers/gemma4_vision_encoder/layers/gemma4_vision_encoder_block/patch_embedder/vars/0",
+      "shape": [
+       2,
+       10240,
+       768
+      ],
+      "dtype": "float32"
+     },
+     {
+      "file": "model_00000.weights.h5",
+      "path": "layers/reversible_embedding/vars/0",
+      "shape": [
+       262144,
+       1536
+      ],
+      "dtype": "|V2"
+     }
+    ]
+   }
+  }
+ ],
+ "options": [
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_12b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_1b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_27b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_4b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_2b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_31b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_4b"
+  ]
+ ],
+ "chosen": [
+  "Gemma4CausalLM",
+  "gemma4_instruct_2b"
+ ]
+}

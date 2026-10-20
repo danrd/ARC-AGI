@@ -4535,12 +4535,18 @@
    "name": "vocab_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "контроль к vocab_a: v_narrow (f_base с прежним узким словарём) на тех же 24 задачах и сидах (72 запуска)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/vocab_b_vocab_b_0.jsonl",
+    "data/experiments/runs/kaggle/vocab_b_vocab_b_1.jsonl",
+    "data/experiments/runs/kaggle/vocab_b_vocab_b_2.jsonl",
+    "data/experiments/runs/kaggle/vocab_b_vocab_b_3.jsonl",
+    "data/experiments/runs/kaggle/vocab_b_vocab_b_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "tpu_gemma4i",

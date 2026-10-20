@@ -756,9 +756,12 @@ class TestCellsReadFromTheirFeatures:
 
     def test_an_agent_reading_cell_features_trains_and_its_env_computes_them_once(self, monkeypatch):
         import symbolic.cell_features as cf
-        calls = []
+        calls, seen = [], []
         original = cf.encoded
         monkeypatch.setattr(cf, "encoded", lambda *a, **k: calls.append(1) or original(*a, **k))
+        described = CoordinateRows.described_cells
+        monkeypatch.setattr(CoordinateRows, "described_cells",
+                            lambda self, features: seen.append(features.detach().clone()) or described(self, features))
         vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=ACTIONS,
                                  observation_space_elements=["delta_input", "delta_target", "cell_features"],
                                  observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
@@ -770,7 +773,11 @@ class TestCellsReadFromTheirFeatures:
             assert agent.policy.features_extractor.coordinate_rows.cell_features
             agent.learn(32)
             obs = vec_env.reset()
-            assert obs["cell_features"].shape[1:3] == (7, 7) and obs["cell_features"].dtype == np.uint8
+            assert obs["cell_features"].shape[1:3] == (7, 7)
             assert len(calls) <= 2                              # once per example's input, not once per step
+            # What the network reads is what the env computed: not divided by 255 as an image, not transposed.
+            assert seen and all(f.shape[1:3] == (7, 7) for f in seen)
+            assert torch.equal(seen[-1][0].to(torch.int64), torch.tensor(obs["cell_features"][0]).to(torch.int64))
+            assert max(f.max().item() for f in seen) > 1
         finally:
             vec_env.close()

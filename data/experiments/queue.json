@@ -4563,11 +4563,17 @@
    "name": "coord_g",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "failed",
    "setup": [],
    "extras": "rl",
    "note": "признаки клетки вместо позиции: c_feat (c_cell, но клетку указатель читает по её признакам — соседи, ближайший цвет по 8 направлениям и расстояние, объект и пятно, зеркальные клетки, строка и столбец, счёт соседей по цвету; без номера строки и столбца) на 23 координатных задачах, сиды 0-2 (69 запусков); против coord_e (тот же c_cell с позицией). Без RL дерево на этих признаках решает 7 из 23 тестов (feature_probe)",
-   "result": [],
+   "result": [
+    "data/experiments/runs/kaggle/coord_g_coord_g_0.jsonl",
+    "data/experiments/runs/kaggle/coord_g_coord_g_1.jsonl",
+    "data/experiments/runs/kaggle/coord_g_coord_g_2.jsonl",
+    "data/experiments/runs/kaggle/coord_g_coord_g_3.jsonl",
+    "data/experiments/runs/kaggle/coord_g_coord_g_4.jsonl"
+   ],
    "cleaned": false
   }
  ]

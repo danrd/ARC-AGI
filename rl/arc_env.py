@@ -290,7 +290,7 @@ class ARCGridWorld(gymnasium.Env):
         shape = self.observation_space["cell_features"].shape[:2]
         key = (np.asarray(self.train_inp).tobytes(), np.asarray(self.train_inp).shape, shape)
         if getattr(self, "_cell_features_key", None) != key:
-            self._cell_features = cell_features.encoded(self.train_inp, shape)
+            self._cell_features = cell_features.encoded(self.train_inp, shape).astype(np.int16)
             self._cell_features_key = key
         obs["cell_features"] = self._cell_features.copy()
 
@@ -574,10 +574,13 @@ class ARCGridWorld(gymnasium.Env):
                     dtype=self.grid_dtype)
         if "cell_features" in self.observation_space_elements:
             # Fixed for the episode and read by the coordinate policy's cells: see _add_cell_features. Sized by the
-            # observed grid, the cells past the input's own size zero.
+            # observed grid, the cells past the input's own size zero. int16, not uint8: stable-baselines takes a
+            # 0-255 uint8 box of three dimensions for an image, divides it by 255 (every count and colour then
+            # floors to 0 in the policy) and may move its last axis first - coord_g trained on zeros and crashed on
+            # a transposed batch.
             self.observation_space['cell_features'] = spaces.Box(
                 low=0, high=255, shape=(*(self.obs_grid_shape or (shape_x, shape_y)), len(cell_features.schema()[0])),
-                dtype=np.uint8)
+                dtype=np.int16)
         # Both embedding blocks are sized by max_objects, not by this
         # subtask's object count, so they are the same shape for every
         # subtask - see MAX_OBJECTS.

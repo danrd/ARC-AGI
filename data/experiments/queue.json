@@ -4492,18 +4492,24 @@
    "name": "coord_f",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "выбор цвета по роли: c_colour (форма → углы → цвет по признакам: цвет углов, доля в рамке мазка, доля на сетке) на тех же 23 задачах, сиды 0-2 (69 запусков); против coord_e",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_f_coord_f_0.jsonl",
+    "data/experiments/runs/kaggle/coord_f_coord_f_1.jsonl",
+    "data/experiments/runs/kaggle/coord_f_coord_f_2.jsonl",
+    "data/experiments/runs/kaggle/coord_f_coord_f_3.jsonl",
+    "data/experiments/runs/kaggle/coord_f_coord_f_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "vocab_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "полный словарь цветов, объекты: f_base (факторизованные головы, цвет по роли) на 24 объектных задачах, где тесту нужен цвет не из обучающих выходов, сиды 0-2 (72 запуска)",

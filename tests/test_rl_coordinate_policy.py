@@ -702,3 +702,75 @@ class TestStrokeColoursByRole:
         assert reader.width == (2 + 2 + 4) * 5 + 40
         with pytest.raises(ValueError, match="need cells"):
             CoordinateRows(2, 2, (), dim=4, cell_colours=True)
+
+
+class TestCellsReadFromTheirFeatures:
+    """'cell_features' in the observation: a cell of the coordinate heads is read from its features
+    (symbolic.cell_features) in place of its row and column."""
+
+    def features(self, grid, shape=(3, 3)):
+        from symbolic.cell_features import encoded
+        return torch.tensor(encoded(np.asarray(grid), shape)).unsqueeze(0)
+
+    def test_two_cells_alike_in_everything_but_place_are_read_alike(self):
+        reader = CoordinateRows(3, 3, (), dim=4, cells=True, cell_features=True)
+        grid = torch.zeros(1, 3, 3, dtype=torch.int64)
+        features = self.features(np.zeros((3, 3), dtype=int))
+        features[0, 2, 2] = features[0, 0, 0]                # (2, 2) described exactly as (0, 0)
+        cells, _ = reader.cell_embeddings({"grid": grid, "cell_features": features})
+        assert torch.allclose(cells[0, 0], cells[0, 8])
+        by_position, _ = CoordinateRows(3, 3, (), dim=4, cells=True).cell_embeddings({"grid": grid})
+        assert not torch.allclose(by_position[0, 0], by_position[0, 8])    # what c_cell reads: where they are
+
+    def test_a_cell_reads_differently_when_its_features_do(self):
+        reader = CoordinateRows(3, 3, (), dim=4, cells=True, cell_features=True)
+        with torch.no_grad():
+            for layer in reader.cell_encoder:
+                if isinstance(layer, torch.nn.Linear):
+                    layer.weight.normal_()
+        grid = torch.zeros(1, 3, 3, dtype=torch.int64)
+        plain = self.features(np.zeros((3, 3), dtype=int))
+        marked = np.zeros((3, 3), dtype=int)
+        marked[0, 2] = 4                                      # changes what (0, 0) sees to its right, not its colour
+        cells, _ = reader.cell_embeddings({"grid": grid, "cell_features": plain})
+        other, _ = reader.cell_embeddings({"grid": grid, "cell_features": self.features(marked)})
+        assert not torch.allclose(cells[0, 0], other[0, 0])
+
+    def test_the_features_are_one_hot_colours_and_scaled_counts(self):
+        from symbolic.cell_features import schema
+        reader = CoordinateRows(3, 3, (), dim=4, cells=True, cell_features=True)
+        names, colours = schema()
+        described = reader.described_cells(self.features(np.zeros((3, 3), dtype=int)))
+        assert described.shape == (1, 11 * len(colours) + len(names) - len(colours), 3, 3)
+        assert torch.allclose(described[0, :11 * len(colours)].sum(0), torch.full((3, 3), float(len(colours))))
+        assert described.min() >= 0 and described.max() <= 1
+        grid = np.zeros((3, 3), dtype=int)
+        grid[0, 1] = 2
+        described = reader.described_cells(self.features(grid))
+        k = [name for name in names if name in colours].index("colour")
+        assert described[0, 11 * k + 3, 0, 1] == 1 and described[0, 11 * k + 1, 0, 0] == 1   # red, black
+
+    def test_features_without_cells_are_refused(self):
+        with pytest.raises(ValueError, match="need cells"):
+            CoordinateRows(3, 3, (), dim=4, cell_features=True)
+
+    def test_an_agent_reading_cell_features_trains_and_its_env_computes_them_once(self, monkeypatch):
+        import symbolic.cell_features as cf
+        calls = []
+        original = cf.encoded
+        monkeypatch.setattr(cf, "encoded", lambda *a, **k: calls.append(1) or original(*a, **k))
+        vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=ACTIONS,
+                                 observation_space_elements=["delta_input", "delta_target", "cell_features"],
+                                 observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
+                                 addressing="coordinates", coordinate_shape=(7, 7))
+        try:
+            agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                                 {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
+                                  "coordinate_heads": "cells", "spatial_channels": 8})
+            assert agent.policy.features_extractor.coordinate_rows.cell_features
+            agent.learn(32)
+            obs = vec_env.reset()
+            assert obs["cell_features"].shape[1:3] == (7, 7) and obs["cell_features"].dtype == np.uint8
+            assert len(calls) <= 2                              # once per example's input, not once per step
+        finally:
+            vec_env.close()

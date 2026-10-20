@@ -173,6 +173,9 @@ The eighth series, the coordinate-addressed tasks (COORD_ARMS), against o_spatia
                 the first
     c_colour    c_cell choosing the stroke's shape, its corners, then its colour - scored from whether it is a corner's
                 colour and its share of the stroke's box and of the grid, never from a weight of its own
+    c_feat      c_cell with each cell read from its features (symbolic.cell_features: neighbours, the nearest colour
+                along each direction, its object and blob, its mirror images) in place of its row and column, which
+                the policy memorised; on those features a tree carries 7 of the 23 tasks to the test (feature_probe)
 
 The ninth series, when to submit (HONEST_ARMS), judged by held_out_honest against o_spatial's:
 
@@ -313,6 +316,9 @@ ARMS = {
     # c_cell choosing the stroke's shape, then its corners, then its colour from what the grid shows of each colour.
     "c_colour": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "coordinate_submit_from": 0.5,
                                     "coordinate_heads": "cell_colours"}),
+    # c_cell reading each cell from its features in place of its position (rl.features.CoordinateRows).
+    "c_feat": ([*DEFAULT_ELEMENTS, "cell_features"], {"spatial_channels": 32, "coordinate_submit_from": 0.5,
+                                                      "coordinate_heads": "cells"}),
     # The ninth series, when to submit: o_spatial trained with episodes that do not end by themselves on the
     # answer (stop_on_solve in rl_configs, an environment setting and not a PPO one - see ENV_SETTINGS).
     "h_nostop": (DEFAULT_ELEMENTS, {"spatial_channels": 32, "stop_on_solve": False}),

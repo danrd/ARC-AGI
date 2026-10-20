@@ -7,6 +7,7 @@ from rl.arc_world import World
 from symbolic.utils import pad_grid
 from symbolic.objects_analysis import OBJECT_DIM
 from symbolic.summaries import GridSummary, RELATION_DIM
+from symbolic import cell_features
 
 #: Embeddings are real-valued, unlike every other part of the observation
 #: (grids and the action space are integer). Casting them to the grid's dtype
@@ -278,6 +279,20 @@ class ARCGridWorld(gymnasium.Env):
                                    != other[:rows, :cols]).astype(self.grid_dtype)
             obs[key] = self.observed_grid(plane) if self.obs_grid_shape is None \
                 else self._padded_delta(plane)
+
+    def _add_cell_features(self, obs):
+        """Each cell's features (symbolic.cell_features.encoded) of the example's input, when the observation asked
+        for them: its neighbours, the nearest colour along each direction, its object and blob, its mirror images -
+        what the coordinate policy reads of a cell in place of where it is. A function of the input alone, so the
+        test pair has them like any other, and computed once per input rather than on every step."""
+        if "cell_features" not in self.observation_space_elements:
+            return
+        shape = self.observation_space["cell_features"].shape[:2]
+        key = (np.asarray(self.train_inp).tobytes(), np.asarray(self.train_inp).shape, shape)
+        if getattr(self, "_cell_features_key", None) != key:
+            self._cell_features = cell_features.encoded(self.train_inp, shape)
+            self._cell_features_key = key
+        obs["cell_features"] = self._cell_features.copy()
 
     def _padded_delta(self, plane):
         """A delta padded with zeros rather than pad_val.
@@ -557,6 +572,12 @@ class ARCGridWorld(gymnasium.Env):
                     low=0, high=1,
                     shape=self.obs_grid_shape or (shape_x, shape_y),
                     dtype=self.grid_dtype)
+        if "cell_features" in self.observation_space_elements:
+            # Fixed for the episode and read by the coordinate policy's cells: see _add_cell_features. Sized by the
+            # observed grid, the cells past the input's own size zero.
+            self.observation_space['cell_features'] = spaces.Box(
+                low=0, high=255, shape=(*(self.obs_grid_shape or (shape_x, shape_y)), len(cell_features.schema()[0])),
+                dtype=np.uint8)
         # Both embedding blocks are sized by max_objects, not by this
         # subtask's object count, so they are the same shape for every
         # subtask - see MAX_OBJECTS.
@@ -702,6 +723,7 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
         self._add_deltas(obs)
+        self._add_cell_features(obs)
         if "objects_emb" in self.observation_space_elements:
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
         if "relations_emb" in self.observation_space_elements:
@@ -734,6 +756,7 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
         self._add_deltas(obs)
+        self._add_cell_features(obs)
         if "objects_emb" in self.observation_space_elements:
             self.objects_emb = self.initial_objects_emb.copy()
             obs['objects_emb'] = self.objects_emb.copy().astype(EMBEDDING_DTYPE)
@@ -796,6 +819,7 @@ class ARCGridWorld(gymnasium.Env):
         if "target" in self.observation_space_elements:
             obs['target'] = self.observed_grid(self.train_out)
         self._add_deltas(obs)
+        self._add_cell_features(obs)
         if "objects_emb" in self.observation_space_elements:
             # Same shape and dtype as reset() and submit_grid() hand back: an
             # episode whose observations change shape or type partway through

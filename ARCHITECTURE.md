@@ -215,18 +215,18 @@ graph TD
   rl["rl (20)"]
   scripts["scripts (20)"]
   subsymbolic["subsymbolic (15)"]
-  symbolic["symbolic (10)"]
-  tests["tests (92)"]
+  symbolic["symbolic (11)"]
+  tests["tests (93)"]
   utils["utils (3)"]
   tests -->|113| rl
   tests -->|48| subsymbolic
   tests -->|40| orchestration
-  tests -->|34| symbolic
+  tests -->|36| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
   scripts -->|17| rl
+  rl -->|13| symbolic
   rl -->|11| data
-  rl -->|11| symbolic
   orchestration -->|7| rl
   orchestration -->|6| symbolic
   scripts -->|6| subsymbolic
@@ -235,7 +235,7 @@ graph TD
   orchestration -->|3| data
   rl -->|3| utils
   scripts -->|3| data
-  scripts -->|2| symbolic
+  scripts -->|3| symbolic
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
@@ -328,6 +328,7 @@ graph TD
 | `subsymbolic.subsymbolic_module` | 7 |
 | `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |
+| `symbolic.cell_features` | 2 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 5 |
 | `symbolic.invariants` | 5 |
@@ -345,7 +346,7 @@ Packages that import each other:
   - `data.configs.rl_configs imports rl.policy`
   - `data.configs.rl_configs imports rl.utils`
   - `data.datasets.ARC.arc_dataset imports rl.arc_task`
-- `symbolic` -> `rl` (1) against `rl` -> `symbolic` (11):
+- `symbolic` -> `rl` (1) against `rl` -> `symbolic` (13):
   - `symbolic.summaries imports rl.arc_task`
 - `data` -> `utils` (1) against `utils` -> `data` (1):
   - `data.datasets.ARC.arc_dataset imports utils.utils`

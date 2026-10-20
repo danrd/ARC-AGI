@@ -16,6 +16,7 @@ from symbolic.objects_analysis import (
     TOPOLOGY,
     group_indices,
 )
+from symbolic import cell_features as cell_feature_schema
 from symbolic.summaries import (
     RELATION_DIM,
     SHAPE_REL,
@@ -1333,7 +1334,8 @@ class CoordinateRows(nn.Module):
     """
 
     def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64,
-                 spatial_channels: int = 0, cells: bool = False, cell_colours: bool = False):
+                 spatial_channels: int = 0, cells: bool = False, cell_colours: bool = False,
+                 cell_features: bool = False):
         """`spatial_channels` reads each row and column from the backbone's
         map (SpatialBackbone.over_lines) rather than from its raw cells:
         the same weights for every row, where the raw reading gives each
@@ -1351,17 +1353,35 @@ class CoordinateRows(nn.Module):
         `cell_colours` adds each cell's colour in the observed grid after the
         cells, ten numbers a cell: what the 'cell_colours' coordinate heads
         score a stroke's colour against ("the colour of the first corner")
-        instead of a weight learnt per colour."""
+        instead of a weight learnt per colour.
+
+        `cell_features` reads a cell from the observation's 'cell_features'
+        (symbolic.cell_features) in place of its position: its neighbours,
+        the nearest colour along each direction and how far, its object and
+        blob, its mirror images. Its row and column number are what a policy
+        memorises - it paints where the answer was on the training grids -
+        and a tree over these features carries 7 of the 23 coordinate tasks'
+        rules to the test where position carries none (feature_probe). A
+        colour feature comes in as eleven one-hot numbers (none and the ten
+        colours), a count as log(1 + count) / log(256).
+        """
         if cell_colours and not cells:
             raise ValueError("cell_colours are read beside the cells: they need cells=True")
+        if cell_features and not cells:
+            raise ValueError("cell_features are how a cell is read: they need cells=True")
         super().__init__()
+        self.cell_features = cell_features
+        names, colours = cell_feature_schema.schema()
+        self.register_buffer("feature_is_colour", torch.tensor([name in colours for name in names]),
+                             persistent=False)
+        described = (11 * len(colours) + len(names) - len(colours)) if cell_features else 2
         self.cell_colours = cell_colours
         self.rows, self.cols = rows, cols
         self.delta_keys = tuple(delta_keys)
         self.spatial_channels = spatial_channels
         self.cells = cells
         channels = 10 + len(self.delta_keys)
-        self.cell_encoder = (nn.Sequential(nn.Linear((spatial_channels or channels) + 2, hidden), nn.ReLU(),
+        self.cell_encoder = (nn.Sequential(nn.Linear((spatial_channels or channels) + described, hidden), nn.ReLU(),
                                            nn.Linear(hidden, dim)) if cells else None)
         row_in = 2 * spatial_channels + 1 if spatial_channels else cols * channels + 1
         col_in = 2 * spatial_channels + 1 if spatial_channels else rows * channels + 1
@@ -1427,13 +1447,25 @@ class CoordinateRows(nn.Module):
         row_mask, col_mask = self.masks(observation)
         source = cell_map if self.spatial_channels else self.planes(observation)
         batch = source.shape[0]
-        where_row = torch.linspace(0, 1, self.rows, device=source.device).view(1, 1, -1, 1)
-        where_col = torch.linspace(0, 1, self.cols, device=source.device).view(1, 1, 1, -1)
-        position = torch.cat([where_row.expand(batch, 1, self.rows, self.cols),
-                              where_col.expand(batch, 1, self.rows, self.cols)], dim=1)
-        cells = torch.cat([source, position], dim=1).flatten(2).transpose(1, 2)
+        if self.cell_features:
+            described = self.described_cells(observation["cell_features"])
+        else:
+            where_row = torch.linspace(0, 1, self.rows, device=source.device).view(1, 1, -1, 1)
+            where_col = torch.linspace(0, 1, self.cols, device=source.device).view(1, 1, 1, -1)
+            described = torch.cat([where_row.expand(batch, 1, self.rows, self.cols),
+                                   where_col.expand(batch, 1, self.rows, self.cols)], dim=1)
+        cells = torch.cat([source, described], dim=1).flatten(2).transpose(1, 2)
         mask = (row_mask.unsqueeze(2) * col_mask.unsqueeze(1)).flatten(1)
         return self.cell_encoder(cells), mask
+
+    def described_cells(self, features):
+        """(batch, rows, cols, features) of encoded cell features -> (batch, width, rows, cols): the colour ones as
+        one-hot over none and the ten colours, the counts as log(1 + count) / log(256)."""
+        features = features.to(torch.int64)
+        colours = torch.nn.functional.one_hot(features[..., self.feature_is_colour].clamp(0, 10), num_classes=11)
+        colours = colours.flatten(-2).float()
+        counts = torch.log1p(features[..., ~self.feature_is_colour].float()) / torch.log(torch.tensor(256.0))
+        return torch.cat([colours, counts], dim=-1).permute(0, 3, 1, 2)
 
     @property
     def width(self) -> int:
@@ -1591,6 +1623,12 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 readout = DeltaReadout()
                 extractors[key] = readout
                 total_concat_size += readout.out_dim
+            elif key == 'cell_features':
+                # How the coordinate heads' cells are read, not a branch of its own: see CoordinateRows.
+                if not (coordinate_dim and coordinate_cells):
+                    raise ValueError("cell_features are read by the coordinate heads' cells: they need "
+                                     "coordinate_dim and coordinate_cells")
+                continue
             elif key == 'grid_shape':
                 # Not a feature to embed: it is there to undo the
                 # observation padding, and forward() below uses it for
@@ -1675,7 +1713,8 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 [key for key in DELTA_KEYS if key in observation_space.spaces],
                 dim=coordinate_dim,
                 spatial_channels=spatial_channels if "grid" in observation_space.spaces else 0,
-                cells=coordinate_cells, cell_colours=coordinate_cell_colours)
+                cells=coordinate_cells, cell_colours=coordinate_cell_colours,
+                cell_features="cell_features" in observation_space.spaces)
             total_concat_size += self.coordinate_rows.width
         #: What the factored object heads read besides the rows: each
         #: slot's raw embedding - its colour shares and where its mass sits

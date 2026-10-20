@@ -13,6 +13,10 @@ either as a colour or as a role - "the colour of the nearest cell to the left", 
 since 11 of the 23 tasks need a colour on the test that no training output has. The tree grows until its leaves
 are pure, to a cap on depth, so a simple rule stays a shallow tree.
 
+More features also give a greedy tree more ways to fit the training pairs by accident (the rich set wins three tasks
+over the structure set and loses three others), so a task also picks its set the way it could without its test:
+by how its trees do on each training pair left out in turn ("chosen").
+
     python scripts/feature_probe.py                       # the 23 coordinate tasks, every feature set
     python scripts/feature_probe.py --tasks 3eda0437 --out probe.json
 """
@@ -31,7 +35,7 @@ COORDINATE_TASKS = ("0ca9ddb6", "11852cab", "1bfc4729", "29623171", "29c11459", 
 OUTSIDE = -1                     # the colour of a neighbour off the grid
 DIRECTIONS = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0),
               "up_left": (-1, -1), "up_right": (-1, 1), "down_left": (1, -1), "down_right": (1, 1)}
-FEATURE_SETS = ("position", "neighbours", "structure", "structure_and_position")
+FEATURE_SETS = ("position", "neighbours", "structure", "structure_and_position", "rich", "rich_and_position")
 
 
 def background(grid):
@@ -102,13 +106,13 @@ def cell_features(grid, feature_set):
     rows, cols = np.indices(grid.shape)
     features = {"colour": grid, "is_background": (grid == bg).astype(int)}
     colours = {"colour"}
-    if feature_set in ("position", "structure_and_position"):
+    if feature_set.endswith("position"):
         features.update(row=rows, col=cols)
-    if feature_set in ("neighbours", "structure", "structure_and_position"):
+    if feature_set != "position":
         near = neighbour_colours(grid)
         features.update(near)
         colours |= set(near)
-    if feature_set in ("structure", "structure_and_position"):
+    if feature_set.startswith(("structure", "rich")):
         along = nearest_along(grid, bg)
         features.update(along)
         colours |= {name for name in along if name.startswith("nearest_")}
@@ -121,7 +125,67 @@ def cell_features(grid, feature_set):
             features[f"col_has_{colour}"] = np.broadcast_to((grid == colour).any(axis=0, keepdims=True), grid.shape)
         features["row_foreground"] = np.broadcast_to((grid != bg).sum(axis=1, keepdims=True), grid.shape)
         features["col_foreground"] = np.broadcast_to((grid != bg).sum(axis=0, keepdims=True), grid.shape)
+    if feature_set.startswith("rich"):
+        extra, extra_colours = rich_features(grid, bg, features)
+        features.update(extra)
+        colours |= extra_colours
     return {name: np.asarray(value).astype(int) for name, value in features.items()}, colours
+
+
+def blob_features(grid, bg):
+    """Each cell's blob - the 8-connected cells that are not background, of any colour - by its size, how many
+    colours it has, its commonest and its rarest colour (OUTSIDE for background cells): where "recolour the shape in
+    its other colour" reads its colour from."""
+    out = {"blob_size": np.zeros(grid.shape, dtype=int), "blob_colours": np.zeros(grid.shape, dtype=int),
+           "blob_majority": np.full(grid.shape, OUTSIDE), "blob_minority": np.full(grid.shape, OUTSIDE)}
+    labels, _ = ndimage.label(grid != bg, structure=np.ones((3, 3)))
+    for index, box in enumerate(ndimage.find_objects(labels), start=1):
+        cells = labels == index
+        counts = np.bincount(grid[cells], minlength=10)
+        present = np.nonzero(counts)[0]
+        out["blob_size"][cells] = cells.sum()
+        out["blob_colours"][cells] = len(present)
+        out["blob_majority"][cells] = present[counts[present].argmax()]
+        out["blob_minority"][cells] = present[counts[present].argmin()]
+    return out
+
+
+def rich_features(grid, bg, structure):
+    """What the structure set lacked on the tasks it missed: how many neighbours of each colour a cell has (a rule
+    "next to red" is one split, not an "or" of eight), the colour of its mirror images (symmetry tasks), its position
+    modulo 2 and 3 (every third column), whether markers close it in on all four sides, its blob, and the grid's
+    rarest and commonest colours as sources for a new colour."""
+    rows, cols = grid.shape
+    near = {name: value for name, value in structure.items() if name.startswith("next_")}
+    orthogonal = [near[f"next_{d}"] for d in ("left", "right", "up", "down")]
+    diagonal = [near[f"next_{d}"] for d in ("up_left", "up_right", "down_left", "down_right")]
+    extra, colours = {}, set()
+    for colour in range(10):
+        extra[f"orthogonal_{colour}"] = sum((n == colour).astype(int) for n in orthogonal)
+        extra[f"diagonal_{colour}"] = sum((n == colour).astype(int) for n in diagonal)
+    extra["orthogonal_foreground"] = sum(((n != bg) & (n != OUTSIDE)).astype(int) for n in orthogonal)
+    extra["diagonal_foreground"] = sum(((n != bg) & (n != OUTSIDE)).astype(int) for n in diagonal)
+    extra["mirror_left_right"] = grid[:, ::-1]
+    extra["mirror_up_down"] = grid[::-1, :]
+    extra["mirror_both"] = grid[::-1, ::-1]
+    extra["mirror_diagonal"] = grid.T if rows == cols else np.full(grid.shape, OUTSIDE)
+    colours |= {"mirror_left_right", "mirror_up_down", "mirror_both", "mirror_diagonal"}
+    r, c = np.indices(grid.shape)
+    for k in (2, 3):
+        extra[f"row_mod_{k}"], extra[f"col_mod_{k}"] = r % k, c % k
+        extra[f"row_from_bottom_mod_{k}"], extra[f"col_from_right_mod_{k}"] = (rows - 1 - r) % k, (cols - 1 - c) % k
+    sides = [structure[f"nearest_{d}"] for d in ("left", "right", "up", "down")]
+    extra["closed_in"] = np.logical_and.reduce([side != OUTSIDE for side in sides]).astype(int)
+    extra["closed_in_by_one_colour"] = (extra["closed_in"].astype(bool)
+                                        & np.logical_and.reduce([side == sides[0] for side in sides])).astype(int)
+    extra.update(blob_features(grid, bg))
+    colours |= {"blob_majority", "blob_minority"}
+    counts = np.bincount(grid[grid != bg], minlength=10) if (grid != bg).any() else np.zeros(10, dtype=int)
+    present = np.nonzero(counts)[0]
+    extra["grid_majority"] = np.full(grid.shape, present[counts[present].argmax()] if len(present) else OUTSIDE)
+    extra["grid_minority"] = np.full(grid.shape, present[counts[present].argmin()] if len(present) else OUTSIDE)
+    colours |= {"grid_majority", "grid_minority"}
+    return extra, colours
 
 
 def table(grids, feature_set):
@@ -236,9 +300,8 @@ def apply_colours(labels, x, names):
     return out
 
 
-def probe_task(train, test_input, test_output, feature_set, max_depth=6):
-    """How a tree over `feature_set` does on one task: whether it reproduces the training outputs, and how much of
-    the test output it gets right."""
+def fit(train, feature_set, max_depth=6):
+    """The two trees for a task's training pairs over `feature_set`: which cells change, and what they become."""
     inputs = [np.asarray(p["input"]) for p in train]
     outputs = [np.asarray(p["output"]) for p in train]
     x, names, colours = table(inputs, feature_set)
@@ -249,22 +312,59 @@ def probe_task(train, test_input, test_output, feature_set, max_depth=6):
     change_tree, change_fits = fitted_tree(x, changed.astype(int), categorical, max_depth)
     labels = new_colour_labels(x[changed], names, colours, after[changed])
     colour_tree, colour_fits = fitted_tree(x[changed], labels, categorical, max_depth)
+    return {"set": feature_set, "names": names, "change": change_tree, "colour": colour_tree, "labels": labels,
+            "fits": bool(change_fits and colour_fits)}
 
-    test_input, test_output = np.asarray(test_input), np.asarray(test_output)
-    tx, _, _ = table([test_input], feature_set)
-    will_change = predict(change_tree, tx).astype(int) == 1
-    guess = test_input.ravel().copy()
+
+def apply(model, grid):
+    """The output the trees give for `grid`, and the cells they change."""
+    grid = np.asarray(grid)
+    x, _, _ = table([grid], model["set"])
+    will_change = predict(model["change"], x).astype(int) == 1
+    guess = grid.ravel().copy()
     if will_change.any():
-        guess[will_change] = apply_colours(predict(colour_tree, tx[will_change]), tx[will_change], names)
-    guess = guess.reshape(test_input.shape)
+        guess[will_change] = apply_colours(predict(model["colour"], x[will_change]), x[will_change], model["names"])
+    return guess.reshape(grid.shape), will_change.reshape(grid.shape)
+
+
+def held_out_pairs(train, feature_set, max_depth=6):
+    """(pairs reproduced, mean cell accuracy) when each training pair in turn is predicted from the others: how well
+    a feature set's trees generalise, measured on the training pairs alone."""
+    if len(train) < 2:
+        return (0, 0.0)
+    right, accuracy = 0, []
+    for i, pair in enumerate(train):
+        guess, _ = apply(fit(train[:i] + train[i + 1:], feature_set, max_depth), pair["input"])
+        want = np.asarray(pair["output"])
+        right += int(guess.shape == want.shape and (guess == want).all())
+        accuracy.append(float((guess == want).mean()))
+    return (right, round(float(np.mean(accuracy)), 4))
+
+
+def probe_task(train, test_input, test_output, feature_set, max_depth=6):
+    """How a tree over `feature_set` does on one task: whether it reproduces the training outputs, how it does on
+    each training pair left out in turn, and how much of the test output it gets right."""
+    model = fit(train, feature_set, max_depth)
+    test_input, test_output = np.asarray(test_input), np.asarray(test_output)
+    guess, will_change = apply(model, test_input)
     truly_changed = test_output != test_input
-    return {"fits_train": bool(change_fits and colour_fits), "test_solved": bool((guess == test_output).all()),
-            "test_changed_cells_right": bool((will_change.reshape(test_input.shape) == truly_changed).all()),
+    return {"fits_train": model["fits"], "held_out_pairs": held_out_pairs(train, feature_set, max_depth),
+            "test_solved": bool((guess == test_output).all()),
+            "test_changed_cells_right": bool((will_change == truly_changed).all()),
             "test_cell_accuracy": round(float((guess == test_output).mean()), 4),
             "changed_cells_right": round(float((guess[truly_changed] == test_output[truly_changed]).mean()), 4)
             if truly_changed.any() else 1.0,
-            "colour_labels": sorted(set(labels.tolist())),
-            "change_rule": describe(change_tree, names)[:400], "colour_rule": describe(colour_tree, names)[:300]}
+            "colour_labels": sorted(set(model["labels"].tolist())),
+            "change_rule": describe(model["change"], model["names"])[:400],
+            "colour_rule": describe(model["colour"], model["names"])[:300]}
+
+
+def chosen(results, candidates=("neighbours", "structure", "rich")):
+    """The feature set a task would pick without seeing its test: the one whose trees reproduce most training pairs
+    held out in turn, then the best cell accuracy on them, then the simplest. More features also give a greedy tree
+    more ways to fit the training pairs by accident; the held-out pairs are what tells the two apart."""
+    present = [name for name in candidates if name in results]
+    return max(present, key=lambda name: (tuple(results[name]["held_out_pairs"]), -present.index(name)))
 
 
 def main():
@@ -281,11 +381,16 @@ def main():
         challenge = challenges[task]
         results[task] = {name: probe_task(challenge["train"], challenge["test"][0]["input"], solutions[task][0],
                                           name, args.max_depth) for name in args.sets}
+    for task in results:
+        if any(name in results[task] for name in ("neighbours", "structure", "rich")):
+            pick = chosen(results[task])
+            results[task]["chosen"] = {"set": pick, **results[task][pick]}
+    names = [name for name in args.sets] + (["chosen"] if any("chosen" in r for r in results.values()) else [])
     summary = {name: {"fits_train": sum(results[t][name]["fits_train"] for t in results),
                       "test_solved": sum(results[t][name]["test_solved"] for t in results),
                       "test_changed_cells_right": sum(results[t][name]["test_changed_cells_right"] for t in results),
                       "solved": sorted(t for t in results if results[t][name]["test_solved"])}
-               for name in args.sets}
+               for name in names}
     Path(args.out).write_text(json.dumps({"max_depth": args.max_depth, "summary": summary, "tasks": results},
                                          indent=1, ensure_ascii=False) + "\n")
     print(f"{'feature set':24} {'fits train':>10} {'which cells':>12} {'test solved':>12}")

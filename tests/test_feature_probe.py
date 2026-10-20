@@ -109,3 +109,79 @@ def test_a_colour_no_training_output_has_comes_through_a_role():
     test = recolour(7, 1)
     result = fp.probe_task(train, test["input"], test["output"], "structure")
     assert result["test_solved"] and result["colour_labels"] == ["src:nearest_left"]
+
+
+def test_the_rich_set_counts_neighbours_by_colour_and_reads_mirrors_periods_and_blobs():
+    grid = np.array([[2, 0, 0, 0],
+                     [0, 0, 0, 0],
+                     [0, 0, 5, 5],
+                     [0, 0, 5, 7]])
+    features, colours = fp.cell_features(grid, "rich")
+    assert features["diagonal_2"][1, 1] == 1 and features["orthogonal_2"][1, 1] == 0
+    assert features["orthogonal_5"][2, 1] == 1 and features["orthogonal_foreground"][3, 2] == 2
+    assert features["mirror_both"][0, 0] == 7 and features["mirror_left_right"][0, 3] == 2
+    assert features["mirror_up_down"][3, 0] == 2
+    square = fp.cell_features(np.array([[1, 2], [3, 4]]), "rich")[0]
+    assert square["mirror_diagonal"].tolist() == [[1, 3], [2, 4]]
+    assert features["col_mod_3"][0, 3] == 0 and features["col_from_right_mod_2"][0, 2] == 1
+    assert features["blob_size"][2, 2] == 4 and features["blob_colours"][3, 3] == 2
+    assert features["blob_majority"][3, 3] == 5 and features["blob_minority"][2, 2] == 7
+    assert features["blob_majority"][1, 1] == fp.OUTSIDE
+    assert features["grid_majority"][0, 0] == 5 and features["grid_minority"][0, 0] in (2, 7)
+    assert {"mirror_both", "blob_minority", "grid_majority"} <= colours and "blob_size" not in colours
+    wide = fp.cell_features(np.zeros((2, 3), dtype=int), "rich")[0]
+    assert (wide["mirror_diagonal"] == fp.OUTSIDE).all()
+
+
+def test_a_cell_closed_in_by_markers_on_four_sides_is_known_and_by_which_colours():
+    grid = np.array([[0, 0, 3, 0, 0],
+                     [3, 0, 0, 0, 3],
+                     [0, 0, 3, 0, 0]])
+    features, _ = fp.cell_features(grid, "rich")
+    assert features["closed_in"][1, 2] == 1 and features["closed_in_by_one_colour"][1, 2] == 1
+    assert features["closed_in"][0, 0] == 0
+    grid[2, 2] = 4
+    features, _ = fp.cell_features(grid, "rich")
+    assert features["closed_in"][1, 2] == 1 and features["closed_in_by_one_colour"][1, 2] == 0
+
+
+def test_a_rule_that_holds_on_every_pair_is_reproduced_on_each_pair_held_out():
+    train = [between_task(9, 1, 1, 5, 2), between_task(9, 3, 2, 7, 2), between_task(10, 0, 4, 8, 2)]
+    assert fp.held_out_pairs(train, "structure") == (3, 1.0)
+    assert fp.held_out_pairs(train, "position")[0] < 3
+    assert fp.held_out_pairs(train[:1], "structure") == (0, 0.0)
+
+
+def test_the_set_chosen_is_the_one_that_does_best_on_held_out_pairs_and_the_simplest_on_a_tie():
+    results = {"neighbours": {"held_out_pairs": [0, 0.9]}, "structure": {"held_out_pairs": [2, 0.95]},
+               "rich": {"held_out_pairs": [2, 0.95]}, "position": {"held_out_pairs": [3, 1.0]}}
+    assert fp.chosen(results) == "structure"
+    results["rich"]["held_out_pairs"] = [2, 0.97]
+    assert fp.chosen(results) == "rich"
+    assert fp.chosen({"neighbours": {"held_out_pairs": [0, 0.5]}}) == "neighbours"
+
+
+def test_a_pair_held_out_is_predicted_from_the_others_only(monkeypatch):
+    pairs = [{"input": [[k]], "output": [[k + 1]]} for k in range(3)]
+    seen = []
+
+    def fake_fit(train, feature_set, max_depth=6):
+        seen.append([p["input"][0][0] for p in train])
+        return train
+
+    def fake_apply(model, grid):                         # a memoriser: right only on a pair it was fitted on
+        known = {p["input"][0][0]: p["output"] for p in model}
+        return np.array(known.get(grid[0][0], [[-1]])), None
+
+    monkeypatch.setattr(fp, "fit", fake_fit)
+    monkeypatch.setattr(fp, "apply", fake_apply)
+    assert fp.held_out_pairs(pairs, "structure") == (0, 0.0)
+    assert seen == [[1, 2], [0, 2], [0, 1]]
+
+
+def test_a_blob_holds_cells_that_touch_only_at_a_corner():
+    grid = np.array([[3, 0, 0],
+                     [0, 4, 0],
+                     [0, 0, 0]])
+    features, _ = fp.cell_features(grid, "rich")
+    assert features["blob_size"][0, 0] == 2 and features["blob_colours"][1, 1] == 2

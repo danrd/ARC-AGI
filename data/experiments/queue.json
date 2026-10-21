@@ -4585,12 +4585,18 @@
    "name": "coord_g2",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "coord_g заново после исправления: признаки клетки идут в наблюдении как int16 (в coord_g stable-baselines принял их за картинку и поделил на 255 — политика видела нули, а на части задач падала). c_feat на 23 координатных задачах, сиды 0-2 (69 запусков); против coord_e (c_cell с позицией)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_g2_coord_g2_0.jsonl",
+    "data/experiments/runs/kaggle/coord_g2_coord_g2_1.jsonl",
+    "data/experiments/runs/kaggle/coord_g2_coord_g2_2.jsonl",
+    "data/experiments/runs/kaggle/coord_g2_coord_g2_3.jsonl",
+    "data/experiments/runs/kaggle/coord_g2_coord_g2_4.jsonl"
+   ],
+   "cleaned": true
   },
   {
    "name": "tpu_gemma4j",

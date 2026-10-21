@@ -1,0 +1,90 @@
+"""The shortest cell rule (symbolic.rule_search): atoms, formulas for the changed cells, colour models, and the whole
+search on small tasks whose rule is known."""
+import numpy as np
+
+from symbolic import rule_search as rs
+
+
+def pair(grid, out):
+    return {"input": np.asarray(grid).tolist(), "output": np.asarray(out).tolist()}
+
+
+def test_atoms_are_distinct_masks_with_equalities_on_colours_and_thresholds_between_counts():
+    x = np.array([[0, 0], [1, 3], [2, 5], [1, 5]])
+    found, masks = rs.atoms(x, ["colour", "size"], {"colour"})
+    text = [str(a) for a in found]
+    assert "colour == 1" in text and "colour != 1" in text and "size <= 3" in text and "size > 3" in text
+    assert len({m.tobytes() for m in masks}) == len(masks)              # no two atoms with the same cells
+    assert "size <= 0" not in text                                      # the same cells as colour == 0, said first
+    assert not any(m.all() or not m.any() for m in masks)
+    assert "size == 3" not in text                                      # a count of three values gets thresholds
+
+
+def test_the_cheapest_formula_comes_first_and_a_disjunction_is_found_when_nothing_shorter_fits():
+    x = np.array([[0, 1], [0, 2], [1, 1], [1, 2], [2, 3]])
+    found, masks = rs.atoms(x, ["a", "b"], {"a", "b"})
+    target = np.array([False, False, True, True, False])
+    best = rs.formulas_for(target, found, masks)
+    assert best[0][0] == 1.0 and [str(found[i]) for i in best[0][1][0]] == ["a == 1"]
+    either = np.array([True, False, False, False, True])               # (a == 0 and b == 1) or a == 2
+    rules = rs.formulas_for(either, found, masks)
+    assert rules and all(np.array_equal(rs.holds(r, found, x, ["a", "b"]), either) for _, r in rules)
+    assert rs.formulas_for(np.zeros(5, dtype=bool), found, masks) == [(0.0, ())]
+
+
+def between_task(width, row, left, right, colour):
+    grid = np.zeros((5, width), dtype=int)
+    grid[row, left] = grid[row, right] = colour
+    out = grid.copy()
+    out[row, left + 1:right] = 4
+    return pair(grid, out)
+
+
+def test_a_rule_about_structure_is_found_and_carries_to_a_test_in_a_new_place():
+    train = [between_task(9, 1, 1, 5, 2), between_task(9, 3, 2, 7, 2), between_task(10, 0, 4, 8, 2)]
+    test = between_task(10, 4, 0, 3, 2)
+    rules = rs.search(train)
+    assert rules and "between_left_right" in rules[0].describe()
+    assert np.array_equal(rs.attempts(rules, test["input"])[0], test["output"])
+
+
+def test_a_colour_no_training_output_has_comes_from_a_role():
+    def recolour(colour, row):
+        grid = np.zeros((4, 6), dtype=int)
+        grid[row, 0] = colour
+        out = grid.copy()
+        out[row, 1:] = colour
+        return pair(grid, out)
+
+    rules = rs.search([recolour(3, 0), recolour(5, 2), recolour(3, 3)])
+    assert rules and "src:" in rules[0].describe()
+    test = recolour(7, 1)
+    assert np.array_equal(rules[0].apply(test["input"]), test["output"])
+
+
+def test_three_labels_split_by_atoms_colour_the_cells_between_two_markers():
+    def bridge(row, left_colour, right_colour):
+        grid = np.zeros((3, 11), dtype=int)
+        grid[row, 0], grid[row, 10] = left_colour, right_colour
+        out = grid.copy()
+        out[row, 1:5], out[row, 5], out[row, 6:10] = left_colour, 5, right_colour
+        return pair(grid, out)
+
+    train = [bridge(0, 1, 2), bridge(2, 3, 4)]
+    rules = rs.search(train)
+    test = bridge(1, 6, 7)
+    assert rules and any(np.array_equal(g, test["output"]) for g in rs.attempts(rules, test["input"]))
+
+
+def test_a_task_that_changes_shape_has_no_rule_and_the_attempts_differ():
+    assert rs.search([pair(np.zeros((2, 2), dtype=int), np.zeros((3, 3), dtype=int))]) == []
+    train = [between_task(9, 1, 1, 5, 2), between_task(9, 3, 2, 7, 2)]
+    rules = rs.search(train)
+    tries = rs.attempts(rules, between_task(10, 4, 0, 3, 2)["input"])
+    assert 1 <= len(tries) <= 2 and (len(tries) == 1 or not np.array_equal(tries[0], tries[1]))
+
+
+def test_a_rule_that_does_not_reproduce_every_pair_is_not_returned():
+    train = [between_task(9, 1, 1, 5, 2), pair(np.eye(4, dtype=int), np.eye(4, dtype=int)[::-1])]
+    for rule in rs.search(train):
+        assert all(np.array_equal(rule.apply(p["input"]), p["output"]) for p in train)

@@ -213,15 +213,15 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (21)"]
   rl["rl (20)"]
-  scripts["scripts (20)"]
+  scripts["scripts (21)"]
   subsymbolic["subsymbolic (15)"]
-  symbolic["symbolic (11)"]
-  tests["tests (93)"]
+  symbolic["symbolic (12)"]
+  tests["tests (95)"]
   utils["utils (3)"]
   tests -->|113| rl
   tests -->|48| subsymbolic
   tests -->|40| orchestration
-  tests -->|36| symbolic
+  tests -->|37| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
   scripts -->|17| rl
@@ -230,12 +230,12 @@ graph TD
   orchestration -->|7| rl
   orchestration -->|6| symbolic
   scripts -->|6| subsymbolic
-  tests -->|5| scripts
+  tests -->|6| scripts
+  scripts -->|4| symbolic
   data -->|3| rl
   orchestration -->|3| data
   rl -->|3| utils
   scripts -->|3| data
-  scripts -->|3| symbolic
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
@@ -305,6 +305,7 @@ graph TD
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |
 | `scripts.rl_compare` | 0 |
+| `scripts.rule_probe` | 0 |
 | `scripts.run_prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |
@@ -328,12 +329,13 @@ graph TD
 | `subsymbolic.subsymbolic_module` | 7 |
 | `subsymbolic.utils` | 12 |
 | `symbolic.analyzer` | 3 |
-| `symbolic.cell_features` | 2 |
+| `symbolic.cell_features` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 5 |
 | `symbolic.invariants` | 5 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
+| `symbolic.rule_search` | 0 |
 | `symbolic.summaries` | 11 |
 | `symbolic.symbolic_module` | 8 |
 | `symbolic.utils` | 11 |

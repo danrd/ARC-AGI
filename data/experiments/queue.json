@@ -4613,12 +4613,18 @@
    "name": "coord_h",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "меньше признаков: c_core (c_feat, но 25 самых простых признаков клетки из 103 — цвет и соседи, ближайший цвет и расстояние по 4 направлениям, «между», размер объекта, край рамки, зеркала) на 11 задачах, где что-то получалось у дерева или RL, сиды 0-2 (33 запуска); против coord_g2 (c_feat, все 103). Дерево на этих 25 решает 6 тестов против 5 на 103",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/coord_h_coord_h_0.jsonl",
+    "data/experiments/runs/kaggle/coord_h_coord_h_1.jsonl",
+    "data/experiments/runs/kaggle/coord_h_coord_h_2.jsonl",
+    "data/experiments/runs/kaggle/coord_h_coord_h_3.jsonl",
+    "data/experiments/runs/kaggle/coord_h_coord_h_4.jsonl"
+   ],
+   "cleaned": true
   }
  ]
 }

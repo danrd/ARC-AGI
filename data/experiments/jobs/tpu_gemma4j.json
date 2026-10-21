@@ -1,0 +1,88 @@
+{
+ "steps": [
+  {
+   "name": "e2b_flat",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_2b",
+    "--layout",
+    "flat",
+    "--repair",
+    "--new-tokens",
+    "256",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "b31_flat_short",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--layout",
+    "flat",
+    "--repair",
+    "--prompt",
+    "data/experiments/runs/kaggle/prompts_gemma_0/6ea4a07e/p0.txt",
+    "--new-tokens",
+    "128",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "b31_flat",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_31b",
+    "--layout",
+    "flat",
+    "--repair",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "moe_flat_short",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_26b_a4b",
+    "--layout",
+    "flat",
+    "--repair",
+    "--prompt",
+    "data/experiments/runs/kaggle/prompts_gemma_0/6ea4a07e/p0.txt",
+    "--new-tokens",
+    "128",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "moe_flat",
+   "command": [
+    "scripts/tpu_gemma_probe.py",
+    "--preset",
+    "gemma4_instruct_26b_a4b",
+    "--layout",
+    "flat",
+    "--repair",
+    "--new-tokens",
+    "512",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ],
+ "model_sources": [
+  "keras/gemma4/keras/gemma4_instruct_2b/2",
+  "keras/gemma4/keras/gemma4_instruct_31b/2",
+  "keras/gemma4/keras/gemma4_instruct_26b_a4b/2"
+ ]
+}

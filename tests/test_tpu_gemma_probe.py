@@ -330,3 +330,63 @@ def test_a_prompt_is_generated_once_per_row_of_the_mesh_and_once_without_one():
     assert probe.generation_batch({"mode": "auto", "mesh": (2, 4)}) == 2
     assert probe.generation_batch({"mode": "auto", "mesh": [4, 2]}) == 4
     assert probe.generation_batch({"mode": "none"}) == 1
+
+
+def test_the_flat_layout_cuts_every_large_weight_along_a_dimension_eight_divides(monkeypatch):
+    import re
+
+    class LayoutMap(dict):
+        def __init__(self, mesh):
+            super().__init__()
+
+    keras = types.ModuleType("keras")
+    keras.distribution = types.SimpleNamespace(LayoutMap=LayoutMap)
+    monkeypatch.setitem(sys.modules, "keras", keras)
+    layout = probe.flat_layout_map("mesh")
+
+    def rule(path):
+        found = [layout[key] for key in layout if re.search(key, path)]
+        assert len(found) <= 1, path                     # Keras refuses a path two rules match
+        return found[0] if found else None
+
+    assert rule("token_embedding/embeddings") == ("model", None)              # by token: the logits are cut too
+    assert rule("per_layer_token_embedding/embeddings") == ("model", None)
+    assert rule("decoder_block_3/attention/key/kernel") == (None, "model", None)   # hidden width, never the heads
+    assert rule("decoder_block_3/attention/attention_output/kernel") == (None, None, "model")
+    assert rule("decoder_block_3/ffw_gating_2/kernel") == (None, "model")
+    assert rule("decoder_block_3/ffw_linear/kernel") == ("model", None)
+    assert rule("decoder_block_3/moe_expert_bank/up_proj") == ("model", None, None)
+    assert rule("image_encoder/encoder_block_0/attention/query/dense/kernel") is None
+    assert rule("decoder_block_3/pre_attention_norm/scale") is None
+
+
+def test_the_sequence_is_as_long_as_the_prompt_and_answer_need_in_steps_of_128():
+    assert probe.sequence_length(3253, 512) == 3840
+    assert probe.sequence_length(100, 20) == 128
+    assert probe.sequence_length(120, 0) == 128 and probe.sequence_length(121, 0) == 256
+
+
+def test_bfloat16_records_stay_bfloat16_for_a_bfloat16_variable_and_become_float32_otherwise():
+    import numpy as np
+    numbers = np.array([1.0, -2.5], dtype=np.float32)
+    records = (numbers.view(np.uint32) >> 16).astype(np.uint16).view("V2")
+    assert probe.host_value(records, "float32").dtype == np.float32
+    try:
+        import ml_dtypes  # noqa: F401
+    except ImportError:
+        assert probe.host_value(records, "bfloat16").dtype == np.float32      # without ml_dtypes, float32
+        return
+    kept = probe.host_value(records, "bfloat16")
+    assert str(kept.dtype) == "bfloat16" and kept.astype(np.float32).tolist() == [1.0, -2.5]
+
+
+def test_a_value_is_placed_the_way_its_variable_is_laid_out_and_left_alone_otherwise(monkeypatch):
+    sharding = types.SimpleNamespace(mesh="8 chips")
+    put = []
+    jax = types.ModuleType("jax")
+    jax.device_put = lambda value, where: put.append(where) or ("placed", value)
+    monkeypatch.setitem(sys.modules, "jax", jax)
+    laid_out = types.SimpleNamespace(value=types.SimpleNamespace(sharding=sharding))
+    assert probe.placed("table", laid_out) == ("placed", "table") and put == [sharding]
+    assert probe.placed("table", types.SimpleNamespace(value=object())) == "table"
+    assert probe.placed("table", FakeVariable((2, 2))) == "table"

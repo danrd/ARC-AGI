@@ -55,6 +55,13 @@ def mesh_shape(chips, model_axis):
     return (chips // model, model)
 
 
+def sequence_length(prompt_tokens, new_tokens, step=128):
+    """As long as the prompt and its answer need (and a few tokens of markers), up to a multiple of `step`, rather than
+    a fixed 4096: the cache of keys and values is laid out for the whole length, and on the flat mesh every chip holds
+    all of it."""
+    return -(-(prompt_tokens + new_tokens + 8) // step) * step
+
+
 def generation_batch(layout):
     """How many copies of the prompt to generate at once: the batch axis of the mesh, which shards the inputs and
     must divide them (one prompt on a (2, 4) mesh: IndivisibleError, "dimension size is 1"), or one without a mesh.
@@ -81,7 +88,28 @@ def gemma_layout_map(mesh):
     return layout
 
 
-LAYOUTS = ("auto", "none", "replicate_embedding")
+def flat_layout_map(mesh):
+    """Every large weight cut eight ways over the `model` axis of a (1, 8) mesh, always along a dimension eight
+    divides in all three Gemma 4 models: the hidden width of the attention projections rather than their heads (2B has
+    one key/value head, 31B four global ones, 26B-A4B two), the feed-forward's inner width, the embeddings' tokens and
+    the experts of a mixture bank. tpu_gemma4i cut 31B four ways and copied it over the other axis - 15.6 of 15.75 GB
+    a chip, so the embedding found no room ("RESOURCE_EXHAUSTED ... 2.62G", reported by Keras as "received 0
+    variables") - and put all of 2B on one chip."""
+    import keras
+    layout = keras.distribution.LayoutMap(mesh)
+    # The tables by token, not by width: the logits over 262144 tokens are then cut eight ways as well, where a table
+    # cut by width gives every chip all of them.
+    layout["(token_embedding|per_layer_token_embedding)/embeddings"] = ("model", None)
+    layout["per_layer_model_projection/kernel"] = (None, "model")
+    layout["decoder_block.*attention.*(query|key|value)/kernel"] = (None, "model", None)
+    layout["decoder_block.*attention_output/kernel"] = (None, None, "model")
+    layout["decoder_block.*ffw_gating.*/kernel"] = (None, "model")
+    layout["decoder_block.*ffw_linear/kernel"] = ("model", None)
+    layout["decoder_block.*moe_expert_bank/(gate_proj|up_proj|down_proj)"] = ("model", None, None)
+    return layout
+
+
+LAYOUTS = ("auto", "none", "replicate_embedding", "flat")
 
 
 def without_embedding_split(layout):
@@ -205,6 +233,32 @@ def bfloat16_from_raw(raw):
     return (np.ascontiguousarray(raw).view(np.uint16).astype(np.uint32) << 16).view(np.float32)
 
 
+def host_value(raw, dtype):
+    """What to hand a variable of `dtype` from a dataset's raw values: bfloat16 records kept as bfloat16 (a view, no
+    copy) when the variable is bfloat16 and ml_dtypes is there, else float32 (bfloat16_from_raw). tpu_gemma4i's repair
+    made float32 of 31B's embedding - 5.25 GB where the chip had 5.22 free."""
+    import numpy as np
+
+    raw = np.asarray(raw)
+    if raw.dtype.kind == "V" and raw.dtype.itemsize == 2 and "bfloat16" in str(dtype):
+        try:
+            import ml_dtypes
+            return np.ascontiguousarray(raw).view(np.uint16).view(ml_dtypes.bfloat16)
+        except ImportError:
+            pass
+    return bfloat16_from_raw(raw)
+
+
+def placed(value, variable):
+    """`value` put on the devices the way `variable` is laid out, shard by shard, when it is laid out at all: assigned
+    whole, a table is first copied to one chip and only then cut, which is the copy that does not fit."""
+    sharding = getattr(getattr(variable, "value", None), "sharding", None)
+    if sharding is None or not hasattr(sharding, "mesh"):
+        return value
+    import jax
+    return jax.device_put(value, sharding)
+
+
 def assign_from_file(layer, folder, group):
     """Reads `layer`'s variables from `group` of the preset's weights and assigns them, the way Keras would have;
     returns what it read and how far the layer's first rows are from the file's afterwards (0 when it took)."""
@@ -219,8 +273,8 @@ def assign_from_file(layer, folder, group):
             raise ValueError(f"{layer.name} has {len(layer.weights)} variables, {group} holds {len(stored)}")
         for index, variable in enumerate(layer.weights):
             dataset = stored[str(index)]
-            value = bfloat16_from_raw(dataset[()])
-            variable.assign(value)
+            value = host_value(dataset[()], getattr(variable, "dtype", None))
+            variable.assign(placed(value, variable))
             rows = min(4, value.shape[0]) if value.ndim else 0
             back = np.asarray(variable[:rows] if rows else variable, dtype=np.float32)
             want = np.asarray(value[:rows] if rows else value, dtype=np.float32)
@@ -279,7 +333,8 @@ def main():
                              "loaded")
     parser.add_argument("--layout", choices=LAYOUTS, default="auto",
                         help="auto: the backbone's own layout map, or ours when it has none; none: no distribution "
-                             "(everything on one chip); replicate_embedding: auto with the embedding left whole")
+                             "(everything on one chip); replicate_embedding: auto with the embedding left whole; "
+                             "flat: every large weight cut eight ways on a (1, 8) mesh (flat_layout_map)")
     parser.add_argument("--repair", action="store_true",
                         help="load the weights without keras-hub's loader, and assign the layers Keras could not load "
                              "straight from the file (the embedding every Gemma 4 load so far has lost)")
@@ -356,11 +411,12 @@ def main():
         devs = keras.distribution.list_devices()
         report["layout"] = {"mode": args.layout}
         if args.layout != "none":
-            shape = mesh_shape(len(devs), args.model_axis)
+            shape = (1, len(devs)) if args.layout == "flat" else mesh_shape(len(devs), args.model_axis)
             mesh = keras.distribution.DeviceMesh(shape, ["batch", "model"], devs)
             backbone = getattr(keras_hub.models, cls_name.replace("CausalLM", "Backbone"))
-            own = hasattr(backbone, "get_layout_map")
-            layout = backbone.get_layout_map(mesh) if own else gemma_layout_map(mesh)
+            own = hasattr(backbone, "get_layout_map") and args.layout != "flat"
+            layout = backbone.get_layout_map(mesh) if own else \
+                (flat_layout_map(mesh) if args.layout == "flat" else gemma_layout_map(mesh))
             removed = without_embedding_split(layout) if args.layout == "replicate_embedding" else []
             report["layout"].update({"mesh": shape, "source": "backbone" if own else "ours", "removed": removed,
                                      "rules": {key: str(value) for key, value in layout.items()}})
@@ -401,12 +457,12 @@ def main():
 
         @step("generate")
         def generate():
-            model.preprocessor.sequence_length = 4096
+            tokenizer = model.preprocessor.tokenizer
+            prompt_tokens = len(tokenizer.tokenize(prompt))
+            model.preprocessor.sequence_length = sequence_length(prompt_tokens, args.new_tokens)
             batch = generation_batch(report["layout"])
             prompts = [prompt] * batch
             model.generate(prompts, max_length=64)                 # compile
-            tokenizer = model.preprocessor.tokenizer
-            prompt_tokens = len(tokenizer.tokenize(prompt))
             # generate compiles again for a new max_length, so the first call at this length is timed apart from the
             # second, which is the speed.
             started = time.time()
@@ -419,6 +475,7 @@ def main():
             new_tokens = max(0, len(tokenizer.tokenize(text)) - prompt_tokens)
             speed = round(new_tokens / seconds, 2) if seconds else None
             return {"seconds": round(seconds, 2), "first_call_seconds": round(first, 2), "batch": batch,
+                    "sequence_length": model.preprocessor.sequence_length,
                     "prompt_tokens": prompt_tokens, "new_tokens_asked": args.new_tokens, "new_tokens": new_tokens,
                     "tokens_per_second": speed, "batch_tokens_per_second": speed and round(speed * batch, 2),
                     "reply_tail": text[-400:]}

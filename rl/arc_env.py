@@ -285,14 +285,16 @@ class ARCGridWorld(gymnasium.Env):
         for them: its neighbours, the nearest colour along each direction, its object and blob, its mirror images -
         what the coordinate policy reads of a cell in place of where it is. A function of the input alone, so the
         test pair has them like any other, and computed once per input rather than on every step."""
-        if "cell_features" not in self.observation_space_elements:
+        name = cell_features.feature_key(self.observation_space_elements)
+        if name is None:
             return
-        shape = self.observation_space["cell_features"].shape[:2]
-        key = (np.asarray(self.train_inp).tobytes(), np.asarray(self.train_inp).shape, shape)
+        shape = self.observation_space[name].shape[:2]
+        key = (np.asarray(self.train_inp).tobytes(), np.asarray(self.train_inp).shape, shape, name)
         if getattr(self, "_cell_features_key", None) != key:
-            self._cell_features = cell_features.encoded(self.train_inp, shape).astype(np.int16)
+            self._cell_features = cell_features.encoded(self.train_inp, shape,
+                                                        cell_features.observed_set(name)).astype(np.int16)
             self._cell_features_key = key
-        obs["cell_features"] = self._cell_features.copy()
+        obs[name] = self._cell_features.copy()
 
     def _padded_delta(self, plane):
         """A delta padded with zeros rather than pad_val.
@@ -572,14 +574,17 @@ class ARCGridWorld(gymnasium.Env):
                     low=0, high=1,
                     shape=self.obs_grid_shape or (shape_x, shape_y),
                     dtype=self.grid_dtype)
-        if "cell_features" in self.observation_space_elements:
+        named = cell_features.feature_key(self.observation_space_elements)
+        if named is not None:
             # Fixed for the episode and read by the coordinate policy's cells: see _add_cell_features. Sized by the
             # observed grid, the cells past the input's own size zero. int16, not uint8: stable-baselines takes a
             # 0-255 uint8 box of three dimensions for an image, divides it by 255 (every count and colour then
             # floors to 0 in the policy) and may move its last axis first - coord_g trained on zeros and crashed on
             # a transposed batch.
-            self.observation_space['cell_features'] = spaces.Box(
-                low=0, high=255, shape=(*(self.obs_grid_shape or (shape_x, shape_y)), len(cell_features.schema()[0])),
+            # 'cell_features' carries the rich set, 'cell_features_<set>' another (symbolic.cell_features).
+            self.observation_space[named] = spaces.Box(
+                low=0, high=255, shape=(*(self.obs_grid_shape or (shape_x, shape_y)),
+                                        len(cell_features.schema(cell_features.observed_set(named))[0])),
                 dtype=np.int16)
         # Both embedding blocks are sized by max_objects, not by this
         # subtask's object count, so they are the same shape for every

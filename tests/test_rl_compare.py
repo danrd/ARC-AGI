@@ -145,7 +145,7 @@ class TestTheArms:
 
     def test_the_coordinate_arms_are_o_spatial_with_submit_held_back(self):
         from data.configs.rl_configs import load_PPO_config
-        assert compare.COORD_ARMS == ("c_nosub", "c_half", "c_cell", "c_colour", "c_feat")
+        assert compare.COORD_ARMS == ("c_nosub", "c_half", "c_cell", "c_colour", "c_feat", "c_core")
         assert compare.arm_settings("c_cell")[1] == {"spatial_channels": 32, "coordinate_submit_from": 0.5,
                                                      "coordinate_heads": "cells"}
         assert compare.arm_settings("c_nosub")[1] == {"spatial_channels": 32, "coordinate_submit_from": 1.0}
@@ -154,6 +154,8 @@ class TestTheArms:
         # c_feat is c_cell with each cell read from its features: one observation more, the same settings.
         cell, feat = compare.arm_settings("c_cell"), compare.arm_settings("c_feat")
         assert feat[1] == cell[1] and list(feat[0]) == [*cell[0], "cell_features"]
+        core = compare.arm_settings("c_core")
+        assert core[1] == cell[1] and list(core[0]) == [*cell[0], "cell_features_core"]
 
     def test_every_relation_arm_builds_the_module_it_names(self):
         """The arguments of relation_arch are RelationMessages' own: an arm that named one it does not take

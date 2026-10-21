@@ -13,7 +13,17 @@ from scipy import ndimage
 OUTSIDE = -1                     # the colour of a neighbour off the grid
 DIRECTIONS = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0),
               "up_left": (-1, -1), "up_right": (-1, 1), "down_left": (1, -1), "down_right": (1, 1)}
-FEATURE_SETS = ("position", "neighbours", "structure", "structure_and_position", "rich", "rich_and_position")
+FEATURE_SETS = ("position", "neighbours", "structure", "structure_and_position", "rich", "rich_and_position", "core")
+#: The plainest 25 of the rich set: the cell's colour and its eight neighbours', the nearest colour and how far it is in
+#: the four straight directions, whether the cell lies between two of one colour, its object's size and whether it is
+#: on the object's border, and its mirror images. The rules the probe's trees found for the 7 tasks they solved used 19
+#: features between them, a handful each; 103 give a policy as many ways to fit 2-5 training pairs by accident.
+CORE = ("colour", "is_background", *(f"next_{d}" for d in ("left", "right", "up", "down", "up_left", "up_right",
+                                                            "down_left", "down_right")),
+        *(f"nearest_{d}" for d in ("left", "right", "up", "down")),
+        *(f"distance_{d}" for d in ("left", "right", "up", "down")),
+        "between_left_right", "between_up_down", "object_size", "on_box_border",
+        "mirror_left_right", "mirror_up_down", "mirror_both")
 
 
 def background(grid):
@@ -79,6 +89,9 @@ def object_features(grid, bg):
 def cell_features(grid, feature_set):
     """name -> (rows, cols) array of one feature per cell, and the names of those that are colours (split by
     equality, and candidates for the role a new colour is taken from)."""
+    if feature_set == "core":
+        features, colours = cell_features(grid, "rich")
+        return {name: features[name] for name in CORE}, colours & set(CORE)
     grid = np.asarray(grid)
     bg = background(grid)
     rows, cols = np.indices(grid.shape)
@@ -178,6 +191,16 @@ def table(grids, feature_set):
 
 #: What the coordinate policy reads of each cell: the rich set, which has no absolute position.
 POLICY_SET = "rich"
+
+
+def observed_set(key):
+    """The feature set an observation key names: 'cell_features' the rich set, 'cell_features_<set>' that set."""
+    return POLICY_SET if key == "cell_features" else key[len("cell_features_"):]
+
+
+def feature_key(keys):
+    """The cell-feature key among an observation's keys, or None."""
+    return next((key for key in keys if key == "cell_features" or key.startswith("cell_features_")), None)
 
 
 def schema(feature_set=POLICY_SET):

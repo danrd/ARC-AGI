@@ -101,3 +101,17 @@ def test_a_grid_is_encoded_cell_by_cell_in_schema_order_padded_with_nothing():
     assert not out[2:].any() and not out[:, 3:].any()                               # past the grid, all zeros
     big = np.zeros((20, 20), dtype=int)
     assert cf.encoded(big)[0, 0, at["object_size"]] == 255                           # a count stops at 255
+
+
+def test_the_core_set_is_the_plainest_part_of_the_rich_one_and_is_read_from_its_own_key():
+    rich, rich_colours = cf.schema("rich")
+    core, core_colours = cf.schema("core")
+    assert len(core) == 25 and set(core) <= set(rich) and set(core_colours) == set(core) & set(rich_colours)
+    assert "mirror_both" in core and "col_mod_3" not in core and "blob_minority" not in core
+    grid = np.array([[0, 3, 0], [0, 0, 5]])
+    full, small = cf.encoded(grid, feature_set="rich"), cf.encoded(grid, feature_set="core")
+    assert small.shape == (2, 3, 25)
+    assert (small[..., core.index("nearest_right")] == full[..., rich.index("nearest_right")]).all()
+    assert cf.observed_set("cell_features") == "rich" and cf.observed_set("cell_features_core") == "core"
+    assert cf.feature_key(["grid", "cell_features_core"]) == "cell_features_core"
+    assert cf.feature_key(["grid", "delta_input"]) is None

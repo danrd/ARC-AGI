@@ -781,3 +781,20 @@ class TestCellsReadFromTheirFeatures:
             assert max(f.max().item() for f in seen) > 1
         finally:
             vec_env.close()
+
+
+def test_an_agent_reads_the_core_features_from_their_own_key():
+    vec_env = create_vec_env(two_sizes(), n_envs=1, max_episode_len=4, feasible_actions=ACTIONS,
+                             observation_space_elements=["delta_input", "delta_target", "cell_features_core"],
+                             observation_grid_shape=(7, 7), repr_level=1, input_pattern="start",
+                             addressing="coordinates", coordinate_shape=(7, 7))
+    try:
+        agent = create_agent({"model_type": "PPO", "addressing": "coordinates"}, vec_env,
+                             {"n_steps": 16, "batch_size": 8, "verbose": 0, "coordinate_dim": 8,
+                              "coordinate_heads": "cells", "spatial_channels": 8})
+        rows = agent.policy.features_extractor.coordinate_rows
+        assert rows.cell_features == "cell_features_core" and rows.feature_is_colour.numel() == 25
+        agent.learn(32)
+        assert vec_env.reset()["cell_features_core"].shape[1:] == (7, 7, 25)
+    finally:
+        vec_env.close()

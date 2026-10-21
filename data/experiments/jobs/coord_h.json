@@ -1,0 +1,33 @@
+{
+ "steps": [
+  {
+   "name": "coord_h",
+   "args": [
+    "--configs",
+    "data/experiments/rl_compare_configs_all.json",
+    "--tasks",
+    "0ca9ddb6",
+    "29c11459",
+    "496994bd",
+    "a65b410d",
+    "a699fb00",
+    "ba26e723",
+    "e8593010",
+    "7b6016b9",
+    "97999447",
+    "3eda0437",
+    "af902bf9",
+    "--arms",
+    "c_core",
+    "--seeds",
+    "0",
+    "1",
+    "2",
+    "--workers",
+    "4",
+    "--hours",
+    "8"
+   ]
+  }
+ ]
+}

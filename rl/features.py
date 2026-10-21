@@ -1335,7 +1335,7 @@ class CoordinateRows(nn.Module):
 
     def __init__(self, rows: int, cols: int, delta_keys, dim: int = 32, hidden: int = 64,
                  spatial_channels: int = 0, cells: bool = False, cell_colours: bool = False,
-                 cell_features: bool = False):
+                 cell_features=False):
         """`spatial_channels` reads each row and column from the backbone's
         map (SpatialBackbone.over_lines) rather than from its raw cells:
         the same weights for every row, where the raw reading gives each
@@ -1363,15 +1363,18 @@ class CoordinateRows(nn.Module):
         and a tree over these features carries 7 of the 23 coordinate tasks'
         rules to the test where position carries none (feature_probe). A
         colour feature comes in as eleven one-hot numbers (none and the ten
-        colours), a count as log(1 + count) / log(256).
+        colours), a count as log(1 + count) / log(256). It names the
+        observation key to read ('cell_features', the rich set, or
+        'cell_features_core'); True reads 'cell_features'.
         """
         if cell_colours and not cells:
             raise ValueError("cell_colours are read beside the cells: they need cells=True")
         if cell_features and not cells:
             raise ValueError("cell_features are how a cell is read: they need cells=True")
         super().__init__()
-        self.cell_features = cell_features
-        names, colours = cell_feature_schema.schema()
+        self.cell_features = "cell_features" if cell_features is True else (cell_features or None)
+        names, colours = cell_feature_schema.schema(
+            cell_feature_schema.observed_set(self.cell_features) if self.cell_features else cell_feature_schema.POLICY_SET)
         self.register_buffer("feature_is_colour", torch.tensor([name in colours for name in names]),
                              persistent=False)
         described = (11 * len(colours) + len(names) - len(colours)) if cell_features else 2
@@ -1448,7 +1451,7 @@ class CoordinateRows(nn.Module):
         source = cell_map if self.spatial_channels else self.planes(observation)
         batch = source.shape[0]
         if self.cell_features:
-            described = self.described_cells(observation["cell_features"])
+            described = self.described_cells(observation[self.cell_features])
         else:
             where_row = torch.linspace(0, 1, self.rows, device=source.device).view(1, 1, -1, 1)
             where_col = torch.linspace(0, 1, self.cols, device=source.device).view(1, 1, 1, -1)
@@ -1623,7 +1626,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 readout = DeltaReadout()
                 extractors[key] = readout
                 total_concat_size += readout.out_dim
-            elif key == 'cell_features':
+            elif key == cell_feature_schema.feature_key([key]):
                 # How the coordinate heads' cells are read, not a branch of its own: see CoordinateRows.
                 if not (coordinate_dim and coordinate_cells):
                     raise ValueError("cell_features are read by the coordinate heads' cells: they need "
@@ -1714,7 +1717,7 @@ class ARCCombinedExtractor(BaseFeaturesExtractor):
                 dim=coordinate_dim,
                 spatial_channels=spatial_channels if "grid" in observation_space.spaces else 0,
                 cells=coordinate_cells, cell_colours=coordinate_cell_colours,
-                cell_features="cell_features" in observation_space.spaces)
+                cell_features=cell_feature_schema.feature_key(observation_space.spaces) or False)
             total_concat_size += self.coordinate_rows.width
         #: What the factored object heads read besides the rows: each
         #: slot's raw embedding - its colour shares and where its mass sits

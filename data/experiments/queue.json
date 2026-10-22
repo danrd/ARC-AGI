@@ -4630,12 +4630,33 @@
    "name": "rules_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "",
    "note": "поиск правил: выбор двух попыток среди подходящих правил — голосование (vote), устойчивость при выбрасывании пары (loo), порог дороже (1.0 вместо 0.25) без голосования и с ним; каждый вариант на всех задачах с выходом той же формы (train и evaluation), 5 блокнотов по 4 ядра; против кратчайшего правила (58 и 18 решённых)",
-   "result": [],
-   "cleaned": false
+   "result": [
+    "data/experiments/runs/kaggle/rules_a_rules_loo_0.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_0.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_vote_0.json",
+    "data/experiments/runs/kaggle/rules_a_rules_vote_0.json",
+    "data/experiments/runs/kaggle/rules_a_rules_loo_1.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_1.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_vote_1.json",
+    "data/experiments/runs/kaggle/rules_a_rules_vote_1.json",
+    "data/experiments/runs/kaggle/rules_a_rules_loo_2.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_2.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_vote_2.json",
+    "data/experiments/runs/kaggle/rules_a_rules_vote_2.json",
+    "data/experiments/runs/kaggle/rules_a_rules_loo_3.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_3.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_vote_3.json",
+    "data/experiments/runs/kaggle/rules_a_rules_vote_3.json",
+    "data/experiments/runs/kaggle/rules_a_rules_loo_4.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_4.json",
+    "data/experiments/runs/kaggle/rules_a_rules_thr1_vote_4.json",
+    "data/experiments/runs/kaggle/rules_a_rules_vote_4.json"
+   ],
+   "cleaned": true
   }
  ]
 }

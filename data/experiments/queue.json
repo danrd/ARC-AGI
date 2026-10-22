@@ -4662,10 +4662,27 @@
    "name": "symcov_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "покрытие символьных солверов (mixer, upscale_or_covering, color_restore) и поиска правил как четвёртого, с проверкой по отложенным парам (checked_solve), обе выборки, 5 блокнотов по 4 ядра; даёт множества решённых задач для пересечений: с поиском правил, Gemma, RL по объектам",
+   "result": [
+    "data/experiments/runs/kaggle/symcov_a_symcov_0.jsonl",
+    "data/experiments/runs/kaggle/symcov_a_symcov_1.jsonl",
+    "data/experiments/runs/kaggle/symcov_a_symcov_2.jsonl",
+    "data/experiments/runs/kaggle/symcov_a_symcov_3.jsonl",
+    "data/experiments/runs/kaggle/symcov_a_symcov_4.jsonl"
+   ],
+   "cleaned": true
+  },
+  {
+   "name": "rules_b",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "running",
+   "setup": [],
+   "extras": "",
+   "note": "поиск правил с новыми признаками: сдвиги на 2-3 клетки, зеркала внутри коробки пятна, повороты сетки (rich_ext) и условия, сравнивающие два цвета между собой (--relational); шесть вариантов на всех задачах с выходом той же формы (train и evaluation): ext_rel, rel, ext, wide_ext_rel (шире перебор), off_rel, obj_rel. На 13 задачах, которые решал только RL по объектам, правила дошли с 0 до 4",
    "result": [],
    "cleaned": false
   }

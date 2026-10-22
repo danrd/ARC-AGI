@@ -155,12 +155,28 @@ def _section(keep: str):
     return lambda task, builder: _findings_section(task, keep, builder)
 
 
+def rule_hint(task, rules: int = 2) -> str:
+    """The shortest cell rules (symbolic.rule_search) that reproduce every example, with their lengths, or a line saying
+    that none does. They are a guess made from the examples alone: a longer rule is a likelier wrong one."""
+    from symbolic import rule_search
+
+    pairs = [{"input": np.asarray(s.train_inp), "output": np.asarray(s.train_out)} for s in task.subtasks]
+    if any(p["input"].shape != p["output"].shape for p in pairs):
+        return "No rule: the output's size differs from the input's in some example."
+    for feature_set in ("core", "rich"):
+        found = rule_search.search(pairs, feature_set)
+        if found:
+            return "\n".join(f"Rule of length {r.cost:.1f}: {r.describe()}" for r in found[:rules])
+    return "No short per-cell rule reproduces all the examples."
+
+
 #: What a run can put in the prompt without being asked for it: name -> (heading in the prompt, function of the task).
 AIDS = {
     "numbered_grids": ("The grids again, with rows and columns numbered from 1", indexed_grids),
     "cell_changes": ("The cells that change between each example's input and output", cell_changes),
     "objects": ("The pieces of one colour in each grid", objects),
     "colour_counts": ("How many cells of each colour each grid has", colour_counts),
+    "rule_hint": ("Rules that a program found to fit all the examples (a guess: a longer rule is likelier wrong)", rule_hint),
 }
 
 

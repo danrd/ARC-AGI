@@ -144,3 +144,18 @@ class TestRunningTheMenu:
         assert result["replies"][0] == "REQUEST: cell_changes" and result["solution"].startswith("3,3:")
         assert "(r2,c2) 0->4" in runner.prompts[1] and "nothing found" in runner.prompts[2]
         assert "pieces" in runner.prompts[3] and "REQUEST: <tool>" not in runner.prompts[3]
+
+
+class TestTheRuleHint:
+    def test_a_rule_that_fits_every_example_is_named_with_its_length(self):
+        pairs = [(np.array([[0, 5, 0], [0, 0, 0]]), np.array([[0, 5, 0], [0, 7, 0]])),
+                 (np.array([[5, 0, 0], [0, 0, 0]]), np.array([[5, 0, 0], [7, 0, 0]]))]
+        task = ARCTask("r", [ARCSubtask(str(i), a, b) for i, (a, b) in enumerate(pairs)], pairs[0][0], pairs[0][1])
+        text = dr.rule_hint(task)
+        assert text.startswith("Rule of length") and "7" in text
+
+    def test_a_size_change_has_no_rule(self, small_task):
+        assert dr.rule_hint(small_task).startswith("No rule")
+
+    def test_it_is_among_the_aids(self):
+        assert "rule_hint" in dr.AIDS

@@ -228,7 +228,7 @@ graph TD
   rl -->|13| symbolic
   rl -->|11| data
   orchestration -->|7| rl
-  orchestration -->|6| symbolic
+  orchestration -->|7| symbolic
   scripts -->|6| subsymbolic
   tests -->|6| scripts
   scripts -->|5| symbolic

@@ -1,0 +1,1056 @@
+{
+ "sets": [
+  "core",
+  "rich",
+  "rich_ext"
+ ],
+ "strategy": "shortest",
+ "threshold_cost": null,
+ "relational": false,
+ "wide": null,
+ "keep": null,
+ "shard": [
+  4,
+  5
+ ],
+ "splits": {
+  "training": {
+   "tasks": 400,
+   "same_shape": 52,
+   "rule_found": 20,
+   "solved_first": 15,
+   "solved_two": 16,
+   "solved": [
+    "2281f1f4",
+    "2bee17df",
+    "32597951",
+    "4258a5f9",
+    "543a7ed5",
+    "60b61512",
+    "67385a82",
+    "7f4411dc",
+    "a5f85a15",
+    "b1948b0a",
+    "bb43febb",
+    "c0f76784",
+    "d037b0a7",
+    "d2abd087",
+    "ded97339",
+    "e8593010"
+   ],
+   "records": [
+    {
+     "task": "05f2a901",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "0a938d79",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.0
+    },
+    {
+     "task": "11852cab",
+     "rule": "change where (box_mirror_diag == 0 and diagonal_0 <= 3) or (at_3_down_right == 0 and diagonal_1 == 1); blob_count == 1 -> src:grid_minority; otherwise -> abs:4",
+     "feature_set": "rich_ext",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 5.25,
+     "rules": 144,
+     "seconds": 11.3
+    },
+    {
+     "task": "1bfc4729",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.7
+    },
+    {
+     "task": "1f642eb9",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.1
+    },
+    {
+     "task": "2281f1f4",
+     "rule": "change where (nearest_right == 5 and nearest_up == 5); otherwise -> abs:2",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.3
+    },
+    {
+     "task": "25d487eb",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.0
+    },
+    {
+     "task": "28e73c20",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.0
+    },
+    {
+     "task": "2bee17df",
+     "rule": "change where (closed_in == 1 and row_foreground <= 2) or (closed_in == 1 and col_foreground <= 2); otherwise -> abs:3",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 4.5,
+     "rules": 12,
+     "seconds": 1.1
+    },
+    {
+     "task": "32597951",
+     "rule": "change where (row_has_8 == 1 and colour == 1 and orthogonal_0 <= 1); otherwise -> abs:3",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.25,
+     "rules": 2,
+     "seconds": 2.0
+    },
+    {
+     "task": "36d67576",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.0
+    },
+    {
+     "task": "3ac3eb23",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.9
+    },
+    {
+     "task": "3e980e27",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.1
+    },
+    {
+     "task": "4258a5f9",
+     "rule": "change where (diagonal_5 == 1) or (orthogonal_5 == 1); otherwise -> abs:1",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.8
+    },
+    {
+     "task": "44d8ac46",
+     "rule": "change where (box_width <= 4 and object_size > 15) or (box_width <= 2 and object_size > 3) or (box_width <= 1); otherwise -> abs:2",
+     "feature_set": "rich",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 6.25,
+     "rules": 12,
+     "seconds": 1.3
+    },
+    {
+     "task": "4c5c2cf0",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.3
+    },
+    {
+     "task": "543a7ed5",
+     "rule": "change where (blob_colours == 0 and diagonal_6 > 0) or (blob_colours == 0 and closed_in == 1); closed_in == 0 -> abs:3; otherwise -> abs:4",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 5.25,
+     "rules": 144,
+     "seconds": 14.3
+    },
+    {
+     "task": "56dc2b01",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.3
+    },
+    {
+     "task": "60b61512",
+     "rule": "change where (blob_colours == 0 and box_area == 9); otherwise -> abs:7",
+     "feature_set": "rich_ext",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 1.0
+    },
+    {
+     "task": "67385a82",
+     "rule": "change where (colour == 3 and object_size > 1); otherwise -> abs:8",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.25,
+     "rules": 12,
+     "seconds": 0.2
+    },
+    {
+     "task": "68b16354",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.9
+    },
+    {
+     "task": "6cdd2623",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 7.5
+    },
+    {
+     "task": "6e02f1e3",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 10.4
+    },
+    {
+     "task": "73251a56",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 124.6
+    },
+    {
+     "task": "794b24be",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.7
+    },
+    {
+     "task": "7f4411dc",
+     "rule": "change where (blob_colours == 1 and orthogonal_0 > 2); otherwise -> abs:0",
+     "feature_set": "rich",
+     "first": [
+      false
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.25,
+     "rules": 12,
+     "seconds": 2.0
+    },
+    {
+     "task": "8403a5d5",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.4
+    },
+    {
+     "task": "890034e9",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 11.4
+    },
+    {
+     "task": "90f3ed37",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "941d9a10",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.9
+    },
+    {
+     "task": "98cf29f8",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.3
+    },
+    {
+     "task": "a1570a43",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.2
+    },
+    {
+     "task": "a5f85a15",
+     "rule": "change where (col_mod_2 == 1 and distance_up_left == 1); otherwise -> abs:4",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.9
+    },
+    {
+     "task": "a78176bb",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.8
+    },
+    {
+     "task": "aabf363d",
+     "rule": "change where (colour != 0); colour == 2 -> abs:4; colour == 3 -> abs:6; otherwise -> abs:0",
+     "feature_set": "core",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 3.0,
+     "rules": 144,
+     "seconds": 6.3
+    },
+    {
+     "task": "b1948b0a",
+     "rule": "change where (colour == 6); otherwise -> abs:2",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 12,
+     "seconds": 0.4
+    },
+    {
+     "task": "b548a754",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.1
+    },
+    {
+     "task": "b782dc8a",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.9
+    },
+    {
+     "task": "bb43febb",
+     "rule": "change where (colour == 5 and on_box_border == 0); otherwise -> abs:2",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.1
+    },
+    {
+     "task": "c0f76784",
+     "rule": "change where (colour == 0 and object_size <= 9); object_size <= 1 -> abs:6; object_size <= 4 -> abs:7; otherwise -> abs:8",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 4.75,
+     "rules": 60,
+     "seconds": 1.0
+    },
+    {
+     "task": "c9f8e694",
+     "rule": "change where (colour == 5); row_has_1 == 1 -> abs:1; row_has_3 == 0 -> src:grid_minority; otherwise -> abs:3",
+     "feature_set": "rich",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 3.0,
+     "rules": 60,
+     "seconds": 26.7
+    },
+    {
+     "task": "d037b0a7",
+     "rule": "change where (nearest_up != -1); otherwise -> src:nearest_up",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 12,
+     "seconds": 0.3
+    },
+    {
+     "task": "d2abd087",
+     "rule": "change where (colour == 5); object_size > 5 and object_size <= 6 -> abs:2; otherwise -> abs:1",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.5,
+     "rules": 12,
+     "seconds": 1.9
+    },
+    {
+     "task": "d4f3cd78",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.9
+    },
+    {
+     "task": "d89b689b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 76.0
+    },
+    {
+     "task": "db93a21d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.2
+    },
+    {
+     "task": "ded97339",
+     "rule": "change where (between_up_down == 1) or (between_left_right == 1); otherwise -> abs:8",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.8
+    },
+    {
+     "task": "e48d4e1a",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.9
+    },
+    {
+     "task": "e8593010",
+     "rule": "change where (colour == 0); object_size <= 1 -> abs:3; object_size <= 2 -> abs:2; otherwise -> abs:1",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.5,
+     "rules": 48,
+     "seconds": 7.6
+    },
+    {
+     "task": "ea786f4a",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.7
+    },
+    {
+     "task": "f15e1fac",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.7
+    },
+    {
+     "task": "f8a8fe49",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.0
+    }
+   ]
+  },
+  "evaluation": {
+   "tasks": 400,
+   "same_shape": 54,
+   "rule_found": 5,
+   "solved_first": 2,
+   "solved_two": 2,
+   "solved": [
+    "32e9702f",
+    "fc754716"
+   ],
+   "records": [
+    {
+     "task": "0607ce86",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 14.9
+    },
+    {
+     "task": "0b17323b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "103eff5b",
+     "rule": "change where (blob_majority == 8); at_2_up == 0 and from_top > 1 or at_3_down == 8 and at_3_up_left == 8 or at_3_down_left == 8 and at_3_down_right == 8 -> abs:3; from_right > 5 or mirror_up_down == 0 and box_centre_row <= -5 -> abs:2; at_3_left == 0 and box_centre_col > 3 or row_foreground <= 2 or at_3_up == 8 and box_mirror_both == 0 -> abs:1; otherwise -> abs:4",
+     "feature_set": "rich_ext",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 16.25,
+     "rules": 12,
+     "seconds": 18.8
+    },
+    {
+     "task": "137f0df0",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.8
+    },
+    {
+     "task": "16b78196",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 20.6
+    },
+    {
+     "task": "1acc24af",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.2
+    },
+    {
+     "task": "1d398264",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 6.6
+    },
+    {
+     "task": "212895b5",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.8
+    },
+    {
+     "task": "256b0a75",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 23.7
+    },
+    {
+     "task": "2a5f8217",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 9.3
+    },
+    {
+     "task": "32e9702f",
+     "rule": "change where (colour == 0) or (nearest_right == -1); nearest_right != -1 and next_right != 0 -> src:nearest_right; otherwise -> abs:5",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 4.0,
+     "rules": 144,
+     "seconds": 6.4
+    },
+    {
+     "task": "37d3e8b2",
+     "rule": "change where (blob_colours == 1); object_touches_edge == 1 or blob_size > 31 -> abs:7; box_height <= 4 and box_width > 4 or blob_size > 14 and blob_size <= 17 -> abs:2; blob_size <= 14 or blob_size > 17 and box_width <= 4 -> abs:1; otherwise -> abs:3",
+     "feature_set": "rich",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 12.0,
+     "rules": 12,
+     "seconds": 18.8
+    },
+    {
+     "task": "423a55dc",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.5
+    },
+    {
+     "task": "45737921",
+     "rule": "change where (blob_colours == 2); object_size > 4 -> src:blob_minority; colour == 6 -> src:grid_majority; otherwise -> src:blob_majority",
+     "feature_set": "rich",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 3.25,
+     "rules": 48,
+     "seconds": 22.1
+    },
+    {
+     "task": "4acc7107",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.5
+    },
+    {
+     "task": "4f537728",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.4
+    },
+    {
+     "task": "5207a7b5",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.0
+    },
+    {
+     "task": "55783887",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.3
+    },
+    {
+     "task": "5af49b42",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.4
+    },
+    {
+     "task": "60a26a3e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.7
+    },
+    {
+     "task": "642248e4",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.4
+    },
+    {
+     "task": "696d4842",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 14.6
+    },
+    {
+     "task": "705a3229",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.9
+    },
+    {
+     "task": "759f3fd3",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.9
+    },
+    {
+     "task": "79fb03f4",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.7
+    },
+    {
+     "task": "7ee1c6ea",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.9
+    },
+    {
+     "task": "85b81ff1",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "8a371977",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 10.6
+    },
+    {
+     "task": "90347967",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.9
+    },
+    {
+     "task": "9356391f",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.8
+    },
+    {
+     "task": "963f59bc",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.0
+    },
+    {
+     "task": "992798f6",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.4
+    },
+    {
+     "task": "9bebae7a",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.4
+    },
+    {
+     "task": "9def23fe",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 7.2
+    },
+    {
+     "task": "a406ac07",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "aa300dc3",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.6
+    },
+    {
+     "task": "ac605cbb",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.2
+    },
+    {
+     "task": "b457fec5",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 10.4
+    },
+    {
+     "task": "ba9d41b8",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.1
+    },
+    {
+     "task": "bf32578f",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.4
+    },
+    {
+     "task": "c663677b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 122.6
+    },
+    {
+     "task": "ca8f78db",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 162.8
+    },
+    {
+     "task": "d282b262",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 8.8
+    },
+    {
+     "task": "d931c21c",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.2
+    },
+    {
+     "task": "dc2e9a9d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.3
+    },
+    {
+     "task": "e2092e0c",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 8.2
+    },
+    {
+     "task": "e5c44e8f",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.5
+    },
+    {
+     "task": "e760a62e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 9.8
+    },
+    {
+     "task": "e95e3d8e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 82.8
+    },
+    {
+     "task": "ecaa0ec1",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.2
+    },
+    {
+     "task": "f3cdc58f",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "f83cb3f6",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.1
+    },
+    {
+     "task": "fc754716",
+     "rule": "change where (on_box_border == 1); blob_colours == 0 -> src:grid_majority; otherwise -> abs:0",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 144,
+     "seconds": 15.8
+    },
+    {
+     "task": "ff72ca3e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.5
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,1082 @@
+{
+ "sets": [
+  "core",
+  "rich"
+ ],
+ "strategy": "shortest",
+ "threshold_cost": null,
+ "relational": true,
+ "wide": null,
+ "keep": null,
+ "shard": [
+  1,
+  5
+ ],
+ "splits": {
+  "training": {
+   "tasks": 400,
+   "same_shape": 53,
+   "rule_found": 20,
+   "solved_first": 17,
+   "solved_two": 17,
+   "solved": [
+    "025d127b",
+    "178fcbfb",
+    "22eb0ac0",
+    "25ff71a9",
+    "29c11459",
+    "3618c87e",
+    "40853293",
+    "4347f46a",
+    "67a3c6ac",
+    "6e82a1ae",
+    "74dd1130",
+    "9565186b",
+    "a85d4709",
+    "b6afb2da",
+    "d406998b",
+    "dc1df850",
+    "f25ffba3"
+   ],
+   "records": [
+    {
+     "task": "025d127b",
+     "rule": "change where (next_down_left == 0 and nearest_left ==f next_down) or (colour ==f nearest_right and next_down ==f next_right) or (object_size <= 1); otherwise -> src:next_left",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 5.25,
+     "rules": 12,
+     "seconds": 0.4
+    },
+    {
+     "task": "08ed6ac7",
+     "rule": "change where (blob_colours == 1); distance_up_left == 0 and nearest_right == 5 and blob_size > 4 -> abs:2; between_left_right == 1 and mirror_both == 5 or between_left_right == 1 and blob_size <= 4 -> abs:3; blob_size <= 3 -> abs:4; otherwise -> abs:1",
+     "feature_set": "rich",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 9.75,
+     "rules": 12,
+     "seconds": 9.0
+    },
+    {
+     "task": "0d3d703e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.8
+    },
+    {
+     "task": "178fcbfb",
+     "rule": "change where (row_has_2 == 0 and nearest_left !=f nearest_right) or (blob_colours == 0 and col_has_2 == 1); row_foreground == 0 -> abs:2; nearest_left == -1 -> src:nearest_right; otherwise -> src:nearest_left",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 6.0,
+     "rules": 144,
+     "seconds": 18.3
+    },
+    {
+     "task": "1e0a9b12",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.0
+    },
+    {
+     "task": "2204b7a8",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.8
+    },
+    {
+     "task": "22eb0ac0",
+     "rule": "change where (between_left_right == 1); otherwise -> src:nearest_left",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 24,
+     "seconds": 1.2
+    },
+    {
+     "task": "25ff71a9",
+     "rule": "change where (colour != 0 and colour !=f nearest_up) or (nearest_up != -1 and colour !=f next_up); colour == 0 -> src:nearest_up; otherwise -> abs:0",
+     "feature_set": "core",
+     "first": [
+      true,
+      true
+     ],
+     "second": [
+      true,
+      true
+     ],
+     "cost": 5.0,
+     "rules": 144,
+     "seconds": 12.2
+    },
+    {
+     "task": "29c11459",
+     "rule": "change where (colour == 0 and nearest_left !=f nearest_right); distance_left <= 4 -> src:nearest_left; distance_left <= 5 -> abs:5; otherwise -> src:nearest_right",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 4.5,
+     "rules": 48,
+     "seconds": 0.8
+    },
+    {
+     "task": "2dd70a9a",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.5
+    },
+    {
+     "task": "3618c87e",
+     "rule": "change where (colour == 1) or (nearest_up == 5); colour == 1 -> abs:0; otherwise -> abs:1",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.0,
+     "rules": 144,
+     "seconds": 2.5
+    },
+    {
+     "task": "3906de3d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.9
+    },
+    {
+     "task": "3bdb4ada",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.2
+    },
+    {
+     "task": "40853293",
+     "rule": "change where (between_up_down == 1) or (between_left_right == 1); between_up_down == 0 -> src:nearest_left; otherwise -> src:nearest_down",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.0,
+     "rules": 144,
+     "seconds": 4.5
+    },
+    {
+     "task": "4347f46a",
+     "rule": "change where (between_left_right == 1 and on_box_border == 0); otherwise -> abs:0",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 1.0
+    },
+    {
+     "task": "484b58aa",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 29.0
+    },
+    {
+     "task": "508bd3b6",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.0
+    },
+    {
+     "task": "54d9e175",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 7.0
+    },
+    {
+     "task": "57aa92db",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.0
+    },
+    {
+     "task": "623ea044",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "67a3c6ac",
+     "rule": "change where (colour !=f mirror_left_right); otherwise -> src:mirror_left_right",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 12,
+     "seconds": 0.7
+    },
+    {
+     "task": "6a1e5592",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.9
+    },
+    {
+     "task": "6d0160f0",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.2
+    },
+    {
+     "task": "6e82a1ae",
+     "rule": "change where (colour == 5); object_size <= 2 -> abs:3; object_size <= 3 -> abs:2; otherwise -> abs:1",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.5,
+     "rules": 60,
+     "seconds": 5.1
+    },
+    {
+     "task": "74dd1130",
+     "rule": "change where (colour !=f mirror_diagonal); otherwise -> src:mirror_diagonal",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 12,
+     "seconds": 0.9
+    },
+    {
+     "task": "7ddcd7ec",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.0
+    },
+    {
+     "task": "82819916",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.8
+    },
+    {
+     "task": "85c4e7cd",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.1
+    },
+    {
+     "task": "8e5a5113",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.4
+    },
+    {
+     "task": "91714a58",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.6
+    },
+    {
+     "task": "9565186b",
+     "rule": "change where (is_background == 0); otherwise -> abs:5",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 12,
+     "seconds": 0.5
+    },
+    {
+     "task": "9d9215db",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.5
+    },
+    {
+     "task": "a3df8b1e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.3
+    },
+    {
+     "task": "a64e4611",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 12.3
+    },
+    {
+     "task": "a85d4709",
+     "rule": "change where (between_up_down == 0) or (mirror_left_right !=f nearest_left); next_left != 0 and next_right != 0 or next_left ==f next_right -> abs:4; mirror_left_right ==f next_right or mirror_left_right ==f nearest_left -> abs:2; otherwise -> abs:3",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 7.0,
+     "rules": 12,
+     "seconds": 5.0
+    },
+    {
+     "task": "ae3edfdc",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.0
+    },
+    {
+     "task": "b27ca6d3",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.4
+    },
+    {
+     "task": "b6afb2da",
+     "rule": "change where (colour == 5); on_box_border == 0 -> abs:2; next_down !=f next_up and next_left !=f next_right -> abs:1; otherwise -> abs:4",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 4.0,
+     "rules": 12,
+     "seconds": 5.2
+    },
+    {
+     "task": "b8cdaf2b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.8
+    },
+    {
+     "task": "bda2d7a6",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 15.4
+    },
+    {
+     "task": "c3f564a4",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 11.6
+    },
+    {
+     "task": "cbded52d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.8
+    },
+    {
+     "task": "d07ae81c",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "d406998b",
+     "rule": "change where (blob_colours == 1 and col_from_right_mod_2 == 0); otherwise -> abs:3",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.5
+    },
+    {
+     "task": "d5d6de2d",
+     "rule": "change where (object_size <= 16); colour == 0 -> abs:3; otherwise -> abs:0",
+     "feature_set": "core",
+     "first": [
+      false,
+      false
+     ],
+     "second": [
+      false,
+      false
+     ],
+     "cost": 2.25,
+     "rules": 144,
+     "seconds": 4.3
+    },
+    {
+     "task": "d90796e8",
+     "rule": "change where (colour == 2 and next_down_right == 0) or (colour == 3 and nearest_right == 2) or (nearest_left == 2 and colour !=f mirror_up_down); colour == 2 -> abs:0; otherwise -> abs:8",
+     "feature_set": "core",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 7.0,
+     "rules": 72,
+     "seconds": 2.1
+    },
+    {
+     "task": "dc1df850",
+     "rule": "change where (orthogonal_2 == 1) or (diagonal_2 == 1); otherwise -> abs:1",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 1.0
+    },
+    {
+     "task": "e21d9049",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.7
+    },
+    {
+     "task": "e509e548",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 7.0
+    },
+    {
+     "task": "e9614598",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.7
+    },
+    {
+     "task": "ecdecbb3",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.3
+    },
+    {
+     "task": "f25ffba3",
+     "rule": "change where (mirror_up_down != 0); otherwise -> src:mirror_up_down",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 1.0,
+     "rules": 12,
+     "seconds": 0.6
+    },
+    {
+     "task": "fcc82909",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.2
+    }
+   ]
+  },
+  "evaluation": {
+   "tasks": 400,
+   "same_shape": 54,
+   "rule_found": 7,
+   "solved_first": 4,
+   "solved_two": 4,
+   "solved": [
+    "1c0d0a4b",
+    "a8610ef7",
+    "ce039d91",
+    "f0df5ff0"
+   ],
+   "records": [
+    {
+     "task": "00dbd492",
+     "rule": "change where (between_left_right == 1 and colour == 0); object_size <= 8 -> abs:8; object_size <= 24 -> abs:4; otherwise -> abs:3",
+     "feature_set": "core",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 4.5,
+     "rules": 60,
+     "seconds": 2.9
+    },
+    {
+     "task": "08573cc6",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.1
+    },
+    {
+     "task": "0d87d2a6",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.1
+    },
+    {
+     "task": "12422b43",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "14754a24",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.4
+    },
+    {
+     "task": "17cae0c1",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.9
+    },
+    {
+     "task": "1c0d0a4b",
+     "rule": "change where (col_has_8 == 1 and row_has_8 == 1); blob_colours == 0 -> abs:2; otherwise -> abs:0",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 3.0,
+     "rules": 144,
+     "seconds": 8.4
+    },
+    {
+     "task": "1e81d6f9",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.8
+    },
+    {
+     "task": "22a4bbc2",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.7
+    },
+    {
+     "task": "27a77e38",
+     "rule": "change where (next_down == -1 and mirror_both ==f mirror_up_down); mirror_both == 6 -> abs:1; otherwise -> src:mirror_both",
+     "feature_set": "core",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 3.0,
+     "rules": 144,
+     "seconds": 1.5
+    },
+    {
+     "task": "2c737e39",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.7
+    },
+    {
+     "task": "3391f8c0",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.0
+    },
+    {
+     "task": "3ed85e70",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 13.4
+    },
+    {
+     "task": "42a15761",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.6
+    },
+    {
+     "task": "477d2879",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 19.1
+    },
+    {
+     "task": "4cd1b7b2",
+     "rule": "change where (colour == 0); mirror_left_right ==f next_down or mirror_left_right == 1 and nearest_left !=f nearest_up -> abs:3; mirror_both == 4 and mirror_both !=f nearest_down -> abs:4; mirror_both ==f next_down or next_down_right == 3 -> abs:1; otherwise -> abs:2",
+     "feature_set": "core",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "cost": 8.0,
+     "rules": 12,
+     "seconds": 11.2
+    },
+    {
+     "task": "50a16a69",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 22.3
+    },
+    {
+     "task": "54db823b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.7
+    },
+    {
+     "task": "58743b76",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.6
+    },
+    {
+     "task": "5b692c0f",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.7
+    },
+    {
+     "task": "62ab2642",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.7
+    },
+    {
+     "task": "66e6c45b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 7.6
+    },
+    {
+     "task": "6ad5bdfd",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.2
+    },
+    {
+     "task": "72207abc",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.9
+    },
+    {
+     "task": "770cc55f",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.1
+    },
+    {
+     "task": "7d1f7ee8",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 7.1
+    },
+    {
+     "task": "845d6e51",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 8.3
+    },
+    {
+     "task": "88207623",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "8dae5dfc",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.7
+    },
+    {
+     "task": "917bccba",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.3
+    },
+    {
+     "task": "94414823",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "97239e3d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.9
+    },
+    {
+     "task": "9b2a60aa",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 3.0
+    },
+    {
+     "task": "9c56f360",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.5
+    },
+    {
+     "task": "a04b2602",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "a8610ef7",
+     "rule": "change where (colour == 8); mirror_up_down == 0 -> abs:5; otherwise -> abs:2",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 48,
+     "seconds": 5.4
+    },
+    {
+     "task": "ac0c5833",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.8
+    },
+    {
+     "task": "af22c60d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 27.4
+    },
+    {
+     "task": "b7fb29bc",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.9
+    },
+    {
+     "task": "bb52a14b",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 4.5
+    },
+    {
+     "task": "c074846d",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.5
+    },
+    {
+     "task": "c7d4e6ad",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.1
+    },
+    {
+     "task": "ce039d91",
+     "rule": "change where (colour == 5 and colour ==f mirror_left_right); otherwise -> abs:1",
+     "feature_set": "core",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 2.0,
+     "rules": 12,
+     "seconds": 0.4
+    },
+    {
+     "task": "d304284e",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.4
+    },
+    {
+     "task": "da2b0fe3",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.8
+    },
+    {
+     "task": "df8cc377",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.2
+    },
+    {
+     "task": "e4075551",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.7
+    },
+    {
+     "task": "e681b708",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 10.6
+    },
+    {
+     "task": "e7b06bea",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 8.8
+    },
+    {
+     "task": "e9bb6954",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 5.1
+    },
+    {
+     "task": "f0df5ff0",
+     "rule": "change where (blob_majority == -1 and orthogonal_1 == 1) or (blob_majority == -1 and diagonal_1 == 1); otherwise -> abs:1",
+     "feature_set": "rich",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "cost": 4.0,
+     "rules": 24,
+     "seconds": 3.3
+    },
+    {
+     "task": "f45f5ca7",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 0.8
+    },
+    {
+     "task": "f9a67cb5",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 1.0
+    },
+    {
+     "task": "fd4b2b02",
+     "rule": null,
+     "feature_set": null,
+     "first": [],
+     "second": [],
+     "seconds": 2.4
+    }
+   ]
+  }
+ }
+}

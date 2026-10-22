@@ -1,0 +1,70 @@
+{
+ "steps": [
+  {
+   "name": "rules_vote",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--strategy",
+    "vote",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "rules_loo",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--strategy",
+    "loo",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "rules_thr1",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--threshold-cost",
+    "1.0",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "rules_thr1_vote",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--threshold-cost",
+    "1.0",
+    "--strategy",
+    "vote",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ]
+}

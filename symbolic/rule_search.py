@@ -390,16 +390,54 @@ def model_with(model, sub_found, found):
     return out
 
 
-def attempts(rules: Sequence[Rule], grid, tries=2) -> List[np.ndarray]:
-    """The outputs of the cheapest rules for `grid`, the first `tries` that differ."""
-    out = []
+STRATEGIES = ("shortest", "vote", "loo")
+
+
+def attempts(rules: Sequence[Rule], grid, tries=2, strategy="shortest", train=None,
+             feature_set="core") -> List[np.ndarray]:
+    """The outputs to hand in for `grid` out of the rules that fit the training pairs (cheapest first).
+
+    shortest  the outputs of the cheapest rules, the first `tries` that differ
+    vote      the outputs grouped, each rule voting 1 / (1 + cost) for its output; the heaviest groups first. Many
+              long rules that agree outweigh one short rule that stands alone
+    loo       the same groups, ranked first by how many of the leave-one-pair-out searches (the rules that fit all
+              the pairs but one) give that output as their cheapest, then by their weight: an output that survives
+              losing any one example is less likely to hang on a coincidence of it. Needs `train`
+    """
+    if strategy not in STRATEGIES:
+        raise ValueError(f"strategy is one of {STRATEGIES}, not {strategy!r}")
+    if strategy == "shortest":
+        out = []
+        for rule in rules:
+            guess = rule.apply(grid)
+            if not any(np.array_equal(guess, g) for g in out):
+                out.append(guess)
+            if len(out) == tries:
+                break
+        return out
+    groups = []                                       # [output, weight, votes from leave-one-out]
     for rule in rules:
         guess = rule.apply(grid)
-        if not any(np.array_equal(guess, g) for g in out):
-            out.append(guess)
-        if len(out) == tries:
-            break
-    return out
+        for group in groups:
+            if np.array_equal(group[0], guess):
+                group[1] += 1.0 / (1.0 + rule.cost)
+                break
+        else:
+            groups.append([guess, 1.0 / (1.0 + rule.cost), 0])
+    if strategy == "loo":
+        if train is None:
+            raise ValueError("the loo strategy needs the training pairs")
+        for i in range(len(train)):
+            fewer = search(list(train[:i]) + list(train[i + 1:]), feature_set)
+            if not fewer:
+                continue
+            guess = fewer[0].apply(grid)
+            for group in groups:
+                if np.array_equal(group[0], guess):
+                    group[2] += 1
+                    break
+    groups.sort(key=lambda group: (-group[2], -group[1]))
+    return [group[0] for group in groups[:tries]]
 
 
 def solve(train, test_input, feature_sets=("core", "rich"), tries=2) -> Tuple[List[np.ndarray], Optional[Rule]]:

@@ -29,16 +29,21 @@ def same_shape(challenge, solutions):
             and all(np.shape(t["input"]) == np.shape(s) for t, s in zip(challenge["test"], solutions)))
 
 
-def probe(task, challenge, solutions, feature_sets):
-    """One task's record: the rule, and for each test input whether the first or the second attempt is right."""
+def probe(task, challenge, solutions, feature_sets, strategy="shortest", threshold_cost=None):
+    """One task's record: the rule, and for each test input whether the first or the second attempt is right.
+    `strategy` is how the two attempts are chosen among the rules that fit (rule_search.attempts), `threshold_cost`
+    what a threshold costs over an equality in a rule's length."""
     started = time.time()
+    if threshold_cost is not None:
+        rule_search.THRESHOLD_COST = threshold_cost
     record = {"task": task, "rule": None, "feature_set": None, "first": [], "second": []}
     for feature_set in feature_sets:
         rules = rule_search.search(challenge["train"], feature_set)
         if rules:
             record.update(rule=rules[0].describe(), feature_set=feature_set, cost=rules[0].cost, rules=len(rules))
             for test, solution in zip(challenge["test"], solutions):
-                guesses = rule_search.attempts(rules, test["input"])
+                guesses = rule_search.attempts(rules, test["input"], strategy=strategy, train=challenge["train"],
+                                               feature_set=feature_set)
                 right = [bool(np.array_equal(g, np.asarray(solution))) for g in guesses]
                 record["first"].append(bool(right[:1] and right[0]))
                 record["second"].append(any(right))
@@ -52,18 +57,26 @@ def main():
     parser.add_argument("--split", nargs="*", default=["training", "evaluation"])
     parser.add_argument("--tasks", nargs="*")
     parser.add_argument("--sets", nargs="*", default=["core", "rich"])
+    parser.add_argument("--strategy", default="shortest", choices=rule_search.STRATEGIES,
+                        help="how the two attempts are chosen among the rules that fit")
+    parser.add_argument("--threshold-cost", type=float, help="what a threshold costs over an equality (default 1.25)")
+    parser.add_argument("--shard", type=int, default=0, help="this shard of --shards: every shards-th task")
+    parser.add_argument("--shards", type=int, default=1)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--timeout", type=float, default=300.0, help="seconds a task may take before it counts as unsolved")
     parser.add_argument("--out", default=str(REPO_ROOT / "data" / "experiments" / "rule_probe.json"))
     args = parser.parse_args()
-    report = {"sets": args.sets, "splits": {}}
+    report = {"sets": args.sets, "strategy": args.strategy, "threshold_cost": args.threshold_cost,
+              "shard": [args.shard, args.shards], "splits": {}}
     for split in args.split:
         challenges = json.loads((DATA / f"{split}_challenges.json").read_text())
         solutions = json.loads((DATA / f"{split}_solutions.json").read_text())
         tasks = [t for t in (args.tasks or challenges) if t in challenges and same_shape(challenges[t], solutions[t])]
+        tasks = tasks[args.shard::args.shards]
         records = []
         with ProcessPoolExecutor(args.workers) as pool:
-            futures = {t: pool.submit(probe, t, challenges[t], solutions[t], args.sets) for t in tasks}
+            futures = {t: pool.submit(probe, t, challenges[t], solutions[t], args.sets, args.strategy,
+                                                  args.threshold_cost) for t in tasks}
             for task, future in futures.items():
                 try:
                     records.append(future.result(timeout=args.timeout))

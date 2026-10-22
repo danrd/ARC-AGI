@@ -213,10 +213,10 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (21)"]
   rl["rl (20)"]
-  scripts["scripts (21)"]
+  scripts["scripts (22)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (12)"]
-  tests["tests (95)"]
+  tests["tests (96)"]
   utils["utils (3)"]
   tests -->|113| rl
   tests -->|48| subsymbolic
@@ -228,9 +228,9 @@ graph TD
   rl -->|13| symbolic
   rl -->|11| data
   orchestration -->|7| rl
+  tests -->|7| scripts
   orchestration -->|6| symbolic
   scripts -->|6| subsymbolic
-  tests -->|6| scripts
   scripts -->|4| symbolic
   data -->|3| rl
   orchestration -->|3| data
@@ -239,6 +239,7 @@ graph TD
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
+  scripts -->|1| orchestration
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -265,7 +266,7 @@ graph TD
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 12 |
 | `orchestration.hierarchy` | 7 |
-| `orchestration.llm_only` | 2 |
+| `orchestration.llm_only` | 3 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
 | `orchestration.refine_core` | 2 |
@@ -306,6 +307,7 @@ graph TD
 | `scripts.prompt_variants` | 0 |
 | `scripts.rl_compare` | 0 |
 | `scripts.rule_probe` | 0 |
+| `scripts.rule_report` | 0 |
 | `scripts.run_prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |

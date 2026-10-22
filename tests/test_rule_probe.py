@@ -28,3 +28,51 @@ def test_a_task_is_solved_when_every_test_is_right_in_two_attempts_and_its_rule_
     nines = (np.asarray(test_in) * 0 + 9).tolist()
     wrong = rp.probe("t", {"train": train, "test": [{"input": test_in}]}, [nines], ["core"])
     assert wrong["rule"] and wrong["second"] == [False] and wrong["first"] == [False]
+
+
+def test_a_shard_takes_every_nth_task_and_the_strategy_reaches_the_search(monkeypatch, tmp_path):
+    import json
+    import sys
+    train = [dict(zip(("input", "output"), between(9, 1, 1, 5))), dict(zip(("input", "output"), between(9, 3, 2, 7)))]
+    test_in, test_out = between(10, 4, 0, 3)
+    challenge = {"train": train, "test": [{"input": test_in}]}
+    names = ["a", "b", "c", "d", "e"]
+    (tmp_path / "x_challenges.json").write_text(json.dumps({n: challenge for n in names}))
+    (tmp_path / "x_solutions.json").write_text(json.dumps({n: [test_out] for n in names}))
+    monkeypatch.setattr(rp, "DATA", tmp_path)
+    monkeypatch.setattr(rp, "ProcessPoolExecutor", lambda workers: __import__("concurrent.futures").futures.ThreadPoolExecutor(1))
+    seen = []
+    original = rp.rule_search.attempts
+    monkeypatch.setattr(rp.rule_search, "attempts",
+                        lambda rules, grid, tries=2, strategy="shortest", **kw: seen.append(strategy) or
+                        original(rules, grid, tries, strategy, **kw))
+    for shard in (0, 1):
+        out = tmp_path / f"out{shard}.json"
+        monkeypatch.setattr(sys, "argv", ["rule_probe", "--split", "x", "--sets", "core", "--shard", str(shard), "--shards", "2",
+                                          "--strategy", "vote", "--workers", "1", "--out", str(out)])
+        rp.main()
+        report = json.loads(out.read_text())
+        got = [r["task"] for r in report["splits"]["x"]["records"]]
+        assert got == names[shard::2] and report["strategy"] == "vote" and report["shard"] == [shard, 2]
+    assert set(seen) == {"vote"}
+    assert rp.rule_search.THRESHOLD_COST == 0.25
+    rp.probe("a", challenge, [test_out], ["core"], threshold_cost=0.75)
+    assert rp.rule_search.THRESHOLD_COST == 0.75
+    rp.rule_search.THRESHOLD_COST = 0.25
+
+
+def test_the_threshold_cost_of_the_command_line_reaches_the_search(monkeypatch, tmp_path):
+    import json
+    import sys
+    train = [dict(zip(("input", "output"), between(9, 1, 1, 5))), dict(zip(("input", "output"), between(9, 3, 2, 7)))]
+    test_in, test_out = between(10, 4, 0, 3)
+    (tmp_path / "x_challenges.json").write_text(json.dumps({"a": {"train": train, "test": [{"input": test_in}]}}))
+    (tmp_path / "x_solutions.json").write_text(json.dumps({"a": [test_out]}))
+    monkeypatch.setattr(rp, "DATA", tmp_path)
+    monkeypatch.setattr(rp, "ProcessPoolExecutor", lambda workers: __import__("concurrent.futures").futures.ThreadPoolExecutor(1))
+    monkeypatch.setattr(rp.rule_search, "THRESHOLD_COST", 0.25)
+    monkeypatch.setattr(sys, "argv", ["rule_probe", "--split", "x", "--sets", "core", "--threshold-cost", "0.75",
+                                      "--out", str(tmp_path / "o.json")])
+    rp.main()
+    assert rp.rule_search.THRESHOLD_COST == 0.75
+    assert json.loads((tmp_path / "o.json").read_text())["threshold_cost"] == 0.75

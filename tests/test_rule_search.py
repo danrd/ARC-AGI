@@ -88,3 +88,57 @@ def test_a_rule_that_does_not_reproduce_every_pair_is_not_returned():
     train = [between_task(9, 1, 1, 5, 2), pair(np.eye(4, dtype=int), np.eye(4, dtype=int)[::-1])]
     for rule in rs.search(train):
         assert all(np.array_equal(rule.apply(p["input"]), p["output"]) for p in train)
+
+
+def test_a_strategy_chooses_among_the_rules_that_fit_and_an_unknown_one_is_refused():
+    import pytest
+    train = [between_task(9, 1, 1, 5, 2), between_task(9, 3, 2, 7, 2), between_task(10, 0, 4, 8, 2)]
+    test = between_task(10, 4, 0, 3, 2)
+    rules = rs.search(train)
+    for strategy in rs.STRATEGIES:
+        tries = rs.attempts(rules, test["input"], strategy=strategy, train=train)
+        assert 1 <= len(tries) <= 2 and np.array_equal(tries[0], test["output"]), strategy
+    with pytest.raises(ValueError, match="strategy"):
+        rs.attempts(rules, test["input"], strategy="best")
+    with pytest.raises(ValueError, match="training pairs"):
+        rs.attempts(rules, test["input"], strategy="loo")
+
+
+class FixedRule:
+    """A rule that gives one output whatever it is shown."""
+
+    def __init__(self, cost, value):
+        self.cost, self.value = cost, value
+
+    def apply(self, grid):
+        return np.full((1, 1), self.value)
+
+
+def test_many_long_rules_that_agree_outvote_one_short_rule_that_stands_alone():
+    rules = [FixedRule(1.0, 7)] + [FixedRule(3.0, 5) for _ in range(4)]
+    assert [g[0, 0] for g in rs.attempts(rules, None, strategy="shortest")] == [7, 5]
+    assert [g[0, 0] for g in rs.attempts(rules, None, strategy="vote")] == [5, 7]       # 4 x 0.25 against 0.5
+    assert [g[0, 0] for g in rs.attempts(rules, None, strategy="vote", tries=1)] == [5]
+
+
+def test_the_threshold_cost_decides_whether_a_threshold_or_an_equality_is_the_shorter_rule(monkeypatch):
+    atom = rs.Atom("size", "<=", 3)
+    monkeypatch.setattr(rs, "THRESHOLD_COST", 0.25)
+    assert atom.cost == 1.25 and rs.Atom("size", "==", 3).cost == 1.0 and rs.Atom("colour", "!=", 3).cost == 1.0
+    monkeypatch.setattr(rs, "THRESHOLD_COST", 1.0)
+    assert atom.cost == 2.0
+
+
+def test_a_cheap_rule_outweighs_two_dear_ones_and_an_output_that_survives_leaving_a_pair_out_comes_first(monkeypatch):
+    cheap_and_dear = [FixedRule(0.0, 7), FixedRule(9.0, 5), FixedRule(9.0, 5)]
+    assert [g[0, 0] for g in rs.attempts(cheap_and_dear, None, strategy="vote")] == [7, 5]    # 1.0 against 0.2
+    steady = [FixedRule(1.0, 7), FixedRule(3.0, 5)]
+    asked = []
+    monkeypatch.setattr(rs, "search", lambda train, feature_set="core", keep=12: asked.append(list(train)) or
+                        [FixedRule(1.0, 5)])
+    pairs = [{"n": 0}, {"n": 1}, {"n": 2}]
+    assert [g[0, 0] for g in rs.attempts(steady, None, strategy="vote")] == [7, 5]
+    assert [g[0, 0] for g in rs.attempts(steady, None, strategy="loo", train=pairs)] == [5, 7]
+    assert asked == [[{"n": 1}, {"n": 2}], [{"n": 0}, {"n": 2}], [{"n": 0}, {"n": 1}]]       # each pair left out once
+    monkeypatch.setattr(rs, "search", lambda train, feature_set="core", keep=12: [])
+    assert [g[0, 0] for g in rs.attempts(steady, None, strategy="loo", train=pairs)] == [7, 5]   # nothing to vote with

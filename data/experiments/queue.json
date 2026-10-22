@@ -4657,6 +4657,17 @@
     "data/experiments/runs/kaggle/rules_a_rules_vote_4.json"
    ],
    "cleaned": true
+  },
+  {
+   "name": "symcov_a",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "покрытие символьных солверов (mixer, upscale_or_covering, color_restore) и поиска правил как четвёртого, с проверкой по отложенным парам (checked_solve), обе выборки, 5 блокнотов по 4 ядра; даёт множества решённых задач для пересечений: с поиском правил, Gemma, RL по объектам",
+   "result": [],
+   "cleaned": false
   }
  ]
 }

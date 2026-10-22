@@ -1,0 +1,22 @@
+{
+ "steps": [
+  {
+   "name": "symcov",
+   "command": [
+    "scripts/symbolic_coverage.py",
+    "--split",
+    "both",
+    "--workers",
+    "4",
+    "--timeout",
+    "600",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

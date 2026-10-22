@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """What the rule probe's runs add up to: variants side by side, and the rules together with the LLM.
 
-    python scripts/rule_report.py                   # every variant found under data/experiments/runs/kaggle
-    python scripts/rule_report.py --gate            # the confidence gate: rules when cheap, the LLM otherwise
+    python -m orchestration.rule_report                   # every variant found under data/experiments/runs/kaggle
+    python -m orchestration.rule_report --gate            # the confidence gate: rules when cheap, the LLM otherwise
 
 A variant is one rule_probe run, in one file or in shards of it (JOB_STEP_K.json from the Kaggle queue, or
 data/experiments/rule_probe.json); the report merges the shards of a variant and counts, per split, the tasks it found a

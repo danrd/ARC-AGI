@@ -211,27 +211,27 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (21)"]
+  orchestration["orchestration (22)"]
   rl["rl (20)"]
-  scripts["scripts (22)"]
+  scripts["scripts (21)"]
   subsymbolic["subsymbolic (15)"]
-  symbolic["symbolic (12)"]
-  tests["tests (96)"]
+  symbolic["symbolic (13)"]
+  tests["tests (97)"]
   utils["utils (3)"]
-  tests -->|113| rl
+  tests -->|114| rl
   tests -->|48| subsymbolic
-  tests -->|40| orchestration
-  tests -->|37| symbolic
+  tests -->|41| orchestration
+  tests -->|39| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
   scripts -->|17| rl
   rl -->|13| symbolic
   rl -->|11| data
   orchestration -->|7| rl
-  tests -->|7| scripts
   orchestration -->|6| symbolic
   scripts -->|6| subsymbolic
-  scripts -->|4| symbolic
+  tests -->|6| scripts
+  scripts -->|5| symbolic
   data -->|3| rl
   orchestration -->|3| data
   rl -->|3| utils
@@ -239,7 +239,6 @@ graph TD
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
-  scripts -->|1| orchestration
   scripts -->|1| utils
   subsymbolic -->|1| data
   subsymbolic -->|1| utils
@@ -272,13 +271,14 @@ graph TD
 | `orchestration.refine_core` | 2 |
 | `orchestration.regrade_llm_only` | 1 |
 | `orchestration.roster` | 3 |
+| `orchestration.rule_report` | 0 |
 | `orchestration.run` | 4 |
 | `orchestration.tools` | 6 |
 | `orchestration.trace` | 11 |
 | `rl.action_structure` | 4 |
 | `rl.arc_env` | 15 |
 | `rl.arc_hp_search` | 1 |
-| `rl.arc_task` | 45 |
+| `rl.arc_task` | 46 |
 | `rl.arc_transformators` | 5 |
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 3 |
@@ -307,7 +307,6 @@ graph TD
 | `scripts.prompt_variants` | 0 |
 | `scripts.rl_compare` | 0 |
 | `scripts.rule_probe` | 0 |
-| `scripts.rule_report` | 0 |
 | `scripts.run_prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |
@@ -337,9 +336,10 @@ graph TD
 | `symbolic.invariants` | 5 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
-| `symbolic.rule_search` | 0 |
+| `symbolic.rule_search` | 1 |
+| `symbolic.rule_solver` | 2 |
 | `symbolic.summaries` | 11 |
-| `symbolic.symbolic_module` | 8 |
+| `symbolic.symbolic_module` | 10 |
 | `symbolic.utils` | 11 |
 | `utils.plotting` | 5 |
 | `utils.utils` | 2 |

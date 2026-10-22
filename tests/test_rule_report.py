@@ -1,7 +1,7 @@
 """The rule report: shards of a variant merged, and the confidence gate between the rules and the LLM."""
 import json
 
-from scripts import rule_report as rr
+from orchestration import rule_report as rr
 
 
 def record(task, cost, right=None):

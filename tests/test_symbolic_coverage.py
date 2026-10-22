@@ -168,9 +168,46 @@ class TestResuming:
         assert len(path.read_text().splitlines()) == 1
 
 
+class TestShards:
+    def test_a_shard_runs_every_nth_task_left_and_the_others_are_left_to_the_other_shards(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(coverage, "load_task_ids", lambda split: ["a", "b", "c", "d", "e"])
+        seen = []
+
+        class Pool:
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def submit(self, fn, split, task_id, timeout):
+                seen.append(task_id)
+                raise RuntimeError("stop after listing")
+
+        monkeypatch.setattr(coverage, "ProcessPoolExecutor", Pool)
+        for shard, expected in ((0, ["a", "c", "e"]), (1, ["b", "d"])):
+            seen.clear()
+            try:
+                coverage.run(("evaluation",), tmp_path / f"o{shard}.jsonl", workers=1, timeout=0, shard=shard, shards=2)
+            except RuntimeError:
+                pass
+            assert seen[:1] == expected[:1]
+        monkeypatch.setattr(coverage, "read_records", lambda path: {("evaluation", "a"): {}})
+        seen.clear()
+        try:
+            coverage.run(("evaluation",), tmp_path / "o2.jsonl", workers=1, timeout=0, shard=0, shards=2)
+        except RuntimeError:
+            pass
+        assert seen[:1] == ["b"]                # "a" is done: the shard counts what is left
+
+
 class TestTheRealSolvers:
-    def test_the_three_the_module_has_are_named(self):
+    def test_the_module_s_three_and_the_rule_search_are_named(self):
         assert set(coverage.default_solvers()) == set(coverage.SOLVERS)
+        assert coverage.SOLVERS[-1] == "rule_search" and len(coverage.SOLVERS) == 4
 
     def test_a_real_task_is_scored_end_to_end_by_id(self):
         """One task from the dataset through the same call a worker makes."""

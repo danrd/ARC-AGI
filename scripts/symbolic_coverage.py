@@ -44,7 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 DATA = REPO_ROOT / "data" / "datasets" / "ARC"
-SOLVERS = ("mixer", "upscale_or_covering", "color_restore")
+SOLVERS = ("mixer", "upscale_or_covering", "color_restore", "rule_search")
 
 
 class TimedOut(Exception):
@@ -96,10 +96,13 @@ class _Alarm:
 
 
 def default_solvers():
+    from symbolic.rule_solver import RuleSearchSolver
     from symbolic.symbolic_module import SymbolicModule
 
     module = SymbolicModule()
-    return {name: getattr(module, name) for name in SOLVERS}
+    solvers = {name: getattr(module, name) for name in SOLVERS if name != "rule_search"}
+    solvers["rule_search"] = RuleSearchSolver()
+    return solvers
 
 
 def solvers_for(task):
@@ -108,8 +111,12 @@ def solvers_for(task):
     or background cells (symbolic_module.font_value_candidates)."""
     from symbolic.symbolic_module import SymbolicModule
 
+    from symbolic.rule_solver import RuleSearchSolver
+
     modules = SymbolicModule.for_task(task)
-    return {name: [getattr(module, name) for module in modules] for name in SOLVERS}
+    solvers = {name: [getattr(module, name) for module in modules] for name in SOLVERS if name != "rule_search"}
+    solvers["rule_search"] = [RuleSearchSolver()]                  # no font colour to try: it reads the cells
+    return solvers
 
 
 def score_task(task, solvers, timeout=0):
@@ -228,14 +235,14 @@ def solved_ids(records, split=None):
     return {name: sorted(ids) for name, ids in by_solver.items()}
 
 
-def run(splits, out, workers, timeout, limit=0):
+def run(splits, out, workers, timeout, limit=0, shard=0, shards=1):
     """Score every task of `splits` not already in `out`, appending as each
     finishes. A worker killed for memory takes its pending tasks with it, so
-    the pool is rebuilt for what is left, up to three times."""
+    the pool is rebuilt for what is left, up to three times. A shard takes every shards-th of the tasks left."""
     done = read_records(out)
     todo = [(split, task_id) for split in splits
             for task_id in load_task_ids(split)[:limit or None]
-            if (split, task_id) not in done]
+            if (split, task_id) not in done][shard::shards]
     print(f"{len(done)} tasks already in {out}; {len(todo)} to go", flush=True)
     breaks = 0
     with open(out, "a", buffering=1) as handle:
@@ -269,12 +276,14 @@ def main():
                         help="seconds a solver may take on one task, its check included; "
                              "0 for no limit")
     parser.add_argument("--limit", type=int, default=0, help="only the first N tasks of a split")
+    parser.add_argument("--shard", type=int, default=0, help="this shard of --shards (a Kaggle notebook's share)")
+    parser.add_argument("--shards", type=int, default=1)
     parser.add_argument("--summary-only", action="store_true",
                         help="summarise what --out already holds and run nothing")
     args = parser.parse_args()
     splits = ("training", "evaluation") if args.split == "both" else (args.split,)
     records = (read_records(args.out) if args.summary_only
-               else run(splits, args.out, args.workers, args.timeout, args.limit))
+               else run(splits, args.out, args.workers, args.timeout, args.limit, args.shard, args.shards))
     wanted = [record for record in records.values() if record["split"] in splits]
     print(render(summarise(wanted)))
     for split in splits:

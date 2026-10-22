@@ -213,15 +213,15 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (22)"]
   rl["rl (20)"]
-  scripts["scripts (21)"]
+  scripts["scripts (23)"]
   subsymbolic["subsymbolic (15)"]
-  symbolic["symbolic (13)"]
-  tests["tests (97)"]
+  symbolic["symbolic (15)"]
+  tests["tests (98)"]
   utils["utils (3)"]
-  tests -->|114| rl
+  tests -->|113| rl
   tests -->|48| subsymbolic
   tests -->|41| orchestration
-  tests -->|39| symbolic
+  tests -->|40| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
   scripts -->|17| rl
@@ -229,9 +229,9 @@ graph TD
   rl -->|11| data
   orchestration -->|7| rl
   orchestration -->|7| symbolic
+  tests -->|7| scripts
   scripts -->|6| subsymbolic
-  tests -->|6| scripts
-  scripts -->|5| symbolic
+  scripts -->|6| symbolic
   data -->|3| rl
   orchestration -->|3| data
   rl -->|3| utils
@@ -283,7 +283,7 @@ graph TD
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 3 |
 | `rl.coordinate_search` | 4 |
-| `rl.evaluation` | 5 |
+| `rl.evaluation` | 4 |
 | `rl.features` | 10 |
 | `rl.mcts` | 8 |
 | `rl.optimization` | 2 |
@@ -305,7 +305,8 @@ graph TD
 | `scripts.module_map` | 0 |
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |
-| `scripts.rl_compare` | 0 |
+| `scripts.rl_compare` | 1 |
+| `scripts.rl_evaluation` | 0 |
 | `scripts.rule_probe` | 0 |
 | `scripts.run_prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
@@ -315,6 +316,7 @@ graph TD
 | `scripts.symbolic_coverage` | 1 |
 | `scripts.sync_llm_kit` | 0 |
 | `scripts.tpu_gemma_probe` | 0 |
+| `scripts.transform_probe` | 0 |
 | `subsymbolic.analyst` | 4 |
 | `subsymbolic.answer_check` | 2 |
 | `subsymbolic.arc_evaluators` | 1 |
@@ -333,6 +335,7 @@ graph TD
 | `symbolic.cell_features` | 3 |
 | `symbolic.color_names` | 1 |
 | `symbolic.findings` | 5 |
+| `symbolic.grid_transforms` | 1 |
 | `symbolic.invariants` | 5 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
@@ -340,6 +343,7 @@ graph TD
 | `symbolic.rule_solver` | 2 |
 | `symbolic.summaries` | 11 |
 | `symbolic.symbolic_module` | 10 |
+| `symbolic.transformed_rules` | 0 |
 | `symbolic.utils` | 11 |
 | `utils.plotting` | 5 |
 | `utils.utils` | 2 |

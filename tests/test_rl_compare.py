@@ -366,13 +366,41 @@ class TestResuming:
 class TestNarrowing:
     def test_each_task_is_written_with_the_vocabulary_it_was_narrowed_to(self, tmp_path, monkeypatch):
         import rl.rl_job as job
-        monkeypatch.setattr(compare, "load_task", lambda task_id: type("T", (), {"agent": "shifter"})())
+        monkeypatch.setattr(compare, "load_task", lambda task_id, split="training": type("T", (), {"agent": "shifter"})())
         monkeypatch.setattr(job, "narrowed_for_task", lambda task, config: {
             "addressing": "objects", "feasible_actions": {0: "submit", 1: "blue_recolor"}})
         out = tmp_path / "c.json"
         compare.narrow(["x", "y"], out)
         written = json.loads(out.read_text())
         assert set(written) == {"x", "y"} and written["x"]["feasible_actions"] == {"0": "submit", "1": "blue_recolor"}
+
+    def test_an_evaluation_task_is_loaded_from_its_split_and_marked_so_in_its_config(self, tmp_path, monkeypatch):
+        import rl.rl_job as job
+        loaded = []
+        monkeypatch.setattr(compare, "load_task", lambda task_id, split="training": loaded.append(split) or object())
+        monkeypatch.setattr(job, "narrowed_for_task", lambda task, config: {
+            "addressing": "objects", "feasible_actions": {0: "submit"}})
+        out, other = tmp_path / "e.json", tmp_path / "t.json"
+        compare.narrow(["x"], out, "evaluation")
+        compare.narrow(["x"], other)
+        assert loaded == ["evaluation", "training"]
+        assert json.loads(out.read_text())["x"]["split"] == "evaluation"
+        assert "split" not in json.loads(other.read_text())["x"]
+
+    def test_a_run_loads_the_split_its_config_names_and_does_not_hand_it_on_to_training(self, monkeypatch):
+        import rl.training
+        seen = {}
+
+        def fake(task, config, ppo, show_plots):
+            seen["config"] = config
+            return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.5}
+
+        loaded = []
+        monkeypatch.setattr(rl.training, "train_on_task", fake)
+        monkeypatch.setattr(compare, "load_task", lambda task_id, split="training": loaded.append(split) or tiny_task())
+        compare.one_run({"feasible_actions": {"0": "submit"}, "split": "evaluation"}, "default", 0, 1000, "a")
+        compare.one_run({"feasible_actions": {"0": "submit"}}, "default", 0, 1000, "a")
+        assert loaded == ["evaluation", "training"] and "split" not in seen["config"]
 
 
 def run(task, arm, held_out, train):
@@ -434,7 +462,7 @@ class TestSelectingTasks:
             return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.5, "test_acc_oracle": 0.75}
 
         monkeypatch.setattr(rl.training, "train_on_task", fake)
-        monkeypatch.setattr(compare, "load_task", lambda task_id: tiny_task())
+        monkeypatch.setattr(compare, "load_task", lambda task_id, split="training": tiny_task())
         config = {"feasible_actions": {"0": "submit"}}
         record = compare.one_run(config, "default", 0, 500_000, "a")
         assert seen["steps"] == 500_000 and record["steps"] == 500_000
@@ -451,7 +479,7 @@ class TestSelectingTasks:
             return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.25}
 
         monkeypatch.setattr(rl.training, "train_on_task", fake)
-        monkeypatch.setattr(compare, "load_task", lambda task_id: tiny_task())
+        monkeypatch.setattr(compare, "load_task", lambda task_id, split="training": tiny_task())
         compare.one_run({"feasible_actions": {"0": "submit"}}, "h_nostop", 0, 1000, "a")
         assert seen["config"]["stop_on_solve"] is False and "stop_on_solve" not in seen["ppo"]
         assert seen["ppo"]["spatial_channels"] == 32
@@ -477,7 +505,7 @@ def test_a_run_trains_with_every_colour_the_task_shows(monkeypatch):
         return {0: 1.0}, {0: 2.0}, None, {"test_acc": 0.5, "test_acc_honest": 0.5, "test_acc_oracle": 0.5}
 
     monkeypatch.setattr(rl.training, "train_on_task", fake)
-    monkeypatch.setattr(compare, "load_task", lambda task_id: tiny_task())
+    monkeypatch.setattr(compare, "load_task", lambda task_id, split="training": tiny_task())
     record = compare.one_run({"feasible_actions": {"0": "submit", "1": "red_fill"}}, "default", 0, 100, "a")
     assert list(seen["actions"].values()) == ["submit", "black_fill", "red_fill", "orange_fill"]
     assert record["actions"] == 4

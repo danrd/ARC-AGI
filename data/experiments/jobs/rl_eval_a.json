@@ -1,0 +1,22 @@
+{
+ "steps": [
+  {
+   "name": "rl_eval",
+   "command": [
+    "scripts/rl_evaluation.py",
+    "--tasks-file",
+    "data/experiments/rl_eval_tasks.json",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--hours",
+    "10",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

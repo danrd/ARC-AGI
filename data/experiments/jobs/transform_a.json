@@ -1,0 +1,22 @@
+{
+ "steps": [
+  {
+   "name": "transform",
+   "command": [
+    "scripts/transform_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--search-seconds",
+    "400",
+    "--timeout",
+    "700",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ]
+}

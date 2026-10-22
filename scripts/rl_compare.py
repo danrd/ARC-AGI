@@ -389,8 +389,9 @@ def load_task(task_id, split="training"):
     return task
 
 
-def narrow(tasks, out):
-    """Write each task's narrowed rl_config to `out`, one task at a time: a
+def narrow(tasks, out, split="training"):
+    """Write each task's narrowed rl_config to `out` (marked with its `split` when that is not the training one, which
+    is where one_run finds the task), one task at a time: a
     task already in the file is kept and not searched again, so a run cut
     short resumes. The search is random, which is why the result is kept and
     every arm, seed and machine trains over this one."""
@@ -404,10 +405,12 @@ def narrow(tasks, out):
     for task_id in tasks:
         if task_id in configs:
             continue
-        task = load_task(task_id)
+        task = load_task(task_id, split)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             config = narrowed_for_task(task, rl_config)
         config["feasible_actions"] = {int(k): v for k, v in config["feasible_actions"].items()}
+        if split != "training":
+            config["split"] = split
         configs[task_id] = config
         print(task_id, getattr(task, "agent", None), config["addressing"], len(config["feasible_actions"]),
               "actions", flush=True)
@@ -485,7 +488,8 @@ def one_run(config, arm, seed, steps, task_id):
     from rl.training import train_on_task
 
     elements, settings = arm_settings(arm)
-    task = load_task(task_id)
+    config = dict(config)
+    task = load_task(task_id, config.pop("split", "training"))
     config = dict(config, seed=seed, total_steps=steps, log_path=f"/tmp/rl_compare/{task_id}_{arm}_{seed}/")
     # The stored configs hold what the search kept, in the colours the examples' answers were reached in; the
     # vocabulary trained with has every colour the task shows (narrowed_for_task does the same).
@@ -618,6 +622,7 @@ def build_parser():
     narrowing = sub.add_parser("narrow", help="write each task's narrowed rl_config")
     narrowing.add_argument("--tasks", nargs="*", default=list(DEFAULT_TASKS))
     narrowing.add_argument("--out", default="rl_compare_configs.json")
+    narrowing.add_argument("--split", default="training", choices=("training", "evaluation"))
     training = sub.add_parser("train", help="run one shard of the (task, arm, seed) grid")
     training.add_argument("--configs", default="rl_compare_configs.json")
     training.add_argument("--arms", nargs="+", default=list(OBSERVATION_ARMS), choices=sorted(ARMS))
@@ -651,7 +656,7 @@ def main():
               file=sys.stderr)
         print(" ".join(chosen))
     elif args.command == "narrow":
-        narrow(args.tasks, args.out)
+        narrow(args.tasks, args.out, args.split)
     elif args.command == "train":
         with open(args.configs) as handle:
             configs = json.load(handle)

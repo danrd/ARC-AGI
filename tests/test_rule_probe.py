@@ -76,3 +76,18 @@ def test_the_threshold_cost_of_the_command_line_reaches_the_search(monkeypatch, 
     rp.main()
     assert rp.rule_search.THRESHOLD_COST == 0.75
     assert json.loads((tmp_path / "o.json").read_text())["threshold_cost"] == 0.75
+
+
+def test_the_relational_flag_and_the_width_reach_the_search(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(rp.rule_search, "search", lambda train, feature_set: seen.update(
+        relational=rp.rule_search.RELATIONAL, wide=rp.rule_search.WIDE, cap=rp.rule_search.SUPERSET_CAP,
+        keep=rp.rule_search.KEEP) or [])
+    saved = (rp.rule_search.RELATIONAL, rp.rule_search.WIDE, rp.rule_search.SUPERSET_CAP, rp.rule_search.KEEP)
+    try:
+        rp.probe("a", {"train": [], "test": []}, [], ["core"], relational=True, wide=1000, keep=24)
+        assert seen == {"relational": True, "wide": 1000, "cap": 300, "keep": 24}
+        rp.probe("a", {"train": [], "test": []}, [], ["core"])
+        assert seen["relational"] is False
+    finally:
+        rp.rule_search.RELATIONAL, rp.rule_search.WIDE, rp.rule_search.SUPERSET_CAP, rp.rule_search.KEEP = saved

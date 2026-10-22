@@ -1,0 +1,132 @@
+{
+ "steps": [
+  {
+   "name": "ext_rel",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--timeout",
+    "900",
+    "--sets",
+    "core",
+    "rich",
+    "rich_ext",
+    "--relational",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "rel",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--timeout",
+    "900",
+    "--sets",
+    "core",
+    "rich",
+    "--relational",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "ext",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--timeout",
+    "900",
+    "--sets",
+    "core",
+    "rich",
+    "rich_ext",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "wide_ext_rel",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--timeout",
+    "900",
+    "--sets",
+    "core",
+    "rich",
+    "rich_ext",
+    "--relational",
+    "--wide",
+    "1500",
+    "--keep",
+    "24",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "off_rel",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--timeout",
+    "900",
+    "--sets",
+    "core",
+    "rich",
+    "rich_off",
+    "--relational",
+    "--out",
+    "{out}.json"
+   ]
+  },
+  {
+   "name": "obj_rel",
+   "command": [
+    "scripts/rule_probe.py",
+    "--shard",
+    "{shard}",
+    "--shards",
+    "{shards}",
+    "--workers",
+    "4",
+    "--timeout",
+    "900",
+    "--sets",
+    "core",
+    "rich",
+    "rich_obj",
+    "--relational",
+    "--out",
+    "{out}.json"
+   ]
+  }
+ ]
+}

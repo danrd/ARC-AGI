@@ -13,7 +13,11 @@ from scipy import ndimage
 OUTSIDE = -1                     # the colour of a neighbour off the grid
 DIRECTIONS = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0),
               "up_left": (-1, -1), "up_right": (-1, 1), "down_left": (1, -1), "down_right": (1, 1)}
-FEATURE_SETS = ("position", "neighbours", "structure", "structure_and_position", "rich", "rich_and_position", "core")
+FEATURE_SETS = ("position", "neighbours", "structure", "structure_and_position", "rich", "rich_and_position", "core",
+                "rich_off", "rich_obj", "rich_ext")
+#: The groups added to the rich set, by set: colours further along each direction ("offsets"), the cell seen from its
+#: blob's box ("boxes") and the grid turned a quarter ("turns"). rich_ext has all three.
+EXTRA_GROUPS = {"rich_off": ("offsets",), "rich_obj": ("boxes",), "rich_ext": ("offsets", "boxes", "turns")}
 #: The plainest 25 of the rich set: the cell's colour and its eight neighbours', the nearest colour and how far it is in
 #: the four straight directions, whether the cell lies between two of one colour, its object's size and whether it is
 #: on the object's border, and its mirror images. The rules the probe's trees found for the 7 tasks they solved used 19
@@ -120,7 +124,75 @@ def cell_features(grid, feature_set):
         extra, extra_colours = rich_features(grid, bg, features)
         features.update(extra)
         colours |= extra_colours
+    for group in EXTRA_GROUPS.get(feature_set, ()):
+        extra, extra_colours = GROUPS[group](grid, bg)
+        features.update(extra)
+        colours |= extra_colours
     return {name: np.asarray(value).astype(int) for name, value in features.items()}, colours
+
+
+def offset_features(grid, bg):
+    """The colour 2 and 3 cells away in each of the eight directions (OUTSIDE off the grid): where a shift of an object
+    by a few cells reads the colour it moves into the cell from. The cell one away is next_*."""
+    rows, cols = grid.shape
+    out, colours = {}, set()
+    for k in (2, 3):
+        padded = np.pad(grid, k, constant_values=OUTSIDE)
+        for name, (dr, dc) in DIRECTIONS.items():
+            out[f"at_{k}_{name}"] = padded[k + k * dr:k + k * dr + rows, k + k * dc:k + k * dc + cols]
+            colours.add(f"at_{k}_{name}")
+    return out, colours
+
+
+def box_features(grid, bg):
+    """Each cell seen from the box of the 8-connected blob of foreground that holds it (the smallest box when several
+    do; none for a cell in no blob's box): the cell's mirror images within the box - a flip of an object in place -
+    the box's size and the cell's place against its centre, whether its blob is the largest or the smallest, and how
+    many blobs the grid has."""
+    names = ("box_mirror_lr", "box_mirror_ud", "box_mirror_both", "box_mirror_diag")
+    out = {name: np.full(grid.shape, OUTSIDE) for name in names}
+    out.update({name: np.zeros(grid.shape, dtype=int) for name in
+                ("in_box", "box_area", "box_centre_row", "box_centre_col", "blob_is_largest", "blob_is_smallest",
+                 "blob_count")})
+    labels, count = ndimage.label(grid != bg, structure=np.ones((3, 3)))
+    boxes = ndimage.find_objects(labels)
+    sizes = [(labels == i + 1).sum() for i in range(count)]
+    out["blob_count"][:] = count
+    order = sorted(range(count), key=lambda i: -((boxes[i][0].stop - boxes[i][0].start) * (boxes[i][1].stop - boxes[i][1].start)))
+    for i in order:                                           # the smallest box is written last, so it wins
+        box = boxes[i]
+        top, bottom, left, right = box[0].start, box[0].stop - 1, box[1].start, box[1].stop - 1
+        r, c = np.indices(grid.shape)
+        inside = (r >= top) & (r <= bottom) & (c >= left) & (c <= right)
+        mirror_r, mirror_c = top + bottom - r, left + right - c
+        out["box_mirror_lr"][inside] = grid[r[inside], mirror_c[inside]]
+        out["box_mirror_ud"][inside] = grid[mirror_r[inside], c[inside]]
+        out["box_mirror_both"][inside] = grid[mirror_r[inside], mirror_c[inside]]
+        if bottom - top == right - left:
+            out["box_mirror_diag"][inside] = grid[top + (c[inside] - left), left + (r[inside] - top)]
+        else:
+            out["box_mirror_diag"][inside] = OUTSIDE
+        out["in_box"][inside] = 1
+        out["box_area"][inside] = (bottom - top + 1) * (right - left + 1)
+        out["box_centre_row"][inside] = 2 * r[inside] - (top + bottom)
+        out["box_centre_col"][inside] = 2 * c[inside] - (left + right)
+        out["blob_is_largest"][inside] = int(sizes[i] == max(sizes))
+        out["blob_is_smallest"][inside] = int(sizes[i] == min(sizes))
+    return out, set(names)
+
+
+def turn_features(grid, bg):
+    """The cell's colour in the grid turned a quarter each way and flipped across the other diagonal (OUTSIDE when the
+    grid is not square): a turn of the whole grid read cell by cell."""
+    if grid.shape[0] != grid.shape[1]:
+        none = np.full(grid.shape, OUTSIDE)
+        out = {"turn_90": none, "turn_270": none.copy(), "turn_anti": none.copy()}
+    else:
+        out = {"turn_90": np.rot90(grid), "turn_270": np.rot90(grid, 3), "turn_anti": grid[::-1, ::-1].T}
+    return out, set(out)
+
+
+GROUPS = {"offsets": offset_features, "boxes": box_features, "turns": turn_features}
 
 
 def blob_features(grid, bg):

@@ -142,3 +142,42 @@ def test_a_cheap_rule_outweighs_two_dear_ones_and_an_output_that_survives_leavin
     assert asked == [[{"n": 1}, {"n": 2}], [{"n": 0}, {"n": 2}], [{"n": 0}, {"n": 1}]]       # each pair left out once
     monkeypatch.setattr(rs, "search", lambda train, feature_set="core", keep=12: [])
     assert [g[0, 0] for g in rs.attempts(steady, None, strategy="loo", train=pairs)] == [7, 5]   # nothing to vote with
+
+
+def test_a_condition_can_compare_two_colour_features_when_asked_and_not_otherwise(monkeypatch):
+    x = np.array([[1, 1, 5], [2, 3, 5], [4, 4, 5], [1, 2, 6], [3, 3, 6], [2, 2, 7]])
+    names, colours = ["colour", "mirror_both", "next_left"], {"colour", "mirror_both", "next_left"}
+    monkeypatch.setattr(rs, "RELATIONAL", False)
+    assert not any(a.op in ("==f", "!=f") for a in rs.atoms(x, names, colours)[0])
+    monkeypatch.setattr(rs, "RELATIONAL", True)
+    found, masks = rs.atoms(x, names, colours)
+    text = [str(a) for a in found]
+    assert "colour ==f mirror_both" in text and "colour !=f mirror_both" in text
+    atom = found[text.index("colour ==f mirror_both")]
+    assert atom.holds(x[:, 0], x[:, 1]).tolist() == [True, False, True, False, True, True] and atom.cost == 1.0
+    assert rs.holds(((text.index("colour !=f mirror_both"),),), found, x, names).tolist() == [False, True, False, True, False, False]
+
+
+def test_a_symmetry_task_is_solved_by_comparing_a_cell_with_its_mirror_only_when_conditions_may_compare(monkeypatch):
+    def mirrored(seed):
+        rng = np.random.default_rng(seed)
+        half = rng.integers(1, 4, (4, 3))
+        grid = np.concatenate([half, np.zeros((4, 3), dtype=int)], axis=1)
+        return pair(grid, np.concatenate([half, half[:, ::-1]], axis=1))
+
+    train = [mirrored(1), mirrored(2), mirrored(3)]
+    test = mirrored(9)
+    monkeypatch.setattr(rs, "RELATIONAL", True)
+    rules = rs.search(train, "rich")
+    assert rules and np.array_equal(rules[0].apply(test["input"]), test["output"])
+    assert "mirror_left_right" in rules[0].describe() or "==f" in rules[0].describe() or "!=f" in rules[0].describe()
+
+
+def test_the_width_and_the_number_of_rules_kept_are_read_when_the_search_runs(monkeypatch):
+    x = np.array([[0, 1], [0, 2], [1, 1], [1, 2], [2, 3]])
+    found, masks = rs.atoms(x, ["a", "b"], {"a", "b"})
+    target = np.array([True, False, False, False, True])
+    monkeypatch.setattr(rs, "KEEP", 1)
+    assert len(rs.formulas_for(target, found, masks)) == 1
+    monkeypatch.setattr(rs, "KEEP", 12)
+    assert len(rs.formulas_for(target, found, masks)) > 1

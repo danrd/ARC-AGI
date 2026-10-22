@@ -115,3 +115,48 @@ def test_the_core_set_is_the_plainest_part_of_the_rich_one_and_is_read_from_its_
     assert cf.observed_set("cell_features") == "rich" and cf.observed_set("cell_features_core") == "core"
     assert cf.feature_key(["grid", "cell_features_core"]) == "cell_features_core"
     assert cf.feature_key(["grid", "delta_input"]) is None
+
+
+def test_the_colour_two_and_three_cells_away_is_read_in_every_direction_and_off_the_grid_is_none():
+    grid = np.zeros((5, 5), dtype=int)
+    grid[2, 4], grid[0, 2] = 7, 4
+    features, colours = cf.cell_features(grid, "rich_off")
+    assert features["at_2_right"][2, 2] == 7 and features["at_3_right"][2, 1] == 7 and features["at_2_right"][2, 3] == cf.OUTSIDE
+    assert features["at_2_up"][2, 2] == 4 and features["at_3_up_right"][1, 3] == cf.OUTSIDE
+    assert {"at_2_left", "at_3_down_left"} <= colours and "at_2_right" not in cf.cell_features(grid, "rich")[0]
+
+
+def test_a_cell_sees_its_mirror_images_within_the_box_of_its_blob_and_no_blob_means_none():
+    grid = np.zeros((5, 6), dtype=int)
+    grid[1, 1], grid[1, 2], grid[2, 1] = 3, 3, 3               # an L in the box rows 1-2, columns 1-2
+    grid[4, 5] = 5                                              # a blob of its own, away from the first
+    features, colours = cf.cell_features(grid, "rich_obj")
+    assert features["box_mirror_lr"][2, 2] == 3 and features["box_mirror_lr"][1, 1] == 3 and features["box_mirror_ud"][1, 2] == 0
+    assert features["box_mirror_both"][2, 2] == 3 and features["box_mirror_diag"][1, 2] == 3 and features["box_mirror_diag"][2, 2] == 0
+    assert features["in_box"][2, 2] == 1 and features["in_box"][0, 5] == 0 and features["box_mirror_lr"][0, 5] == cf.OUTSIDE
+    assert features["blob_count"][0, 0] == 2 and features["blob_is_largest"][1, 1] == 1 and features["blob_is_smallest"][4, 5] == 1
+    assert features["box_centre_row"][1, 1] == -1 and features["box_centre_col"][2, 2] == 1
+    assert "box_mirror_both" in colours and "box_area" not in colours
+
+
+def test_a_square_grid_turned_a_quarter_is_read_cell_by_cell_and_another_shape_gives_none():
+    grid = np.arange(9).reshape(3, 3)
+    features, _ = cf.cell_features(grid, "rich_ext")
+    assert features["turn_90"].tolist() == np.rot90(grid).tolist() and features["turn_270"].tolist() == np.rot90(grid, 3).tolist()
+    assert features["turn_anti"][0, 0] == 8 and features["turn_anti"][0, 2] == 2
+    wide, _ = cf.cell_features(np.zeros((2, 3), dtype=int), "rich_ext")
+    assert (wide["turn_90"] == cf.OUTSIDE).all() and (wide["turn_anti"] == cf.OUTSIDE).all()
+    sets = {name: set(cf.cell_features(grid, name)[0]) for name in ("rich", "rich_off", "rich_obj", "rich_ext")}
+    assert sets["rich"] < sets["rich_off"] < sets["rich_ext"] and sets["rich"] < sets["rich_obj"] < sets["rich_ext"]
+
+
+def test_the_diagonal_mirror_of_a_box_differs_from_the_cell_and_the_smallest_box_that_holds_a_cell_wins():
+    grid = np.zeros((6, 6), dtype=int)
+    grid[1, 1], grid[1, 2], grid[2, 2] = 3, 3, 3                 # a corner: not symmetric across its diagonal
+    features, _ = cf.cell_features(grid, "rich_obj")
+    assert features["box_mirror_diag"][1, 2] == 0 and features["box_mirror_diag"][2, 1] == 3
+    ring = np.zeros((7, 7), dtype=int)
+    ring[0, :], ring[6, :], ring[:, 0], ring[:, 6] = 5, 5, 5, 5   # a frame, its box the whole grid
+    ring[3, 3] = 2                                                # a blob of one cell in its middle
+    features, _ = cf.cell_features(ring, "rich_obj")
+    assert features["box_area"][3, 3] == 1 and features["box_area"][2, 2] == 49 and features["blob_is_largest"][2, 2] == 1

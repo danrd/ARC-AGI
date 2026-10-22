@@ -27,16 +27,33 @@ from symbolic.cell_features import cell_features
 KEEP = 12
 #: A threshold reads more into the examples than an equality does: it costs this much more in a rule's length.
 THRESHOLD_COST = 0.25
+#: Conditions that compare two colour features of the cell ("colour == mirror_both") besides those that compare one with
+#: a value; off by default, for the features in RELATIONAL below.
+RELATIONAL = False
+#: The colour features the relational conditions are made from: the cell, its neighbours and nearest colours, and its
+#: mirror images. All pairs of more than these would be the product of two hundred features with each other.
+RELATIONAL_FEATURES = ("colour", "next_left", "next_right", "next_up", "next_down", "nearest_left", "nearest_right",
+                       "nearest_up", "nearest_down", "mirror_left_right", "mirror_up_down", "mirror_both",
+                       "mirror_diagonal", "box_mirror_lr", "box_mirror_ud", "box_mirror_both", "turn_90",
+                       "turn_270", "turn_anti")
+#: How many terms (and how many supersets) the formulas for "which cells change" are built from.
+WIDE = 400
+SUPERSET_CAP = 120
 
 
 @dataclass(frozen=True)
 class Atom:
     """One condition on one feature of a cell: equal to a value, at most a value, or more than it."""
     feature: str
-    op: str            # "==", "!=" (colours: "nearest_left != none"), "<=", ">"
+    op: str            # "==", "!=" (colours: "nearest_left != none"), "<=", ">", "==f" and "!=f" (against `other`)
     value: int
+    other: str = ""
 
-    def holds(self, column):
+    def holds(self, column, other=None):
+        if self.op == "==f":
+            return column == other
+        if self.op == "!=f":
+            return column != other
         if self.op == "==":
             return column == self.value
         if self.op == "!=":
@@ -47,10 +64,10 @@ class Atom:
 
     @property
     def cost(self):
-        return 1.0 if self.op in ("==", "!=") else 1.0 + THRESHOLD_COST
+        return 1.0 if self.op in ("==", "!=", "==f", "!=f") else 1.0 + THRESHOLD_COST
 
     def __str__(self):
-        return f"{self.feature} {self.op} {self.value}"
+        return f"{self.feature} {self.op} {self.other if self.other else self.value}"
 
 
 def table(grids, feature_set):
@@ -88,6 +105,12 @@ def atoms(x, names, colours):
         if name in colours:
             for value in values:
                 add(Atom(name, "!=", int(value)), column != value)
+    if RELATIONAL:
+        usable = [j for j, name in enumerate(names) if name in RELATIONAL_FEATURES and name in colours]
+        for a, b in itertools.combinations(usable, 2):
+            same = x[:, a] == x[:, b]
+            add(Atom(names[a], "==f", 0, names[b]), same)
+            add(Atom(names[a], "!=f", 0, names[b]), ~same)
     for j, name in enumerate(names):
         if name in colours:
             continue
@@ -109,10 +132,13 @@ def term_cost(term, found):
     return sum(found[i].cost for i in term)
 
 
-def formulas_for(target, found, masks, keep=KEEP, wide=400, superset_cap=120):
+def formulas_for(target, found, masks, keep=None, wide=None, superset_cap=None):
     """The cheapest formulas in disjunctive form (tuples of terms, a term a tuple of atom indices) that are true on
     exactly the `target` cells: a single atom, a conjunction of two or three, or a disjunction of two or three
     conjunctions of at most two. Returns [(cost, formula)], cheapest first."""
+    keep = KEEP if keep is None else keep
+    wide = WIDE if wide is None else wide
+    superset_cap = SUPERSET_CAP if superset_cap is None else superset_cap
     found_rules = []
     if not target.any():
         return [(0.0, ())]                                     # nothing changes
@@ -193,7 +219,7 @@ def holds(formula, found, x, names):
         part = np.ones(len(x), dtype=bool)
         for i in term:
             atom = found[i]
-            part &= atom.holds(x[:, names.index(atom.feature)])
+            part &= atom.holds(x[:, names.index(atom.feature)], x[:, names.index(atom.other)] if atom.other else None)
         result |= part
     return result
 
@@ -218,10 +244,11 @@ def label_cost(label):
     return 0.0
 
 
-def colour_models(x, names, colours, targets, found, masks, keep=KEEP):
+def colour_models(x, names, colours, targets, found, masks, keep=None):
     """The cheapest ways to give the changed cells (`x`, `targets` restricted to them) their colours: one label for
     all; two labels split by a term of one or two atoms; or one colour per group, each group but the largest picked
     out by a term. A model is a list of (term or None, label), read in order, the last with no condition."""
+    keep = KEEP if keep is None else keep
     models = []
     allowed = label_candidates(x, names, colours, targets)
     for label, mask in allowed.items():
@@ -342,9 +369,10 @@ class Rule:
         return f"change where {change}; {colour}"
 
 
-def search(train, feature_set="core", keep=KEEP) -> List[Rule]:
+def search(train, feature_set="core", keep=None) -> List[Rule]:
     """The rules that reproduce every training pair, cheapest first. Empty when the pairs change shape, when a
     cell's change does not follow from its features, or when no rule short enough is found."""
+    keep = KEEP if keep is None else keep
     inputs = [np.asarray(p["input"]) for p in train]
     outputs = [np.asarray(p["output"]) for p in train]
     if any(i.shape != o.shape for i, o in zip(inputs, outputs)):

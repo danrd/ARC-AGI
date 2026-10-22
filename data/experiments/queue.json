@@ -4721,7 +4721,7 @@
    "name": "think_diag_a",
    "resource": "gpu",
    "shards": 1,
-   "status": "failed",
+   "status": "queued",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
@@ -4734,7 +4734,7 @@
    "name": "think_diag_b",
    "resource": "gpu",
    "shards": 1,
-   "status": "failed",
+   "status": "queued",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
@@ -4747,7 +4747,7 @@
    "name": "think_diag_c",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "queued",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],

@@ -4722,7 +4722,9 @@
    "resource": "gpu",
    "shards": 1,
    "status": "running",
-   "setup": [],
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
    "extras": "rl",
    "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов",
    "result": [],
@@ -4733,7 +4735,9 @@
    "resource": "gpu",
    "shards": 1,
    "status": "queued",
-   "setup": [],
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
    "extras": "rl",
    "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов",
    "result": [],
@@ -4744,9 +4748,33 @@
    "resource": "gpu",
    "shards": 1,
    "status": "queued",
-   "setup": [],
+   "setup": [
+    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
+   ],
    "extras": "rl",
    "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов",
+   "result": [],
+   "cleaned": false
+  },
+  {
+   "name": "transform_a",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "преобразование входа (поворот, отражение, обрезка, масштаб, тайлинг, половины) и поиск правил поверх него, все задачи обеих выборок, 5 блокнотов по 4 ядра; сколько решается сверх чистого поиска правил (wide_ext_rel: 70 и 20)",
+   "result": [],
+   "cleaned": false
+  },
+  {
+   "name": "rl_eval_a",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "объектный RL (o_spatial, сид 0) на evaluation: 260 задач с выходом той же формы, не решённых модулями; каждый блокнот сам сужает конфиги своих задач и обучает, 10 часов; даёт RL в общую таблицу на evaluation",
    "result": [],
    "cleaned": false
   }

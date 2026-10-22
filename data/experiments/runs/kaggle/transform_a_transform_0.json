@@ -1,0 +1,2558 @@
+{
+ "sets": [
+  "core",
+  "rich",
+  "rich_ext"
+ ],
+ "relational": true,
+ "shard": [
+  0,
+  5
+ ],
+ "splits": {
+  "training": {
+   "tasks": 400,
+   "searched": 80,
+   "rule_found": 23,
+   "solved_two": 15,
+   "transformed": [
+    "1cf80156",
+    "4c4377d9",
+    "c9e6f938"
+   ],
+   "solved": [
+    "1cf80156",
+    "22168020",
+    "4c4377d9",
+    "54d82841",
+    "67a423a3",
+    "6d75e8bb",
+    "6f8cd79b",
+    "9dfd6313",
+    "a5313dff",
+    "a79310a0",
+    "b1948b0a",
+    "c9e6f938",
+    "d364b489",
+    "ded97339",
+    "ef135b50"
+   ],
+   "records": [
+    {
+     "task": "007bbfb7",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 5.1
+    },
+    {
+     "task": "0520fde7",
+     "transform": "right_half",
+     "rule": "change where (colour == 1); nearest_left ==f next_right or nearest_right ==f next_down -> abs:2; otherwise -> abs:0",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "right_half",
+       "feature_set": "core",
+       "cost": 4.0
+      },
+      {
+       "transform": "left_half",
+       "feature_set": "core",
+       "cost": 5.0
+      }
+     ],
+     "cost": 4.0,
+     "seconds": 7.6
+    },
+    {
+     "task": "09629e4f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 33.9
+    },
+    {
+     "task": "0d3d703e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 35.9
+    },
+    {
+     "task": "1190e5a7",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "1b2d62fb",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 2.3
+    },
+    {
+     "task": "1cf80156",
+     "transform": "crop_content",
+     "rule": "change where nothing; ",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "crop_content",
+       "feature_set": "core",
+       "cost": 1.0
+      },
+      {
+       "transform": "crop_largest",
+       "feature_set": "core",
+       "cost": 1.0
+      },
+      {
+       "transform": "crop_smallest",
+       "feature_set": "core",
+       "cost": 1.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 0.1
+    },
+    {
+     "task": "1f85a75f",
+     "transform": "crop_largest",
+     "rule": "change where nothing; ",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "crop_largest",
+       "feature_set": "core",
+       "cost": 1.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 0.0
+    },
+    {
+     "task": "22168020",
+     "transform": "identity",
+     "rule": "change where (between_left_right == 1); otherwise -> src:nearest_down",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 1.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 22.7
+    },
+    {
+     "task": "234bbc79",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "25d487eb",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 14.5
+    },
+    {
+     "task": "27a28665",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false,
+      false,
+      false
+     ],
+     "second": [
+      false,
+      false,
+      false
+     ],
+     "found": [],
+     "seconds": 1.1
+    },
+    {
+     "task": "29ec7d0e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 339.3
+    },
+    {
+     "task": "2dd70a9a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 63.7
+    },
+    {
+     "task": "3345333e",
+     "transform": "identity",
+     "rule": "change where (colour == 3) or (colour == 1); col_from_right_mod_2 == 1 and col_has_2 == 1 or closed_in == 1 and row_foreground > 7 -> abs:2; orthogonal_6 > 0 or col_from_right_mod_2 == 0 and nearest_down_right == 1 -> abs:6; otherwise -> abs:0",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 9.5
+      }
+     ],
+     "cost": 9.5,
+     "seconds": 50.1
+    },
+    {
+     "task": "36d67576",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 37.5
+    },
+    {
+     "task": "3aa6fb7a",
+     "transform": "identity",
+     "rule": "change where (on_box_border == 0 and next_down !=f next_up and next_left !=f next_right); otherwise -> abs:1",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 3.0
+      }
+     ],
+     "cost": 3.0,
+     "seconds": 6.5
+    },
+    {
+     "task": "3befdf3e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 22.1
+    },
+    {
+     "task": "3f7978a0",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "4290ef0e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "447fd412",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 11.4
+    },
+    {
+     "task": "46442a0e",
+     "transform": "mirror_both",
+     "rule": "change where (colour !=f mirror_diagonal and distance_down_right <= 2 and distance_up_left <= 2); otherwise -> src:mirror_diagonal",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "mirror_both",
+       "feature_set": "rich",
+       "cost": 4.5
+      }
+     ],
+     "cost": 4.5,
+     "seconds": 3.3
+    },
+    {
+     "task": "48d8fb45",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "4c4377d9",
+     "transform": "tile_2x1",
+     "rule": "change where (row_from_bottom_mod_2 == 1 and colour !=f mirror_up_down); otherwise -> src:mirror_up_down",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "tile_2x1",
+       "feature_set": "rich",
+       "cost": 3.0
+      }
+     ],
+     "cost": 3.0,
+     "seconds": 1.8
+    },
+    {
+     "task": "5117e062",
+     "transform": "crop_smallest",
+     "rule": "change where (nearest_down ==f nearest_up and nearest_left ==f nearest_right) or (nearest_left == 0); next_right != 2 and next_down ==f next_up -> src:next_down; otherwise -> abs:3",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "crop_smallest",
+       "feature_set": "core",
+       "cost": 6.0
+      },
+      {
+       "transform": "crop_largest",
+       "feature_set": "core",
+       "cost": 10.25
+      }
+     ],
+     "cost": 6.0,
+     "seconds": 18.9
+    },
+    {
+     "task": "54d82841",
+     "transform": "identity",
+     "rule": "change where (next_down == -1 and nearest_down !=f nearest_up and col_foreground <= 1); otherwise -> abs:4",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 3.25
+      }
+     ],
+     "cost": 3.25,
+     "seconds": 5.2
+    },
+    {
+     "task": "56dc2b01",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 6.2
+    },
+    {
+     "task": "5c0a986e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 11.9
+    },
+    {
+     "task": "623ea044",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 22.7
+    },
+    {
+     "task": "662c240a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "67a423a3",
+     "transform": "identity",
+     "rule": "change where (nearest_down !=f nearest_up and orthogonal_foreground > 1) or (colour !=f mirror_diagonal and diagonal_foreground > 0); otherwise -> abs:4",
+     "first": [
+      false
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 4.5
+      },
+      {
+       "transform": "transpose",
+       "feature_set": "rich",
+       "cost": 5.5
+      },
+      {
+       "transform": "crop_content",
+       "feature_set": "rich",
+       "cost": 5.5
+      },
+      {
+       "transform": "crop_largest",
+       "feature_set": "rich",
+       "cost": 5.5
+      },
+      {
+       "transform": "crop_smallest",
+       "feature_set": "rich",
+       "cost": 5.5
+      }
+     ],
+     "cost": 4.5,
+     "seconds": 19.4
+    },
+    {
+     "task": "694f12f3",
+     "transform": "identity",
+     "rule": "change where (between_left_right == 1 and next_down ==f next_up); object_size <= 16 -> abs:1; otherwise -> abs:2",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 3.25
+      }
+     ],
+     "cost": 3.25,
+     "seconds": 8.4
+    },
+    {
+     "task": "6cdd2623",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 44.0
+    },
+    {
+     "task": "6d75e8bb",
+     "transform": "identity",
+     "rule": "change where (col_has_8 == 1 and blob_colours == 0 and row_has_8 == 1); otherwise -> abs:2",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 3.0
+      }
+     ],
+     "cost": 3.0,
+     "seconds": 4.3
+    },
+    {
+     "task": "6f8cd79b",
+     "transform": "identity",
+     "rule": "change where (on_box_border == 1); otherwise -> abs:8",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 1.0
+      },
+      {
+       "transform": "rot180",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "flip_rows",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "flip_columns",
+       "feature_set": "core",
+       "cost": 2.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 1.4
+    },
+    {
+     "task": "7447852a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 4.4
+    },
+    {
+     "task": "760b3cac",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 5.4
+    },
+    {
+     "task": "794b24be",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false,
+      false
+     ],
+     "second": [
+      false,
+      false
+     ],
+     "found": [],
+     "seconds": 16.4
+    },
+    {
+     "task": "7df24a62",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 146.0
+    },
+    {
+     "task": "810b9b61",
+     "transform": "identity",
+     "rule": "change where (colour == 1 and object_size > 9) or (object_size > 7 and object_size <= 8); otherwise -> abs:3",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 4.75
+      }
+     ],
+     "cost": 4.75,
+     "seconds": 22.3
+    },
+    {
+     "task": "846bdb03",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "88a10436",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 9.9
+    },
+    {
+     "task": "8d5021e8",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "8efcae92",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "91413438",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "941d9a10",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 12.8
+    },
+    {
+     "task": "963e52fc",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 2.8
+    },
+    {
+     "task": "99b1bc43",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 2.6
+    },
+    {
+     "task": "9dfd6313",
+     "transform": "identity",
+     "rule": "change where (colour !=f mirror_diagonal); otherwise -> src:mirror_diagonal",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 1.0
+      },
+      {
+       "transform": "transpose",
+       "feature_set": "core",
+       "cost": 1.0
+      },
+      {
+       "transform": "rot90",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "rot180",
+       "feature_set": "rich_ext",
+       "cost": 2.0
+      },
+      {
+       "transform": "rot270",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "flip_rows",
+       "feature_set": "rich_ext",
+       "cost": 2.0
+      },
+      {
+       "transform": "flip_columns",
+       "feature_set": "rich_ext",
+       "cost": 2.0
+      },
+      {
+       "transform": "anti_transpose",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "crop_content",
+       "feature_set": "rich",
+       "cost": 2.0
+      },
+      {
+       "transform": "crop_largest",
+       "feature_set": "rich",
+       "cost": 2.0
+      },
+      {
+       "transform": "crop_smallest",
+       "feature_set": "rich",
+       "cost": 2.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 28.2
+    },
+    {
+     "task": "a2fd1cf0",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 10.5
+    },
+    {
+     "task": "a5313dff",
+     "transform": "identity",
+     "rule": "change where (blob_colours == 0 and object_touches_edge == 0); otherwise -> abs:1",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 2.0
+      }
+     ],
+     "cost": 2.0,
+     "seconds": 11.0
+    },
+    {
+     "task": "a65b410d",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 3.5
+    },
+    {
+     "task": "a79310a0",
+     "transform": "identity",
+     "rule": "change where (colour == 8) or (next_up == 8); distance_up == 0 -> abs:0; otherwise -> abs:2",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 3.0
+      },
+      {
+       "transform": "flip_rows",
+       "feature_set": "core",
+       "cost": 5.0
+      }
+     ],
+     "cost": 3.0,
+     "seconds": 12.2
+    },
+    {
+     "task": "a9f96cdd",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 8.6
+    },
+    {
+     "task": "ae4f1146",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.7
+    },
+    {
+     "task": "b1948b0a",
+     "transform": "identity",
+     "rule": "change where (colour == 6); otherwise -> abs:2",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 1.0
+      },
+      {
+       "transform": "crop_content",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "crop_largest",
+       "feature_set": "core",
+       "cost": 2.0
+      },
+      {
+       "transform": "rot180",
+       "feature_set": "core",
+       "cost": 4.0
+      },
+      {
+       "transform": "flip_rows",
+       "feature_set": "core",
+       "cost": 4.0
+      },
+      {
+       "transform": "flip_columns",
+       "feature_set": "core",
+       "cost": 4.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 14.6
+    },
+    {
+     "task": "b548a754",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 14.0
+    },
+    {
+     "task": "b782dc8a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 23.0
+    },
+    {
+     "task": "b9b7f026",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "bc1d5164",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "beb8660c",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 14.6
+    },
+    {
+     "task": "c444b776",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 22.9
+    },
+    {
+     "task": "c9e6f938",
+     "transform": "mirror_right",
+     "rule": "change where nothing; ",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "mirror_right",
+       "feature_set": "core",
+       "cost": 1.0
+      },
+      {
+       "transform": "tile_1x2",
+       "feature_set": "core",
+       "cost": 5.0
+      }
+     ],
+     "cost": 1.0,
+     "seconds": 0.2
+    },
+    {
+     "task": "cdecee7f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "cf98881b",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "d10ecb37",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "d364b489",
+     "transform": "identity",
+     "rule": "change where (orthogonal_1 == 1); next_right == 1 -> abs:7; next_up == 1 -> abs:8; next_left == 1 -> abs:6; otherwise -> abs:2",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 4.0
+      }
+     ],
+     "cost": 4.0,
+     "seconds": 20.2
+    },
+    {
+     "task": "d4f3cd78",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 8.7
+    },
+    {
+     "task": "d6ad076f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 28.4
+    },
+    {
+     "task": "d9fac9be",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.1
+    },
+    {
+     "task": "dc0a314f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "ded97339",
+     "transform": "identity",
+     "rule": "change where (between_up_down == 1) or (between_left_right == 1); otherwise -> abs:8",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 2.0
+      }
+     ],
+     "cost": 2.0,
+     "seconds": 8.9
+    },
+    {
+     "task": "e40b9e2f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 25.5
+    },
+    {
+     "task": "e6721834",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 8.4
+    },
+    {
+     "task": "e9614598",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false,
+      false
+     ],
+     "second": [
+      false,
+      false
+     ],
+     "found": [],
+     "seconds": 15.4
+    },
+    {
+     "task": "eb281b96",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "ef135b50",
+     "transform": "identity",
+     "rule": "change where (between_left_right == 1 and object_size > 46) or (colour !=f next_left and next_left ==f next_right) or (blob_majority == 0 and row_foreground <= 2); otherwise -> abs:9",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 6.5
+      }
+     ],
+     "cost": 6.5,
+     "seconds": 10.4
+    },
+    {
+     "task": "f2829549",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 2.1
+    },
+    {
+     "task": "f8b3ba0a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "fcb5c309",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    }
+   ]
+  },
+  "evaluation": {
+   "tasks": 400,
+   "searched": 80,
+   "rule_found": 10,
+   "solved_two": 8,
+   "transformed": [
+    "00576224",
+    "c35c1b4c",
+    "ed98d772"
+   ],
+   "solved": [
+    "00576224",
+    "09c534e7",
+    "12eac192",
+    "17b80ad2",
+    "72a961c9",
+    "aa18de87",
+    "c35c1b4c",
+    "ed98d772"
+   ],
+   "records": [
+    {
+     "task": "00576224",
+     "transform": "tile_3x3",
+     "rule": "change where (nearest_up != -1 and row_from_bottom_mod_3 > 1) or (next_down != -1 and row_from_bottom_mod_3 <= 0); otherwise -> src:mirror_left_right",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "tile_3x3",
+       "feature_set": "rich",
+       "cost": 5.5
+      }
+     ],
+     "cost": 5.5,
+     "seconds": 1.5
+    },
+    {
+     "task": "0607ce86",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 100.6
+    },
+    {
+     "task": "09c534e7",
+     "transform": "identity",
+     "rule": "change where (diagonal_0 <= 0 and on_box_border == 0 and orthogonal_0 <= 0); otherwise -> src:blob_minority",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 3.5
+      }
+     ],
+     "cost": 3.5,
+     "seconds": 154.0
+    },
+    {
+     "task": "0becf7df",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 320.6
+    },
+    {
+     "task": "0f63c0b9",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 187.9
+    },
+    {
+     "task": "12eac192",
+     "transform": "identity",
+     "rule": "change where (colour != 0 and object_size <= 2); otherwise -> abs:3",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 2.25
+      },
+      {
+       "transform": "crop_content",
+       "feature_set": "core",
+       "cost": 3.25
+      }
+     ],
+     "cost": 2.25,
+     "seconds": 8.5
+    },
+    {
+     "task": "14754a24",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 34.7
+    },
+    {
+     "task": "17b80ad2",
+     "transform": "identity",
+     "rule": "change where (blob_majority == -1 and col_has_5 == 1); otherwise -> src:nearest_down",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 2.0
+      }
+     ],
+     "cost": 2.0,
+     "seconds": 71.3
+    },
+    {
+     "task": "1990f7a8",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "1c02dbbe",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 60.4
+    },
+    {
+     "task": "1da012fc",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 245.7
+    },
+    {
+     "task": "20818e16",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "25094a63",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 141.5
+    },
+    {
+     "task": "2753e76c",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "29700607",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 33.4
+    },
+    {
+     "task": "2f0c5170",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 1.3
+    },
+    {
+     "task": "31d5ba1a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false,
+      false
+     ],
+     "second": [
+      false,
+      false
+     ],
+     "found": [],
+     "seconds": 3.7
+    },
+    {
+     "task": "3490cc26",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 43.9
+    },
+    {
+     "task": "3979b1a8",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 3.8
+    },
+    {
+     "task": "3ee1011a",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "42918530",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 55.6
+    },
+    {
+     "task": "45bbe264",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 61.7
+    },
+    {
+     "task": "48f8583b",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 17.9
+    },
+    {
+     "task": "4cd1b7b2",
+     "transform": "identity",
+     "rule": "change where (colour == 0); mirror_left_right ==f next_down or mirror_left_right == 1 and nearest_left !=f nearest_up -> abs:3; mirror_both == 4 and mirror_both !=f nearest_down -> abs:4; mirror_both ==f next_down or next_down_right == 3 -> abs:1; otherwise -> abs:2",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 8.0
+      },
+      {
+       "transform": "crop_content",
+       "feature_set": "core",
+       "cost": 9.0
+      },
+      {
+       "transform": "crop_largest",
+       "feature_set": "core",
+       "cost": 9.0
+      }
+     ],
+     "cost": 8.0,
+     "seconds": 331.5
+    },
+    {
+     "task": "505fff84",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "516b51b7",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 9.9
+    },
+    {
+     "task": "55059096",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 7.4
+    },
+    {
+     "task": "5833af48",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "5af49b42",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 23.0
+    },
+    {
+     "task": "5ffb2104",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 10.1
+    },
+    {
+     "task": "62ab2642",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 9.8
+    },
+    {
+     "task": "64a7c07e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 11.2
+    },
+    {
+     "task": "67c52801",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 129.8
+    },
+    {
+     "task": "69889d6e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 12.2
+    },
+    {
+     "task": "6f473927",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 2.7
+    },
+    {
+     "task": "72a961c9",
+     "transform": "identity",
+     "rule": "change where (nearest_down == 2 and distance_down <= 4) or (nearest_down == 8 and distance_down <= 3); nearest_down == 8 and distance_down > 2 -> abs:8; distance_down > 3 -> abs:2; otherwise -> abs:1",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 8.0
+      }
+     ],
+     "cost": 8.0,
+     "seconds": 6.6
+    },
+    {
+     "task": "762cd429",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 18.9
+    },
+    {
+     "task": "79fb03f4",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 47.7
+    },
+    {
+     "task": "7d1f7ee8",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 75.9
+    },
+    {
+     "task": "81c0276b",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "8597cfd7",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "891232d6",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 53.1
+    },
+    {
+     "task": "8cb8642d",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 34.4
+    },
+    {
+     "task": "90347967",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 8.4
+    },
+    {
+     "task": "92e50de0",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 124.5
+    },
+    {
+     "task": "94414823",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 26.9
+    },
+    {
+     "task": "97239e3d",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 56.0
+    },
+    {
+     "task": "9a4bb226",
+     "transform": "crop_largest",
+     "rule": "change where (colour != 5 and object_size > 2) or (next_up_right != 8 and nearest_down ==f nearest_left); is_background == 1 and colour !=f mirror_left_right or next_up_left == 9 -> abs:2; colour !=f mirror_both and colour ==f next_left -> abs:3; next_up == 7 or next_down_right == 5 -> abs:6; otherwise -> abs:1",
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [
+      {
+       "transform": "crop_largest",
+       "feature_set": "core",
+       "cost": 12.25
+      },
+      {
+       "transform": "crop_smallest",
+       "feature_set": "core",
+       "cost": 12.25
+      }
+     ],
+     "cost": 12.25,
+     "seconds": 26.8
+    },
+    {
+     "task": "9c1e755f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 86.9
+    },
+    {
+     "task": "9f27f097",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 109.7
+    },
+    {
+     "task": "a57f2f04",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 36.7
+    },
+    {
+     "task": "aa18de87",
+     "transform": "identity",
+     "rule": "change where (between_left_right == 1 and colour != 8); otherwise -> abs:2",
+     "first": [
+      false
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "identity",
+       "feature_set": "core",
+       "cost": 2.0
+      }
+     ],
+     "cost": 2.0,
+     "seconds": 5.6
+    },
+    {
+     "task": "ac2e8ecf",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 27.5
+    },
+    {
+     "task": "aee291af",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "b15fca0b",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 15.1
+    },
+    {
+     "task": "b7999b51",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "b9630600",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 144.3
+    },
+    {
+     "task": "bc4146bd",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "bf699163",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "c35c1b4c",
+     "transform": "flip_columns",
+     "rule": "change where (is_background == 0 and colour !=f mirror_left_right); otherwise -> src:mirror_left_right",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "flip_columns",
+       "feature_set": "core",
+       "cost": 3.0
+      },
+      {
+       "transform": "identity",
+       "feature_set": "rich",
+       "cost": 6.0
+      },
+      {
+       "transform": "crop_content",
+       "feature_set": "rich",
+       "cost": 7.0
+      }
+     ],
+     "cost": 3.0,
+     "seconds": 33.0
+    },
+    {
+     "task": "c663677b",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 405.4
+    },
+    {
+     "task": "c92b942c",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 6.4
+    },
+    {
+     "task": "cb227835",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 7.6
+    },
+    {
+     "task": "cf133acc",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 80.9
+    },
+    {
+     "task": "d2acf2cb",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 11.1
+    },
+    {
+     "task": "d4b1c2b1",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "d94c3b52",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 25.0
+    },
+    {
+     "task": "dd2401ed",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 10.0
+    },
+    {
+     "task": "e1baa8a4",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "e4075551",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 23.1
+    },
+    {
+     "task": "e619ca6e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 49.2
+    },
+    {
+     "task": "e6de6e8f",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "e7a25a18",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 5.4
+    },
+    {
+     "task": "e95e3d8e",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 305.8
+    },
+    {
+     "task": "e9c9d9a1",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 16.4
+    },
+    {
+     "task": "ed98d772",
+     "transform": "tile_2x2",
+     "rule": "change where (at_3_down_left != -1 and colour !=f turn_90) or (at_3_up_left != -1 and colour !=f turn_270) or (at_3_up_right != -1 and colour !=f mirror_both); at_3_down != -1 -> src:turn_90; at_3_left == -1 -> src:mirror_both; otherwise -> src:turn_270",
+     "first": [
+      true
+     ],
+     "second": [
+      true
+     ],
+     "found": [
+      {
+       "transform": "tile_2x2",
+       "feature_set": "rich_ext",
+       "cost": 9.0
+      }
+     ],
+     "cost": 9.0,
+     "seconds": 11.0
+    },
+    {
+     "task": "f3b10344",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 121.9
+    },
+    {
+     "task": "f5aa3634",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 0.0
+    },
+    {
+     "task": "f9a67cb5",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 10.7
+    },
+    {
+     "task": "fd096ab6",
+     "transform": null,
+     "rule": null,
+     "first": [
+      false
+     ],
+     "second": [
+      false
+     ],
+     "found": [],
+     "seconds": 93.3
+    }
+   ]
+  }
+ }
+}

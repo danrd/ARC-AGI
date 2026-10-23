@@ -190,3 +190,29 @@ def test_a_download_that_never_gives_anything_raises_after_its_tries(tmp_path, m
     with pytest.raises(launch.CollectFailed, match="nothing came back in 3 tries"):
         launch.collect("j", 1, sleep=lambda s: None)
     assert len(calls) == 3
+
+
+def _answer(stdout="", stderr=""):
+    return type("R", (), {"stdout": stdout, "stderr": stderr})()
+
+
+def test_a_status_query_that_fails_is_asked_again_before_the_notebook_is_taken_for_gone(monkeypatch):
+    answers = iter([_answer("Something went wrong"), _answer("", "Error 503"),
+                    _answer('me/arc-worker-j-0 has status "KernelWorkerStatus.RUNNING"')])
+    waits = []
+    monkeypatch.setattr(launch, "kaggle", lambda *a: next(answers))
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    assert launch.status("j", 1, wait=3, sleep=waits.append) == {0: "RUNNING"} and waits == [3, 3]
+
+
+def test_a_notebook_that_is_still_not_there_after_the_tries_reads_as_gone_and_the_others_are_asked_once(monkeypatch):
+    calls = []
+
+    def fake(*args):
+        calls.append(args[-1])
+        return _answer("not found") if args[-1].endswith("-0") else _answer('x has status "KernelWorkerStatus.COMPLETE"')
+
+    monkeypatch.setattr(launch, "kaggle", fake)
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    assert launch.status("j", 2, attempts=2, sleep=lambda s: None) == {0: "?", 1: "COMPLETE"}
+    assert calls.count("me/arc-worker-j-0") == 2 and calls.count("me/arc-worker-j-1") == 1

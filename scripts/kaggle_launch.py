@@ -127,9 +127,20 @@ def shard_status(result) -> str:
     return "UNKNOWN" if TRANSIENT.search(result.stdout + result.stderr) else "?"
 
 
-def status(job, shards):
+def status(job, shards, attempts=3, wait=10, sleep=time.sleep):
+    """{shard: status}. A query that fails ("?" or "UNKNOWN") is asked again `attempts` times, `wait` seconds apart: one
+    that failed for the service's own reasons must not read as a notebook that is gone, or a running job is taken for
+    an ended one, collected with nothing and marked failed."""
     user = username()
-    return {shard: shard_status(kaggle("kernels", "status", f"{user}/{slug(job, shard)}")) for shard in range(shards)}
+    out = {}
+    for shard in range(shards):
+        for attempt in range(attempts):
+            out[shard] = shard_status(kaggle("kernels", "status", f"{user}/{slug(job, shard)}"))
+            if out[shard] not in ("?", "UNKNOWN"):
+                break
+            if attempt + 1 < attempts:
+                sleep(wait)
+    return out
 
 
 def delete(job, shards):

@@ -4750,7 +4750,7 @@
    "name": "think_diag_c",
    "resource": "gpu",
    "shards": 1,
-   "status": "running",
+   "status": "failed",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],

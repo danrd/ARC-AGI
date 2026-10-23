@@ -4893,12 +4893,18 @@
    "name": "rl_eval_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "объектный RL (o_spatial, сид 0) на 149 задачах evaluation, до которых не дошёл rl_eval_a: порядок задач перемешан, лимит 8 часов (в rl_eval_a один блокнот был отменён на 12-м часу); каждый блокнот сам сужает конфиги",
-   "result": [],
-   "cleaned": false,
+   "result": [
+    "data/experiments/runs/kaggle/rl_eval_b_rl_eval_b_0.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_b_rl_eval_b_1.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_b_rl_eval_b_2.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_b_rl_eval_b_3.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_b_rl_eval_b_4.jsonl"
+   ],
+   "cleaned": true,
    "collect_tries": 0
   },
   {

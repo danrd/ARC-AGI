@@ -83,7 +83,12 @@ def username():
     if name:
         return name
     out = kaggle("kernels", "list", "--mine", "--page-size", "1", "--csv").stdout.splitlines()
-    return out[1].split(",")[0].split("/")[0] if len(out) > 1 else sys.exit("no Kaggle account: set KAGGLE_USERNAME")
+    # The CLI prints a warning before the table when it is out of date (not on every call): the first row is after
+    # the header, which starts "ref,", wherever that is. Read from the first line, the account came out as "ref".
+    header = next((i for i, line in enumerate(out) if line.startswith("ref,")), None)
+    if header is None or header + 1 >= len(out):
+        sys.exit("no Kaggle account: set KAGGLE_USERNAME")
+    return out[header + 1].split(",")[0].split("/")[0]
 
 
 class PushRefused(Exception):

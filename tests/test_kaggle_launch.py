@@ -216,3 +216,25 @@ def test_a_notebook_that_is_still_not_there_after_the_tries_reads_as_gone_and_th
     monkeypatch.setattr(launch, "username", lambda: "me")
     assert launch.status("j", 2, attempts=2, sleep=lambda s: None) == {0: "?", 1: "COMPLETE"}
     assert calls.count("me/arc-worker-j-0") == 2 and calls.count("me/arc-worker-j-1") == 1
+
+
+def _listing(*lines):
+    return lambda *a: type("R", (), {"stdout": "\n".join(lines) + "\n", "stderr": ""})()
+
+
+def test_the_account_is_read_from_the_first_row_of_the_table_with_or_without_the_cli_s_upgrade_warning(monkeypatch):
+    monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
+    table = ["ref,title,author,lastRunTime,totalVotes", "me/first,First,me,2026-01-01,0", "me/second,Second,me,2026-01-01,0"]
+    monkeypatch.setattr(launch, "kaggle", _listing(*table))
+    assert launch.username() == "me"
+    monkeypatch.setattr(launch, "kaggle", _listing("Warning: Looks like you're using an outdated `kaggle` version", *table))
+    assert launch.username() == "me"
+
+
+def test_an_empty_table_or_none_is_no_account(monkeypatch):
+    import pytest
+    monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
+    for lines in ([], ["Warning: x"], ["ref,title,author,lastRunTime,totalVotes"]):
+        monkeypatch.setattr(launch, "kaggle", _listing(*lines))
+        with pytest.raises(SystemExit):
+            launch.username()

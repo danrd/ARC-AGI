@@ -161,3 +161,81 @@ class TestTheRanking:
 class TestDownscaling:
     def test_a_grid_of_one_block_is_not_shrunk_to_a_cell(self):
         assert gt.transformed("down2", np.ones((2, 2), int)) is None
+
+
+class TestTheLargerLibrary:
+    def test_stretched_rows_and_columns_are_merged(self):
+        g = np.array([[1, 1, 2], [1, 1, 2], [3, 3, 4]])
+        assert gt.transformed("dedup_rows", g).tolist() == [[1, 1, 2], [3, 3, 4]]
+        assert gt.transformed("dedup_columns", g).tolist() == [[1, 2], [1, 2], [3, 4]]
+        assert gt.transformed("dedup_both", g).tolist() == [[1, 2], [3, 4]]
+        assert gt.transformed("dedup_rows", np.array([[1, 2], [2, 1]])) is None
+        assert gt.transformed("dedup_both", np.array([[1, 2], [2, 1]])) is None
+
+    def test_a_row_equal_to_the_one_before_only_is_merged(self):
+        assert gt.transformed("dedup_rows", np.array([[1], [2], [1]])) is None
+
+    def test_down4_and_down5_need_blocks_of_that_size(self):
+        small = np.array([[1, 2], [3, 4]])
+        assert gt.transformed("down4", np.kron(small, np.ones((4, 4), int))).tolist() == small.tolist()
+        assert gt.transformed("down5", np.kron(small, np.ones((5, 5), int))).tolist() == small.tolist()
+        assert gt.transformed("down4", np.kron(small, np.ones((2, 2), int))) is None
+
+    def test_the_rarest_and_the_commonest_colour_are_cropped_to(self):
+        g = np.zeros((5, 5), int)
+        g[0, 0], g[4, 4] = 7, 7
+        g[2, 1:4] = 3
+        assert gt.transformed("crop_rarest_colour", g).shape == (5, 5)
+        assert gt.transformed("crop_commonest_colour", g).tolist() == [[3, 3, 3]]
+        assert gt.transformed("crop_rarest_colour", np.zeros((3, 3), int)) is None
+
+    def test_a_grid_is_cut_in_two_at_a_divider_of_one_colour_or_exactly_in_half(self):
+        g = np.array([[1, 0, 5, 0, 2], [0, 0, 5, 3, 0]])
+        a, b = gt.parts(g, False)
+        assert a.tolist() == [[1, 0], [0, 0]] and b.tolist() == [[0, 2], [3, 0]]
+        assert gt.parts(np.array([[1, 2, 3, 4]]), False)[1].tolist() == [[3, 4]]
+        assert gt.parts(np.array([[1, 2, 3]]), False) is not None            # one cell's divider is one colour
+        assert gt.parts(np.array([[1, 0, 2], [1, 5, 2]]), False) is None     # a middle that is not a divider
+        assert gt.parts(np.array([[1]]), False) is None
+
+    def test_vertical_cuts_stack_the_parts(self):
+        g = np.array([[1, 0], [5, 5], [0, 2]])
+        a, b = gt.parts(g, True)
+        assert a.tolist() == [[1, 0]] and b.tolist() == [[0, 2]]
+
+    def test_the_parts_laid_over_each_other(self):
+        g = np.array([[1, 0, 9, 0, 2], [0, 0, 9, 3, 0], [4, 0, 9, 4, 0]])
+        assert gt.transformed("side_or_first", g).tolist() == [[1, 2], [3, 0], [4, 0]]
+        assert gt.transformed("side_and", g).tolist() == [[0, 0], [0, 0], [4, 0]]
+        assert gt.transformed("side_xor", g).tolist() == [[1, 2], [3, 0], [0, 0]]
+        nor = gt.transformed("side_nor", g)
+        assert nor.tolist() == [[0, 0], [0, 1], [0, 1]]
+
+    def test_the_first_part_wins_in_or_first_and_the_second_in_or_second(self):
+        g = np.array([[1, 0, 9, 3, 2], [0, 0, 9, 0, 0], [0, 0, 9, 0, 0]])
+        assert gt.transformed("side_or_first", g).tolist() == [[1, 2], [0, 0], [0, 0]]
+        assert gt.transformed("side_or_second", g).tolist() == [[3, 2], [0, 0], [0, 0]]
+
+    def test_stack_cuts_across_rows(self):
+        g = np.array([[1, 0], [9, 9], [0, 2]])
+        assert gt.transformed("stack_or_first", g).tolist() == [[1, 2]]
+        assert gt.transformed("stack_xor", g).tolist() == [[1, 2]]
+        assert gt.transformed("stack_and", g).tolist() == [[0, 0]]
+
+    def test_the_library_has_all_its_names_and_none_changes_its_argument(self):
+        assert len(gt.TRANSFORMS) == 46
+        g = np.array([[1, 0, 9, 0, 2], [0, 0, 9, 3, 0], [4, 0, 9, 4, 0]])
+        before = g.copy()
+        for name in gt.TRANSFORMS:
+            gt.transformed(name, g)
+        assert np.array_equal(g, before)
+
+
+class TestReachable:
+    def test_a_transformation_is_reachable_when_every_pair_matches_the_output_shape(self):
+        reach = tr.reachable(pairs(lambda g: g.T, GRIDS), GRIDS[0])
+        assert "transpose" in [n for n, _, _ in reach] and "identity" not in [n for n, _, _ in reach]
+        assert all(p["input"].shape == p["output"].shape for _, ps, _ in reach for p in ps)
+
+    def test_the_identity_comes_first(self):
+        assert tr.reachable(pairs(lambda g: g, GRIDS), GRIDS[0])[0][0] == "identity"

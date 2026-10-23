@@ -30,21 +30,29 @@ class Candidate:
         return self.rules[0].cost + (0.0 if self.transform == "identity" else PENALTY)
 
 
+def reachable(train, test_input):
+    """[(name, pairs, test input)] of every transformation that gives each training input the shape of its output and
+    applies to the test input, in the library's order (the identity first)."""
+    inputs = [np.asarray(p["input"]) for p in train]
+    outputs = [np.asarray(p["output"]) for p in train]
+    out = []
+    for name in TRANSFORMS:
+        moved = [transformed(name, g) for g in inputs]
+        test = transformed(name, test_input)
+        if test is None or any(m is None or m.shape != o.shape for m, o in zip(moved, outputs)):
+            continue
+        out.append((name, [{"input": m, "output": o} for m, o in zip(moved, outputs)], test))
+    return out
+
+
 def candidates(train, test_input, feature_sets: Sequence[str] = ("core", "rich"), seconds: Optional[float] = None,
                clock=time.time) -> List[Candidate]:
     """Every transformation with a rule that reproduces all the pairs, cheapest first. `seconds` is how long the
     searches may take altogether: when it is spent the transformations not tried yet are left out."""
     started, found = clock(), []
-    inputs = [np.asarray(p["input"]) for p in train]
-    outputs = [np.asarray(p["output"]) for p in train]
-    for name in TRANSFORMS:
+    for name, pairs, test in reachable(train, test_input):
         if seconds is not None and clock() - started > seconds:
             break
-        moved = [transformed(name, g) for g in inputs]
-        test = transformed(name, test_input)
-        if test is None or any(m is None or m.shape != o.shape for m, o in zip(moved, outputs)):
-            continue
-        pairs = [{"input": m, "output": o} for m, o in zip(moved, outputs)]
         for feature_set in feature_sets:
             rules = rule_search.search(pairs, feature_set)
             if rules:

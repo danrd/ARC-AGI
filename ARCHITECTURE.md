@@ -213,24 +213,24 @@ graph TD
   data["data (8)"]
   orchestration["orchestration (23)"]
   rl["rl (20)"]
-  scripts["scripts (24)"]
+  scripts["scripts (25)"]
   subsymbolic["subsymbolic (15)"]
-  symbolic["symbolic (15)"]
-  tests["tests (100)"]
+  symbolic["symbolic (16)"]
+  tests["tests (102)"]
   utils["utils (3)"]
   tests -->|114| rl
   tests -->|48| subsymbolic
   tests -->|42| orchestration
-  tests -->|40| symbolic
+  tests -->|42| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
   scripts -->|17| rl
   rl -->|13| symbolic
   rl -->|11| data
-  scripts -->|8| symbolic
+  scripts -->|9| symbolic
+  tests -->|8| scripts
   orchestration -->|7| rl
   orchestration -->|7| symbolic
-  tests -->|7| scripts
   scripts -->|6| subsymbolic
   data -->|3| rl
   orchestration -->|3| data
@@ -299,6 +299,7 @@ graph TD
 | `scripts.check_invariants` | 0 |
 | `scripts.compare_llm_arms` | 0 |
 | `scripts.compare_reward_approaches` | 2 |
+| `scripts.failure_probe` | 0 |
 | `scripts.feature_probe` | 0 |
 | `scripts.harvest_traces` | 0 |
 | `scripts.kaggle_launch` | 0 |
@@ -342,6 +343,7 @@ graph TD
 | `symbolic.invariants` | 5 |
 | `symbolic.objects_analysis` | 19 |
 | `symbolic.patterns` | 6 |
+| `symbolic.rule_diagnosis` | 0 |
 | `symbolic.rule_search` | 1 |
 | `symbolic.rule_solver` | 2 |
 | `symbolic.summaries` | 11 |

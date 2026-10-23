@@ -74,6 +74,71 @@ def mirrored(grid, horizontal: bool, vertical: bool):
     return out
 
 
+def dedup(grid, axis: int):
+    """The grid with consecutive equal rows (axis 0) or columns (axis 1) merged into one: the grid a stretched one was
+    made from. None when nothing merges."""
+    moved = grid if axis == 0 else grid.T
+    keep = [0] + [i for i in range(1, len(moved)) if not np.array_equal(moved[i], moved[i - 1])]
+    out = moved[keep]
+    if len(keep) == len(moved):
+        return None
+    return out if axis == 0 else out.T
+
+
+def dedup_both(grid):
+    rows = dedup(grid, 0)
+    rows = grid if rows is None else rows
+    both = dedup(rows, 1)
+    both = rows if both is None else both
+    return None if both.shape == grid.shape else both
+
+
+def crop_to_colour(grid, rarest: bool):
+    """The bounding box of all cells of the rarest (or commonest) colour that is not the background."""
+    background_colour = background(grid)
+    colours, counts = np.unique(grid[grid != background_colour], return_counts=True)
+    if not len(colours):
+        return None
+    colour = colours[counts.argmin() if rarest else counts.argmax()]
+    found = box(grid == colour)
+    return grid[found[0]:found[1], found[2]:found[3]]
+
+
+def parts(grid, vertical: bool):
+    """The two halves of the grid side by side (or one above the other) with a divider line of one colour between them
+    left out, or None when the grid cannot be cut in two equal parts."""
+    moved = grid.T if vertical else grid
+    width = moved.shape[1]
+    if width < 2:
+        return None
+    half_width = width // 2
+    if width % 2 == 1 and len(np.unique(moved[:, half_width])) > 1:
+        return None                                      # an odd grid is cut at a line of one colour, or not at all
+    first, second = moved[:, :half_width], moved[:, width - half_width:]
+    return (first.T, second.T) if vertical else (first, second)
+
+
+def combined(grid, vertical: bool, how: str):
+    """The two parts of the grid laid over each other cell by cell: `or_first`/`or_second` keep the cell of the named
+    part that is not background (the first part's wins in `or_first`), `and` the first part's cell where both have one,
+    `xor` the cell of the one part that has one, `nor` a mark where neither does."""
+    cut = parts(grid, vertical)
+    if cut is None:
+        return None
+    first, second = cut
+    bg = background(grid)
+    a, b = first != bg, second != bg
+    if how == "or_first":
+        return np.where(a, first, second)
+    if how == "or_second":
+        return np.where(b, second, first)
+    if how == "and":
+        return np.where(a & b, first, bg)
+    if how == "xor":
+        return np.where(a & ~b, first, np.where(b & ~a, second, bg))
+    return np.where(~a & ~b, (bg + 1) % 10, bg)
+
+
 #: name -> function of a grid. Applying one never changes its argument.
 TRANSFORMS: Dict[str, Callable[[np.ndarray], Optional[np.ndarray]]] = {
     "identity": lambda g: g,
@@ -105,7 +170,17 @@ TRANSFORMS: Dict[str, Callable[[np.ndarray], Optional[np.ndarray]]] = {
     "bottom_half": lambda g: half(g, "bottom"),
     "trim": trim,
     "pad": pad,
+    "down4": lambda g: downscale(g, 4),
+    "down5": lambda g: downscale(g, 5),
+    "dedup_rows": lambda g: dedup(g, 0),
+    "dedup_columns": lambda g: dedup(g, 1),
+    "dedup_both": dedup_both,
+    "crop_rarest_colour": lambda g: crop_to_colour(g, True),
+    "crop_commonest_colour": lambda g: crop_to_colour(g, False),
 }
+for _axis, _vertical in (("side", False), ("stack", True)):
+    for _how in ("or_first", "or_second", "and", "xor", "nor"):
+        TRANSFORMS[f"{_axis}_{_how}"] = (lambda g, v=_vertical, h=_how: combined(g, v, h))
 
 
 def transformed(name: str, grid) -> Optional[np.ndarray]:

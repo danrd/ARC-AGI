@@ -4935,6 +4935,30 @@
    "result": [],
    "cleaned": false,
    "collect_tries": 0
+  },
+  {
+   "name": "transform_b",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "расширенная библиотека преобразований (46 вместо 29: склейка растянутых строк, обрезка по цвету, down4/5, половины друг на друге: или/и/xor/нор) и поиск правил поверх них, обе выборки; против transform_a (90 и 28 решённых)",
+   "result": [],
+   "cleaned": false,
+   "collect_tries": 0
+  },
+  {
+   "name": "failure_a",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "queued",
+   "setup": [],
+   "extras": "rl",
+   "note": "почему правила не решают: класс каждой задачи (нет преобразования / признаков мало / язык правил / правило неверно: лишние изменения, пропущенные, не тот цвет), обе выборки",
+   "result": [],
+   "cleaned": false,
+   "collect_tries": 0
   }
  ]
 }

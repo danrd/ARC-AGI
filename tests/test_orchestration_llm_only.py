@@ -331,3 +331,22 @@ class TestSmallTasks:
         assert llm_only.ids_from_args(wide, difficulties, self.loader) == ["many", "tie"]
         shuffled = SimpleNamespace(small=None, max_examples=3, split="evaluation", seed=0, limit=3)
         assert llm_only.ids_from_args(shuffled, difficulties, self.loader) == llm_only.shuffled_tasks(difficulties)[:3]
+
+
+class TestSampling:
+    def test_the_runs_are_greedy_with_the_notebooks_seed_unless_asked_otherwise(self):
+        params = llm_only.llm_only_params(MODEL, thinking=True)
+        assert params["generation"]["temperature"] == 0.0 and "seed" not in params["base"]
+
+    def test_a_temperature_and_a_seed_make_the_run_sample_with_that_seed(self):
+        params = llm_only.llm_only_params(MODEL, thinking=True, temperature=0.7, sampling_seed=3)
+        assert params["generation"]["temperature"] == 0.7 and params["base"]["seed"] == 3
+
+    def test_a_temperature_of_zero_is_a_choice_and_not_an_absent_one(self):
+        assert llm_only.llm_only_params(MODEL, temperature=0.0, sampling_seed=0)["base"]["seed"] == 0
+
+    def test_the_command_line_hands_them_on(self):
+        args = type("A", (), dict(model=MODEL, tokenizer=None, max_tokens=100, thinking=False, context=14000, aids=[],
+                                  prompt_lookup=None, temperature=0.5, sampling_seed=9))()
+        params = llm_only.params_from_args(args)
+        assert params["generation"]["temperature"] == 0.5 and params["base"]["seed"] == 9

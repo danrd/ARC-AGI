@@ -38,17 +38,24 @@ ORDER = ("easy", "medium", "hard", "impossible", "very_hard")
 
 def llm_only_params(model: str, tokenizer: Optional[str] = None, max_tokens: int = 1200,
                     thinking: bool = False, context: int = 14000, aids: bool = False,
-                    prompt_lookup: Optional[int] = None) -> Dict[str, Any]:
+                    prompt_lookup: Optional[int] = None, temperature: Optional[float] = None,
+                    sampling_seed: Optional[int] = None) -> Dict[str, Any]:
     """The GPU notebooks' parameters for `model` with the grammar taken off and the prompt cut to BLOCKS.
 
     `thinking` lets the model reason before it answers (the notebooks switch that off, because a model that reasons can
     spend every token on it and never answer). The reasoning is part of the reply and counts against `max_tokens`, so
     the window grows to `context` and a prompt that would leave less than `max_tokens` of it is not asked.
     `aids` puts the auxiliary_info block, where `solve_one(aids=...)` puts what it computes, before the output format.
+    `temperature` and `sampling_seed` make the run sample (the notebooks are greedy, seed 42) so that a repeat with another
+    seed measures how much a result moves by chance alone.
     `prompt_lookup` turns on speculative decoding by prompt lookup with that many proposed tokens (LlmConfig's
     prompt_lookup_tokens)."""
     params = gpu_notebook_params(model, tokenizer, max_tokens)
     params["generation"] = {k: v for k, v in params["generation"].items() if k != "grammar"}
+    if temperature is not None:                           # greedy unless asked: a repeat of a greedy run repeats it
+        params["generation"]["temperature"] = temperature
+    if sampling_seed is not None:
+        params["base"] = {**params["base"], "seed": sampling_seed}
     blocks = list(BLOCKS)
     if aids:
         blocks.insert(blocks.index("output_format"), "auxiliary_info")
@@ -235,7 +242,7 @@ def ids_from_args(args, difficulties: Dict[str, str], loader=load_task) -> List[
 def params_from_args(args) -> Dict[str, Any]:
     """The model parameters the command line asks for: the aids, if any, get their block."""
     return llm_only_params(args.model, args.tokenizer, args.max_tokens, args.thinking, args.context, bool(args.aids),
-                           args.prompt_lookup)
+                           args.prompt_lookup, getattr(args, "temperature", None), getattr(args, "sampling_seed", None))
 
 
 def main():
@@ -259,6 +266,9 @@ def main():
     from orchestration.data_requests import AIDS
     parser.add_argument("--aids", nargs="*", default=[], choices=sorted(AIDS), help="what to compute from the task and put in the prompt: "
                         "names from orchestration.data_requests.AIDS; a task whose prompt it makes too long is skipped")
+    parser.add_argument("--temperature", type=float, help="sample at this temperature (default: greedy)")
+    parser.add_argument("--sampling-seed", type=int, help="the model's seed (default 42); with --temperature, another "
+                        "seed is another sample")
     parser.add_argument("--hours", type=float)
     parser.add_argument("--skip", nargs="*", default=[], help="result files of other runs: their tasks are done")
     parser.add_argument("--out", default="llm_only.jsonl")

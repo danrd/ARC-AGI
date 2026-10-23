@@ -1,0 +1,50 @@
+{
+ "steps": [
+  {
+   "name": "base",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--thinking",
+    "--max-tokens",
+    "10000",
+    "--context",
+    "14000",
+    "--tasks-file",
+    "data/experiments/think_diag_tasks_b.json",
+    "--hours",
+    "2.7",
+    "--out",
+    "{out}.jsonl"
+   ]
+  },
+  {
+   "name": "rule_hint",
+   "command": [
+    "-m",
+    "orchestration.llm_only",
+    "--model",
+    "unsloth/gemma-4-31B-it-GGUF:gemma-4-31B-it-Q4_K_S.gguf",
+    "--tokenizer",
+    "google/gemma-4-31B-it",
+    "--thinking",
+    "--max-tokens",
+    "10000",
+    "--context",
+    "14000",
+    "--tasks-file",
+    "data/experiments/think_diag_tasks_b.json",
+    "--aids",
+    "rule_hint",
+    "--hours",
+    "2.7",
+    "--out",
+    "{out}.jsonl"
+   ]
+  }
+ ]
+}

@@ -216,9 +216,9 @@ graph TD
   scripts["scripts (23)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (15)"]
-  tests["tests (98)"]
+  tests["tests (99)"]
   utils["utils (3)"]
-  tests -->|113| rl
+  tests -->|114| rl
   tests -->|48| subsymbolic
   tests -->|41| orchestration
   tests -->|40| symbolic
@@ -283,7 +283,7 @@ graph TD
 | `rl.arc_world` | 3 |
 | `rl.callbacks` | 3 |
 | `rl.coordinate_search` | 4 |
-| `rl.evaluation` | 4 |
+| `rl.evaluation` | 5 |
 | `rl.features` | 10 |
 | `rl.mcts` | 8 |
 | `rl.optimization` | 2 |

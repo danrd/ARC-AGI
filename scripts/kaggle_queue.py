@@ -31,11 +31,16 @@ from typing import Callable, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kaggle_launch import CollectFailed  # noqa: E402 - after the path is set
 
 QUEUE = ROOT / "data" / "experiments" / "queue.json"
 CAPACITY = {"cpu": 5, "gpu": 1, "tpu": 1}
 BUSY = {"RUNNING", "QUEUED", "NEW", "STARTING"}
 ENDED = {"COMPLETE", "ERROR", "CANCEL_ACKNOWLEDGED", "CANCELLED"}
+
+
+#: How many ticks a finished job is asked again for its output when the download gives nothing, before it ends without.
+COLLECT_TRIES = 3
 
 
 class StartRefused(Exception):
@@ -53,6 +58,7 @@ class Job:
     note: str = ""
     result: List[str] = field(default_factory=list)       # the files collected
     cleaned: bool = False            # the job's notebooks have been deleted from Kaggle
+    collect_tries: int = 0           # the ticks that found its notebooks ended and could not download their output
 
 
 def load(path=QUEUE) -> List[Job]:
@@ -94,7 +100,16 @@ def tick(jobs: List[Job], status_fn: Callable[[Job], List[str]], start_fn: Calla
         statuses[job.name] = status_fn(job)
         seen = statuses[job.name]
         if seen and all(s in ENDED for s in seen):
-            job.result = collect_fn(job)
+            try:
+                job.result = collect_fn(job)
+            except CollectFailed as failure:
+                job.collect_tries += 1
+                if job.collect_tries < COLLECT_TRIES:
+                    events.append(f"{job.name}: ended, output not downloadable yet ({failure}); asked again at the "
+                                  f"next tick ({job.collect_tries} of {COLLECT_TRIES})")
+                    continue
+                job.result = []
+                events.append(f"{job.name}: output never came back ({failure}); the job ends with nothing collected")
             job.status = "done" if all(s == "COMPLETE" for s in seen) else "failed"
             events.append(f"{job.name}: {job.status}, {len(job.result)} files collected")
             statuses[job.name] = seen

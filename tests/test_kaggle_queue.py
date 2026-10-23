@@ -206,3 +206,45 @@ def test_a_notebook_that_is_not_there_is_still_the_end_of_its_job(monkeypatch):
     import kaggle_launch
     monkeypatch.setattr(kaggle_launch, "status", lambda name, shards: {0: "?"})
     assert queue.real_status(Job("a", "cpu", 1)) == ["ERROR"]
+
+
+class Flaky(Fake):
+    """A collect that cannot download for the first `failures` asks."""
+
+    def __init__(self, failures, **states):
+        super().__init__(**states)
+        self.failures = failures
+
+    def collect(self, job):
+        if self.failures:
+            self.failures -= 1
+            raise queue.CollectFailed("arc-worker-a-0: nothing came back in 3 tries")
+        return super().collect(job)
+
+
+def test_a_job_whose_output_could_not_be_downloaded_stays_running_and_is_asked_again_next_tick():
+    fake = Flaky(1, a=["COMPLETE"])
+    jobs = [Job("a", "cpu", 1, "running"), Job("next", "cpu", 5)]
+    events = fake.tick(jobs)
+    assert jobs[0].status == "running" and jobs[0].collect_tries == 1 and jobs[0].result == []
+    assert any("a: ended, output not downloadable yet" in e and "1 of 3" in e for e in events)
+    assert fake.deleted == [] and fake.started == ["next"]
+    fake.tick(jobs)
+    assert jobs[0].status == "done" and jobs[0].result == ["a_0.jsonl"]
+
+
+def test_a_job_whose_output_never_comes_back_ends_with_nothing_after_three_ticks_and_keeps_its_notebooks():
+    fake = Flaky(99, a=["COMPLETE"])
+    jobs = [Job("a", "cpu", 1, "running")]
+    for _ in range(queue.COLLECT_TRIES - 1):
+        fake.tick(jobs)
+        assert jobs[0].status == "running"
+    events = fake.tick(jobs)
+    assert jobs[0].status == "done" and jobs[0].result == [] and jobs[0].collect_tries == queue.COLLECT_TRIES
+    assert any("output never came back" in e for e in events) and fake.deleted == []
+
+
+def test_the_count_of_ticks_that_could_not_download_is_kept_in_the_queue_file(tmp_path):
+    path = tmp_path / "q.json"
+    save([Job("a", "cpu", 1, "running", collect_tries=2)], path)
+    assert load(path)[0].collect_tries == 2

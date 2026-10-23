@@ -147,3 +147,46 @@ def test_a_status_query_that_failed_for_the_service_s_reason_is_unknown_and_for_
     assert launch.shard_status(answer("", "HTTPSConnectionPool: Read timed out.")) == "UNKNOWN"
     assert launch.shard_status(answer("404 Client Error: Not Found for url: https://x")) == "?"
     assert launch.shard_status(answer()) == "?"
+
+
+def test_a_download_that_gives_nothing_is_asked_again_and_a_log_is_kept_for_every_notebook(tmp_path, monkeypatch):
+    calls = []
+
+    def fake(*args):
+        folder = Path(args[args.index("-p") + 1])
+        calls.append(1)
+        if len(calls) >= 2:
+            (folder / "arc-worker-j-0.log").write_text("why it ended")
+            (folder / "j_a_0.jsonl").write_text("new\n")
+        return type("R", (), {"stdout": "", "stderr": ""})()
+
+    waits = []
+    monkeypatch.setattr(launch, "kaggle", fake)
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "RUNS", tmp_path / "runs")
+    got = launch.collect("j", 1, wait=7, sleep=waits.append)
+    assert [p.name for p in got] == ["j_a_0.jsonl"] and len(calls) == 2 and waits == [7]
+    assert (tmp_path / "runs" / "logs" / "arc-worker-j-0.log").read_text() == "why it ended"
+
+
+def test_a_notebook_that_gave_only_a_log_is_collected_with_its_log_and_no_files(tmp_path, monkeypatch):
+    def fake(*args):
+        (Path(args[args.index("-p") + 1]) / "x.log").write_text("Traceback")
+        return type("R", (), {"stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(launch, "kaggle", fake)
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "RUNS", tmp_path / "runs")
+    assert launch.collect("j", 1) == []
+    assert (tmp_path / "runs" / "logs" / "arc-worker-j-0.log").read_text() == "Traceback"
+
+
+def test_a_download_that_never_gives_anything_raises_after_its_tries(tmp_path, monkeypatch):
+    import pytest
+    calls = []
+    monkeypatch.setattr(launch, "kaggle", lambda *a: calls.append(1) or type("R", (), {"stdout": "", "stderr": ""})())
+    monkeypatch.setattr(launch, "username", lambda: "me")
+    monkeypatch.setattr(launch, "RUNS", tmp_path / "runs")
+    with pytest.raises(launch.CollectFailed, match="nothing came back in 3 tries"):
+        launch.collect("j", 1, sleep=lambda s: None)
+    assert len(calls) == 3

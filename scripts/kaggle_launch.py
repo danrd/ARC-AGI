@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -145,23 +146,45 @@ def delete(job, shards):
     return gone
 
 
-def collect(job, shards):
-    """Download every notebook's output; returns the files put in RUNS (the output's own folders kept)."""
+class CollectFailed(Exception):
+    """A notebook's output could not be downloaded: Kaggle answered with nothing at all, not even the log."""
+
+
+#: Where a notebook's log is kept, a file a notebook: the log is what says why a notebook ended in error.
+LOGS = "logs"
+
+
+def collect(job, shards, attempts=3, wait=20, sleep=time.sleep):
+    """Download every notebook's output; returns the files put in RUNS (the output's own folders kept).
+
+    The notebook's log goes to RUNS/logs/ whatever the notebook did, so that a notebook that ended in error is
+    explained the moment it is collected. A download that gives nothing - not even a log - is the service's fault
+    and not an empty notebook: it is asked again `attempts` times, `wait` seconds apart, and then raises
+    CollectFailed rather than let the job end with nothing collected."""
     user = username()
     RUNS.mkdir(parents=True, exist_ok=True)
     got = []
     for shard in range(shards):
-        with tempfile.TemporaryDirectory() as folder:
-            kaggle("kernels", "output", f"{user}/{slug(job, shard)}", "-p", folder)
-            for path in sorted(Path(folder).rglob("*")):
-                relative = path.relative_to(folder)
-                if path.is_dir() or path.suffix == ".log" or path.name == "__results__.html" \
-                        or relative.parts[0] == "ARC-AGI":           # a notebook that cloned into its working folder
-                    continue
-                target = RUNS / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(path, target)
-                got.append(target)
+        for attempt in range(attempts):
+            with tempfile.TemporaryDirectory() as folder:
+                kaggle("kernels", "output", f"{user}/{slug(job, shard)}", "-p", folder)
+                found = sorted(path for path in Path(folder).rglob("*") if path.is_file())
+                if found:
+                    for path in found:
+                        relative = path.relative_to(folder)
+                        if path.suffix == ".log":
+                            (RUNS / LOGS).mkdir(exist_ok=True)
+                            shutil.copy(path, RUNS / LOGS / f"{slug(job, shard)}.log")
+                        elif path.name != "__results__.html" and relative.parts[0] != "ARC-AGI":
+                            target = RUNS / relative             # not a notebook that cloned into its working folder
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy(path, target)
+                            got.append(target)
+                    break
+            if attempt + 1 < attempts:
+                sleep(wait)
+        else:
+            raise CollectFailed(f"{slug(job, shard)}: nothing came back in {attempts} tries")
     return got
 
 

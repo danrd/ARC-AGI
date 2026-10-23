@@ -4737,26 +4737,31 @@
    "name": "think_diag_b",
    "resource": "gpu",
    "shards": 1,
-   "status": "failed",
+   "status": "done",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов",
-   "result": [],
+   "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов [tick пометил failed и не собрал файлы; блокноты завершились, выходы скачаны вручную]",
+   "result": [
+    "data/experiments/runs/kaggle/think_diag_b_cell_changes_0.jsonl",
+    "data/experiments/runs/kaggle/think_diag_b_objects_0.jsonl"
+   ],
    "cleaned": false
   },
   {
    "name": "think_diag_c",
    "resource": "gpu",
    "shards": 1,
-   "status": "failed",
+   "status": "done",
    "setup": [
     "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
    ],
    "extras": "rl",
-   "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов",
-   "result": [],
+   "note": "диагностика thinking: парные пособия, 12 задач same-shape, 12000 токенов [tick пометил failed и не собрал файлы; блокноты завершились, выходы скачаны вручную]",
+   "result": [
+    "data/experiments/runs/kaggle/think_diag_c_numbered_0.jsonl"
+   ],
    "cleaned": false
   },
   {
@@ -4780,11 +4785,17 @@
    "name": "rl_eval_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "failed",
+   "status": "done",
    "setup": [],
    "extras": "rl",
-   "note": "объектный RL (o_spatial, сид 0) на evaluation: 260 задач с выходом той же формы, не решённых модулями; каждый блокнот сам сужает конфиги своих задач и обучает, 10 часов; даёт RL в общую таблицу на evaluation",
-   "result": [],
+   "note": "объектный RL (o_spatial, сид 0) на evaluation: 260 задач с выходом той же формы, не решённых модулями; каждый блокнот сам сужает конфиги своих задач и обучает, 10 часов; даёт RL в общую таблицу на evaluation [tick пометил failed и не собрал файлы; блокноты завершились, выходы скачаны вручную]",
+   "result": [
+    "data/experiments/runs/kaggle/rl_eval_a_rl_eval_0.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_a_rl_eval_1.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_a_rl_eval_2.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_a_rl_eval_3.jsonl",
+    "data/experiments/runs/kaggle/rl_eval_a_rl_eval_4.jsonl"
+   ],
    "cleaned": false
   }
  ]

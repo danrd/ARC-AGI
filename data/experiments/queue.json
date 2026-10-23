@@ -14,7 +14,8 @@
    "extras": "rl",
    "note": "добор по трём задачам; собран вручную в runs/gaps.jsonl",
    "result": [],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "mseries",
@@ -1352,7 +1353,8 @@
     "data/experiments/runs/kaggle/ARC-AGI/uv.lock",
     "data/experiments/runs/kaggle/mseries_core_2.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "prompts",
@@ -1892,7 +1894,8 @@
     "data/experiments/runs/kaggle/prompts_qwen_0/report.md",
     "data/experiments/runs/kaggle/prompts_qwen_0/results.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "moreseeds",
@@ -1906,7 +1909,8 @@
     "data/experiments/runs/kaggle/moreseeds_pair_0.jsonl",
     "data/experiments/runs/kaggle/moreseeds_pair_1.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "system",
@@ -1924,7 +1928,8 @@
     "data/experiments/runs/kaggle/system_rl_base_0.jsonl",
     "data/experiments/runs/kaggle/system_rl_refine_0.jsonl"
    ],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "system_rl",
@@ -1940,7 +1945,8 @@
     "data/experiments/runs/kaggle/system_rl_base_0.jsonl",
     "data/experiments/runs/kaggle/system_rl_refine_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "system_gpu",
@@ -1957,7 +1963,8 @@
     "data/experiments/runs/kaggle/system_gpu_llm_0.jsonl",
     "data/experiments/runs/kaggle/system_gpu_refine_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "system_refine",
@@ -1972,7 +1979,8 @@
    "result": [
     "data/experiments/runs/kaggle/system_refine_refine_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "bench",
@@ -1988,7 +1996,8 @@
     "data/experiments/runs/kaggle/bench_e2b_0.jsonl",
     "data/experiments/runs/kaggle/bench_qwen_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "system_big",
@@ -2005,7 +2014,8 @@
     "data/experiments/runs/kaggle/system_big_llm_0.jsonl",
     "data/experiments/runs/kaggle/system_big_refine_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "otherseeds_o",
@@ -2018,7 +2028,8 @@
    "result": [
     "data/experiments/runs/kaggle/otherseeds_o_seeds_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "otherseeds_s",
@@ -2031,7 +2042,8 @@
    "result": [
     "data/experiments/runs/kaggle/otherseeds_s_seeds_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "mseries2",
@@ -2044,7 +2056,8 @@
    "result": [
     "data/experiments/runs/kaggle/mseries2_core2_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "long1m_default",
@@ -2057,7 +2070,8 @@
    "result": [
     "data/experiments/runs/kaggle/long1m_default_long_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "long1m_m16",
@@ -2070,7 +2084,8 @@
    "result": [
     "data/experiments/runs/kaggle/long1m_m16_long_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma",
@@ -2081,7 +2096,8 @@
    "extras": "",
    "note": "TPU v5e-8: Gemma через Keras+JAX, веса по восьми чипам; какой пресет влезает и как быстро отвечает",
    "result": [],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "coreseeds_a",
@@ -2094,7 +2110,8 @@
    "result": [
     "data/experiments/runs/kaggle/coreseeds_a_core_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coreseeds_b",
@@ -2107,7 +2124,8 @@
    "result": [
     "data/experiments/runs/kaggle/coreseeds_b_core_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rseries",
@@ -2123,7 +2141,8 @@
     "data/experiments/runs/kaggle/rseries_read_2.jsonl",
     "data/experiments/runs/kaggle/rseries_read_3.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma2",
@@ -2136,7 +2155,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma2_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "bench2",
@@ -2152,7 +2172,8 @@
     "data/experiments/runs/kaggle/bench2_e2b_0.jsonl",
     "data/experiments/runs/kaggle/bench2_qwen_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "wide_base",
@@ -2165,7 +2186,8 @@
    "result": [
     "data/experiments/runs/kaggle/wide_base_wide_base_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "wide_read",
@@ -2181,7 +2203,8 @@
     "data/experiments/runs/kaggle/wide_read_wide_read_2.jsonl",
     "data/experiments/runs/kaggle/wide_read_wide_read_3.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "llm_only",
@@ -2196,7 +2219,8 @@
    "result": [
     "data/experiments/runs/kaggle/llm_only_gemma31b_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma3",
@@ -2209,7 +2233,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma3_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "wide_base2",
@@ -2222,7 +2247,8 @@
    "result": [
     "data/experiments/runs/kaggle/wide_base2_wide_base2_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "llm_only_qwen",
@@ -2237,7 +2263,8 @@
    "result": [
     "data/experiments/runs/kaggle/llm_only_qwen_qwen27b_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "wide_read2",
@@ -2253,7 +2280,8 @@
     "data/experiments/runs/kaggle/wide_read2_wide_read2_2.jsonl",
     "data/experiments/runs/kaggle/wide_read2_wide_read2_3.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "wide_base3",
@@ -2270,7 +2298,8 @@
     "data/experiments/runs/kaggle/wide_base3_wide_base3_3.jsonl",
     "data/experiments/runs/kaggle/wide_base3_wide_base3_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "readcells",
@@ -2287,7 +2316,8 @@
     "data/experiments/runs/kaggle/readcells_cells_3.jsonl",
     "data/experiments/runs/kaggle/readcells_cells_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "cells_repeat",
@@ -2304,7 +2334,8 @@
     "data/experiments/runs/kaggle/cells_repeat_cells_repeat_3.jsonl",
     "data/experiments/runs/kaggle/cells_repeat_cells_repeat_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "cells_rest",
@@ -2320,7 +2351,8 @@
     "data/experiments/runs/kaggle/cells_rest_cells_rest_2.jsonl",
     "data/experiments/runs/kaggle/cells_rest_cells_rest_3.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4",
@@ -2335,7 +2367,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma4_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "maps_a",
@@ -2349,7 +2382,8 @@
     "data/experiments/runs/kaggle/maps_a_maps_a_0.jsonl",
     "data/experiments/runs/kaggle/maps_a_maps_a_1.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "maps_b",
@@ -2364,7 +2398,8 @@
     "data/experiments/runs/kaggle/maps_b_maps_b_1.jsonl",
     "data/experiments/runs/kaggle/maps_b_maps_b_2.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "maps_a2",
@@ -2378,7 +2413,8 @@
     "data/experiments/runs/kaggle/maps_a2_maps_a2_0.jsonl",
     "data/experiments/runs/kaggle/maps_a2_maps_a2_1.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "maps_b2",
@@ -2393,7 +2429,8 @@
     "data/experiments/runs/kaggle/maps_b2_maps_b2_1.jsonl",
     "data/experiments/runs/kaggle/maps_b2_maps_b2_2.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "prompts2",
@@ -2933,7 +2970,8 @@
     "data/experiments/runs/kaggle/prompts2_qwen_0/report.md",
     "data/experiments/runs/kaggle/prompts2_qwen_0/results.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "prompts3",
@@ -3233,7 +3271,8 @@
     "data/experiments/runs/kaggle/prompts3_qwen_0/report.md",
     "data/experiments/runs/kaggle/prompts3_qwen_0/results.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4b",
@@ -3248,7 +3287,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma4b_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rel_a",
@@ -3265,7 +3305,8 @@
     "data/experiments/runs/kaggle/rel_a_rel_a_3.jsonl",
     "data/experiments/runs/kaggle/rel_a_rel_a_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rel_b",
@@ -3282,7 +3323,8 @@
     "data/experiments/runs/kaggle/rel_b_rel_b_3.jsonl",
     "data/experiments/runs/kaggle/rel_b_rel_b_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rel_c",
@@ -3297,7 +3339,8 @@
     "data/experiments/runs/kaggle/rel_c_rel_c_1.jsonl",
     "data/experiments/runs/kaggle/rel_c_rel_c_2.jsonl"
    ],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "rel_rest",
@@ -3314,7 +3357,8 @@
     "data/experiments/runs/kaggle/rel_rest_rel_rest_3.jsonl",
     "data/experiments/runs/kaggle/rel_rest_rel_rest_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "prompts4",
@@ -4014,7 +4058,8 @@
     "data/experiments/runs/kaggle/prompts4_qwen_0/report.md",
     "data/experiments/runs/kaggle/prompts4_qwen_0/results.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4c",
@@ -4029,7 +4074,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma4c_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_cal",
@@ -4044,7 +4090,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_cal_gemma_think_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_cal_qwen",
@@ -4059,7 +4106,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_cal_qwen_think_cal_qwen_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_cal_12b",
@@ -4074,7 +4122,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_cal_12b_think_cal_12b_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4d",
@@ -4089,7 +4138,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma4d_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_cal_moe",
@@ -4104,7 +4154,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_cal_moe_think_cal_moe_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "pair_a",
@@ -4121,7 +4172,8 @@
     "data/experiments/runs/kaggle/pair_a_pair_a_3.jsonl",
     "data/experiments/runs/kaggle/pair_a_pair_a_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "needs",
@@ -4139,7 +4191,8 @@
     "data/experiments/runs/kaggle/needs_moe_0.jsonl",
     "data/experiments/runs/kaggle/needs_qwen27_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "ask_data",
@@ -4155,7 +4208,8 @@
     "data/experiments/runs/kaggle/ask_data_menu_0.jsonl",
     "data/experiments/runs/kaggle/ask_data_wishes_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4e",
@@ -4168,7 +4222,8 @@
    "result": [
     "data/experiments/runs/kaggle/tpu_gemma4e_gemma_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_aids",
@@ -4183,7 +4238,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_aids_gemma_think_aids_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_aids2",
@@ -4198,7 +4254,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_aids2_gemma_think_aids2_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "pair_b",
@@ -4209,7 +4266,8 @@
    "extras": "rl",
    "note": "подтверждение на свежих сидах: f_base (факторизованные головы с картой) и f_pair на 23 задачах, сиды 5-6 (92 запуска); база o_spatial для этих сидов уже есть",
    "result": [],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "pair_b2",
@@ -4226,7 +4284,8 @@
     "data/experiments/runs/kaggle/pair_b2_pair_b2_3.jsonl",
     "data/experiments/runs/kaggle/pair_b2_pair_b2_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_small",
@@ -4242,7 +4301,8 @@
     "data/experiments/runs/kaggle/think_small_aids_0.jsonl",
     "data/experiments/runs/kaggle/think_small_base_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "ctrl_ospatial",
@@ -4259,7 +4319,8 @@
     "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_3.jsonl",
     "data/experiments/runs/kaggle/ctrl_ospatial_ctrl_ospatial_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4f",
@@ -4275,7 +4336,8 @@
     "data/experiments/runs/kaggle/tpu_gemma4f_e2b_none_0.json",
     "data/experiments/runs/kaggle/tpu_gemma4f_e2b_repl_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_a",
@@ -4292,7 +4354,8 @@
     "data/experiments/runs/kaggle/coord_a_coord_a_3.jsonl",
     "data/experiments/runs/kaggle/coord_a_coord_a_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "honest_a",
@@ -4309,7 +4372,8 @@
     "data/experiments/runs/kaggle/honest_a_honest_a_3.jsonl",
     "data/experiments/runs/kaggle/honest_a_honest_a_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4g",
@@ -4325,7 +4389,8 @@
     "data/experiments/runs/kaggle/tpu_gemma4g_e2b_none_0.json",
     "data/experiments/runs/kaggle/tpu_gemma4g_e2b_repl_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "nostop_a",
@@ -4342,7 +4407,8 @@
     "data/experiments/runs/kaggle/nostop_a_nostop_a_3.jsonl",
     "data/experiments/runs/kaggle/nostop_a_nostop_a_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "nostop_b",
@@ -4359,7 +4425,8 @@
     "data/experiments/runs/kaggle/nostop_b_nostop_b_3.jsonl",
     "data/experiments/runs/kaggle/nostop_b_nostop_b_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "nostop_b_ctrl",
@@ -4376,7 +4443,8 @@
     "data/experiments/runs/kaggle/nostop_b_ctrl_nostop_b_ctrl_3.jsonl",
     "data/experiments/runs/kaggle/nostop_b_ctrl_nostop_b_ctrl_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_long",
@@ -4391,7 +4459,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_long_base_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_b",
@@ -4408,7 +4477,8 @@
     "data/experiments/runs/kaggle/coord_b_coord_b_3.jsonl",
     "data/experiments/runs/kaggle/coord_b_coord_b_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_c",
@@ -4425,7 +4495,8 @@
     "data/experiments/runs/kaggle/coord_c_coord_c_3.jsonl",
     "data/experiments/runs/kaggle/coord_c_coord_c_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_d",
@@ -4442,7 +4513,8 @@
     "data/experiments/runs/kaggle/coord_d_coord_d_3.jsonl",
     "data/experiments/runs/kaggle/coord_d_coord_d_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_spec",
@@ -4458,7 +4530,8 @@
     "data/experiments/runs/kaggle/think_spec_base_0.jsonl",
     "data/experiments/runs/kaggle/think_spec_lookup_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4h",
@@ -4478,7 +4551,8 @@
     "data/experiments/runs/kaggle/tpu_gemma4h_inspect_e2b_nightly_0.json",
     "data/experiments/runs/kaggle/tpu_gemma4h_inspect_e2b_up_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_e",
@@ -4495,7 +4569,8 @@
     "data/experiments/runs/kaggle/coord_e_coord_e_3.jsonl",
     "data/experiments/runs/kaggle/coord_e_coord_e_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_f",
@@ -4512,7 +4587,8 @@
     "data/experiments/runs/kaggle/coord_f_coord_f_3.jsonl",
     "data/experiments/runs/kaggle/coord_f_coord_f_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "vocab_a",
@@ -4529,7 +4605,8 @@
     "data/experiments/runs/kaggle/vocab_a_vocab_a_3.jsonl",
     "data/experiments/runs/kaggle/vocab_a_vocab_a_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "vocab_b",
@@ -4546,7 +4623,8 @@
     "data/experiments/runs/kaggle/vocab_b_vocab_b_3.jsonl",
     "data/experiments/runs/kaggle/vocab_b_vocab_b_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4i",
@@ -4562,7 +4640,8 @@
     "data/experiments/runs/kaggle/tpu_gemma4i_e2b_repair_0.json",
     "data/experiments/runs/kaggle/tpu_gemma4i_moe_repair_0.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "coord_g",
@@ -4579,7 +4658,8 @@
     "data/experiments/runs/kaggle/coord_g_coord_g_3.jsonl",
     "data/experiments/runs/kaggle/coord_g_coord_g_4.jsonl"
    ],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "coord_g2",
@@ -4596,7 +4676,8 @@
     "data/experiments/runs/kaggle/coord_g2_coord_g2_3.jsonl",
     "data/experiments/runs/kaggle/coord_g2_coord_g2_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "tpu_gemma4j",
@@ -4625,7 +4706,8 @@
     "data/experiments/runs/kaggle/coord_h_coord_h_3.jsonl",
     "data/experiments/runs/kaggle/coord_h_coord_h_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rules_a",
@@ -4657,7 +4739,8 @@
     "data/experiments/runs/kaggle/rules_a_rules_thr1_vote_4.json",
     "data/experiments/runs/kaggle/rules_a_rules_vote_4.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "symcov_a",
@@ -4674,7 +4757,8 @@
     "data/experiments/runs/kaggle/symcov_a_symcov_3.jsonl",
     "data/experiments/runs/kaggle/symcov_a_symcov_4.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rules_b",
@@ -4716,7 +4800,8 @@
     "data/experiments/runs/kaggle/rules_b_rel_4.json",
     "data/experiments/runs/kaggle/rules_b_wide_ext_rel_4.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_diag_a",
@@ -4732,7 +4817,8 @@
     "data/experiments/runs/kaggle/think_diag_a_base_0.jsonl",
     "data/experiments/runs/kaggle/think_diag_a_rule_hint_0.jsonl"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "think_diag_b",
@@ -4748,7 +4834,8 @@
     "data/experiments/runs/kaggle/think_diag_b_cell_changes_0.jsonl",
     "data/experiments/runs/kaggle/think_diag_b_objects_0.jsonl"
    ],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "think_diag_c",
@@ -4763,7 +4850,8 @@
    "result": [
     "data/experiments/runs/kaggle/think_diag_c_numbered_0.jsonl"
    ],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
   },
   {
    "name": "transform_a",
@@ -4780,7 +4868,8 @@
     "data/experiments/runs/kaggle/transform_a_transform_3.json",
     "data/experiments/runs/kaggle/transform_a_transform_4.json"
    ],
-   "cleaned": true
+   "cleaned": true,
+   "collect_tries": 0
   },
   {
    "name": "rl_eval_a",
@@ -4797,7 +4886,20 @@
     "data/experiments/runs/kaggle/rl_eval_a_rl_eval_3.jsonl",
     "data/experiments/runs/kaggle/rl_eval_a_rl_eval_4.jsonl"
    ],
-   "cleaned": false
+   "cleaned": false,
+   "collect_tries": 0
+  },
+  {
+   "name": "rl_eval_b",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "объектный RL (o_spatial, сид 0) на 149 задачах evaluation, до которых не дошёл rl_eval_a: порядок задач перемешан, лимит 8 часов (в rl_eval_a один блокнот был отменён на 12-м часу); каждый блокнот сам сужает конфиги",
+   "result": [],
+   "cleaned": false,
+   "collect_tries": 0
   }
  ]
 }

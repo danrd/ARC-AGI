@@ -211,31 +211,32 @@ Around that rule there are options, each off by default and each leaving the rul
 ```mermaid
 graph TD
   data["data (8)"]
-  orchestration["orchestration (22)"]
+  orchestration["orchestration (23)"]
   rl["rl (20)"]
-  scripts["scripts (23)"]
+  scripts["scripts (24)"]
   subsymbolic["subsymbolic (15)"]
   symbolic["symbolic (15)"]
-  tests["tests (99)"]
+  tests["tests (100)"]
   utils["utils (3)"]
   tests -->|114| rl
   tests -->|48| subsymbolic
-  tests -->|41| orchestration
+  tests -->|42| orchestration
   tests -->|40| symbolic
   orchestration -->|32| subsymbolic
   tests -->|22| data
   scripts -->|17| rl
   rl -->|13| symbolic
   rl -->|11| data
+  scripts -->|8| symbolic
   orchestration -->|7| rl
   orchestration -->|7| symbolic
   tests -->|7| scripts
   scripts -->|6| subsymbolic
-  scripts -->|6| symbolic
   data -->|3| rl
   orchestration -->|3| data
   rl -->|3| utils
   scripts -->|3| data
+  scripts -->|3| orchestration
   subsymbolic -->|2| symbolic
   data -->|1| symbolic
   data -->|1| utils
@@ -265,14 +266,15 @@ graph TD
 | `orchestration.feedback` | 4 |
 | `orchestration.graph` | 12 |
 | `orchestration.hierarchy` | 7 |
-| `orchestration.llm_only` | 3 |
+| `orchestration.llm_only` | 4 |
 | `orchestration.llm_orchestrator` | 2 |
 | `orchestration.refine` | 2 |
 | `orchestration.refine_core` | 2 |
 | `orchestration.regrade_llm_only` | 1 |
 | `orchestration.roster` | 3 |
-| `orchestration.rule_report` | 0 |
+| `orchestration.rule_report` | 1 |
 | `orchestration.run` | 4 |
+| `orchestration.source_selection` | 0 |
 | `orchestration.tools` | 6 |
 | `orchestration.trace` | 11 |
 | `rl.action_structure` | 4 |
@@ -305,15 +307,16 @@ graph TD
 | `scripts.module_map` | 0 |
 | `scripts.prompt_oracles` | 0 |
 | `scripts.prompt_variants` | 0 |
-| `scripts.rl_compare` | 1 |
+| `scripts.rl_compare` | 2 |
 | `scripts.rl_evaluation` | 0 |
 | `scripts.rule_probe` | 0 |
 | `scripts.run_prompt_variants` | 0 |
 | `scripts.search_budget` | 0 |
 | `scripts.search_census` | 0 |
 | `scripts.solved_by_source` | 0 |
+| `scripts.source_answers` | 0 |
 | `scripts.stroke_census` | 0 |
-| `scripts.symbolic_coverage` | 1 |
+| `scripts.symbolic_coverage` | 2 |
 | `scripts.sync_llm_kit` | 0 |
 | `scripts.tpu_gemma_probe` | 0 |
 | `scripts.transform_probe` | 0 |
@@ -342,7 +345,7 @@ graph TD
 | `symbolic.rule_search` | 1 |
 | `symbolic.rule_solver` | 2 |
 | `symbolic.summaries` | 11 |
-| `symbolic.symbolic_module` | 10 |
+| `symbolic.symbolic_module` | 11 |
 | `symbolic.transformed_rules` | 0 |
 | `symbolic.utils` | 11 |
 | `utils.plotting` | 5 |

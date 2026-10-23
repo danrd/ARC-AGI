@@ -4900,20 +4900,6 @@
    "result": [],
    "cleaned": false,
    "collect_tries": 1
-  },
-  {
-   "name": "think_diag_d",
-   "resource": "gpu",
-   "shards": 1,
-   "status": "running",
-   "setup": [
-    "bash /tmp/ARC-AGI/scripts/install_llama_gpu.sh"
-   ],
-   "extras": "rl",
-   "note": "разброс thinking: база (без пособий, 12 задач) с семплированием 0.7 и двумя сидами; сравнить с жадной базой (10 из 12)",
-   "result": [],
-   "cleaned": false,
-   "collect_tries": 0
   }
  ]
 }

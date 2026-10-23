@@ -4923,6 +4923,18 @@
    ],
    "cleaned": true,
    "collect_tries": 0
+  },
+  {
+   "name": "rl_eval_c",
+   "resource": "cpu",
+   "shards": 5,
+   "status": "running",
+   "setup": [],
+   "extras": "rl",
+   "note": "объектный RL (o_spatial, сид 0) на 50 задачах evaluation, до которых не дошли rl_eval_a и rl_eval_b: завершает прогон по всем 260",
+   "result": [],
+   "cleaned": false,
+   "collect_tries": 0
   }
  ]
 }

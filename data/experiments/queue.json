@@ -4969,12 +4969,18 @@
    "name": "failure_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "почему правила не решают: класс каждой задачи (нет преобразования / признаков мало / язык правил / правило неверно: лишние изменения, пропущенные, не тот цвет), обе выборки",
-   "result": [],
-   "cleaned": false,
+   "result": [
+    "data/experiments/runs/kaggle/failure_a_failure_0.json",
+    "data/experiments/runs/kaggle/failure_a_failure_1.json",
+    "data/experiments/runs/kaggle/failure_a_failure_2.json",
+    "data/experiments/runs/kaggle/failure_a_failure_3.json",
+    "data/experiments/runs/kaggle/failure_a_failure_4.json"
+   ],
+   "cleaned": true,
    "collect_tries": 0
   }
  ]

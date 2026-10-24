@@ -4683,11 +4683,16 @@
    "name": "tpu_gemma4j",
    "resource": "tpu",
    "shards": 1,
-   "status": "running",
+   "status": "failed",
    "setup": [],
    "extras": "rl",
    "note": "TPU: все веса на 8 чипов (сетка 1×8, режется скрытая ширина внимания, внутренняя ширина FFN, токены эмбеддинга, эксперты) — в tpu_gemma4i 31B занимала 15,6 из 15,75 ГБ на чип и эмбеддингу не хватало места, а 2B не влезала на один чип. Подстановка эмбеддинга из файла — в bfloat16 и сразу по частям на чипы. Ступени: 2B (256 токенов), 31B короткий промпт (128) и длинный (512), 26B-A4B MoE короткий и длинный; генерация по одному промпту",
-   "result": [],
+   "result": [
+    "data/experiments/runs/kaggle/tpu_gemma4j_b31_flat_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4j_e2b_flat_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4j_moe_flat_0.json",
+    "data/experiments/runs/kaggle/tpu_gemma4j_moe_flat_short_0.json"
+   ],
    "cleaned": false,
    "collect_tries": 0
   },
@@ -4946,19 +4951,25 @@
    "name": "transform_b",
    "resource": "cpu",
    "shards": 5,
-   "status": "running",
+   "status": "done",
    "setup": [],
    "extras": "rl",
    "note": "расширенная библиотека преобразований (46 вместо 29: склейка растянутых строк, обрезка по цвету, down4/5, половины друг на друге: или/и/xor/нор) и поиск правил поверх них, обе выборки; против transform_a (90 и 28 решённых)",
-   "result": [],
-   "cleaned": false,
+   "result": [
+    "data/experiments/runs/kaggle/transform_b_transform_b_0.json",
+    "data/experiments/runs/kaggle/transform_b_transform_b_1.json",
+    "data/experiments/runs/kaggle/transform_b_transform_b_2.json",
+    "data/experiments/runs/kaggle/transform_b_transform_b_3.json",
+    "data/experiments/runs/kaggle/transform_b_transform_b_4.json"
+   ],
+   "cleaned": true,
    "collect_tries": 0
   },
   {
    "name": "failure_a",
    "resource": "cpu",
    "shards": 5,
-   "status": "queued",
+   "status": "running",
    "setup": [],
    "extras": "rl",
    "note": "почему правила не решают: класс каждой задачи (нет преобразования / признаков мало / язык правил / правило неверно: лишние изменения, пропущенные, не тот цвет), обе выборки",

@@ -1,0 +1,263 @@
+{
+ "steps": [
+  {
+   "step": "devices",
+   "ok": true,
+   "seconds": 20.6,
+   "value": [
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    },
+    {
+     "kind": "TPU v5 lite",
+     "bytes_limit": 16909332480
+    }
+   ]
+  },
+  {
+   "step": "inputs",
+   "ok": true,
+   "seconds": 0.1,
+   "value": [
+    "/kaggle/input/models",
+    "/kaggle/input/models/keras",
+    "/kaggle/input/models/keras/gemma4",
+    "/kaggle/input/models/keras/gemma4/keras"
+   ]
+  },
+  {
+   "step": "presets",
+   "ok": true,
+   "seconds": 36.5,
+   "value": {
+    "Gemma3CausalLM": [
+     "embedding_gemma3_300m",
+     "function_gemma_instruct_270m",
+     "gemma3_12b",
+     "gemma3_12b_text",
+     "gemma3_1b",
+     "gemma3_270m",
+     "gemma3_27b",
+     "gemma3_27b_text",
+     "gemma3_4b",
+     "gemma3_4b_text",
+     "gemma3_instruct_12b",
+     "gemma3_instruct_12b_text",
+     "gemma3_instruct_1b",
+     "gemma3_instruct_270m",
+     "gemma3_instruct_27b",
+     "gemma3_instruct_27b_text",
+     "gemma3_instruct_4b",
+     "gemma3_instruct_4b_text",
+     "harrier_embedding_oss_270m",
+     "medgemma_1.5_instruct_4b",
+     "medgemma_4b",
+     "medgemma_instruct_27b",
+     "medgemma_instruct_27b_text",
+     "medgemma_instruct_4b",
+     "translategemma_12b_it",
+     "translategemma_27b_it",
+     "translategemma_4b_it"
+    ],
+    "Gemma3nCausalLM": [
+     "gemma3n_e2b",
+     "gemma3n_e2b_it",
+     "gemma3n_e4b",
+     "gemma3n_e4b_it"
+    ],
+    "Gemma4CausalLM": [
+     "gemma4_26b_a4b",
+     "gemma4_2b",
+     "gemma4_31b",
+     "gemma4_4b",
+     "gemma4_instruct_26b_a4b",
+     "gemma4_instruct_26b_a4b_assistant",
+     "gemma4_instruct_2b",
+     "gemma4_instruct_2b_assistant",
+     "gemma4_instruct_31b",
+     "gemma4_instruct_31b_assistant",
+     "gemma4_instruct_4b",
+     "gemma4_instruct_4b_assistant"
+    ],
+    "GemmaCausalLM": [
+     "c2s_scale_gemma_2_27b_en",
+     "c2s_scale_gemma_2_2b_en",
+     "code_gemma_1.1_2b_en",
+     "code_gemma_1.1_instruct_7b_en",
+     "code_gemma_2b_en",
+     "code_gemma_7b_en",
+     "code_gemma_instruct_7b_en",
+     "gemma2_27b_en",
+     "gemma2_2b_en",
+     "gemma2_9b_en",
+     "gemma2_instruct_27b_en",
+     "gemma2_instruct_2b_en",
+     "gemma2_instruct_9b_en",
+     "gemma_1.1_instruct_2b_en",
+     "gemma_1.1_instruct_7b_en",
+     "gemma_2b_en",
+     "gemma_7b_en",
+     "gemma_instruct_2b_en",
+     "gemma_instruct_7b_en",
+     "shieldgemma_27b_en",
+     "shieldgemma_2b_en",
+     "shieldgemma_9b_en",
+     "vault_gemma_1b_en"
+    ],
+    "PaliGemmaCausalLM": [
+     "pali_gemma2_ft_docci_10b_448",
+     "pali_gemma2_mix_10b_224",
+     "pali_gemma2_mix_10b_448",
+     "pali_gemma2_mix_28b_224",
+     "pali_gemma2_mix_28b_448",
+     "pali_gemma2_mix_3b_224",
+     "pali_gemma2_mix_3b_448",
+     "pali_gemma2_pt_10b_224",
+     "pali_gemma2_pt_10b_448",
+     "pali_gemma2_pt_10b_896",
+     "pali_gemma2_pt_28b_224",
+     "pali_gemma2_pt_28b_448",
+     "pali_gemma2_pt_28b_896",
+     "pali_gemma2_pt_3b_224",
+     "pali_gemma2_pt_3b_448",
+     "pali_gemma2_pt_3b_896",
+     "pali_gemma_2_ft_docci_3b_448",
+     "pali_gemma_3b_224",
+     "pali_gemma_3b_448",
+     "pali_gemma_3b_896",
+     "pali_gemma_3b_mix_224",
+     "pali_gemma_3b_mix_448"
+    ]
+   }
+  },
+  {
+   "step": "shard and load",
+   "ok": true,
+   "seconds": 120.2,
+   "value": {
+    "preset": "gemma4_instruct_2b",
+    "gb_in_use_per_chip": [
+     2.78,
+     2.77,
+     2.77,
+     2.77,
+     2.77,
+     2.77,
+     2.77,
+     2.77
+    ]
+   }
+  },
+  {
+   "step": "generate",
+   "ok": true,
+   "seconds": 1175.9,
+   "value": {
+    "seconds": 0.17,
+    "first_call_seconds": 660.15,
+    "batch": 1,
+    "sequence_length": 3584,
+    "prompt_tokens": 3253,
+    "new_tokens_asked": 256,
+    "new_tokens": 1,
+    "tokens_per_second": 5.94,
+    "batch_tokens_per_second": 5.94,
+    "reply_tail": "00000000000\n14 00000000000000\n\n</TASK_REPR>\n<OUTPUT_FORMAT>\nReturn *only* the predicted output grid in the specified format below. Do not include any reasoning, explanations, comments, or any text before or after the grid.\nThe format is:\nn,m:\n1 x_1 ... x_m\n...\nn x_1 ... x_m\n\nWhere 'n' is the number of rows, 'm' is the number of columns, and x_i are the cell values (colors).\n</OUTPUT_FORMAT><turn|>"
+   }
+  }
+ ],
+ "options": [
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_12b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_1b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_27b"
+  ],
+  [
+   "Gemma3CausalLM",
+   "gemma3_instruct_4b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_2b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_31b"
+  ],
+  [
+   "Gemma4CausalLM",
+   "gemma4_instruct_4b"
+  ]
+ ],
+ "chosen": [
+  "Gemma4CausalLM",
+  "gemma4_instruct_2b"
+ ],
+ "layout": {
+  "mode": "flat",
+  "mesh": [
+   1,
+   8
+  ],
+  "source": "ours",
+  "removed": [],
+  "rules": {
+   "(token_embedding|per_layer_token_embedding)/embeddings": "<TensorLayout axes=('model', None), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>",
+   "per_layer_model_projection/kernel": "<TensorLayout axes=(None, 'model'), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>",
+   "decoder_block.*attention.*(query|key|value)/kernel": "<TensorLayout axes=(None, 'model', None), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>",
+   "decoder_block.*attention_output/kernel": "<TensorLayout axes=(None, None, 'model'), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>",
+   "decoder_block.*ffw_gating.*/kernel": "<TensorLayout axes=(None, 'model'), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>",
+   "decoder_block.*ffw_linear/kernel": "<TensorLayout axes=('model', None), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>",
+   "decoder_block.*moe_expert_bank/(gate_proj|up_proj|down_proj)": "<TensorLayout axes=('model', None, None), device_mesh=<DeviceMesh shape=(1, 8), axis_names=['batch', 'model']>>"
+  }
+ },
+ "embedding_loads": [
+  {
+   "layer": "token_embedding",
+   "group": "layers/reversible_embedding",
+   "shard": "model_00000.weights.h5",
+   "variables_found": 1,
+   "ok": true
+  },
+  {
+   "layer": "per_layer_token_embedding",
+   "group": "layers/embedding",
+   "shard": "model_00000.weights.h5",
+   "variables_found": 1,
+   "ok": true
+  }
+ ],
+ "load_error": null
+}
